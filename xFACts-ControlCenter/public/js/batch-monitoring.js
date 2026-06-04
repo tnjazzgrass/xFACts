@@ -1,86 +1,68 @@
 /* ============================================================================
-   xFACts Control Center - Batch Monitoring JavaScript
+   xFACts Control Center - Batch Monitoring JavaScript (batch-monitoring.js)
    Location: E:\xFACts-ControlCenter\public\js\batch-monitoring.js
    Version: Tracked in dbo.System_Metadata (component: BatchOps)
 
-   Page-specific JavaScript for the Batch Monitoring dashboard. Cross-page
-   utilities (escapeHtml, formatTimeOfDay, MONTH_NAMES, DAY_NAMES, safeInt,
-   safeFloat, formatTimeSince, formatAge, showAlert, showConfirm,
-   engineFetch, pageRefresh, etc.) are provided by engine-events.js.
+   Page module for the Batch Monitoring dashboard. Loaded by the cc-shared.js
+   bootloader, which reads data-cc-prefix from the body and invokes bat_init.
+   Renders the daily summary cards, the live active-batch table, collector
+   process status, and the batch history tree with its day-detail slideout.
+   Cross-page utilities (escaping, timestamp and duration formatting, safe
+   number coercion, the fetch wrapper, month/day name lookups, the engine
+   card system, and the page refresh hook) are provided by cc-shared.js.
 
-   CHANGELOG
-   ---------
-   2026-04-30  Phase 4 (Standardization): full alignment to shared module.
-                 - Deleted local escapeHtml; uses shared escapeHtml.
-                 - Deleted local formatTime; uses shared formatTimeOfDay
-                   (the shared version already handles .NET /Date(ms)/
-                   format that the BatchMon-specific version handled).
-                 - Deleted local monthNames; uses shared MONTH_NAMES.
-                 - Deleted local dayNames; uses shared DAY_NAMES.
-                 - Deleted local safeInt and safeFloat; uses shared.
-                 - Deleted local formatTimeSince; uses shared.
-                 - Deleted local formatAge; uses shared.
-                 - Deleted local pageRefresh; defined onPageRefresh hook
-                   that the shared module's pageRefresh wrapper calls.
-                 - Deleted local showError/clearError; replaced call sites
-                   with console.error() per Phase 4 alignment pattern.
-                 - Slideout open/close: updated DOM IDs to match new shared
-                   .slide-panel-* markup (#batch-slideout-overlay).
-                 - parseDateOnly: ASCII-cleaned mojibake comments
-                   (replaced two corrupt em-dash artifacts with ASCII '--').
-                 - Removed duplicate "Initialization" header comment that
-                   appeared twice consecutively in the file.
-                 - Removed legacy ENGINE STATUS REMOVED comment block --
-                   the historical context lives in CHANGELOGs and the
-                   architecture doc; comment block was 8 lines of
-                   information that no current reader needs to see inline.
+   FILE ORGANIZATION
+   -----------------
+   CONSTANTS: ENGINE PROCESSES
+   CONSTANTS: STATUS DISPLAY MAPS
+   CONSTANTS: DISPATCH TABLES
+   STATE: REFRESH AND PAGE STATE
+   STATE: SECTION FILTER STATE
+   STATE: SLIDEOUT STATE
+   FUNCTIONS: INITIALIZATION
+   FUNCTIONS: REFRESH ARCHITECTURE
+   FUNCTIONS: API CALLS
+   FUNCTIONS: STATUS RESOLVERS
+   FUNCTIONS: RENDER PROCESS STATUS
+   FUNCTIONS: RENDER DAILY SUMMARY
+   FUNCTIONS: RENDER ACTIVE BATCHES
+   FUNCTIONS: RENDER BATCH HISTORY
+   FUNCTIONS: RENDER SLIDEOUT
+   FUNCTIONS: SLIDEOUT FILTER ACTIONS
+   FUNCTIONS: TREE TOGGLES
+   FUNCTIONS: SLIDEOUT OPEN AND CLOSE
+   FUNCTIONS: FILTER ACTIONS
+   FUNCTIONS: UTILITIES
+   FUNCTIONS: PAGE LIFECYCLE HOOKS
    ============================================================================ */
 
-// ============================================================================
-// CONFIGURATION
-// ============================================================================
+/* ============================================================================
+   CONSTANTS: ENGINE PROCESSES
+   ----------------------------------------------------------------------------
+   Maps each orchestrator process feeding this page's engine cards to its
+   card slug. Read by cc_connectEngineEvents to wire WebSocket events to the
+   nb / pmt / bdl / summary indicator cards.
+   Prefix: bat
+   ============================================================================ */
 
-// Engine events -- process map for shared WebSocket module (engine-events.js)
-var ENGINE_PROCESSES = {
+/* Orchestrator process-to-slug map for the four Batch Monitoring engine cards. */
+var bat_ENGINE_PROCESSES = {
     'Collect-NBBatchStatus':  { slug: 'nb' },
     'Collect-PMTBatchStatus': { slug: 'pmt' },
     'Collect-BDLBatchStatus': { slug: 'bdl' },
     'Send-OpenBatchSummary':  { slug: 'summary' }
 };
 
-// Live polling (Refresh Architecture)
-var PAGE_REFRESH_INTERVAL = 30;   // Default; overridden by GlobalConfig on load
+/* ============================================================================
+   CONSTANTS: STATUS DISPLAY MAPS
+   ----------------------------------------------------------------------------
+   Lookup maps translating raw Debt Manager status reference values into the
+   short readable labels shown in the active-batch table and slideout.
+   Prefix: bat
+   ============================================================================ */
 
-// Page hooks for engine-events.js shared module
-function onPageRefresh()    { refreshAll(); }
-function onPageResumed()    { refreshAll(); }
-function onSessionExpired() { stopLivePolling(); }
-
-var livePollingTimer = null;
-var pageLoadDate = new Date().toDateString();
-
-// Active Batches state
-var currentActiveFilter = 'ALL';
-var lastActiveBatchData = null;
-
-// Batch History state
-var currentHistoryFilter = 'ALL';
-var currentHistoryData = null;
-var expandedYears = {};
-var expandedMonths = {};
-
-// Slideout state
-var currentSlideoutTab = 'ALL';        // ALL, NB, PMT, BDL
-var currentSlideoutPmtFilter = 'ALL';  // ALL, IMPORT, MANUAL, REVERSAL, REAPPLY, OTHER
-var currentSlideoutStatusFilter = 'ALL';
-var currentSlideoutBatches = [];
-
-// ============================================================================
-// FRIENDLY STATUS DISPLAY MAPS
-// (DM reference table values -> readable text)
-// ============================================================================
-
-var nbStatusMap = {
+/* Maps NB batch status reference values to readable labels. */
+const bat_nbStatusMap = {
     'EMPTY': 'Empty', 'UPLOADING': 'Uploading', 'UPLOADFAILED': 'Upload Failed',
     'UPLOADED': 'Uploaded', 'DELETED': 'Deleted', 'RELEASENEEDED': 'Release Needed',
     'RELEASING': 'Releasing', 'RELEASED': 'Released', 'RELEASEFAILED': 'Release Failed',
@@ -89,7 +71,8 @@ var nbStatusMap = {
     'GENERATING': 'Generating', 'GENERATED': 'Generated'
 };
 
-var nbMergeStatusMap = {
+/* Maps NB merge status reference values to readable labels. */
+const bat_nbMergeStatusMap = {
     'NONE': 'None', 'POST_RELEASE_MERGING': 'Merging',
     'POST_RELEASE_MERGE_COMPLETE': 'Merge Complete',
     'POST_RELEASE_LINKING': 'Linking', 'POST_RELEASE_LINK_COMPLETE': 'Link Complete',
@@ -100,7 +83,8 @@ var nbMergeStatusMap = {
     'POST_RELEASE_PARTIAL_MERGED': 'Partial Merged'
 };
 
-var pmtStatusMap = {
+/* Maps PMT batch status reference values to readable labels. */
+const bat_pmtStatusMap = {
     'ACTIVE': 'Active', 'RELEASED': 'Released', 'INPROCESS': 'In Process',
     'POSTED': 'Posted', 'PARTIAL': 'Partial', 'FAILED': 'Failed',
     'ARCHIVED': 'Archived', 'NEWIMPORT': 'New Import',
@@ -119,293 +103,441 @@ var pmtStatusMap = {
     'PROCESSEDWITHSUSPENSE': 'Processed w/ Suspense'
 };
 
-function friendlyStatus(raw, map) {
-    if (!raw) return 'Unknown';
-    var key = raw.toUpperCase().trim();
-    return map[key] || raw;
-}
+/* ============================================================================
+   CONSTANTS: DISPATCH TABLES
+   ----------------------------------------------------------------------------
+   Per-event dispatch tables routing data-action-<event> values declared in
+   the page markup and in rendered HTML to their handler functions. Wired to
+   a delegated body listener in bat_init.
+   Prefix: bat
+   ============================================================================ */
 
-// ============================================================================
-// STATUS BADGE CLASS RESOLVERS
-// ============================================================================
+/* Routes data-action-click values to their handlers. */
+const bat_clickActions = {
+    'bat-set-active-filter':   bat_setActiveFilter,
+    'bat-set-history-filter':  bat_setHistoryFilter,
+    'bat-toggle-year':         bat_toggleYear,
+    'bat-toggle-month':        bat_toggleMonth,
+    'bat-open-day-detail':     bat_openDayDetail,
+    'bat-toggle-batch-row':    bat_toggleBatchRow,
+    'bat-set-slideout-tab':    bat_setSlideoutTab,
+    'bat-set-slideout-status': bat_setSlideoutStatusFilter,
+    'bat-set-slideout-pmt':    bat_setSlideoutPmtFilter,
+    'bat-close-slideout':      bat_closeSlideout
+};
 
-function nbStatusBadgeClass(batchCode, mergeCode) {
-    // Failures
-    if (batchCode === 3 || batchCode === 9 || batchCode === 13) return 'failed';
-    // In-flight (blue)
-    if (batchCode === 2 || batchCode === 7 || batchCode === 12) return 'active';
-    // Generating (blue)
-    if (batchCode === 14 || batchCode === 15) return 'active';
-    // Waiting/staged (yellow)
-    if (batchCode === 4 || batchCode === 6 || batchCode === 11) return 'waiting';
-    // Released - completed status phase (green)
-    if (batchCode === 8 || batchCode === 10) return 'processing';
-    return 'info';
-}
+/* ============================================================================
+   STATE: REFRESH AND PAGE STATE
+   ----------------------------------------------------------------------------
+   Live polling cadence, the live-polling timer handle, and the page-load
+   date used to force a full reload across a midnight rollover.
+   Prefix: bat
+   ============================================================================ */
 
-function pmtStatusBadgeClass(batchCode) {
-    // Failures
-    if (batchCode === 6 || batchCode === 11 || batchCode === 14 || batchCode === 20 || batchCode === 27) return 'failed';
-    // Warnings (partial, suspense)
-    if (batchCode === 5 || batchCode === 30) return 'failed';
-    // In-flight (blue)
-    if (batchCode === 3 || batchCode === 10 || batchCode === 13 || batchCode === 19 || batchCode === 22 || batchCode === 26) return 'active';
-    // Waiting (yellow)
-    if (batchCode === 2 || batchCode === 8 || batchCode === 9 || batchCode === 12 || batchCode === 15 || batchCode === 18 || batchCode === 21 || batchCode === 25) return 'waiting';
-    // Wrap-up and delete
-    if (batchCode === 16 || batchCode === 17 || batchCode === 23 || batchCode === 24 || batchCode === 28) return 'info';
-    return 'info';
-}
+/* Live polling interval in seconds; overridden by GlobalConfig on load. */
+var bat_pageRefreshInterval = 30;
 
-function bdlStatusBadgeClass(fileRegistryCode) {
-    // File_Registry status codes from Ref_File_Stts_Cd
-    if (fileRegistryCode === 6 || fileRegistryCode === 7) return 'failed';
-    if (fileRegistryCode === 8) return 'warning';
-    if (fileRegistryCode === 5) return 'processing';
-    if (fileRegistryCode === 4 || fileRegistryCode === 10 || fileRegistryCode === 11) return 'active';
-    return 'info';
-}
+/* setInterval handle for the live Active Batches polling timer. */
+var bat_livePollingTimer = null;
 
+/* setInterval handle for the midnight-rollover reload check. */
+var bat_autoRefreshTimer = null;
 
-// ============================================================================
-// INITIALIZATION
-// ============================================================================
+/* The date string at page load, compared to detect a midnight rollover. */
+var bat_pageLoadDate = new Date().toDateString();
 
-document.addEventListener('DOMContentLoaded', async function() {
-    await loadRefreshInterval();
-    refreshAll();
-    connectEngineEvents();
-    initEngineCardClicks();
-    startLivePolling();
-    startAutoRefresh();
+/* ============================================================================
+   STATE: SECTION FILTER STATE
+   ----------------------------------------------------------------------------
+   Current filter selections and the last-rendered data for the Active
+   Batches and Batch History sections.
+   Prefix: bat
+   ============================================================================ */
 
-    // History filter buttons
-    document.querySelectorAll('.filter-btn').forEach(function(btn) {
-        btn.addEventListener('click', function() {
-            document.querySelectorAll('.filter-btn').forEach(function(b) { b.classList.remove('active'); });
-            this.classList.add('active');
-            currentHistoryFilter = this.getAttribute('data-filter');
-            // Reset all expanded state when switching filters
-            expandedYears = {};
-            expandedMonths = {};
-            loadBatchHistory();
-        });
+/* Current Active Batches type filter (ALL, NB, PMT, BDL). */
+var bat_currentActiveFilter = 'ALL';
+
+/* Last active-batch payload, retained so filter changes re-render without refetch. */
+var bat_lastActiveBatchData = null;
+
+/* Current Batch History type filter (ALL, NB, PMT, BDL). */
+var bat_currentHistoryFilter = 'ALL';
+
+/* Last history payload retained for re-rendering. */
+var bat_currentHistoryData = null;
+
+/* Map of expanded year keys in the history tree. */
+var bat_expandedYears = {};
+
+/* Map of expanded month keys in the history tree. */
+var bat_expandedMonths = {};
+
+/* ============================================================================
+   STATE: SLIDEOUT STATE
+   ----------------------------------------------------------------------------
+   The batch-detail slideout's current tab and filter selections and the
+   batch set it is currently displaying.
+   Prefix: bat
+   ============================================================================ */
+
+/* Current slideout batch-type tab (ALL, NB, PMT, BDL). */
+var bat_currentSlideoutTab = 'ALL';
+
+/* Current slideout PMT sub-type filter. */
+var bat_currentSlideoutPmtFilter = 'ALL';
+
+/* Current slideout status filter (ALL, SUCCESS, FAILED, ACTIVE). */
+var bat_currentSlideoutStatusFilter = 'ALL';
+
+/* The batches currently loaded into the slideout. */
+var bat_currentSlideoutBatches = [];
+
+/* ============================================================================
+   FUNCTIONS: INITIALIZATION
+   ----------------------------------------------------------------------------
+   The page boot function invoked by the cc-shared.js bootloader. Registers
+   the delegated click listener, connects engine events, starts the live and
+   midnight-rollover timers, and loads all sections.
+   Prefix: bat
+   ============================================================================ */
+
+/* Page boot entry point. Wires the delegated click dispatcher, engine events, timers, and initial data load. */
+async function bat_init() {
+    await bat_loadRefreshInterval();
+
+    document.body.addEventListener('click', function(event) {
+        var target = event.target.closest('[data-action-click]');
+        if (!target) {
+            return;
+        }
+        var action = target.getAttribute('data-action-click');
+        if (!action || action.indexOf('bat-') !== 0) {
+            return;
+        }
+        var handler = bat_clickActions[action];
+        if (handler) {
+            handler(target, event);
+        }
     });
 
-    // Active batches filter buttons
-    document.querySelectorAll('.active-filter-btn').forEach(function(btn) {
-        btn.addEventListener('click', function() {
-            document.querySelectorAll('.active-filter-btn').forEach(function(b) { b.classList.remove('active'); });
-            this.classList.add('active');
-            currentActiveFilter = this.getAttribute('data-filter');
-            renderActiveBatches(lastActiveBatchData);
-        });
-    });
-});
+    bat_refreshAll();
+    cc_connectEngineEvents();
+    bat_startLivePolling();
+    bat_startAutoRefresh();
+}
 
+/* ============================================================================
+   FUNCTIONS: REFRESH ARCHITECTURE
+   ----------------------------------------------------------------------------
+   The live section (Active Batches) refreshes on a GlobalConfig-driven timer;
+   the event-driven sections (Today's Activity, Process Status, Batch History)
+   refresh when an orchestrator process completes. A separate timer forces a
+   full reload across a midnight rollover.
+   Prefix: bat
+   ============================================================================ */
 
-// ============================================================================
-// REFRESH ARCHITECTURE
-// ----------------------------------------------------------------------------
-// Live sections: Active Batches (direct DM production query)
-// Event-driven sections: Today's Activity, Process Status, Batch History
-// See: Refresh Architecture doc, Section 6.5
-// ============================================================================
-
-async function loadRefreshInterval() {
+/* Loads the page's live polling interval from GlobalConfig; falls back to the default. */
+async function bat_loadRefreshInterval() {
     try {
-        var data = await engineFetch('/api/config/refresh-interval?page=batch');
-        if (data) {
-            PAGE_REFRESH_INTERVAL = data.interval || 30;
+        var data = await cc_engineFetch('/api/config/refresh-interval?page=batch');
+        if (data && data.interval) {
+            bat_pageRefreshInterval = data.interval;
         }
     } catch (e) {
-        // API unavailable -- use default
+        // Config endpoint unavailable; keep the default interval.
     }
 }
 
-function startLivePolling() {
-    if (livePollingTimer) clearInterval(livePollingTimer);
-    livePollingTimer = setInterval(function() {
-        if (enginePageHidden || engineSessionExpired) return;
-        refreshLiveSections();
-    }, PAGE_REFRESH_INTERVAL * 1000);
+/* Starts the live Active Batches polling timer; cc_engineFetch self-gates when hidden, idle, or expired. */
+function bat_startLivePolling() {
+    if (bat_livePollingTimer) {
+        clearInterval(bat_livePollingTimer);
+    }
+    bat_livePollingTimer = setInterval(bat_refreshLiveSections, bat_pageRefreshInterval * 1000);
 }
 
-function stopLivePolling() {
-    if (livePollingTimer) {
-        clearInterval(livePollingTimer);
-        livePollingTimer = null;
+/* Stops the live polling timer. */
+function bat_stopLivePolling() {
+    if (bat_livePollingTimer) {
+        clearInterval(bat_livePollingTimer);
+        bat_livePollingTimer = null;
     }
 }
 
-function startAutoRefresh() {
-    setInterval(function() {
+/* Starts the timer that reloads the page when the calendar date rolls over. */
+function bat_startAutoRefresh() {
+    bat_autoRefreshTimer = setInterval(function() {
         var today = new Date().toDateString();
-        if (today !== pageLoadDate) {
+        if (today !== bat_pageLoadDate) {
             window.location.reload();
         }
     }, 60000);
 }
 
-// -- Live sections: refresh on GlobalConfig timer --
-function refreshLiveSections() {
-    loadActiveBatches();
-    updateTimestamp();
+/* Refreshes the live sections (Active Batches) and the timestamp. */
+function bat_refreshLiveSections() {
+    bat_loadActiveBatches();
+    bat_updateTimestamp();
 }
 
-// -- Event-driven sections: refresh on orchestrator PROCESS_COMPLETED --
-function refreshEventSections() {
-    loadProcessStatus();
-    loadDailySummary();
-    loadBatchHistory();
-    updateTimestamp();
+/* Refreshes the event-driven sections after an orchestrator process completes. */
+function bat_refreshEventSections() {
+    bat_loadProcessStatus();
+    bat_loadDailySummary();
+    bat_loadBatchHistory();
+    bat_updateTimestamp();
 }
 
-// -- Manual refresh: everything --
-function refreshAll() {
-    loadProcessStatus();
-    loadDailySummary();
-    loadActiveBatches();
-    loadBatchHistory();
-    updateTimestamp();
+/* Refreshes every section (manual refresh and initial load). */
+function bat_refreshAll() {
+    bat_loadProcessStatus();
+    bat_loadDailySummary();
+    bat_loadActiveBatches();
+    bat_loadBatchHistory();
+    bat_updateTimestamp();
 }
 
-function updateTimestamp() {
-    var el = document.getElementById('last-update');
+/* Updates the last-update timestamp in the refresh info row. */
+function bat_updateTimestamp() {
+    var el = document.getElementById('cc-last-update');
     if (el) {
         el.textContent = new Date().toLocaleTimeString();
     }
 }
 
-// Called by engine-events.js when a relevant PROCESS_COMPLETED event arrives
-function onEngineProcessCompleted(processName, event) {
-    refreshEventSections();
-}
+/* ============================================================================
+   FUNCTIONS: API CALLS
+   ----------------------------------------------------------------------------
+   Section data loaders. Each fetches its endpoint through cc_engineFetch and
+   hands the payload to its renderer.
+   Prefix: bat
+   ============================================================================ */
 
-
-// ============================================================================
-// API CALLS
-// ============================================================================
-
-function loadProcessStatus() {
-    engineFetch('/api/batch-monitoring/process-status')
+/* Loads collector process health and renders the Process Status cards. */
+function bat_loadProcessStatus() {
+    cc_engineFetch('/api/batch-monitoring/process-status')
         .then(function(data) {
-            if (!data) return;
-            if (data.error) { console.error('Process status:', data.error); return; }
-            renderProcessStatus(data.processes || []);
+            if (!data) {
+                return;
+            }
+            if (data.error) {
+                console.error('Process status:', data.error);
+                return;
+            }
+            bat_renderProcessStatus(data.processes || []);
         })
         .catch(function(err) { console.error('Failed to load process status:', err.message); });
 }
 
-function loadDailySummary() {
-    engineFetch('/api/batch-monitoring/daily-summary')
+/* Loads today's batch counts and renders the Daily Summary cards. */
+function bat_loadDailySummary() {
+    cc_engineFetch('/api/batch-monitoring/daily-summary')
         .then(function(data) {
-            if (!data) return;
-            if (data.error) { console.error('Daily summary:', data.error); return; }
-            renderDailySummary(data);
-            updateTimestamp();
+            if (!data) {
+                return;
+            }
+            if (data.error) {
+                console.error('Daily summary:', data.error);
+                return;
+            }
+            bat_renderDailySummary(data);
+            bat_updateTimestamp();
         })
         .catch(function(err) { console.error('Failed to load daily summary:', err.message); });
 }
 
-function loadActiveBatches() {
-    engineFetch('/api/batch-monitoring/active-batches')
+/* Loads live in-flight batches and renders the Active Batches table. */
+function bat_loadActiveBatches() {
+    cc_engineFetch('/api/batch-monitoring/active-batches')
         .then(function(data) {
-            if (!data) return;
-            if (data.error) { console.error('Active batches:', data.error); return; }
-            lastActiveBatchData = data;
-            renderActiveBatches(data);
-            updateTimestamp();
+            if (!data) {
+                return;
+            }
+            if (data.error) {
+                console.error('Active batches:', data.error);
+                return;
+            }
+            bat_lastActiveBatchData = data;
+            bat_renderActiveBatches(data);
+            bat_updateTimestamp();
         })
         .catch(function(err) { console.error('Failed to load active batches:', err.message); });
 }
 
-function loadBatchHistory() {
-    engineFetch('/api/batch-monitoring/history?type=' + currentHistoryFilter)
+/* Loads the year/month history rollup and renders the Batch History tree. */
+function bat_loadBatchHistory() {
+    cc_engineFetch('/api/batch-monitoring/history?type=' + bat_currentHistoryFilter)
         .then(function(data) {
-            if (!data) return;
-            if (data.error) { console.error('Batch history:', data.error); return; }
-            currentHistoryData = data.data || [];
-            renderBatchHistory(currentHistoryData);
+            if (!data) {
+                return;
+            }
+            if (data.error) {
+                console.error('Batch history:', data.error);
+                return;
+            }
+            bat_currentHistoryData = data.data || [];
+            bat_renderBatchHistory(bat_currentHistoryData);
         })
         .catch(function(err) { console.error('Failed to load batch history:', err.message); });
 }
 
-function loadMonthDetail(year, month) {
+/* Loads the day-level detail for an expanded month into its container. */
+function bat_loadMonthDetail(year, month) {
     var key = year + '-' + month;
-    var container = document.getElementById('month-detail-' + key);
-    if (!container) return;
+    var container = document.getElementById('bat-month-detail-' + key);
+    if (!container) {
+        return;
+    }
 
-    container.innerHTML = '<div class="loading">Loading...</div>';
+    container.innerHTML = '<div class="bat-loading">Loading...</div>';
 
-    engineFetch('/api/batch-monitoring/history-month?year=' + year + '&month=' + month + '&type=' + currentHistoryFilter)
+    cc_engineFetch('/api/batch-monitoring/history-month?year=' + year + '&month=' + month + '&type=' + bat_currentHistoryFilter)
         .then(function(data) {
-            if (!data) return;
-            if (data.error) { container.innerHTML = '<div class="no-activity">Error: ' + data.error + '</div>'; return; }
-            renderMonthDetail(container, data.data || [], year, month);
-        })
-        .catch(function(err) {
-            container.innerHTML = '<div class="no-activity">Failed to load: ' + err.message + '</div>';
-        });
-}
-
-function loadDayDetail(date) {
-    document.getElementById('slideout-title').textContent = 'Batches: ' + formatDisplayDate(date);
-    document.getElementById('slideout-body').innerHTML = '<div class="loading">Loading...</div>';
-    openSlideout();
-
-    // Always fetch ALL types -- tab filtering is handled client-side in the slideout
-    engineFetch('/api/batch-monitoring/history-day?date=' + date + '&type=ALL')
-        .then(function(data) {
-            if (!data) return;
-            if (data.error) {
-                document.getElementById('slideout-body').innerHTML = '<div class="no-activity">Error: ' + data.error + '</div>';
+            if (!data) {
                 return;
             }
-            renderDayDetail(data.data || []);
+            if (data.error) {
+                container.innerHTML = '<div class="bat-no-activity">Error: ' + data.error + '</div>';
+                return;
+            }
+            bat_renderMonthDetail(container, data.data || [], year, month);
         })
         .catch(function(err) {
-            document.getElementById('slideout-body').innerHTML = '<div class="no-activity">Failed to load: ' + err.message + '</div>';
+            container.innerHTML = '<div class="bat-no-activity">Failed to load: ' + err.message + '</div>';
         });
 }
 
+/* Loads a single day's batches into the slideout and opens it. */
+function bat_loadDayDetail(date) {
+    document.getElementById('bat-slideout-title').textContent = 'Batches: ' + bat_formatDisplayDate(date);
+    document.getElementById('bat-slideout-body').innerHTML = '<div class="bat-loading">Loading...</div>';
+    bat_openSlideout();
 
-// ============================================================================
-// RENDER: PROCESS STATUS
-// ============================================================================
+    cc_engineFetch('/api/batch-monitoring/history-day?date=' + date + '&type=ALL')
+        .then(function(data) {
+            if (!data) {
+                return;
+            }
+            if (data.error) {
+                document.getElementById('bat-slideout-body').innerHTML = '<div class="bat-no-activity">Error: ' + data.error + '</div>';
+                return;
+            }
+            bat_renderDayDetail(data.data || []);
+        })
+        .catch(function(err) {
+            document.getElementById('bat-slideout-body').innerHTML = '<div class="bat-no-activity">Failed to load: ' + err.message + '</div>';
+        });
+}
 
-function renderProcessStatus(processes) {
-    var container = document.getElementById('process-status');
+/* ============================================================================
+   FUNCTIONS: STATUS RESOLVERS
+   ----------------------------------------------------------------------------
+   Translate raw status codes into readable labels and into the badge state
+   class that colors a status pill.
+   Prefix: bat
+   ============================================================================ */
+
+/* Returns a readable label for a raw status value via the supplied map. */
+function bat_friendlyStatus(raw, map) {
+    if (!raw) {
+        return 'Unknown';
+    }
+    var key = raw.toUpperCase().trim();
+    return map[key] || raw;
+}
+
+/* Returns the badge state class for an NB batch from its batch and merge codes. */
+function bat_nbStatusBadgeClass(batchCode, mergeCode) {
+    if (batchCode === 3 || batchCode === 9 || batchCode === 13) {
+        return 'bat-failed';
+    }
+    if (batchCode === 2 || batchCode === 7 || batchCode === 12 || batchCode === 14 || batchCode === 15) {
+        return 'bat-active';
+    }
+    if (batchCode === 4 || batchCode === 6 || batchCode === 11) {
+        return 'bat-waiting';
+    }
+    if (batchCode === 8 || batchCode === 10) {
+        return 'bat-processing';
+    }
+    return 'bat-info';
+}
+
+/* Returns the badge state class for a PMT batch from its status code. */
+function bat_pmtStatusBadgeClass(batchCode) {
+    if (batchCode === 6 || batchCode === 11 || batchCode === 14 || batchCode === 20 || batchCode === 27) {
+        return 'bat-failed';
+    }
+    if (batchCode === 5 || batchCode === 30) {
+        return 'bat-failed';
+    }
+    if (batchCode === 3 || batchCode === 10 || batchCode === 13 || batchCode === 19 || batchCode === 22 || batchCode === 26) {
+        return 'bat-active';
+    }
+    if (batchCode === 2 || batchCode === 8 || batchCode === 9 || batchCode === 12 || batchCode === 15 || batchCode === 18 || batchCode === 21 || batchCode === 25) {
+        return 'bat-waiting';
+    }
+    return 'bat-info';
+}
+
+/* Returns the badge state class for a BDL file from its File_Registry status code. */
+function bat_bdlStatusBadgeClass(fileRegistryCode) {
+    if (fileRegistryCode === 6 || fileRegistryCode === 7) {
+        return 'bat-failed';
+    }
+    if (fileRegistryCode === 8) {
+        return 'bat-warning';
+    }
+    if (fileRegistryCode === 5) {
+        return 'bat-processing';
+    }
+    if (fileRegistryCode === 4 || fileRegistryCode === 10 || fileRegistryCode === 11) {
+        return 'bat-active';
+    }
+    return 'bat-info';
+}
+
+/* ============================================================================
+   FUNCTIONS: RENDER PROCESS STATUS
+   ----------------------------------------------------------------------------
+   Renders the collector health cards from the process-status payload.
+   Prefix: bat
+   ============================================================================ */
+
+/* Renders the Process Status cards into their container. */
+function bat_renderProcessStatus(processes) {
+    var container = document.getElementById('bat-process-status');
 
     if (!processes || processes.length === 0) {
-        container.innerHTML = '<div class="no-activity">No processes registered</div>';
+        container.innerHTML = '<div class="bat-no-activity">No processes registered</div>';
         return;
     }
 
     var html = '';
     processes.forEach(function(p) {
-        var secSince = safeInt(p.seconds_since_run);
+        var secSince = cc_safeInt(p.seconds_since_run);
         var health = p.health_status || 'healthy';
 
-        // Card frame color only on non-healthy
-        var cardClass = (health !== 'healthy') ? ' ' + health : '';
+        var cardClass = '';
+        if (health === 'running')       { cardClass = ' bat-running'; }
+        else if (health === 'critical') { cardClass = ' bat-critical'; }
+        else if (health === 'warning')  { cardClass = ' bat-warning'; }
 
-        // Badge reflects health status
         var badgeLabel = 'OK';
-        var badgeClass = 'success';
-        if (health === 'running')       { badgeLabel = 'Running'; badgeClass = 'active'; }
-        else if (health === 'critical') { badgeLabel = p.last_status === 'FAILED' ? 'Failed' : 'Stale'; badgeClass = 'failed'; }
-        else if (health === 'warning')  { badgeLabel = 'Delayed'; badgeClass = 'warning'; }
+        var badgeClass = 'bat-success';
+        if (health === 'running')       { badgeLabel = 'Running'; badgeClass = 'bat-active'; }
+        else if (health === 'critical') { badgeLabel = (p.last_status === 'FAILED') ? 'Failed' : 'Stale'; badgeClass = 'bat-failed'; }
+        else if (health === 'warning')  { badgeLabel = 'Delayed'; badgeClass = 'bat-warning'; }
 
-        html += '<div class="process-card' + cardClass + '">';
-        html += '<div class="process-status-badge ' + badgeClass + '">' + badgeLabel + '</div>';
-        html += '<div class="process-info">';
-        html += '<div class="process-name">' + escapeHtml(p.collector_name) + '</div>';
+        html += '<div class="bat-process-card' + cardClass + '">';
+        html += '<div class="bat-process-status-badge ' + badgeClass + '">' + badgeLabel + '</div>';
+        html += '<div class="bat-process-info">';
+        html += '<div class="bat-process-name">' + cc_escapeHtml(p.collector_name) + '</div>';
         html += '</div>';
-        html += '<div class="process-timing">';
+        html += '<div class="bat-process-timing">';
         if (p.completed_dttm) {
-            html += '<div class="timing-value">' + formatTimeSince(secSince) + ' ago</div>';
-            html += '<div>' + (safeInt(p.last_duration_ms) > 0 ? (safeInt(p.last_duration_ms) / 1000).toFixed(1) + 's' : '') + '</div>';
+            html += '<div class="bat-timing-value">' + cc_formatTimeSince(secSince) + ' ago</div>';
+            html += '<div>' + (cc_safeInt(p.last_duration_ms) > 0 ? (cc_safeInt(p.last_duration_ms) / 1000).toFixed(1) + 's' : '') + '</div>';
         } else {
             html += '<div>Never run</div>';
         }
@@ -416,72 +548,72 @@ function renderProcessStatus(processes) {
     container.innerHTML = html;
 }
 
+/* ============================================================================
+   FUNCTIONS: RENDER DAILY SUMMARY
+   ----------------------------------------------------------------------------
+   Renders the three Today's Activity cards (NB, PMT, BDL) from the daily
+   summary payload.
+   Prefix: bat
+   ============================================================================ */
 
-// ============================================================================
-// RENDER: DAILY SUMMARY
-// ============================================================================
-
-function renderDailySummary(data) {
-    var container = document.getElementById('daily-summary');
+/* Renders the Daily Summary cards into their container. */
+function bat_renderDailySummary(data) {
+    var container = document.getElementById('bat-daily-summary');
     var nb = data.nb || {};
     var pmt = data.pmt || {};
     var bdl = data.bdl || {};
 
-    var nbTotal  = safeInt(nb.total);
-    var pmtTotal = safeInt(pmt.total);
-    var bdlTotal = safeInt(bdl.total);
+    var nbTotal  = cc_safeInt(nb.total);
+    var pmtTotal = cc_safeInt(pmt.total);
+    var bdlTotal = cc_safeInt(bdl.total);
 
     var html = '';
 
-    // NB Card
-    html += '<div class="summary-card nb-card">';
-    html += '<div class="card-label">New Business</div>';
-    html += '<div class="card-value">' + nbTotal + '</div>';
-    html += '<div class="card-detail">';
+    html += '<div class="bat-summary-card bat-nb-card">';
+    html += '<div class="bat-card-label">New Business</div>';
+    html += '<div class="bat-card-value">' + nbTotal + '</div>';
+    html += '<div class="bat-card-detail">';
     if (nbTotal > 0) {
-        html += '<span class="success">' + safeInt(nb.completed) + ' complete</span>';
-        if (safeInt(nb.failed) > 0)         html += '<span class="failed">' + safeInt(nb.failed) + ' failed</span>';
-        if (safeInt(nb.in_flight) > 0)      html += '<span class="active">' + safeInt(nb.in_flight) + ' active</span>';
-        if (safeInt(nb.total_accounts) > 0) html += '<span>' + safeInt(nb.total_accounts).toLocaleString() + ' accounts</span>';
+        html += '<span class="bat-success">' + cc_safeInt(nb.completed) + ' complete</span>';
+        if (cc_safeInt(nb.failed) > 0)         { html += '<span class="bat-failed">' + cc_safeInt(nb.failed) + ' failed</span>'; }
+        if (cc_safeInt(nb.in_flight) > 0)      { html += '<span class="bat-active">' + cc_safeInt(nb.in_flight) + ' active</span>'; }
+        if (cc_safeInt(nb.total_accounts) > 0) { html += '<span>' + cc_safeInt(nb.total_accounts).toLocaleString() + ' accounts</span>'; }
     } else {
         html += '<span>No batches today</span>';
     }
     html += '</div></div>';
 
-    // PMT Card
-    html += '<div class="summary-card pmt-card">';
-    html += '<div class="card-label">Payments</div>';
-    html += '<div class="card-value">' + pmtTotal + '</div>';
-    html += '<div class="card-detail">';
+    html += '<div class="bat-summary-card bat-pmt-card">';
+    html += '<div class="bat-card-label">Payments</div>';
+    html += '<div class="bat-card-value">' + pmtTotal + '</div>';
+    html += '<div class="bat-card-detail">';
     if (pmtTotal > 0) {
-        html += '<span class="success">' + safeInt(pmt.completed) + ' complete</span>';
-        if (safeInt(pmt.failed) > 0)         html += '<span class="failed">' + safeInt(pmt.failed) + ' failed</span>';
-        if (safeInt(pmt.in_flight) > 0)      html += '<span class="active">' + safeInt(pmt.in_flight) + ' active</span>';
-        if (safeInt(pmt.total_payments) > 0) html += '<span>' + safeInt(pmt.total_payments).toLocaleString() + ' payments</span>';
+        html += '<span class="bat-success">' + cc_safeInt(pmt.completed) + ' complete</span>';
+        if (cc_safeInt(pmt.failed) > 0)         { html += '<span class="bat-failed">' + cc_safeInt(pmt.failed) + ' failed</span>'; }
+        if (cc_safeInt(pmt.in_flight) > 0)      { html += '<span class="bat-active">' + cc_safeInt(pmt.in_flight) + ' active</span>'; }
+        if (cc_safeInt(pmt.total_payments) > 0) { html += '<span>' + cc_safeInt(pmt.total_payments).toLocaleString() + ' payments</span>'; }
     } else {
         html += '<span>No batches today</span>';
     }
-    // Muted footnote for excluded companion batch types
-    var reapplyCount = safeInt(pmt.reapply_count);
-    var otherCount = safeInt(pmt.other_count);
+    var reapplyCount = cc_safeInt(pmt.reapply_count);
+    var otherCount = cc_safeInt(pmt.other_count);
     if (reapplyCount > 0 || otherCount > 0) {
         var footnotes = [];
-        if (reapplyCount > 0) footnotes.push(reapplyCount + ' reapply');
-        if (otherCount > 0)   footnotes.push(otherCount + ' other');
-        html += '<span class="card-footnote">' + footnotes.join(' &middot; ') + '</span>';
+        if (reapplyCount > 0) { footnotes.push(reapplyCount + ' reapply'); }
+        if (otherCount > 0)   { footnotes.push(otherCount + ' other'); }
+        html += '<span class="bat-card-footnote">' + footnotes.join(' &middot; ') + '</span>';
     }
     html += '</div></div>';
 
-    // BDL Card
-    html += '<div class="summary-card bdl-card">';
-    html += '<div class="card-label">BDL Import</div>';
-    html += '<div class="card-value">' + bdlTotal + '</div>';
-    html += '<div class="card-detail">';
+    html += '<div class="bat-summary-card bat-bdl-card">';
+    html += '<div class="bat-card-label">BDL Import</div>';
+    html += '<div class="bat-card-value">' + bdlTotal + '</div>';
+    html += '<div class="bat-card-detail">';
     if (bdlTotal > 0) {
-        html += '<span class="success">' + safeInt(bdl.completed) + ' complete</span>';
-        if (safeInt(bdl.failed) > 0)        html += '<span class="failed">' + safeInt(bdl.failed) + ' failed</span>';
-        if (safeInt(bdl.in_flight) > 0)     html += '<span class="active">' + safeInt(bdl.in_flight) + ' active</span>';
-        if (safeInt(bdl.total_records) > 0) html += '<span>' + safeInt(bdl.total_records).toLocaleString() + ' records</span>';
+        html += '<span class="bat-success">' + cc_safeInt(bdl.completed) + ' complete</span>';
+        if (cc_safeInt(bdl.failed) > 0)        { html += '<span class="bat-failed">' + cc_safeInt(bdl.failed) + ' failed</span>'; }
+        if (cc_safeInt(bdl.in_flight) > 0)     { html += '<span class="bat-active">' + cc_safeInt(bdl.in_flight) + ' active</span>'; }
+        if (cc_safeInt(bdl.total_records) > 0) { html += '<span>' + cc_safeInt(bdl.total_records).toLocaleString() + ' records</span>'; }
     } else {
         html += '<span>No files today</span>';
     }
@@ -490,229 +622,198 @@ function renderDailySummary(data) {
     container.innerHTML = html;
 }
 
+/* ============================================================================
+   FUNCTIONS: RENDER ACTIVE BATCHES
+   ----------------------------------------------------------------------------
+   Renders the filtered live active-batch table across NB, PMT, and BDL types,
+   including the per-row activity indicator (status label or progress bar).
+   Prefix: bat
+   ============================================================================ */
 
-// ============================================================================
-// RENDER: ACTIVE BATCHES (Filtered View)
-// ============================================================================
-
-function renderActiveBatches(data) {
-    var container = document.getElementById('active-batches');
-    if (!data) { container.innerHTML = '<div class="no-activity">Loading...</div>'; return; }
+/* Renders the Active Batches table from the active-batch payload, applying the current type filter. */
+function bat_renderActiveBatches(data) {
+    var container = document.getElementById('bat-active-batches');
+    if (!data) {
+        container.innerHTML = '<div class="bat-no-activity">Loading...</div>';
+        return;
+    }
 
     var nbList  = data.nb  || [];
     var pmtList = data.pmt || [];
     var bdlList = data.bdl || [];
 
-    // Apply client-side filter
-    var showNB  = (currentActiveFilter === 'ALL' || currentActiveFilter === 'NB');
-    var showPMT = (currentActiveFilter === 'ALL' || currentActiveFilter === 'PMT');
-    var showBDL = (currentActiveFilter === 'ALL' || currentActiveFilter === 'BDL');
+    var showNB  = (bat_currentActiveFilter === 'ALL' || bat_currentActiveFilter === 'NB');
+    var showPMT = (bat_currentActiveFilter === 'ALL' || bat_currentActiveFilter === 'PMT');
+    var showBDL = (bat_currentActiveFilter === 'ALL' || bat_currentActiveFilter === 'BDL');
     var filteredNB  = showNB  ? nbList  : [];
     var filteredPMT = showPMT ? pmtList : [];
     var filteredBDL = showBDL ? bdlList : [];
 
     if (filteredNB.length === 0 && filteredPMT.length === 0 && filteredBDL.length === 0) {
-        var msg = currentActiveFilter === 'ALL' ? 'No batches currently in flight' : 'No ' + currentActiveFilter + ' batches currently in flight';
-        container.innerHTML = '<div class="no-activity">' + msg + '</div>';
+        var msg = bat_currentActiveFilter === 'ALL' ? 'No batches currently in flight' : 'No ' + bat_currentActiveFilter + ' batches currently in flight';
+        container.innerHTML = '<div class="bat-no-activity">' + msg + '</div>';
         return;
     }
 
-    var html = '<table class="active-batch-table">';
+    var html = '<table class="bat-active-batch-table">';
     html += '<thead><tr>';
-    html += '<th>Type</th><th>Batch ID</th><th>Name</th><th>Status</th><th>Progress</th><th style="text-align:right">Count</th><th style="text-align:right">Time</th>';
+    html += '<th class="bat-active-th">Type</th><th class="bat-active-th">Batch ID</th><th class="bat-active-th">Name</th><th class="bat-active-th">Status</th><th class="bat-active-th">Progress</th><th class="bat-active-th">Count</th><th class="bat-active-th">Time</th>';
     html += '</tr></thead><tbody>';
 
-    // NB batches
     filteredNB.forEach(function(b) {
-        var statusDisplay = friendlyStatus(b.merge_status || b.batch_status, nbStatusMap);
-        if (b.merge_status) statusDisplay = friendlyStatus(b.merge_status, nbMergeStatusMap);
-        var ageDisplay = formatAge(safeInt(b.age_minutes));
-        var mergeCode = safeInt(b.merge_status_code);
-        var batchCode = safeInt(b.batch_status_code);
-        var consumerCount = safeInt(b.consumer_count);
+        var statusDisplay = bat_friendlyStatus(b.batch_status, bat_nbStatusMap);
+        if (b.merge_status) {
+            statusDisplay = bat_friendlyStatus(b.merge_status, bat_nbMergeStatusMap);
+        }
+        var ageDisplay = cc_formatAge(cc_safeInt(b.age_minutes));
+        var mergeCode = cc_safeInt(b.merge_status_code);
+        var batchCode = cc_safeInt(b.batch_status_code);
+        var consumerCount = cc_safeInt(b.consumer_count);
         var countDisplay = consumerCount > 0 ? consumerCount.toLocaleString() : '-';
 
-        // Activity indicator based on pipeline position
-        // Blue (in-flight) statuses: progress column is empty -- status badge tells the story
         var activityHtml = '';
         var isInFlight = (batchCode === 2 || batchCode === 7 || batchCode === 12 || batchCode === 14 || batchCode === 15);
 
         if (isInFlight) {
             activityHtml = '';
         } else if (batchCode === 3 || batchCode === 13) {
-            // UPLOADFAILED or FAILED
-            activityHtml = '<span class="activity-label failed">Failed</span>';
+            activityHtml = '<span class="bat-activity-label bat-failed">Failed</span>';
         } else if (batchCode === 9) {
-            // RELEASEFAILED
-            activityHtml = '<span class="activity-label failed">Release Failed</span>';
+            activityHtml = '<span class="bat-activity-label bat-failed">Release Failed</span>';
         } else if (mergeCode === 2 || mergeCode === 7) {
-            // Merging -- show progress meter if consumer counts available
-            var mergeProcessed = safeInt(b.merge_processed_count);
-
+            var mergeProcessed = cc_safeInt(b.merge_processed_count);
             if (consumerCount > 0 && mergeProcessed > 0) {
-                var pct = Math.min(100, Math.round((mergeProcessed / consumerCount) * 100));
-                activityHtml = '<div class="progress-bar-container">';
-                activityHtml += '<div class="progress-bar" style="width:' + pct + '%"></div>';
-                activityHtml += '<span class="progress-text">' + mergeProcessed.toLocaleString() + '/' + consumerCount.toLocaleString() + ' (' + pct + '%)</span>';
-                activityHtml += '</div>';
+                var nbPct = Math.min(100, Math.round((mergeProcessed / consumerCount) * 100));
+                activityHtml = bat_progressBar(nbPct, mergeProcessed.toLocaleString() + '/' + consumerCount.toLocaleString() + ' (' + nbPct + '%)');
             } else {
-                activityHtml = '<span class="activity-label processing">Merging</span>';
+                activityHtml = '<span class="bat-activity-label bat-processing">Merging</span>';
             }
         } else if (batchCode === 8 && mergeCode <= 1) {
-            activityHtml = '<span class="activity-label waiting">In Queue</span>';
+            activityHtml = '<span class="bat-activity-label bat-waiting">In Queue</span>';
         } else if (batchCode === 4 || batchCode === 6) {
-            activityHtml = '<span class="activity-label waiting">Awaiting Release</span>';
+            activityHtml = '<span class="bat-activity-label bat-waiting">Awaiting Release</span>';
         } else {
-            activityHtml = '<span class="activity-label info">' + escapeHtml(statusDisplay) + '</span>';
+            activityHtml = '<span class="bat-activity-label bat-info">' + cc_escapeHtml(statusDisplay) + '</span>';
         }
 
-        html += '<tr>';
-        html += '<td><span class="batch-type-tag nb">NB</span></td>';
-        html += '<td>' + b.batch_id + '</td>';
-        html += '<td class="batch-name-cell">' + escapeHtml(b.batch_name) + '</td>';
-        html += '<td class="status-cell"><span class="status-badge ' + nbStatusBadgeClass(batchCode, mergeCode) + '">' + escapeHtml(statusDisplay) + '</span></td>';
-        html += '<td class="activity-cell">' + activityHtml + '</td>';
-        html += '<td class="count-cell">' + countDisplay + '</td>';
-        html += '<td class="age-cell">' + ageDisplay + '</td>';
+        html += '<tr class="bat-active-row">';
+        html += '<td class="bat-active-td"><span class="bat-type-tag bat-type-nb">NB</span></td>';
+        html += '<td class="bat-active-td">' + b.batch_id + '</td>';
+        html += '<td class="bat-active-td bat-name-cell">' + cc_escapeHtml(b.batch_name) + '</td>';
+        html += '<td class="bat-active-td bat-status-cell"><span class="bat-status-badge ' + bat_nbStatusBadgeClass(batchCode, mergeCode) + '">' + cc_escapeHtml(statusDisplay) + '</span></td>';
+        html += '<td class="bat-active-td bat-activity-cell">' + activityHtml + '</td>';
+        html += '<td class="bat-active-td bat-count-cell">' + countDisplay + '</td>';
+        html += '<td class="bat-active-td bat-age-cell">' + ageDisplay + '</td>';
         html += '</tr>';
     });
 
-    // PMT batches - all non-terminal statuses except ACTIVE
     filteredPMT.forEach(function(b) {
-        var statusDisplay = friendlyStatus(b.batch_status, pmtStatusMap);
-        var ageDisplay = formatAge(safeInt(b.age_minutes));
+        var statusDisplay = bat_friendlyStatus(b.batch_status, bat_pmtStatusMap);
+        var ageDisplay = cc_formatAge(cc_safeInt(b.age_minutes));
         var pmtType = b.pmt_batch_type || '';
-        var batchCode = safeInt(b.batch_status_code);
-        var activeCount = safeInt(b.active_count);
+        var batchCode = cc_safeInt(b.batch_status_code);
+        var activeCount = cc_safeInt(b.active_count);
         var countDisplay = activeCount > 0 ? activeCount.toLocaleString() : '-';
 
         var activityHtml = '';
-
-        // Blue (in-flight) statuses except INPROCESS: progress column is empty
         var isPmtInFlight = (batchCode === 10 || batchCode === 13 || batchCode === 19 || batchCode === 22 || batchCode === 26);
 
         if (isPmtInFlight) {
             activityHtml = '';
         } else if (batchCode === 6 || batchCode === 11 || batchCode === 27) {
-            // FAILED, IMPORTFAILED, REVERSALFAILED
-            activityHtml = '<span class="activity-label failed">Failed</span>';
+            activityHtml = '<span class="bat-activity-label bat-failed">Failed</span>';
         } else if (batchCode === 5) {
-            // PARTIAL
-            activityHtml = '<span class="activity-label failed">Partial</span>';
+            activityHtml = '<span class="bat-activity-label bat-failed">Partial</span>';
         } else if (batchCode === 30) {
-            // ACTIVEWITHSUSPENSE
-            activityHtml = '<span class="activity-label failed">Suspense</span>';
+            activityHtml = '<span class="bat-activity-label bat-failed">Suspense</span>';
         } else if (batchCode === 3) {
-            // INPROCESS - show journal progress
-            var journalPosted = safeInt(b.journal_posted_count);
-
+            var journalPosted = cc_safeInt(b.journal_posted_count);
             if (activeCount > 0 && journalPosted > 0) {
-                var pct = Math.min(100, Math.round((journalPosted / activeCount) * 100));
-                activityHtml = '<div class="progress-bar-container">';
-                activityHtml += '<div class="progress-bar" style="width:' + pct + '%"></div>';
-                activityHtml += '<span class="progress-text">' + journalPosted.toLocaleString() + '/' + activeCount.toLocaleString() + ' (' + pct + '%)</span>';
-                activityHtml += '</div>';
+                var pmtPct = Math.min(100, Math.round((journalPosted / activeCount) * 100));
+                activityHtml = bat_progressBar(pmtPct, journalPosted.toLocaleString() + '/' + activeCount.toLocaleString() + ' (' + pmtPct + '%)');
             } else if (activeCount > 0) {
-                activityHtml = '<span class="activity-label waiting">Posting</span>';
+                activityHtml = '<span class="bat-activity-label bat-waiting">Posting</span>';
             } else {
-                activityHtml = '<span class="activity-label waiting">Awaiting Posting</span>';
+                activityHtml = '<span class="bat-activity-label bat-waiting">Awaiting Posting</span>';
             }
         } else if (batchCode === 2) {
-            // RELEASED
-            activityHtml = '<span class="activity-label waiting">Released</span>';
+            activityHtml = '<span class="bat-activity-label bat-waiting">Released</span>';
         } else if (batchCode === 23) {
-            // IMPORTWRAPUP
-            activityHtml = '<span class="activity-label info">Import Wrap Up</span>';
+            activityHtml = '<span class="bat-activity-label bat-info">Import Wrap Up</span>';
         } else if (batchCode === 24) {
-            // POSTWRAPUP
-            activityHtml = '<span class="activity-label info">Post Wrap Up</span>';
+            activityHtml = '<span class="bat-activity-label bat-info">Post Wrap Up</span>';
         } else if (batchCode === 25) {
-            // PENDINGREVERSAL
-            activityHtml = '<span class="activity-label waiting">Reversal Pending</span>';
+            activityHtml = '<span class="bat-activity-label bat-waiting">Reversal Pending</span>';
         } else if (batchCode === 28) {
-            // REVERSALWRAPUP
-            activityHtml = '<span class="activity-label info">Reversal Wrap Up</span>';
+            activityHtml = '<span class="bat-activity-label bat-info">Reversal Wrap Up</span>';
         } else if (batchCode === 16 || batchCode === 17) {
-            // DELETEREQUESTED, DELETING
-            activityHtml = '<span class="activity-label info">Deleting</span>';
-        } else if (batchCode === 8 || batchCode === 9 || batchCode === 15 || batchCode === 18) {
-            // NEWIMPORT, WAITINGFORIMPORT, WAITINGFORCONVERSION, WAITINGFORVIRTUAL
-            activityHtml = '<span class="activity-label waiting">' + escapeHtml(pmtType || statusDisplay) + '</span>';
+            activityHtml = '<span class="bat-activity-label bat-info">Deleting</span>';
         } else {
-            activityHtml = '<span class="activity-label info">' + escapeHtml(pmtType || statusDisplay) + '</span>';
+            activityHtml = '<span class="bat-activity-label bat-info">' + cc_escapeHtml(pmtType || statusDisplay) + '</span>';
         }
 
-        html += '<tr>';
-        html += '<td><span class="batch-type-tag pmt">PMT</span></td>';
-        html += '<td>' + b.batch_id + '</td>';
-        html += '<td class="batch-name-cell">' + escapeHtml(b.batch_name || b.external_name || 'Batch ' + b.batch_id) + '</td>';
-        html += '<td class="status-cell"><span class="status-badge ' + pmtStatusBadgeClass(batchCode) + '">' + escapeHtml(statusDisplay) + '</span></td>';
-        html += '<td class="activity-cell">' + activityHtml + '</td>';
-        html += '<td class="count-cell">' + countDisplay + '</td>';
-        html += '<td class="age-cell">' + ageDisplay + '</td>';
+        html += '<tr class="bat-active-row">';
+        html += '<td class="bat-active-td"><span class="bat-type-tag bat-type-pmt">PMT</span></td>';
+        html += '<td class="bat-active-td">' + b.batch_id + '</td>';
+        html += '<td class="bat-active-td bat-name-cell">' + cc_escapeHtml(b.batch_name || b.external_name || 'Batch ' + b.batch_id) + '</td>';
+        html += '<td class="bat-active-td bat-status-cell"><span class="bat-status-badge ' + bat_pmtStatusBadgeClass(batchCode) + '">' + cc_escapeHtml(statusDisplay) + '</span></td>';
+        html += '<td class="bat-active-td bat-activity-cell">' + activityHtml + '</td>';
+        html += '<td class="bat-active-td bat-count-cell">' + countDisplay + '</td>';
+        html += '<td class="bat-active-td bat-age-cell">' + ageDisplay + '</td>';
         html += '</tr>';
     });
 
-    // BDL files
     filteredBDL.forEach(function(b) {
         var statusDisplay = b.file_registry_status || 'Unknown';
-        var ageDisplay = formatAge(safeInt(b.age_minutes));
-        var statusCode = safeInt(b.bdl_log_status_code);
-        var fileRegCode = safeInt(b.file_registry_status_code);
-        var totalRecords = safeInt(b.total_record_count);
+        var ageDisplay = cc_formatAge(cc_safeInt(b.age_minutes));
+        var statusCode = cc_safeInt(b.bdl_log_status_code);
+        var fileRegCode = cc_safeInt(b.file_registry_status_code);
+        var totalRecords = cc_safeInt(b.total_record_count);
         var countDisplay = totalRecords > 0 ? totalRecords.toLocaleString() : '-';
 
         var activityHtml = '';
 
         if (statusCode === 8) {
-            // STAGEFAILED
-            activityHtml = '<span class="activity-label failed">Stage Failed</span>';
+            activityHtml = '<span class="bat-activity-label bat-failed">Stage Failed</span>';
         } else if (statusCode === 11) {
-            // IMPORT_FAILED
-            activityHtml = '<span class="activity-label failed">Import Failed</span>';
+            activityHtml = '<span class="bat-activity-label bat-failed">Import Failed</span>';
         } else if (statusCode === 2) {
-            // PROCESSING -- show partition progress if available
-            var partCount = safeInt(b.partition_count);
-            var partCompleted = safeInt(b.partitions_completed);
+            var partCount = cc_safeInt(b.partition_count);
+            var partCompleted = cc_safeInt(b.partitions_completed);
             if (partCount > 0 && partCompleted > 0) {
-                var pct = Math.min(100, Math.round((partCompleted / partCount) * 100));
-                activityHtml = '<div class="progress-bar-container">';
-                activityHtml += '<div class="progress-bar" style="width:' + pct + '%"></div>';
-                activityHtml += '<span class="progress-text">' + partCompleted + '/' + partCount + ' partitions (' + pct + '%)</span>';
-                activityHtml += '</div>';
+                var bdlPct = Math.min(100, Math.round((partCompleted / partCount) * 100));
+                activityHtml = bat_progressBar(bdlPct, partCompleted + '/' + partCount + ' partitions (' + bdlPct + '%)');
             } else {
-                activityHtml = '<span class="activity-label processing">Processing</span>';
+                activityHtml = '<span class="bat-activity-label bat-processing">Processing</span>';
             }
         } else if (statusCode === 10) {
-            // STAGED -- check for partition progress (import may be actively running)
-            var partCount2 = safeInt(b.partition_count);
-            var partCompleted2 = safeInt(b.partitions_completed);
+            var partCount2 = cc_safeInt(b.partition_count);
+            var partCompleted2 = cc_safeInt(b.partitions_completed);
             if (partCount2 > 0 && partCompleted2 > 0) {
-                var pct2 = Math.min(100, Math.round((partCompleted2 / partCount2) * 100));
-                activityHtml = '<div class="progress-bar-container">';
-                activityHtml += '<div class="progress-bar" style="width:' + pct2 + '%"></div>';
-                activityHtml += '<span class="progress-text">' + partCompleted2 + '/' + partCount2 + ' partitions (' + pct2 + '%)</span>';
-                activityHtml += '</div>';
+                var bdlPct2 = Math.min(100, Math.round((partCompleted2 / partCount2) * 100));
+                activityHtml = bat_progressBar(bdlPct2, partCompleted2 + '/' + partCount2 + ' partitions (' + bdlPct2 + '%)');
             } else {
-                activityHtml = '<span class="activity-label waiting">Awaiting Import</span>';
+                activityHtml = '<span class="bat-activity-label bat-waiting">Awaiting Import</span>';
             }
         } else {
-            activityHtml = '<span class="activity-label info">' + escapeHtml(statusDisplay) + '</span>';
+            activityHtml = '<span class="bat-activity-label bat-info">' + cc_escapeHtml(statusDisplay) + '</span>';
         }
 
         var nameDisplay = b.batch_name || 'File ' + b.batch_id;
         var entityType = b.entity_type;
 
-        html += '<tr>';
-        html += '<td><span class="batch-type-tag bdl">BDL</span></td>';
-        html += '<td>' + b.batch_id + '</td>';
-        html += '<td class="batch-name-cell">' + escapeHtml(nameDisplay);
-        if (entityType) html += ' <span class="bdl-entity-label">' + escapeHtml(entityType) + '</span>';
+        html += '<tr class="bat-active-row">';
+        html += '<td class="bat-active-td"><span class="bat-type-tag bat-type-bdl">BDL</span></td>';
+        html += '<td class="bat-active-td">' + b.batch_id + '</td>';
+        html += '<td class="bat-active-td bat-name-cell">' + cc_escapeHtml(nameDisplay);
+        if (entityType) {
+            html += ' <span class="bat-entity-label">' + cc_escapeHtml(entityType) + '</span>';
+        }
         html += '</td>';
-        html += '<td class="status-cell"><span class="status-badge ' + bdlStatusBadgeClass(fileRegCode) + '">' + escapeHtml(statusDisplay) + '</span></td>';
-        html += '<td class="activity-cell">' + activityHtml + '</td>';
-        html += '<td class="count-cell">' + countDisplay + '</td>';
-        html += '<td class="age-cell">' + ageDisplay + '</td>';
+        html += '<td class="bat-active-td bat-status-cell"><span class="bat-status-badge ' + bat_bdlStatusBadgeClass(fileRegCode) + '">' + cc_escapeHtml(statusDisplay) + '</span></td>';
+        html += '<td class="bat-active-td bat-activity-cell">' + activityHtml + '</td>';
+        html += '<td class="bat-active-td bat-count-cell">' + countDisplay + '</td>';
+        html += '<td class="bat-active-td bat-age-cell">' + ageDisplay + '</td>';
         html += '</tr>';
     });
 
@@ -720,31 +821,48 @@ function renderActiveBatches(data) {
     container.innerHTML = html;
 }
 
+/* Builds the inline progress-bar markup for a percentage and overlay text. */
+function bat_progressBar(pct, text) {
+    var html = '<div class="bat-progress-bar-container">';
+    html += '<div class="bat-progress-bar" style="width:' + pct + '%"></div>';
+    html += '<span class="bat-progress-text">' + text + '</span>';
+    html += '</div>';
+    return html;
+}
 
-// ============================================================================
-// RENDER: BATCH HISTORY (Year/Month Tree)
-// ============================================================================
+/* ============================================================================
+   FUNCTIONS: RENDER BATCH HISTORY
+   ----------------------------------------------------------------------------
+   Renders the year/month history tree and, on month expansion, the day-level
+   summary table. Aggregates across batch types and computes weighted average
+   durations.
+   Prefix: bat
+   ============================================================================ */
 
-function renderBatchHistory(data) {
-    var container = document.getElementById('batch-history');
+/* Renders the Batch History year/month tree from the history payload. */
+function bat_renderBatchHistory(data) {
+    var container = document.getElementById('bat-batch-history');
 
     if (!data || data.length === 0) {
-        container.innerHTML = '<div class="no-activity">No batch history found</div>';
+        container.innerHTML = '<div class="bat-no-activity">No batch history found</div>';
         return;
     }
 
-    // Group by year, then month - aggregate across batch types
     var yearMap = {};
     data.forEach(function(row) {
         var y = row.year;
         var m = row.month;
-        if (!yearMap[y]) yearMap[y] = { total: 0, completed: 0, failed: 0, in_flight: 0, months: {} };
-        if (!yearMap[y].months[m]) yearMap[y].months[m] = { total: 0, completed: 0, failed: 0, in_flight: 0, avg_total_minutes: null, avg_weight: 0, types: [] };
+        if (!yearMap[y]) {
+            yearMap[y] = { total: 0, completed: 0, failed: 0, in_flight: 0, months: {} };
+        }
+        if (!yearMap[y].months[m]) {
+            yearMap[y].months[m] = { total: 0, completed: 0, failed: 0, in_flight: 0, avg_total_minutes: null, avg_weight: 0 };
+        }
 
-        var total     = safeInt(row.total_batches);
-        var completed = safeInt(row.completed);
-        var failed    = safeInt(row.failed);
-        var inFlight  = safeInt(row.in_flight);
+        var total     = cc_safeInt(row.total_batches);
+        var completed = cc_safeInt(row.completed);
+        var failed    = cc_safeInt(row.failed);
+        var inFlight  = cc_safeInt(row.in_flight);
 
         yearMap[y].total     += total;
         yearMap[y].completed += completed;
@@ -754,68 +872,67 @@ function renderBatchHistory(data) {
         yearMap[y].months[m].completed += completed;
         yearMap[y].months[m].failed    += failed;
         yearMap[y].months[m].in_flight += inFlight;
-        yearMap[y].months[m].types.push(row);
 
-        // Weighted average total minutes (weight by batch count for accurate cross-type averaging)
         if (row.avg_total_minutes != null) {
-            var completedCount = completed + failed; // batches that have a duration
+            var completedCount = completed + failed;
             var prevWeight = yearMap[y].months[m].avg_weight;
             var prevAvg    = yearMap[y].months[m].avg_total_minutes || 0;
             var newWeight  = prevWeight + completedCount;
             if (newWeight > 0) {
-                yearMap[y].months[m].avg_total_minutes = Math.round(((prevAvg * prevWeight) + (safeInt(row.avg_total_minutes) * completedCount)) / newWeight);
+                yearMap[y].months[m].avg_total_minutes = Math.round(((prevAvg * prevWeight) + (cc_safeInt(row.avg_total_minutes) * completedCount)) / newWeight);
                 yearMap[y].months[m].avg_weight = newWeight;
             }
         }
     });
 
-    // Sort years descending
     var sortedYears = Object.keys(yearMap).sort(function(a, b) { return b - a; });
 
     var html = '';
-    sortedYears.forEach(function(year, idx) {
+    sortedYears.forEach(function(year) {
         var yd = yearMap[year];
-        var isExpanded = expandedYears[year] || false;
+        var isExpanded = bat_expandedYears[year] || false;
 
-        html += '<div class="year-group">';
-        html += '<div class="year-header" onclick="toggleYear(\'' + year + '\')">';
-        html += '<span class="expand-icon ' + (isExpanded ? 'expanded' : '') + '" id="year-icon-' + year + '">&#9654;</span>';
-        html += '<span class="year-label">' + year + '</span>';
-        if (yd.in_flight > 0) html += '<span class="year-active">' + yd.in_flight + ' active batches</span>';
-        html += '<div class="year-stats">';
-        html += '<span class="year-stat">' + yd.total + ' batches</span>';
-        html += '<span class="year-stat success">' + yd.completed + ' success</span>';
-        html += '<span class="year-stat failed">' + (yd.failed > 0 ? yd.failed + ' failed' : '-') + '</span>';
+        html += '<div class="bat-year-group">';
+        html += '<div class="bat-year-header" data-action-click="bat-toggle-year" data-bat-year="' + year + '">';
+        html += '<span class="bat-expand-icon ' + (isExpanded ? 'bat-expanded' : '') + '" id="bat-year-icon-' + year + '">&#9654;</span>';
+        html += '<span class="bat-year-label">' + year + '</span>';
+        if (yd.in_flight > 0) {
+            html += '<span class="bat-year-active">' + yd.in_flight + ' active batches</span>';
+        }
+        html += '<div class="bat-year-stats">';
+        html += '<span class="bat-year-stat">' + yd.total + ' batches</span>';
+        html += '<span class="bat-year-stat bat-success">' + yd.completed + ' success</span>';
+        html += '<span class="bat-year-stat bat-failed">' + (yd.failed > 0 ? yd.failed + ' failed' : '-') + '</span>';
         html += '</div>';
         html += '</div>';
 
-        html += '<div class="year-content ' + (isExpanded ? 'expanded' : '') + '" id="year-content-' + year + '">';
+        html += '<div class="bat-year-content ' + (isExpanded ? 'bat-expanded' : '') + '" id="bat-year-content-' + year + '">';
 
-        // Month table
         var sortedMonths = Object.keys(yd.months).sort(function(a, b) { return b - a; });
-        html += '<table class="month-summary-table">';
-        html += '<thead><tr><th class="expand-cell"></th><th>Month</th><th>Batches</th><th>Completed</th><th>Failed</th><th>Active</th><th>Avg Duration</th></tr></thead>';
+        html += '<table class="bat-month-summary-table">';
+        html += '<thead><tr><th class="bat-month-th bat-expand-cell"></th><th class="bat-month-th">Month</th><th class="bat-month-th">Batches</th><th class="bat-month-th">Completed</th><th class="bat-month-th">Failed</th><th class="bat-month-th">Active</th><th class="bat-month-th">Avg Duration</th></tr></thead>';
         html += '<tbody>';
 
         sortedMonths.forEach(function(month) {
             var md = yd.months[month];
             var monthKey = year + '-' + month;
-            var isMonthExpanded = expandedMonths[monthKey];
+            var isMonthExpanded = bat_expandedMonths[monthKey];
 
-            html += '<tr class="month-row" onclick="toggleMonth(\'' + year + '\', \'' + month + '\')">';
-            html += '<td class="expand-cell"><span class="expand-icon ' + (isMonthExpanded ? 'expanded' : '') + '" id="month-icon-' + monthKey + '">&#9654;</span></td>';
-            html += '<td class="month-cell">' + MONTH_NAMES[parseInt(month)] + '</td>';
-            html += '<td>' + md.total + '</td>';
-            html += '<td class="success-cell">' + md.completed + '</td>';
-            html += '<td class="fail-cell">' + (md.failed > 0 ? md.failed : '-') + '</td>';
-            html += '<td class="active-cell">' + (md.in_flight > 0 ? md.in_flight : '-') + '</td>';
-            html += '<td class="duration-cell">' + (md.avg_total_minutes != null ? formatDurationMinutes(md.avg_total_minutes) : '-') + '</td>';
+            html += '<tr class="bat-month-row" data-action-click="bat-toggle-month" data-bat-year="' + year + '" data-bat-month="' + month + '">';
+            html += '<td class="bat-month-td bat-expand-cell"><span class="bat-expand-icon ' + (isMonthExpanded ? 'bat-expanded' : '') + '" id="bat-month-icon-' + monthKey + '">&#9654;</span></td>';
+            html += '<td class="bat-month-td bat-month-cell">' + cc_MONTH_NAMES[parseInt(month, 10)] + '</td>';
+            html += '<td class="bat-month-td">' + md.total + '</td>';
+            html += '<td class="bat-month-td bat-success-cell">' + md.completed + '</td>';
+            html += '<td class="bat-month-td bat-fail-cell">' + (md.failed > 0 ? md.failed : '-') + '</td>';
+            html += '<td class="bat-month-td bat-active-cell">' + (md.in_flight > 0 ? md.in_flight : '-') + '</td>';
+            html += '<td class="bat-month-td bat-duration-cell">' + (md.avg_total_minutes != null ? bat_formatDurationMinutes(md.avg_total_minutes) : '-') + '</td>';
             html += '</tr>';
 
-            // Month detail container (lazy loaded)
-            html += '<tr class="month-details" id="month-row-' + monthKey + '" style="display:' + (isMonthExpanded ? 'table-row' : 'none') + '">';
-            html += '<td colspan="7"><div class="month-details-content" id="month-detail-' + monthKey + '">';
-            if (isMonthExpanded) html += '<div class="loading">Loading...</div>';
+            html += '<tr id="bat-month-row-' + monthKey + '" style="display:' + (isMonthExpanded ? 'table-row' : 'none') + '">';
+            html += '<td class="bat-month-details-cell" colspan="7"><div class="bat-month-details-content" id="bat-month-detail-' + monthKey + '">';
+            if (isMonthExpanded) {
+                html += '<div class="bat-loading">Loading...</div>';
+            }
             html += '</div></td></tr>';
         });
 
@@ -826,41 +943,36 @@ function renderBatchHistory(data) {
     container.innerHTML = html;
 }
 
-
-// ============================================================================
-// RENDER: MONTH DAY DETAIL
-// ============================================================================
-
-function renderMonthDetail(container, data, year, month) {
+/* Renders the day-level summary table inside an expanded month container. */
+function bat_renderMonthDetail(container, data, year, month) {
     if (!data || data.length === 0) {
-        container.innerHTML = '<div class="no-activity">No data for this month</div>';
+        container.innerHTML = '<div class="bat-no-activity">No data for this month</div>';
         return;
     }
 
-    // Group by date, aggregate across batch types
     var dayMap = {};
     data.forEach(function(row) {
-        var d = parseDateOnly(row.batch_date);
-        if (!dayMap[d]) dayMap[d] = { total: 0, completed: 0, failed: 0, in_flight: 0, records: 0, types: [], avg_total_min: null, avg_weight: 0 };
+        var d = bat_parseDateOnly(row.batch_date);
+        if (!dayMap[d]) {
+            dayMap[d] = { total: 0, completed: 0, failed: 0, in_flight: 0, records: 0, avg_total_min: null, avg_weight: 0 };
+        }
 
-        var completed = safeInt(row.completed);
-        var failed    = safeInt(row.failed);
+        var completed = cc_safeInt(row.completed);
+        var failed    = cc_safeInt(row.failed);
 
-        dayMap[d].total     += safeInt(row.total_batches);
+        dayMap[d].total     += cc_safeInt(row.total_batches);
         dayMap[d].completed += completed;
         dayMap[d].failed    += failed;
-        dayMap[d].in_flight += safeInt(row.in_flight);
-        dayMap[d].records   += safeInt(row.total_records);
-        dayMap[d].types.push(row);
+        dayMap[d].in_flight += cc_safeInt(row.in_flight);
+        dayMap[d].records   += cc_safeInt(row.total_records);
 
-        // Weighted average
         if (row.avg_total_min != null) {
             var completedCount = completed + failed;
             var prevWeight = dayMap[d].avg_weight;
             var prevAvg    = dayMap[d].avg_total_min || 0;
             var newWeight  = prevWeight + completedCount;
             if (newWeight > 0) {
-                dayMap[d].avg_total_min = Math.round(((prevAvg * prevWeight) + (safeInt(row.avg_total_min) * completedCount)) / newWeight);
+                dayMap[d].avg_total_min = Math.round(((prevAvg * prevWeight) + (cc_safeInt(row.avg_total_min) * completedCount)) / newWeight);
                 dayMap[d].avg_weight = newWeight;
             }
         }
@@ -868,26 +980,26 @@ function renderMonthDetail(container, data, year, month) {
 
     var sortedDays = Object.keys(dayMap).sort(function(a, b) { return b > a ? 1 : -1; });
 
-    var html = '<table class="day-table">';
-    html += '<thead><tr><th>Date</th><th>Day</th><th>Batches</th><th>Completed</th><th>Failed</th><th>Active</th><th>Records</th><th>Avg Total</th></tr></thead>';
+    var html = '<table class="bat-day-table">';
+    html += '<thead><tr><th class="bat-day-th">Date</th><th class="bat-day-th">Day</th><th class="bat-day-th">Batches</th><th class="bat-day-th">Completed</th><th class="bat-day-th">Failed</th><th class="bat-day-th">Active</th><th class="bat-day-th">Records</th><th class="bat-day-th">Avg Total</th></tr></thead>';
     html += '<tbody>';
 
     sortedDays.forEach(function(date) {
         var dd = dayMap[date];
         var parts = date.split('-');
-        var dateObj = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
-        var dayName = DAY_NAMES[dateObj.getDay()];
+        var dateObj = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+        var dayName = cc_DAY_NAMES[dateObj.getDay() + 1];
         var dateDisplay = (dateObj.getMonth() + 1) + '/' + dateObj.getDate();
 
-        html += '<tr class="clickable" onclick="loadDayDetail(\'' + date + '\')">';
-        html += '<td>' + dateDisplay + '</td>';
-        html += '<td>' + dayName + '</td>';
-        html += '<td>' + dd.total + '</td>';
-        html += '<td class="success-cell">' + dd.completed + '</td>';
-        html += '<td class="fail-cell">' + (dd.failed > 0 ? dd.failed : '-') + '</td>';
-        html += '<td class="active-cell">' + (dd.in_flight > 0 ? dd.in_flight : '-') + '</td>';
-        html += '<td>' + (dd.records > 0 ? dd.records.toLocaleString() : '-') + '</td>';
-        html += '<td class="duration-cell">' + (dd.avg_total_min != null ? formatDurationMinutes(dd.avg_total_min) : '-') + '</td>';
+        html += '<tr class="bat-day-row" data-action-click="bat-open-day-detail" data-bat-date="' + date + '">';
+        html += '<td class="bat-day-td">' + dateDisplay + '</td>';
+        html += '<td class="bat-day-td">' + dayName + '</td>';
+        html += '<td class="bat-day-td">' + dd.total + '</td>';
+        html += '<td class="bat-day-td bat-success-cell">' + dd.completed + '</td>';
+        html += '<td class="bat-day-td bat-fail-cell">' + (dd.failed > 0 ? dd.failed : '-') + '</td>';
+        html += '<td class="bat-day-td bat-active-cell">' + (dd.in_flight > 0 ? dd.in_flight : '-') + '</td>';
+        html += '<td class="bat-day-td">' + (dd.records > 0 ? dd.records.toLocaleString() : '-') + '</td>';
+        html += '<td class="bat-day-td bat-duration-cell">' + (dd.avg_total_min != null ? bat_formatDurationMinutes(dd.avg_total_min) : '-') + '</td>';
         html += '</tr>';
     });
 
@@ -895,32 +1007,39 @@ function renderMonthDetail(container, data, year, month) {
     container.innerHTML = html;
 }
 
+/* ============================================================================
+   FUNCTIONS: RENDER SLIDEOUT
+   ----------------------------------------------------------------------------
+   Renders the batch-detail slideout body: the tab bar, filter bars, count
+   summary, and the expandable per-batch rows with inline metrics and the
+   phase-duration timeline.
+   Prefix: bat
+   ============================================================================ */
 
-// ============================================================================
-// RENDER: SLIDEOUT DAY DETAIL
-// ============================================================================
-
-function renderDayDetail(batches) {
-    var body = document.getElementById('slideout-body');
+/* Receives a day's batches, seeds the slideout filters, and renders its content. */
+function bat_renderDayDetail(batches) {
+    var body = document.getElementById('bat-slideout-body');
 
     if (!batches || batches.length === 0) {
-        body.innerHTML = '<div class="no-activity">No batches found for this day</div>';
+        body.innerHTML = '<div class="bat-no-activity">No batches found for this day</div>';
         return;
     }
 
-    currentSlideoutBatches = batches;
-    // Initialize tab from the history master filter
-    currentSlideoutTab = currentHistoryFilter;
-    currentSlideoutPmtFilter = 'ALL';
-    currentSlideoutStatusFilter = 'ALL';
+    bat_currentSlideoutBatches = batches;
+    bat_currentSlideoutTab = bat_currentHistoryFilter;
+    bat_currentSlideoutPmtFilter = 'ALL';
+    bat_currentSlideoutStatusFilter = 'ALL';
 
-    renderSlideoutContent();
+    bat_renderSlideoutContent();
 }
 
-function getBatchOutcome(b) {
+/* Returns the outcome class (success, failed, active) for a batch. */
+function bat_getBatchOutcome(b) {
     var isNB  = (b.batch_type === 'NB');
     var isBDL = (b.batch_type === 'BDL');
-    if (!b.is_complete) return 'active';
+    if (!b.is_complete) {
+        return 'active';
+    }
     var cs = (b.completed_status || '').toUpperCase();
     if (isNB) {
         var nbSuccess = ['POST_RELEASE_MERGE_COMPLETE', 'POST_RELEASE_PRTL_MRGD_WTH_ERS',
@@ -934,107 +1053,99 @@ function getBatchOutcome(b) {
     }
 }
 
-function renderSlideoutContent() {
-    var body = document.getElementById('slideout-body');
-    var batches = currentSlideoutBatches;
-    var hasNB  = batches.some(function(b) { return b.batch_type === 'NB'; });
+/* Renders the slideout body content from the current batches and filters. */
+function bat_renderSlideoutContent() {
+    var body = document.getElementById('bat-slideout-body');
+    var batches = bat_currentSlideoutBatches;
     var hasPmt = batches.some(function(b) { return b.batch_type === 'PMT'; });
-    var hasBDL = batches.some(function(b) { return b.batch_type === 'BDL'; });
 
     var html = '';
 
-    // -- Tab bar: ALL / NB / PMT / BDL --
-    html += '<div class="slideout-tab-bar">';
+    html += '<div class="bat-slideout-tab-bar">';
     var tabs = ['ALL', 'NB', 'PMT', 'BDL'];
     tabs.forEach(function(t) {
-        var activeClass = (currentSlideoutTab === t) ? ' active' : '';
+        var activeClass = (bat_currentSlideoutTab === t) ? ' bat-active' : '';
         var label = t === 'ALL' ? 'All' : t;
-        // Show batch count on each tab
-        var count = 0;
-        if (t === 'ALL') count = batches.length;
-        else count = batches.filter(function(b) { return b.batch_type === t; }).length;
-        var countLabel = count > 0 ? ' <span class="tab-count">' + count + '</span>' : '';
-        html += '<button class="slideout-tab' + activeClass + '" onclick="setSlideoutTab(\'' + t + '\')">' + label + countLabel + '</button>';
+        var count = (t === 'ALL') ? batches.length : batches.filter(function(b) { return b.batch_type === t; }).length;
+        var countActiveClass = (bat_currentSlideoutTab === t) ? ' bat-active' : '';
+        var countLabel = count > 0 ? ' <span class="bat-tab-count' + countActiveClass + '">' + count + '</span>' : '';
+        html += '<button class="bat-slideout-tab' + activeClass + '" data-action-click="bat-set-slideout-tab" data-bat-tab="' + t + '">' + label + countLabel + '</button>';
     });
     html += '</div>';
 
-    // -- Filter bar: status + PMT sub-type (when applicable) --
-    html += '<div class="slideout-filter-bar">';
+    html += '<div class="bat-slideout-filter-bar">';
 
-    // Status filter buttons
     var statusFilters = ['ALL', 'SUCCESS', 'FAILED', 'ACTIVE'];
     statusFilters.forEach(function(f) {
-        var activeClass = (currentSlideoutStatusFilter === f) ? ' active' : '';
+        var activeClass = (bat_currentSlideoutStatusFilter === f) ? ' bat-active' : '';
         var label = f.charAt(0) + f.slice(1).toLowerCase();
-        html += '<button class="slideout-status-btn' + activeClass + '" onclick="setSlideoutStatusFilter(\'' + f + '\')">' + label + '</button>';
+        html += '<button class="bat-slideout-status-btn' + activeClass + '" data-action-click="bat-set-slideout-status" data-bat-status="' + f + '">' + label + '</button>';
     });
 
-    // PMT sub-type filter (only when PMT or ALL tab is active AND PMT batches exist)
-    if (hasPmt && (currentSlideoutTab === 'PMT' || currentSlideoutTab === 'ALL')) {
-        html += '<span class="filter-separator"></span>';
+    if (hasPmt && (bat_currentSlideoutTab === 'PMT' || bat_currentSlideoutTab === 'ALL')) {
+        html += '<span class="bat-filter-separator"></span>';
         var pmtFilters = ['ALL', 'IMPORT', 'MANUAL', 'REVERSAL', 'REAPPLY', 'OTHER'];
         pmtFilters.forEach(function(f) {
-            var activeClass = (currentSlideoutPmtFilter === f) ? ' active' : '';
-            html += '<button class="slideout-filter-btn' + activeClass + '" onclick="setSlideoutPmtFilter(\'' + f + '\')">' + f.charAt(0) + f.slice(1).toLowerCase() + '</button>';
+            var activeClass = (bat_currentSlideoutPmtFilter === f) ? ' bat-active' : '';
+            html += '<button class="bat-slideout-filter-btn' + activeClass + '" data-action-click="bat-set-slideout-pmt" data-bat-pmt="' + f + '">' + f.charAt(0) + f.slice(1).toLowerCase() + '</button>';
         });
     }
 
     html += '</div>';
 
-    // -- Apply tab filter (batch type) --
     var filtered = batches;
-    if (currentSlideoutTab !== 'ALL') {
-        filtered = filtered.filter(function(b) { return b.batch_type === currentSlideoutTab; });
+    if (bat_currentSlideoutTab !== 'ALL') {
+        filtered = filtered.filter(function(b) { return b.batch_type === bat_currentSlideoutTab; });
     }
 
-    // -- Apply PMT sub-type filter --
-    if (currentSlideoutPmtFilter !== 'ALL' && (currentSlideoutTab === 'PMT' || currentSlideoutTab === 'ALL')) {
+    if (bat_currentSlideoutPmtFilter !== 'ALL' && (bat_currentSlideoutTab === 'PMT' || bat_currentSlideoutTab === 'ALL')) {
         filtered = filtered.filter(function(b) {
-            if (b.batch_type === 'NB' || b.batch_type === 'BDL') return true; // NB and BDL pass through sub-type filter
-            if (currentSlideoutPmtFilter === 'OTHER') {
+            if (b.batch_type === 'NB' || b.batch_type === 'BDL') {
+                return true;
+            }
+            if (bat_currentSlideoutPmtFilter === 'OTHER') {
                 var knownTypes = ['IMPORT', 'MANUAL', 'REVERSAL', 'REAPPLY'];
                 return knownTypes.indexOf((b.pmt_batch_type || '').toUpperCase()) === -1;
             }
-            return (b.pmt_batch_type || '').toUpperCase() === currentSlideoutPmtFilter;
+            return (b.pmt_batch_type || '').toUpperCase() === bat_currentSlideoutPmtFilter;
         });
     }
 
-    // -- Apply status filter --
-    if (currentSlideoutStatusFilter !== 'ALL') {
-        var target = currentSlideoutStatusFilter.toLowerCase();
+    if (bat_currentSlideoutStatusFilter !== 'ALL') {
+        var target = bat_currentSlideoutStatusFilter.toLowerCase();
         filtered = filtered.filter(function(b) {
-            return getBatchOutcome(b) === target;
+            return bat_getBatchOutcome(b) === target;
         });
     }
 
-    // Summary counts
-    var successCount = 0, failedCount = 0, activeCount = 0;
+    var successCount = 0;
+    var failedCount = 0;
+    var activeCount = 0;
     filtered.forEach(function(b) {
-        var outcome = getBatchOutcome(b);
-        if (outcome === 'success')      successCount++;
-        else if (outcome === 'failed')  failedCount++;
-        else                            activeCount++;
+        var outcome = bat_getBatchOutcome(b);
+        if (outcome === 'success')      { successCount++; }
+        else if (outcome === 'failed')  { failedCount++; }
+        else                            { activeCount++; }
     });
 
-    html += '<div class="slideout-batch-count">';
+    html += '<div class="bat-slideout-batch-count">';
     html += filtered.length + ' batches';
-    if (successCount > 0) html += ' &middot; <span class="count-success">' + successCount + ' success</span>';
-    if (failedCount > 0)  html += ' &middot; <span class="count-failed">' + failedCount + ' failed</span>';
-    if (activeCount > 0)  html += ' &middot; <span class="count-active">' + activeCount + ' in progress</span>';
+    if (successCount > 0) { html += ' &middot; <span class="bat-count-success">' + successCount + ' success</span>'; }
+    if (failedCount > 0)  { html += ' &middot; <span class="bat-count-failed">' + failedCount + ' failed</span>'; }
+    if (activeCount > 0)  { html += ' &middot; <span class="bat-count-active">' + activeCount + ' in progress</span>'; }
     html += '</div>';
 
     if (filtered.length === 0) {
-        html += '<div class="no-activity">No matching batches</div>';
+        html += '<div class="bat-no-activity">No matching batches</div>';
         body.innerHTML = html;
         return;
     }
 
-    // Render compact batch rows
     filtered.forEach(function(b, idx) {
         var isNB  = (b.batch_type === 'NB');
         var isBDL = (b.batch_type === 'BDL');
-        var typeClass = isNB ? 'nb' : (isBDL ? 'bdl' : 'pmt');
-        var outcome = getBatchOutcome(b);
+        var typeClass = isNB ? 'bat-type-nb' : (isBDL ? 'bat-type-bdl' : 'bat-type-pmt');
+        var outcome = bat_getBatchOutcome(b);
         var batchName = '';
         if (isNB) {
             batchName = b.upload_filename || b.batch_name || '';
@@ -1044,299 +1155,358 @@ function renderSlideoutContent() {
             batchName = b.batch_name || b.external_name || 'Batch ' + b.batch_id;
         }
 
-        // Status display text and class
         var statusText = '';
         var statusClass = '';
         if (!b.is_complete) {
             statusText = b.batch_status || 'In Progress';
-            statusClass = 'active';
+            statusClass = 'bat-active';
         } else {
             statusText = b.completed_status || b.batch_status || '';
-            if (outcome === 'success')      statusClass = 'success';
-            else if (outcome === 'failed')  statusClass = 'failed';
-            else                            statusClass = 'neutral';
+            if (outcome === 'success')      { statusClass = 'bat-success'; }
+            else if (outcome === 'failed')  { statusClass = 'bat-failed'; }
+            else                            { statusClass = 'bat-neutral'; }
         }
 
-        // Times
-        var startTime = formatTimeOfDay(b.batch_created_dttm);
-        var endTime = b.completed_dttm ? formatTimeOfDay(b.completed_dttm) : '-';
-        var totalMin = safeInt(b.total_min);
-        var durationText = totalMin > 0 ? formatDurationMinutes(totalMin) : '-';
+        var startTime = cc_formatTimeOfDay(b.batch_created_dttm);
+        var endTime = b.completed_dttm ? cc_formatTimeOfDay(b.completed_dttm) : '-';
+        var totalMin = cc_safeInt(b.total_min);
+        var durationText = totalMin > 0 ? bat_formatDurationMinutes(totalMin) : '-';
 
-        html += '<div class="batch-row" id="batch-row-' + idx + '">';
+        html += '<div class="bat-batch-row" id="bat-batch-row-' + idx + '">';
 
-        // Compact header row
-        html += '<div class="batch-row-header" onclick="toggleBatchRow(' + idx + ')">';
-        html += '<span class="expand-icon">&#9654;</span>';
-        html += '<span class="batch-type-tag ' + typeClass + '">' + b.batch_type + '</span>';
-        html += '<span class="batch-row-id">#' + b.batch_id + '</span>';
-        html += '<span class="batch-row-name">' + escapeHtml(batchName) + '</span>';
-        html += '<span class="batch-row-time">' + startTime + '</span>';
-        html += '<span style="color:#555; margin:0 2px;">&#8594;</span>';
-        html += '<span class="batch-row-time">' + endTime + '</span>';
-        html += '<span class="batch-row-status ' + statusClass + '">' + escapeHtml(statusText) + '</span>';
+        html += '<div class="bat-batch-row-header" data-action-click="bat-toggle-batch-row" data-bat-row="' + idx + '">';
+        html += '<span class="bat-batch-row-icon" id="bat-batch-row-icon-' + idx + '">&#9654;</span>';
+        html += '<span class="bat-type-tag ' + typeClass + '">' + b.batch_type + '</span>';
+        html += '<span class="bat-batch-row-id">#' + b.batch_id + '</span>';
+        html += '<span class="bat-batch-row-name">' + cc_escapeHtml(batchName) + '</span>';
+        html += '<span class="bat-batch-row-time">' + startTime + ' &#8594; ' + endTime + '</span>';
+        html += '<span class="bat-batch-row-status ' + statusClass + '">' + cc_escapeHtml(statusText) + '</span>';
         html += '</div>';
 
-        // Expandable detail section
-        html += '<div class="batch-row-detail">';
+        html += '<div class="bat-batch-row-detail" id="bat-batch-row-detail-' + idx + '">';
 
-        // Inline metrics
-        html += '<div class="detail-metrics">';
+        html += '<div class="bat-detail-metrics">';
         if (isNB) {
-            html += metricSpan('Accounts', b.account_count ? safeInt(b.account_count).toLocaleString() : '-');
-            html += metricSpan('Consumers', b.consumer_count ? safeInt(b.consumer_count).toLocaleString() : '-');
-            html += metricSpan('Balance', b.total_balance_amt ? '$' + safeFloat(b.total_balance_amt).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2}) : '-');
-            html += metricSpan('Posted', b.posted_account_count ? safeInt(b.posted_account_count).toLocaleString() : '-');
-            html += metricSpan('Duration', durationText);
+            html += bat_metricSpan('Accounts', b.account_count ? cc_safeInt(b.account_count).toLocaleString() : '-');
+            html += bat_metricSpan('Consumers', b.consumer_count ? cc_safeInt(b.consumer_count).toLocaleString() : '-');
+            html += bat_metricSpan('Balance', b.total_balance_amt ? '$' + cc_safeFloat(b.total_balance_amt).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-');
+            html += bat_metricSpan('Posted', b.posted_account_count ? cc_safeInt(b.posted_account_count).toLocaleString() : '-');
+            html += bat_metricSpan('Duration', durationText);
         } else if (isBDL) {
-            html += metricSpan('Entity', b.entity_type || '-');
-            html += metricSpan('Records', b.total_record_count ? safeInt(b.total_record_count).toLocaleString() : '-');
-            html += metricSpan('Staged', b.staging_success_count ? safeInt(b.staging_success_count).toLocaleString() : '-');
-            if (safeInt(b.staging_failed_count) > 0) html += metricSpan('Stage Errors', safeInt(b.staging_failed_count).toLocaleString());
-            html += metricSpan('Imported', b.import_success_count ? safeInt(b.import_success_count).toLocaleString() : '-');
-            if (safeInt(b.import_failed_count) > 0) html += metricSpan('Import Errors', safeInt(b.import_failed_count).toLocaleString());
-            html += metricSpan('Partitions', b.partition_count ? (safeInt(b.partitions_completed) + '/' + safeInt(b.partition_count)) : '-');
-            html += metricSpan('Duration', durationText);
-            if (b.error_message) html += metricSpan('Error', b.error_message);
+            html += bat_metricSpan('Entity', b.entity_type || '-');
+            html += bat_metricSpan('Records', b.total_record_count ? cc_safeInt(b.total_record_count).toLocaleString() : '-');
+            html += bat_metricSpan('Staged', b.staging_success_count ? cc_safeInt(b.staging_success_count).toLocaleString() : '-');
+            if (cc_safeInt(b.staging_failed_count) > 0) {
+                html += bat_metricSpan('Stage Errors', cc_safeInt(b.staging_failed_count).toLocaleString());
+            }
+            html += bat_metricSpan('Imported', b.import_success_count ? cc_safeInt(b.import_success_count).toLocaleString() : '-');
+            if (cc_safeInt(b.import_failed_count) > 0) {
+                html += bat_metricSpan('Import Errors', cc_safeInt(b.import_failed_count).toLocaleString());
+            }
+            html += bat_metricSpan('Partitions', b.partition_count ? (cc_safeInt(b.partitions_completed) + '/' + cc_safeInt(b.partition_count)) : '-');
+            html += bat_metricSpan('Duration', durationText);
+            if (b.error_message) {
+                html += bat_metricSpan('Error', cc_escapeHtml(b.error_message));
+            }
         } else {
-            html += metricSpan('Type', b.pmt_batch_type || '-');
-            html += metricSpan('Payments', b.active_count ? safeInt(b.active_count).toLocaleString() : '-');
-            html += metricSpan('Posted', b.journal_posted_count ? safeInt(b.journal_posted_count).toLocaleString() : '-');
-            if (safeInt(b.journal_failed_count) > 0) html += metricSpan('Failed', safeInt(b.journal_failed_count).toLocaleString());
-            html += metricSpan('Duration', durationText);
+            html += bat_metricSpan('Type', b.pmt_batch_type || '-');
+            html += bat_metricSpan('Payments', b.active_count ? cc_safeInt(b.active_count).toLocaleString() : '-');
+            html += bat_metricSpan('Posted', b.journal_posted_count ? cc_safeInt(b.journal_posted_count).toLocaleString() : '-');
+            if (cc_safeInt(b.journal_failed_count) > 0) {
+                html += bat_metricSpan('Failed', cc_safeInt(b.journal_failed_count).toLocaleString());
+            }
+            html += bat_metricSpan('Duration', durationText);
         }
         html += '</div>';
 
-        // Phase timeline (only if completed with duration data)
         if (totalMin > 0) {
-            html += '<div class="phase-timeline">';
-            html += '<div class="phase-timeline-header">Phase Durations</div>';
+            html += '<div class="bat-phase-timeline">';
+            html += '<div class="bat-phase-timeline-header">Phase Durations</div>';
 
             if (isNB) {
-                var uploadRelease = safeInt(b.upload_to_release_min);
-                var releaseMerge  = safeInt(b.release_to_merge_min);
-                var mergeDur      = safeInt(b.merge_duration_min);
-
-                html += phaseRow('Upload &#8594; Release', uploadRelease, totalMin, 'upload');
-                html += phaseRow('Queue Wait', releaseMerge, totalMin, 'release');
-                html += phaseRow('Merge', mergeDur, totalMin, 'merge');
+                html += bat_phaseRow('Upload to Release', cc_safeInt(b.upload_to_release_min), totalMin, 'bat-phase-upload');
+                html += bat_phaseRow('Queue Wait', cc_safeInt(b.release_to_merge_min), totalMin, 'bat-phase-release');
+                html += bat_phaseRow('Merge', cc_safeInt(b.merge_duration_min), totalMin, 'bat-phase-merge');
             } else if (isBDL) {
-                var createdToStaged = safeInt(b.created_to_staged_min);
-                var stagedToImported = safeInt(b.staged_to_imported_min);
-
-                html += phaseRow('Processing &#8594; Staged', createdToStaged, totalMin, 'upload');
-                html += phaseRow('Staged &#8594; Imported', stagedToImported, totalMin, 'process');
+                html += bat_phaseRow('Created to Staged', cc_safeInt(b.created_to_staged_min), totalMin, 'bat-phase-upload');
+                html += bat_phaseRow('Staged to Imported', cc_safeInt(b.staged_to_imported_min), totalMin, 'bat-phase-process');
             } else {
-                var createRelease   = safeInt(b.created_to_release_min);
-                var releaseProcess  = safeInt(b.release_to_processed_min);
-
-                html += phaseRow('Created &#8594; Released', createRelease, totalMin, 'upload');
-                html += phaseRow('Released &#8594; Processed', releaseProcess, totalMin, 'process');
+                html += bat_phaseRow('Created to Release', cc_safeInt(b.created_to_release_min), totalMin, 'bat-phase-upload');
+                html += bat_phaseRow('Release to Processed', cc_safeInt(b.release_to_processed_min), totalMin, 'bat-phase-process');
             }
-
-            html += phaseRow('Total', totalMin, totalMin, 'merge');
+            html += bat_phaseRow('Total', totalMin, totalMin, 'bat-phase-merge');
             html += '</div>';
         }
 
-        html += '</div>'; // batch-row-detail
-        html += '</div>'; // batch-row
+        html += '</div>';
+        html += '</div>';
     });
 
     body.innerHTML = html;
 }
 
-function metricSpan(label, value) {
-    return '<span class="detail-metric"><span class="metric-label">' + label + ':</span><span class="metric-value">' + value + '</span></span>';
+/* Builds one label/value metric span for the detail panel. */
+function bat_metricSpan(label, value) {
+    return '<span class="bat-detail-metric"><span class="bat-metric-label">' + label + ':</span><span class="bat-metric-value">' + value + '</span></span>';
 }
 
-function toggleBatchRow(idx) {
-    var row = document.getElementById('batch-row-' + idx);
-    if (row) row.classList.toggle('expanded');
-}
-
-function setSlideoutTab(tab) {
-    currentSlideoutTab = tab;
-    currentSlideoutPmtFilter = 'ALL'; // Reset sub-type when switching tabs
-    currentSlideoutStatusFilter = 'ALL'; // Reset status when switching tabs
-
-    // Propagate tab selection back up to history master filter
-    if (tab !== currentHistoryFilter) {
-        currentHistoryFilter = tab;
-        // Update history filter button highlights
-        document.querySelectorAll('.filter-btn').forEach(function(b) {
-            b.classList.remove('active');
-            if (b.getAttribute('data-filter') === tab) b.classList.add('active');
-        });
-        // Reload history tree with new filter (preserves expanded state)
-        loadBatchHistory();
-    }
-
-    renderSlideoutContent();
-}
-
-function setSlideoutPmtFilter(filter) {
-    currentSlideoutPmtFilter = filter;
-    renderSlideoutContent();
-}
-
-function setSlideoutStatusFilter(filter) {
-    currentSlideoutStatusFilter = filter;
-    renderSlideoutContent();
-}
-
-
-// ============================================================================
-// TREE TOGGLE FUNCTIONS
-// ============================================================================
-
-function toggleYear(year) {
-    var content = document.getElementById('year-content-' + year);
-    var icon = document.getElementById('year-icon-' + year);
-
-    if (content.classList.contains('expanded')) {
-        // Collapse this year and reset its months
-        content.classList.remove('expanded');
-        icon.classList.remove('expanded');
-        expandedYears[year] = false;
-        resetMonthsForYear(year);
-    } else {
-        // Collapse all other years first and reset their months
-        Object.keys(expandedYears).forEach(function(otherYear) {
-            if (expandedYears[otherYear] && otherYear !== year) {
-                var otherContent = document.getElementById('year-content-' + otherYear);
-                var otherIcon = document.getElementById('year-icon-' + otherYear);
-                if (otherContent) otherContent.classList.remove('expanded');
-                if (otherIcon)    otherIcon.classList.remove('expanded');
-                expandedYears[otherYear] = false;
-                resetMonthsForYear(otherYear);
-            }
-        });
-
-        // Expand this year
-        content.classList.add('expanded');
-        icon.classList.add('expanded');
-        expandedYears[year] = true;
-    }
-}
-
-function resetMonthsForYear(year) {
-    // Reset all expanded months for a given year
-    Object.keys(expandedMonths).forEach(function(key) {
-        if (key.indexOf(year + '-') === 0 && expandedMonths[key]) {
-            var row = document.getElementById('month-row-' + key);
-            var icon = document.getElementById('month-icon-' + key);
-            if (row)  row.style.display = 'none';
-            if (icon) icon.classList.remove('expanded');
-            expandedMonths[key] = false;
-        }
-    });
-}
-
-function toggleMonth(year, month) {
-    var key = year + '-' + month;
-    var row = document.getElementById('month-row-' + key);
-    var icon = document.getElementById('month-icon-' + key);
-
-    if (expandedMonths[key]) {
-        row.style.display = 'none';
-        icon.classList.remove('expanded');
-        expandedMonths[key] = false;
-    } else {
-        row.style.display = 'table-row';
-        icon.classList.add('expanded');
-        expandedMonths[key] = true;
-        loadMonthDetail(year, month);
-    }
-}
-
-
-// ============================================================================
-// SLIDEOUT
-// ----------------------------------------------------------------------------
-// Uses shared .slide-panel-* infrastructure. The shared system uses .open
-// class on both the panel and the overlay for the visible state.
-// ============================================================================
-
-function openSlideout() {
-    document.getElementById('batch-slideout').classList.add('open');
-    document.getElementById('batch-slideout-overlay').classList.add('open');
-}
-
-function closeSlideout() {
-    document.getElementById('batch-slideout').classList.remove('open');
-    document.getElementById('batch-slideout-overlay').classList.remove('open');
-}
-
-
-// ============================================================================
-// PAGE-SPECIFIC UTILITIES
-// ----------------------------------------------------------------------------
-// Cross-page utilities (escapeHtml, formatTimeOfDay, MONTH_NAMES, DAY_NAMES,
-// safeInt, safeFloat, formatTimeSince, formatAge) are provided by
-// engine-events.js. The functions below are BatchMon-specific.
-// ============================================================================
-
-// Phase timeline row builder for slideout
-function phaseRow(name, minutes, maxMinutes, colorClass) {
-    var pct = maxMinutes > 0 ? Math.min(100, Math.round((minutes / maxMinutes) * 100)) : 0;
-    if (minutes > 0 && pct === 0) pct = 1; // minimum visible
-
-    var html = '<div class="phase-row">';
-    html += '<span class="phase-name">' + name + '</span>';
-    html += '<div class="phase-bar"><div class="phase-bar-fill ' + colorClass + '" style="width:' + pct + '%"></div></div>';
-    html += '<span class="phase-duration">' + formatDurationMinutes(minutes) + '</span>';
+/* Builds one phase row with a proportional duration bar. */
+function bat_phaseRow(name, minutes, maxMinutes, colorClass) {
+    var mins = cc_safeInt(minutes);
+    var pct = (maxMinutes > 0 && mins > 0) ? Math.max(1, Math.round((mins / maxMinutes) * 100)) : 0;
+    var html = '<div class="bat-phase-row">';
+    html += '<span class="bat-phase-name">' + name + '</span>';
+    html += '<div class="bat-phase-bar"><div class="bat-phase-bar-fill ' + colorClass + '" style="width:' + pct + '%"></div></div>';
+    html += '<span class="bat-phase-duration">' + bat_formatDurationMinutes(mins) + '</span>';
     html += '</div>';
     return html;
 }
 
-// Duration formatter that takes minutes and outputs human-readable form.
-// Returns "-" for null/0, otherwise "Xm" / "Xh Xm" / "Xd Xh".
-// BatchMon-specific because output unit (minutes) differs from BIDATA's
-// formatDuration (which takes seconds and outputs H:MM:SS).
-function formatDurationMinutes(minutes) {
-    if (minutes == null || minutes === 0) return '-';
-    if (minutes < 60) return minutes + 'm';
-    var h = Math.floor(minutes / 60);
-    var m = minutes % 60;
-    if (h < 24) return h + 'h ' + m + 'm';
+/* ============================================================================
+   FUNCTIONS: SLIDEOUT FILTER ACTIONS
+   ----------------------------------------------------------------------------
+   Handlers updating the slideout's tab and filter selections and re-rendering
+   its content.
+   Prefix: bat
+   ============================================================================ */
+
+/* Switches the slideout batch-type tab. */
+function bat_setSlideoutTab(target) {
+    bat_currentSlideoutTab = target.getAttribute('data-bat-tab');
+    bat_currentSlideoutPmtFilter = 'ALL';
+    bat_renderSlideoutContent();
+}
+
+/* Sets the slideout status filter. */
+function bat_setSlideoutStatusFilter(target) {
+    bat_currentSlideoutStatusFilter = target.getAttribute('data-bat-status');
+    bat_renderSlideoutContent();
+}
+
+/* Sets the slideout PMT sub-type filter. */
+function bat_setSlideoutPmtFilter(target) {
+    bat_currentSlideoutPmtFilter = target.getAttribute('data-bat-pmt');
+    bat_renderSlideoutContent();
+}
+
+/* ============================================================================
+   FUNCTIONS: TREE TOGGLES
+   ----------------------------------------------------------------------------
+   Expand/collapse handlers for the history tree's year and month rows and the
+   slideout's per-batch detail rows.
+   Prefix: bat
+   ============================================================================ */
+
+/* Toggles a year group's expanded state. */
+function bat_toggleYear(target) {
+    var year = target.getAttribute('data-bat-year');
+    var isExpanded = !bat_expandedYears[year];
+    bat_expandedYears[year] = isExpanded;
+
+    var icon = document.getElementById('bat-year-icon-' + year);
+    var content = document.getElementById('bat-year-content-' + year);
+    if (icon) {
+        icon.classList.toggle('bat-expanded', isExpanded);
+    }
+    if (content) {
+        content.classList.toggle('bat-expanded', isExpanded);
+    }
+}
+
+/* Toggles a month row's day-detail expansion, loading day data on first open. */
+function bat_toggleMonth(target) {
+    var year = target.getAttribute('data-bat-year');
+    var month = target.getAttribute('data-bat-month');
+    var monthKey = year + '-' + month;
+    var isExpanded = !bat_expandedMonths[monthKey];
+    bat_expandedMonths[monthKey] = isExpanded;
+
+    var icon = document.getElementById('bat-month-icon-' + monthKey);
+    var row = document.getElementById('bat-month-row-' + monthKey);
+    if (icon) {
+        icon.classList.toggle('bat-expanded', isExpanded);
+    }
+    if (row) {
+        row.style.display = isExpanded ? 'table-row' : 'none';
+    }
+
+    if (isExpanded) {
+        bat_loadMonthDetail(year, month);
+    }
+}
+
+/* Toggles a slideout batch row's detail panel open or closed. */
+function bat_toggleBatchRow(target) {
+    var idx = target.getAttribute('data-bat-row');
+    var row = document.getElementById('bat-batch-row-' + idx);
+    var icon = document.getElementById('bat-batch-row-icon-' + idx);
+    var detail = document.getElementById('bat-batch-row-detail-' + idx);
+    var willExpand = !(row && row.classList.contains('bat-expanded'));
+
+    if (row) {
+        row.classList.toggle('bat-expanded', willExpand);
+    }
+    if (icon) {
+        icon.classList.toggle('bat-expanded', willExpand);
+    }
+    if (detail) {
+        detail.classList.toggle('bat-expanded', willExpand);
+    }
+}
+
+/* ============================================================================
+   FUNCTIONS: SLIDEOUT OPEN AND CLOSE
+   ----------------------------------------------------------------------------
+   Open and close handlers for the batch-detail slideout, following the shared
+   static slide-overlay pattern.
+   Prefix: bat
+   ============================================================================ */
+
+/* Opens the batch-detail slideout. */
+function bat_openSlideout() {
+    var overlay = document.getElementById('bat-slideout-detail');
+    var dialog = overlay.querySelector('.cc-dialog');
+    overlay.classList.add('cc-open');
+    requestAnimationFrame(function() {
+        dialog.classList.add('cc-open');
+    });
+}
+
+/* Closes the batch-detail slideout; ignores clicks bubbling from the dialog interior. */
+function bat_closeSlideout(target, event) {
+    if (event && target.id === 'bat-slideout-detail' && event.target !== target) {
+        return;
+    }
+    var overlay = document.getElementById('bat-slideout-detail');
+    var dialog = overlay.querySelector('.cc-dialog');
+    dialog.addEventListener('transitionend', function handler() {
+        dialog.removeEventListener('transitionend', handler);
+        overlay.classList.remove('cc-open');
+    });
+    dialog.classList.remove('cc-open');
+}
+
+/* ============================================================================
+   FUNCTIONS: FILTER ACTIONS
+   ----------------------------------------------------------------------------
+   Handlers for the Active Batches and Batch History section type filters.
+   Prefix: bat
+   ============================================================================ */
+
+/* Sets the Active Batches type filter and re-renders from retained data. */
+function bat_setActiveFilter(target) {
+    bat_currentActiveFilter = target.getAttribute('data-bat-filter');
+
+    var buttons = document.querySelectorAll('.bat-active-filter-btn');
+    buttons.forEach(function(btn) {
+        btn.classList.toggle('bat-active', btn.getAttribute('data-bat-filter') === bat_currentActiveFilter);
+    });
+
+    if (bat_lastActiveBatchData) {
+        bat_renderActiveBatches(bat_lastActiveBatchData);
+    }
+}
+
+/* Sets the Batch History type filter and reloads the tree. */
+function bat_setHistoryFilter(target) {
+    bat_currentHistoryFilter = target.getAttribute('data-bat-filter');
+
+    var buttons = document.querySelectorAll('.bat-filter-btn');
+    buttons.forEach(function(btn) {
+        btn.classList.toggle('bat-active', btn.getAttribute('data-bat-filter') === bat_currentHistoryFilter);
+    });
+
+    bat_expandedYears = {};
+    bat_expandedMonths = {};
+    bat_loadBatchHistory();
+}
+
+/* Opens the day-detail slideout for a clicked day row. */
+function bat_openDayDetail(target) {
+    var date = target.getAttribute('data-bat-date');
+    bat_loadDayDetail(date);
+}
+
+/* ============================================================================
+   FUNCTIONS: UTILITIES
+   ----------------------------------------------------------------------------
+   Page-local formatting helpers with no shared equivalent: minute-duration
+   formatting and the two date display/parse helpers used by the history tree
+   and slideout.
+   Prefix: bat
+   ============================================================================ */
+
+/* Formats a minute count as a compact duration string (m, h m, or d h). */
+function bat_formatDurationMinutes(minutes) {
+    var m = cc_safeInt(minutes);
+    if (m <= 0) {
+        return '0m';
+    }
+    if (m < 60) {
+        return m + 'm';
+    }
+    var h = Math.floor(m / 60);
+    var rem = m % 60;
+    if (h < 24) {
+        return h + 'h ' + rem + 'm';
+    }
     var d = Math.floor(h / 24);
     h = h % 24;
     return d + 'd ' + h + 'h';
 }
 
-// Display-friendly date formatter ("January 15, 2026" form)
-function formatDisplayDate(dateStr) {
-    var parts = dateStr.split('-');
-    if (parts.length === 3) {
-        var m = parseInt(parts[1]);
-        var d = parseInt(parts[2]);
-        var y = parts[0];
-        return MONTH_NAMES[m] + ' ' + d + ', ' + y;
-    }
-    return dateStr;
+/* Formats a date-only string as a readable display date. */
+function bat_formatDisplayDate(date) {
+    var d = bat_parseDateOnly(date);
+    var parts = d.split('-');
+    var dateObj = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+    return cc_MONTH_NAMES[dateObj.getMonth() + 1] + ' ' + dateObj.getDate() + ', ' + dateObj.getFullYear();
 }
 
-// Parses a date value from SQL Server (could be "2026-02-14",
-// "2026-02-14T00:00:00", or "/Date(xxxxx)/") and returns YYYY-MM-DD string.
-// BatchMon-specific because it produces a string key for grouping; the
-// shared formatTimeOfDay produces a display string instead.
-function parseDateOnly(val) {
-    if (!val) return '';
-    var s = String(val);
-    // Already YYYY-MM-DD
-    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-    // ISO datetime -- take date portion
-    if (s.indexOf('T') > 0) return s.substring(0, 10);
-    // .NET /Date()/ format
+/* Normalizes a timestamp or date value to a YYYY-MM-DD date-only string. */
+function bat_parseDateOnly(value) {
+    if (!value) {
+        return '';
+    }
+    var s = String(value);
     var match = s.match(/\/Date\((\d+)\)\//);
     if (match) {
-        var d = new Date(parseInt(match[1]));
+        var d = new Date(parseInt(match[1], 10));
         return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
     }
-    // Fallback -- try to parse and extract
-    var d2 = new Date(s);
-    if (!isNaN(d2.getTime())) {
-        return d2.getFullYear() + '-' + String(d2.getMonth() + 1).padStart(2, '0') + '-' + String(d2.getDate()).padStart(2, '0');
+    if (s.indexOf('T') !== -1) {
+        return s.split('T')[0];
+    }
+    if (s.indexOf(' ') !== -1) {
+        return s.split(' ')[0];
     }
     return s;
+}
+
+/* ============================================================================
+   FUNCTIONS: PAGE LIFECYCLE HOOKS
+   ----------------------------------------------------------------------------
+   Named callbacks the cc-shared.js chrome invokes on page refresh, tab
+   resume, session expiry, and engine process completion.
+   Prefix: bat
+   ============================================================================ */
+
+/* Manual page-refresh hook: refreshes every section. */
+function bat_onPageRefresh() {
+    bat_refreshAll();
+}
+
+/* Tab-resume hook: refreshes every section. */
+function bat_onPageResumed() {
+    bat_refreshAll();
+}
+
+/* Session-expiry hook: stops the live polling timer. */
+function bat_onSessionExpired() {
+    bat_stopLivePolling();
+}
+
+/* Engine-completion hook: refreshes the event-driven sections. */
+function bat_onEngineProcessCompleted() {
+    bat_refreshEventSections();
 }
