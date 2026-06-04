@@ -1,130 +1,149 @@
-# ============================================================================
-# xFACts Control Center - DBCC Operations Page
-# Location: E:\xFACts-ControlCenter\scripts\routes\DBCCOperations.ps1
-#
-# Renders the DBCC Operations monitoring dashboard page.
-# CSS: /css/dbcc-operations.css
-# JS:  /js/dbcc-operations.js
-# APIs: DBCCOperations-API.ps1
-#
-# Version: Tracked in dbo.System_Metadata (component: ServerOps.DBCC)
-#
-# CHANGELOG
-# ---------
-# 2026-04-29  Phase 3d of dynamic nav: replaced hardcoded nav block with
-#             Get-NavBarHtml helper. Page H1 link, title, subtitle, and
-#             browser tab title now render from RBAC_NavRegistry via
-#             Get-PageHeaderHtml and Get-PageBrowserTitle.
-# ============================================================================
+<#
+.SYNOPSIS
+    Control Center page route for the DBCC Operations monitoring dashboard.
+
+.DESCRIPTION
+    Registers the GET /dbcc-operations page route. Renders the page shell:
+    dynamic nav, page header, chrome banners, the two-column dashboard
+    layout (live progress, today's executions, schedule overview, execution
+    history), and the schedule modals. All data is loaded client-side by the
+    page JS module via the DBCC API endpoints.
+
+.COMPONENT
+    ServerOps.DBCC
+
+.NOTES
+    File Name : DBCCOperations.ps1
+    Location  : E:\xFACts-ControlCenter\scripts\routes\DBCCOperations.ps1
+
+    FILE ORGANIZATION
+    -----------------
+    CHANGELOG: CHANGE HISTORY
+    ROUTE: PAGE PATH
+#>
+
+<# ============================================================================
+   CHANGELOG: CHANGE HISTORY
+   ----------------------------------------------------------------------------
+   Dated change history for this route file. Most recent first.
+   Prefix: (none)
+   ============================================================================ #>
+
+# 2026-06-04  Refactored to CC file-format specs: cc-shared chrome classes,
+#             $bannerHtml chrome banners, data-action attributes (no inline
+#             handlers), static cc-dialog modals, server-side admin gating
+#             (removed window.isAdmin injection), single cc-shared.js asset.
+
+<# ============================================================================
+   ROUTE: PAGE PATH
+   ----------------------------------------------------------------------------
+   The GET /dbcc-operations page route. Performs the RBAC access check, then
+   emits the page shell as a here-string with nav, header, banner chrome, and
+   the dashboard content and modal overlays.
+   Prefix: (none)
+   ============================================================================ #>
 
 Add-PodeRoute -Method Get -Path '/dbcc-operations' -Authentication 'ADLogin' -ScriptBlock {
+    Import-Module -Name 'E:\xFACts-ControlCenter\scripts\modules\xFACts-CCShared.psm1' -Force -DisableNameChecking
 
-    # --- RBAC Access Check ---
     $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/dbcc-operations'
     if (-not $access.HasAccess) {
         Write-PodeHtmlResponse -Value (Get-AccessDeniedHtml -DisplayName $access.DisplayName -PageRoute '/dbcc-operations') -StatusCode 403
         return
     }
 
-    # --- User context (used by helper for nav rendering and isAdmin flag) ---
     $ctx = Get-UserContext -WebEvent $WebEvent
 
-    # --- Render dynamic nav bar and page header from RBAC_NavRegistry ---
-    $navHtml      = Get-NavBarHtml      -UserContext $ctx -CurrentPageRoute '/dbcc-operations'
+    $navHtml      = Get-NavBarHtml       -UserContext $ctx -CurrentPageRoute '/dbcc-operations'
     $headerHtml   = Get-PageHeaderHtml   -PageRoute '/dbcc-operations'
     $browserTitle = Get-PageBrowserTitle -PageRoute '/dbcc-operations'
+    $bannerHtml   = Get-ChromeBannersHtml
 
     $html = @"
-
 <!DOCTYPE html>
 <html>
 <head>
     <title>$browserTitle</title>
+
     <link rel="stylesheet" href="/css/dbcc-operations.css">
-    <link rel="stylesheet" href="/css/engine-events.css">
+
+    <link rel="stylesheet" href="/css/cc-shared.css">
 </head>
-<body>
+<body class="cc-section-platform" data-cc-page="dbcc-operations" data-cc-prefix="dbc">
 $navHtml
 
-    <div class="header-bar">
+    <div class="cc-header-bar">
         <div>
             $headerHtml
         </div>
-        <div class="header-right">
-            <div class="refresh-info">
-                <span class="live-indicator"></span>
-                <span>Live</span> | Updated: <span id="last-update" class="last-updated">-</span>
-                <button class="page-refresh-btn" onclick="pageRefresh()" title="Refresh all data">&#8635;</button>
+        <div class="cc-header-right">
+            <div class="cc-refresh-info">
+                <span class="cc-live-indicator"></span>
+                <span>Live</span> | Updated: <span id="cc-last-update" class="cc-last-updated">-</span>
+                <button class="cc-page-refresh-btn" data-action-click="cc-page-refresh" title="Refresh all data">&#8635;</button>
             </div>
-            <div class="engine-row">
-                <div class="engine-card" id="card-engine-dbcc">
-                    <span class="engine-label">DBCC</span>
-                    <div class="engine-bar disabled" id="engine-bar-dbcc"></div>
-                    <span class="engine-countdown" id="engine-cd-dbcc">&nbsp;</span>
+            <div class="cc-engine-row">
+                <div class="cc-card-engine" id="cc-card-engine-dbcc">
+                    <span class="cc-engine-label">DBCC</span>
+                    <div class="cc-engine-bar" id="cc-engine-bar-dbcc"></div>
+                    <span class="cc-engine-cd" id="cc-engine-cd-dbcc"></span>
                 </div>
             </div>
         </div>
     </div>
 
-    <div id="connection-error" class="connection-error"></div>
+    $bannerHtml
 
-    <!-- Two Column Layout -->
-    <div class="two-column-layout">
+    <div class="dbc-two-column">
 
-        <!-- Left Column: Live Progress + Today's Executions -->
-        <div class="left-column">
+        <div class="dbc-column">
 
-            <!-- Live Progress -->
-            <div class="section">
-                <div class="section-header">
-                    <h2 class="section-title">Live Progress</h2>
-                    <span class="refresh-badge-live" title="Refreshes on live interval"><span class="badge-dot"></span></span>
+            <div class="cc-section">
+                <div class="cc-section-header">
+                    <h2 class="cc-section-title">Live Progress</h2>
+                    <span class="cc-refresh-badge-live" title="Refreshes on live interval"><span class="cc-refresh-badge-dot"></span></span>
                 </div>
-                <div id="live-progress" class="live-progress-content">
-                    <div class="loading">Loading...</div>
+                <div id="dbc-live-progress" class="dbc-live-progress-content">
+                    <div class="dbc-loading">Loading...</div>
                 </div>
             </div>
 
-            <!-- Today's Executions -->
-            <div class="section section-fill">
-                <div class="section-header">
-                    <h2 class="section-title">Today's Executions</h2>
-                    <div class="section-header-right">
-                        <button id="btn-pending-queue" class="refresh-btn pending-btn" title="View pending queue" onclick="openPendingPanel()">
-                            &#9202; Pending <span id="pending-count-badge" class="pending-badge hidden">0</span>
+            <div class="cc-section cc-fill">
+                <div class="cc-section-header">
+                    <h2 class="cc-section-title">Today's Executions</h2>
+                    <div class="cc-section-header-right">
+                        <button id="dbc-btn-pending-queue" class="dbc-pending-btn" data-action-click="dbc-open-pending" title="View pending queue">
+                            &#9202; Pending <span id="dbc-pending-count-badge" class="dbc-pending-badge cc-hidden">0</span>
                         </button>
-                        <span class="refresh-badge-live" title="Refreshes on live interval"><span class="badge-dot"></span></span>
+                        <span class="cc-refresh-badge-live" title="Refreshes on live interval"><span class="cc-refresh-badge-dot"></span></span>
                     </div>
                 </div>
-                <div id="todays-executions">
-                    <div class="loading">Loading...</div>
+                <div id="dbc-todays-executions">
+                    <div class="dbc-loading">Loading...</div>
                 </div>
             </div>
 
         </div>
 
-        <!-- Right Column: Schedule Overview + Execution History -->
-        <div class="right-column">
+        <div class="dbc-column">
 
-            <!-- Schedule Overview (server list) -->
-            <div class="section section-fixed-schedule">
-                <div class="section-header">
-                    <h2 class="section-title">Schedule Overview</h2>
-                    <span class="refresh-badge-static" title="Loads once on page load">&#128204;</span>
+            <div class="cc-section dbc-section-schedule">
+                <div class="cc-section-header">
+                    <h2 class="cc-section-title">Schedule Overview</h2>
+                    <span class="cc-refresh-badge-static" title="Loads once on page load">&#128204;</span>
                 </div>
-                <div id="schedule-overview">
-                    <div class="loading">Loading...</div>
+                <div id="dbc-schedule-overview">
+                    <div class="dbc-loading">Loading...</div>
                 </div>
             </div>
 
-            <!-- Execution History (fills remaining height) -->
-            <div class="section section-fill">
-                <div class="section-header">
-                    <h2 class="section-title">Execution History</h2>
-                    <span class="refresh-badge-event" title="Refreshes when engine process completes">&#9889;</span>
+            <div class="cc-section cc-fill">
+                <div class="cc-section-header">
+                    <h2 class="cc-section-title">Execution History</h2>
+                    <span class="cc-refresh-badge-event" title="Refreshes when engine process completes">&#9889;</span>
                 </div>
-                <div id="execution-history">
-                    <div class="loading">Loading...</div>
+                <div id="dbc-execution-history">
+                    <div class="dbc-loading">Loading...</div>
                 </div>
             </div>
 
@@ -132,53 +151,49 @@ $navHtml
 
     </div>
 
-    <script>window.isAdmin = __IS_ADMIN__;</script>
-    <script src="/js/dbcc-operations.js"></script>
-    <script src="/js/engine-events.js"></script>
-
-    <!-- Pending Queue Modal -->
-    <div id="pending-modal-overlay" class="modal-overlay hidden" onclick="closePendingPanel()">
-        <div class="modal-dialog" onclick="event.stopPropagation()">
-            <div class="modal-header">
-                <h3>Pending Queue</h3>
-                <button class="modal-close" onclick="closePendingPanel()">&times;</button>
+    <!-- Purpose: pending DBCC queue list, opened from the Today's Executions header -->
+    <div id="dbc-modal-pending" class="cc-modal-overlay cc-hidden" data-action-click="dbc-close-pending">
+        <div class="cc-dialog cc-dialog-modal cc-wide">
+            <div class="cc-dialog-header">
+                <h3 class="cc-dialog-title">Pending Queue</h3>
+                <button class="cc-dialog-close" data-action-click="dbc-close-pending">&times;</button>
             </div>
-            <div class="modal-body" id="pending-panel-body">
-                <div class="loading">Loading...</div>
+            <div class="cc-dialog-body" id="dbc-pending-body">
+                <div class="dbc-loading">Loading...</div>
             </div>
         </div>
     </div>
 
-    <!-- Schedule Detail Modal (server-level: view databases) -->
-    <div id="schedule-modal-overlay" class="modal-overlay hidden" onclick="closeScheduleModal()">
-        <div class="modal-dialog" onclick="event.stopPropagation()">
-            <div class="modal-header">
-                <h3 id="schedule-modal-title">Server Schedule</h3>
-                <button class="modal-close" onclick="closeScheduleModal()">&times;</button>
+    <!-- Purpose: server-level schedule detail, listing each database's per-operation schedule -->
+    <div id="dbc-modal-schedule" class="cc-modal-overlay cc-hidden" data-action-click="dbc-close-schedule">
+        <div class="cc-dialog cc-dialog-modal cc-wide">
+            <div class="cc-dialog-header">
+                <h3 class="cc-dialog-title" id="dbc-schedule-title">Server Schedule</h3>
+                <button class="cc-dialog-close" data-action-click="dbc-close-schedule">&times;</button>
             </div>
-            <div class="modal-body" id="schedule-modal-body">
-                <div class="loading">Loading...</div>
+            <div class="cc-dialog-body" id="dbc-schedule-body">
+                <div class="dbc-loading">Loading...</div>
             </div>
         </div>
     </div>
 
-    <!-- Schedule Edit Modal (database-level: edit operations) -->
-    <div id="edit-modal-overlay" class="modal-overlay hidden" onclick="closeEditModal()">
-        <div class="modal-dialog modal-narrow" onclick="event.stopPropagation()">
-            <div class="modal-header">
-                <h3 id="edit-modal-title">Edit Schedule</h3>
-                <button class="modal-close" onclick="closeEditModal()">&times;</button>
+    <!-- Purpose: database-level schedule editor for one schedule row -->
+    <div id="dbc-modal-edit" class="cc-modal-overlay cc-hidden" data-action-click="dbc-close-edit">
+        <div class="cc-dialog cc-dialog-modal">
+            <div class="cc-dialog-header">
+                <h3 class="cc-dialog-title" id="dbc-edit-title">Edit Schedule</h3>
+                <button class="cc-dialog-close" data-action-click="dbc-close-edit">&times;</button>
             </div>
-            <div class="modal-body" id="edit-modal-body">
-                <div class="loading">Loading...</div>
+            <div class="cc-dialog-body" id="dbc-edit-body">
+                <div class="dbc-loading">Loading...</div>
             </div>
-            <div class="modal-footer" id="edit-modal-footer"></div>
+            <div class="cc-dialog-actions" id="dbc-edit-actions"></div>
         </div>
     </div>
+
+    <script src="/js/cc-shared.js"></script>
 </body>
 </html>
-
 "@
-    $html = $html.Replace('__IS_ADMIN__', $(if ($ctx.IsAdmin) { 'true' } else { 'false' }))
     Write-PodeHtmlResponse -Value $html
 }
