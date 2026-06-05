@@ -1,969 +1,1413 @@
 /* ============================================================================
-   xFACts Control Center - Server Health Styles
+   xFACts Control Center - Server Health Styles (server-health.css)
    Location: E:\xFACts-ControlCenter\public\css\server-health.css
    Version: Tracked in dbo.System_Metadata (component: ServerOps.ServerHealth)
 
-   CHANGELOG
-   ---------
-   2026-04-29  Phase 3d of dynamic nav: stripped duplicate nav-bar, nav-link,
-               nav-spacer, nav-admin styles (now in engine-events.css).
-               Also stripped page-refresh-btn, scrollbar, and h1 a hover
-               rules now consolidated in engine-events.css.
+   Page-specific styles for the Server Health dashboard: the header-bar
+   server selector and its mini gauges, the two-column metric and info
+   layout, metric widgets and their gauges, Extended Events activity cards,
+   server info / disk space / availability group panels, and the content
+   rendered inside the shared modal and slideout overlays.
+
+   FILE ORGANIZATION
+   -----------------
+   LAYOUT: PAGE LAYOUT
+   CONTENT: SERVER SELECTOR
+   CONTENT: METRIC WIDGETS
+   CONTENT: GAUGES
+   CONTENT: XE ACTIVITY CARDS
+   CONTENT: INFO PANEL
+   CONTENT: DISK SPACE
+   CONTENT: AG HEALTH
+   CONTENT: AG DETAIL
+   CONTENT: STATE INDICATORS
+   CONTENT: TRANSACTIONS TABLE
+   CONTENT: BLOCKING PANEL
+   CONTENT: ACTIVE REQUESTS PANEL
+   CONTENT: QUERY TEXT
+   CONTENT: VICTIM CARDS
+   CONTENT: TREND CHART
+   CONTENT: TIME WINDOW CONTROL
+   CONTENT: ZOMBIE MODAL
    ============================================================================ */
 
-/* Base Layout */
-* { box-sizing: border-box; }
-body {
-    font-family: 'Segoe UI', Arial, sans-serif;
-    margin: 0;
-    padding: 20px 40px 30px 40px;
-    padding-top: 60px;
-    background: #1e1e1e;
-    color: #d4d4d4;
-}
-h1 { color: #569cd6; margin-bottom: 2px; font-size: 24px; }
-.page-subtitle { color: #888; font-size: 14px; margin: 0; }
-a { color: #9cdcfe; }
-.back-link { margin-bottom: 15px; display: inline-block; font-size: 14px; }
+/* ============================================================================
+   LAYOUT: PAGE LAYOUT
+   ----------------------------------------------------------------------------
+   The two-column page body: a flexible metrics column on the left and a
+   fixed-width info column on the right. Also the header-center wrapper that
+   holds the server selector inside the shared header bar.
+   Prefix: srv
+   ============================================================================ */
 
-/* Header */
-.header-bar {
+/* The header-center inner wrapper holding the server selector. */
+.srv-server-tabs {
     display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 15px;
-    gap: 15px;
-    position: relative;
-}
-.header-left { flex: 0 0 auto; }
-.header-center {
-    position: absolute;
-    left: 50%;
-    transform: translateX(-50%);
-    top: 4px;
-}
-.header-right {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 12px;
-}
-.refresh-info { display: flex; align-items: center; gap: 8px; color: #888; font-size: 13px; }
-.last-updated { color: #4ec9b0; }
-
-.live-indicator {
-    width: 8px;
-    height: 8px;
-    background: #4ec9b0;
-    border-radius: 50%;
-    animation: pulse 2s infinite;
-}
-@keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
-}
-
-/* Server Tabs / Mini Gauges */
-.server-tabs {
-    display: flex;
-    gap: 6px;
+    gap: var(--size-spacing-sm);
     justify-content: center;
     flex-wrap: wrap;
 }
-.mini-gauge {
+
+/* The connection error banner shown when a live fetch fails. */
+.srv-connection-error {
+    background: var(--color-tint-critical);
+    border: var(--size-border-thin) solid var(--color-status-critical);
+    border-radius: var(--size-radius-lg);
+    padding: var(--size-spacing-md) var(--size-spacing-lg);
+    margin-bottom: var(--size-spacing-lg);
+    color: var(--color-status-critical);
+    display: none;
+}
+
+/* The two-column page body wrapper. */
+.srv-main-layout {
+    display: flex;
+    gap: var(--size-spacing-2xl);
+}
+
+/* The left column holding the metric sections. */
+.srv-metrics-column {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-spacing-lg);
+}
+
+/* The right column holding the server info, disk, and AG panels. */
+.srv-info-column {
+    width: 340px;
+    flex-shrink: 0;
+}
+
+/* ============================================================================
+   CONTENT: SERVER SELECTOR
+   ----------------------------------------------------------------------------
+   The mini-gauge server selector shown in the header center. Each gauge is a
+   clickable tab showing a per-server CPU reading; the selected gauge is
+   highlighted. Includes the inline loading placeholder.
+   Prefix: srv
+   ============================================================================ */
+
+/* Inline loading text shown in the selector before servers load. */
+.srv-loading-inline {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-content);
+    font-style: italic;
+}
+
+/* A single selectable mini-gauge server tab. */
+.srv-mini-gauge {
     display: flex;
     flex-direction: column;
     align-items: center;
     cursor: pointer;
-    transition: all 0.2s;
-    background: #2d2d2d;
-    border: 1px solid #404040;
-    border-radius: 5px;
-    padding: 4px 6px 3px;
+    transition: all var(--duration-fast);
+    background: var(--color-bg-card-hover);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-sm);
+    padding: var(--size-spacing-xs) var(--size-spacing-sm) var(--size-spacing-sm);
     min-width: 72px;
 }
-.mini-gauge:hover { border-color: #555; background: #333; }
-.mini-gauge.selected {
-    border-color: #4ec9b0;
+
+.srv-mini-gauge:hover { /* hover state for a mini-gauge tab */
+    border-color: var(--color-border-strong);
+    background: #333;
+}
+
+/* Modifier marking the currently selected server gauge. */
+.srv-selected { }
+
+.srv-mini-gauge.srv-selected {
+    border-color: var(--color-accent-shared);
     background: #2a3a35;
-    box-shadow: 0 0 8px rgba(78, 201, 176, 0.15);
-}
-.mini-gauge-wrap { position: relative; width: 60px; height: 36px; overflow: hidden; }
-.mini-gauge-wrap canvas { width: 60px !important; height: 60px !important; position: absolute; top: 0; left: 0; }
-.mini-gauge-pct { font-size: 12px; font-weight: 700; text-align: center; margin-top: 0; line-height: 1; }
-.mini-gauge-pct.green { color: #4ec9b0; }
-.mini-gauge-pct.yellow { color: #dcdcaa; }
-.mini-gauge-pct.red { color: #f48771; }
-.mini-gauge-pct.na { color: #555; font-size: 10px; }
-.mini-gauge-name { font-size: 9px; color: #666; margin-top: 1px; white-space: nowrap; }
-.mini-gauge.selected .mini-gauge-name { color: #4ec9b0; font-weight: 600; }
-.loading-inline {
-    color: #888;
-    font-size: 12px;
-    font-style: italic;
+    box-shadow: 0 0 var(--size-spacing-md) rgba(78, 201, 176, 0.15);
 }
 
-/* Sections */
-.section {
-    background: #252526;
-    border: 1px solid #404040;
-    border-radius: 6px;
-    padding: 15px;
-    margin-bottom: 15px;
-}
-.section-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 15px;
-    border-bottom: 1px solid #404040;
-    padding-bottom: 8px;
-}
-.section-title {
-    color: #4ec9b0;
-    font-size: 14px;
-    font-weight: 600;
-    margin: 0;
-    text-transform: uppercase;
-    letter-spacing: 1px;
+/* The canvas wrapper clipping the mini gauge arc. */
+.srv-mini-gauge-wrap {
+    position: relative;
+    width: 60px;
+    height: 36px;
+    overflow: hidden;
 }
 
-/* Main Layout */
-.main-layout { display: flex; gap: 20px; }
-.metrics-column { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 15px; }
-.info-column { width: 340px; flex-shrink: 0; }
-
-/* Metrics sections don't stretch - natural height only */
-.metrics-column .section {
-    flex: 0 0 auto;
+/* The mini gauge canvas element sized within its wrapper. */
+.srv-mini-gauge-canvas {
+    width: 60px;
+    height: 60px;
+    position: absolute;
+    top: 0;
+    left: 0;
 }
 
-/* Section header with inline control */
-.section-header-with-control {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-.time-window-control {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    font-size: 12px;
-    color: #888;
-}
-.time-window-btn {
-    background: #3c3c3c;
-    border: 1px solid #555;
-    color: #888;
-    width: 20px;
-    height: 20px;
-    border-radius: 3px;
-    cursor: pointer;
-    font-size: 11px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-.time-window-btn:hover {
-    background: #4a4a4a;
-    border-color: #569cd6;
-    color: #d4d4d4;
-}
-
-/* AG Health Content - Right Column */
-.ag-health-content {
-    display: flex;
-    flex-direction: column;
-    gap: 0;
-}
-.ag-summary-card {
-    background: #2d2d2d;
-    border: 1px solid #404040;
-    border-radius: 6px;
-    padding: 10px 12px;
-    transition: border-color 0.2s, background 0.2s;
-}
-.ag-summary-card.warning {
-    border-color: #dcdcaa;
-    background: rgba(220, 220, 170, 0.1);
-}
-.ag-summary-card.critical {
-    border-color: #f48771;
-    background: rgba(244, 135, 113, 0.1);
-}
-.ag-summary-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 3px 0;
-    font-size: 12px;
-}
-.ag-summary-row:not(:last-child) {
-    border-bottom: 1px solid #333;
-}
-.ag-summary-label {
-    color: #888;
-}
-.ag-summary-value {
-    font-weight: 500;
-    color: #d4d4d4;
-}
-.ag-summary-badge {
-    font-size: 11px;
-    padding: 2px 8px;
-    border-radius: 10px;
-    font-weight: 500;
-    text-transform: uppercase;
-}
-.ag-summary-badge.healthy {
-    background: rgba(78, 201, 176, 0.2);
-    color: #4ec9b0;
-}
-.ag-summary-badge.warning {
-    background: rgba(220, 220, 170, 0.2);
-    color: #dcdcaa;
-}
-.ag-summary-badge.critical {
-    background: rgba(244, 135, 113, 0.2);
-    color: #f48771;
-}
-.ag-summary-link {
-    color: #9cdcfe;
-    cursor: pointer;
-    transition: color 0.2s;
-}
-.ag-summary-link:hover {
-    color: #4ec9b0;
-    text-decoration: underline;
-}
-.ag-not-available {
-    color: #888;
-    font-style: italic;
+/* The percentage readout under a mini gauge. */
+.srv-mini-gauge-pct {
+    font-size: var(--font-size-content);
+    font-weight: 700;
     text-align: center;
-    padding: 10px;
-    font-size: 12px;
+    margin-top: 0;
+    line-height: 1;
 }
 
-/* AG Detail Slideout */
-.ag-detail-summary {
+/* Color state for a healthy mini-gauge reading. */
+.srv-gauge-green { }
+
+.srv-mini-gauge-pct.srv-gauge-green { color: var(--color-accent-shared); }
+
+/* Color state for a warning mini-gauge reading. */
+.srv-gauge-yellow { }
+
+.srv-mini-gauge-pct.srv-gauge-yellow { color: var(--color-accent-departmental); }
+
+/* Color state for a critical mini-gauge reading. */
+.srv-gauge-red { }
+
+.srv-mini-gauge-pct.srv-gauge-red { color: var(--color-status-critical); }
+
+/* Color state for an unreachable mini-gauge reading. */
+.srv-gauge-na { }
+
+.srv-mini-gauge-pct.srv-gauge-na {
+    color: var(--color-border-strong);
+    font-size: var(--font-size-default);
+}
+
+/* The server name label under a mini gauge. */
+.srv-mini-gauge-name {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-subtle);
+    margin-top: 1px;
+    white-space: nowrap;
+}
+
+/* Selected-state treatment for the mini-gauge name label. */
+.srv-mini-gauge-name-selected {
+    color: var(--color-accent-shared);
+    font-weight: 600;
+}
+
+/* ============================================================================
+   CONTENT: METRIC WIDGETS
+   ----------------------------------------------------------------------------
+   The metric widget cards filling the metric sections. Each card shows a
+   labeled value, an optional unit, and a status pill, with warning, critical,
+   and crisis frame treatments and a clickable affordance for drill-down.
+   Prefix: srv
+   ============================================================================ */
+
+/* The flex container arranging metric widgets in a section. */
+.srv-metrics-grid {
     display: flex;
-    gap: 15px;
-    margin-bottom: 15px;
+    flex-wrap: wrap;
+    gap: var(--size-spacing-lg);
     justify-content: center;
 }
-.ag-detail-role {
-    padding: 6px 16px;
-    border-radius: 4px;
-    font-weight: 600;
-    font-size: 14px;
-    text-transform: uppercase;
-}
-.ag-detail-role.primary {
-    background: #264f78;
-    color: #9cdcfe;
-}
-.ag-detail-role.secondary {
-    background: #3d3d3d;
-    color: #d4d4d4;
-}
-.ag-detail-health {
-    padding: 6px 16px;
-    border-radius: 4px;
-    font-weight: 500;
-    font-size: 14px;
-    text-transform: uppercase;
-}
-.ag-detail-health.healthy {
-    background: #1e3a2f;
-    color: #4ec9b0;
-}
-.ag-detail-health.warning {
-    background: #3d3a1e;
-    color: #dcdcaa;
-}
-.ag-detail-health.critical {
-    background: #3a1e1e;
-    color: #f48771;
-}
-.ag-detail-info {
-    background: #252526;
-    border-radius: 6px;
-    padding: 12px;
-    margin-bottom: 15px;
-}
-.ag-detail-row {
-    display: flex;
-    justify-content: space-between;
-    padding: 4px 0;
-    font-size: 12px;
-    border-bottom: 1px solid #333;
-}
-.ag-detail-row:last-child {
-    border-bottom: none;
-}
-.ag-detail-row span:first-child {
-    color: #888;
-}
-.ag-databases-header {
-    font-size: 13px;
-    font-weight: 600;
-    color: #569cd6;
-    margin-bottom: 10px;
-    padding-bottom: 5px;
-    border-bottom: 1px solid #404040;
-}
-.ag-database-card {
-    background: #252526;
-    border: 1px solid #333;
-    border-radius: 6px;
-    padding: 12px;
-    margin-bottom: 10px;
-}
-.ag-database-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 8px;
-}
-.ag-database-name {
-    font-weight: 600;
-    color: #d4d4d4;
-    font-size: 13px;
-}
-.ag-database-state {
-    font-size: 11px;
-    padding: 2px 8px;
-    border-radius: 3px;
-    text-transform: uppercase;
-}
-.ag-database-state.healthy {
-    background: #1e3a2f;
-    color: #4ec9b0;
-}
-.ag-database-state.warning {
-    background: #3d3a1e;
-    color: #dcdcaa;
-}
-.ag-database-state.critical {
-    background: #3a1e1e;
-    color: #f48771;
-}
-.suspended-badge {
-    display: inline-block;
-    background: #5c2020;
-    color: #f48771;
-    font-size: 10px;
-    padding: 2px 6px;
-    border-radius: 3px;
-    margin-bottom: 8px;
-}
-.ag-database-metrics {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 6px 15px;
-    font-size: 11px;
-    margin-bottom: 8px;
-}
-.ag-metric {
-    display: flex;
-    justify-content: space-between;
-}
-.ag-metric-label {
-    color: #888;
-}
-.ag-metric-value {
-    color: #4ec9b0;
-    font-weight: 500;
-}
-.ag-database-times {
-    font-size: 10px;
-    color: #666;
-    border-top: 1px solid #333;
-    padding-top: 8px;
-    margin-top: 4px;
-}
 
-/* XE Activity Cards */
-.xe-card {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 15px 16px;
-    background: #2d2d2d;
-    border: 1px solid #404040;
-    border-radius: 6px;
-    cursor: pointer;
-    transition: border-color 0.2s, background 0.2s;
-    flex: 1;
-    min-height: 150px;
-}
-.xe-card:hover {
-    border-color: #569cd6;
-}
-.xe-card.card-warning {
-    border-color: #dcdcaa;
-    background: rgba(220, 220, 170, 0.1);
-}
-.xe-card.card-critical {
-    border-color: #f48771;
-    background: rgba(244, 135, 113, 0.1);
-}
-.xe-card-label {
-    font-size: 11px;
-    color: #888;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    text-align: left;
-    align-self: flex-start;
-    margin-bottom: auto;
-}
-.xe-card-value {
-    font-size: 28px;
-    font-weight: 400;
-    color: #4ec9b0;
-}
-.xe-card-value.warning { color: #dcdcaa; }
-.xe-card-value.critical { color: #f48771; }
-.xe-card-time {
-    font-size: 10px;
-    color: #666;
-    margin-top: auto;
-}
-
-/* Info Panel */
-.info-panel { margin-bottom: 15px; }
-.server-info-content { font-size: 13px; line-height: 1.8; }
-.server-name-header {
-    font-size: 18px;
-    font-weight: 600;
-    color: #569cd6;
-    margin-bottom: 12px;
-    padding-bottom: 8px;
-    border-bottom: 1px solid #404040;
-}
-.info-row {
-    display: flex;
-    justify-content: space-between;
-    padding: 4px 0;
-    border-bottom: 1px solid #333;
-}
-.info-row:last-child { border-bottom: none; }
-.info-label { color: #888; }
-.info-value { color: #d4d4d4; font-weight: 500; }
-.info-value.primary { color: #4ec9b0; }
-.info-value.secondary { color: #dcdcaa; }
-
-/* Disk Space */
-.disk-item { margin-bottom: 12px; }
-.disk-item:last-child { margin-bottom: 0; }
-.disk-header { display: flex; justify-content: space-between; margin-bottom: 4px; font-size: 12px; }
-.disk-label { color: #d4d4d4; font-weight: 500; }
-.disk-free { color: #888; }
-.disk-segment-bar { display: flex; gap: 2px; height: 12px; }
-.disk-segment { flex: 1; background: #404040; border-radius: 1px; }
-.disk-segment.active-healthy { background: #4ec9b0; }
-.disk-segment.active-warning { background: #dcdcaa; }
-.disk-segment.active-critical { background: #f48771; }
-.disk-segment.active-crisis { background: #ff4444; }
-
-/* Metrics Grid */
-.metrics-grid { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
-
-/* Metric Widget */
-.metric-widget {
-    background: #2d2d2d;
-    border: 1px solid #404040;
-    border-radius: 6px;
-    padding: 15px;
+/* A single metric widget card. */
+.srv-metric-widget {
+    background: var(--color-bg-card-hover);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-lg);
+    padding: var(--size-spacing-xl);
     width: 300px;
     min-height: 150px;
     text-align: center;
     position: relative;
-    transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+    transition: border-color var(--duration-fast), box-shadow var(--duration-fast), background var(--duration-fast);
 }
-.metric-widget.card-warning { border-color: #dcdcaa; background: rgba(220, 220, 170, 0.1); }
-.metric-widget.card-critical { border-color: #f48771; background: rgba(244, 135, 113, 0.1); }
-.metric-widget.card-crisis { border-color: #ff4444; background: rgba(255, 0, 0, 0.1); }
-.metric-widget.clickable { cursor: pointer; }
-.metric-widget.clickable:hover {
-    border-color: #569cd6;
-    box-shadow: 0 0 8px rgba(86, 156, 214, 0.3);
+
+/* Frame treatment for a metric widget in a warning state. */
+.srv-card-warning { }
+
+.srv-metric-widget.srv-card-warning {
+    border-color: var(--color-accent-departmental);
+    background: var(--color-tint-warning);
 }
-.metric-widget.clickable::after {
+
+/* Frame treatment for a metric widget in a critical state. */
+.srv-card-critical { }
+
+.srv-metric-widget.srv-card-critical {
+    border-color: var(--color-status-critical);
+    background: var(--color-tint-critical);
+}
+
+/* Frame treatment for a metric widget in a crisis state. */
+.srv-card-crisis { }
+
+.srv-metric-widget.srv-card-crisis {
+    border-color: #ff4444;
+    background: rgba(255, 0, 0, 0.1);
+}
+
+/* Modifier marking a metric widget as clickable for drill-down. */
+.srv-clickable { }
+
+.srv-metric-widget.srv-clickable { cursor: pointer; }
+
+.srv-metric-widget.srv-clickable:hover { /* hover state for a clickable metric widget */
+    border-color: var(--color-accent-platform);
+    box-shadow: 0 0 var(--size-spacing-md) rgba(86, 156, 214, 0.3);
+}
+
+/* Drill-down chevron shown on a clickable metric widget. */
+.srv-metric-widget.srv-clickable::after {
     content: '\25B6';
     position: absolute;
-    bottom: 8px;
-    right: 10px;
-    font-size: 10px;
-    color: #555;
-    transition: color 0.2s;
+    bottom: var(--size-spacing-md);
+    right: var(--size-spacing-lg);
+    font-size: var(--font-size-default);
+    color: var(--color-border-strong);
+    transition: color var(--duration-fast);
 }
-.metric-widget.clickable:hover::after { color: #569cd6; }
 
-.metric-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
-.metric-label {
-    color: #888;
-    font-size: 11px;
+.srv-metric-widget.srv-clickable:hover::after { color: var(--color-accent-platform); }
+
+/* The metric widget header row (label left, info button right). */
+.srv-metric-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: var(--size-spacing-lg);
+}
+
+/* The metric label text. */
+.srv-metric-label {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body);
     text-transform: uppercase;
     letter-spacing: 0.5px;
     line-height: 1.3;
     flex: 1;
     text-align: left;
 }
-.metric-value { font-size: 28px; font-weight: 400; margin: 8px 0 4px 0; line-height: 1.1; }
-.metric-unit { color: #888; font-size: 11px; margin-bottom: 10px; }
-.metric-status { font-size: 11px; font-weight: 500; padding: 2px 8px; border-radius: 10px; display: inline-block; text-transform: uppercase; }
 
-/* Status Colors */
-.status-healthy { background: rgba(78, 201, 176, 0.2); color: #4ec9b0; }
-.status-warning { background: rgba(220, 220, 170, 0.2); color: #dcdcaa; }
-.status-critical { background: rgba(244, 135, 113, 0.2); color: #f48771; }
-.status-crisis { background: rgba(255, 0, 0, 0.3); color: #ff4444; }
+/* The large metric value readout. */
+.srv-metric-value {
+    font-size: 28px;
+    font-weight: 400;
+    margin: var(--size-spacing-md) 0 var(--size-spacing-xs) 0;
+    line-height: 1.1;
+}
 
-/* Info Button & Tooltip */
-.info-btn {
-    background: #3c3c3c;
-    border: 1px solid #555;
-    color: #9cdcfe;
+/* The unit caption under a metric value. */
+.srv-metric-unit {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body);
+    margin-bottom: var(--size-spacing-lg);
+}
+
+/* The status pill summarizing a metric's state. */
+.srv-metric-status {
+    font-size: var(--font-size-body);
+    font-weight: 500;
+    padding: 2px var(--size-spacing-md);
+    border-radius: 10px;
+    display: inline-block;
+    text-transform: uppercase;
+}
+
+/* Status pill coloring for a healthy metric. */
+.srv-status-healthy {
+    background: rgba(78, 201, 176, 0.2);
+    color: var(--color-accent-shared);
+}
+
+/* Status pill coloring for a warning metric. */
+.srv-status-warning {
+    background: rgba(220, 220, 170, 0.2);
+    color: var(--color-accent-departmental);
+}
+
+/* Status pill coloring for a critical metric. */
+.srv-status-critical {
+    background: rgba(244, 135, 113, 0.2);
+    color: var(--color-status-critical);
+}
+
+/* Status pill coloring for a crisis metric. */
+.srv-status-crisis {
+    background: rgba(255, 0, 0, 0.3);
+    color: #ff4444;
+}
+
+/* Round info button that reveals a metric's explanation tooltip. */
+.srv-info-btn {
+    background: var(--color-bg-card-hover);
+    border: var(--size-border-thin) solid var(--color-border-strong);
+    color: var(--color-text-link);
     width: 18px;
     height: 18px;
     border-radius: 50%;
     cursor: pointer;
-    font-size: 11px;
+    font-size: var(--font-size-body);
     font-weight: bold;
     display: flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    margin-left: 8px;
+    margin-left: var(--size-spacing-md);
 }
-.info-btn:hover { background: #4a4a4a; border-color: #569cd6; }
 
-.tooltip-container { position: relative; display: inline-block; }
-.tooltip {
+.srv-info-btn:hover { /* hover state for the info button */
+    background: #4a4a4a;
+    border-color: var(--color-accent-platform);
+}
+
+/* Wrapper anchoring an info tooltip to its trigger. */
+.srv-tooltip-container {
+    position: relative;
+    display: inline-block;
+}
+
+/* The hover tooltip panel explaining a metric. */
+.srv-tooltip {
     visibility: hidden;
     opacity: 0;
     position: absolute;
     top: 100%;
     right: 0;
-    margin-top: 8px;
+    margin-top: var(--size-spacing-md);
     background: #1a1a1a;
-    border: 1px solid #569cd6;
-    border-radius: 6px;
-    padding: 12px;
+    border: var(--size-border-thin) solid var(--color-accent-platform);
+    border-radius: var(--size-radius-lg);
+    padding: var(--size-spacing-lg);
     width: 260px;
     z-index: 100;
-    transition: opacity 0.2s;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    transition: opacity var(--duration-fast);
+    box-shadow: var(--shadow-popup);
     text-align: left;
 }
-.tooltip h4 { color: #4ec9b0; margin: 0 0 8px 0; font-size: 13px; }
-.tooltip p { margin: 0 0 8px 0; font-size: 12px; line-height: 1.4; color: #d4d4d4; }
-.tooltip ul { margin: 5px 0 0 0; padding-left: 16px; font-size: 11px; }
-.tooltip li { margin: 2px 0; }
-.tooltip .healthy { color: #4ec9b0; }
-.tooltip .warning { color: #dcdcaa; }
-.tooltip .critical { color: #f48771; }
-.tooltip .crisis { color: #ff4444; }
-.tooltip-container:hover .tooltip { visibility: visible; opacity: 1; }
 
-/* Segment Bar Gauge */
-.segment-bar { display: flex; gap: 3px; margin: 12px 0; }
-.segment { flex: 1; height: 18px; background: #404040; border-radius: 3px; transition: background 0.3s ease; }
-.segment.active-healthy { background: #4ec9b0; }
-.segment.active-warning { background: #dcdcaa; }
-.segment.active-critical { background: #f48771; }
-.segment.active-crisis { background: #ff4444; }
+/* Visible state for a metric tooltip (toggled while its trigger is hovered). */
+.srv-tooltip-visible { }
 
-/* Speedometer Gauge */
-.speedometer { position: relative; width: 140px; height: 80px; margin: 5px auto 0 auto; }
-.speedometer svg { width: 100%; height: 100%; overflow: visible; }
-.speedo-zone { fill: none; stroke-width: 12; }
-.speedo-needle { fill: #d4d4d4; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.5)); }
-.speedo-center { fill: #2d2d2d; stroke: #555; stroke-width: 2; }
-.speedo-label { font-size: 9px; fill: #666; }
+.srv-tooltip.srv-tooltip-visible { /* tooltip shown on trigger hover */
+    visibility: visible;
+    opacity: 1;
+}
 
-/* State Indicators */
-.loading { color: #888; font-style: italic; text-align: center; padding: 30px; }
-.error { color: #f48771; text-align: center; padding: 30px; }
-.no-data { color: #888; font-style: italic; text-align: center; padding: 15px; }
+/* Heading inside a metric tooltip. */
+.srv-tooltip-title {
+    color: var(--color-accent-shared);
+    margin: 0 0 var(--size-spacing-md) 0;
+    font-size: var(--font-size-content-lg);
+}
 
-.connection-error {
-    background: rgba(244, 135, 113, 0.1);
-    border: 1px solid #f48771;
-    border-radius: 6px;
-    padding: 12px 15px;
-    margin-bottom: 15px;
-    color: #f48771;
-    display: none;
+/* Paragraph text inside a metric tooltip. */
+.srv-tooltip-text {
+    margin: 0 0 var(--size-spacing-md) 0;
+    font-size: var(--font-size-content);
+    line-height: 1.4;
+    color: var(--color-text-primary);
+}
+
+/* Healthy threshold row in a metric tooltip legend. */
+.srv-tt-healthy {
+    margin: 2px 0;
+    color: var(--color-accent-shared);
+}
+
+/* Warning threshold row in a metric tooltip legend. */
+.srv-tt-warning {
+    margin: 2px 0;
+    color: var(--color-accent-departmental);
+}
+
+/* Critical threshold row in a metric tooltip legend. */
+.srv-tt-critical {
+    margin: 2px 0;
+    color: var(--color-status-critical);
+}
+
+/* Crisis threshold row in a metric tooltip legend. */
+.srv-tt-crisis {
+    margin: 2px 0;
+    color: #ff4444;
 }
 
 /* ============================================================================
-   Modal Styles
+   CONTENT: GAUGES
+   ----------------------------------------------------------------------------
+   The visual gauges rendered inside metric widgets: the segmented bar gauge
+   with per-segment severity coloring and the SVG speedometer gauge with its
+   zones, needle, and labels.
+   Prefix: srv
    ============================================================================ */
-.modal {
-    position: fixed;
-    top: 0;
-    left: 0;
+
+/* The segmented bar gauge container. */
+.srv-segment-bar {
+    display: flex;
+    gap: var(--size-spacing-sm);
+    margin: var(--size-spacing-lg) 0;
+}
+
+/* A single segment in the bar gauge. */
+.srv-segment {
+    flex: 1;
+    height: 18px;
+    background: var(--color-border-default);
+    border-radius: var(--size-radius-sm);
+    transition: background var(--duration-default) ease;
+}
+
+/* Active segment coloring at the healthy level. */
+.srv-active-healthy { }
+
+.srv-segment.srv-active-healthy { background: var(--color-accent-shared); }
+
+/* Active segment coloring at the warning level. */
+.srv-active-warning { }
+
+.srv-segment.srv-active-warning { background: var(--color-accent-departmental); }
+
+/* Active segment coloring at the critical level. */
+.srv-active-critical { }
+
+.srv-segment.srv-active-critical { background: var(--color-status-critical); }
+
+/* Active segment coloring at the crisis level. */
+.srv-active-crisis { }
+
+.srv-segment.srv-active-crisis { background: #ff4444; }
+
+/* The speedometer gauge wrapper. */
+.srv-speedometer {
+    position: relative;
+    width: 140px;
+    height: 80px;
+    margin: var(--size-spacing-sm) auto 0 auto;
+}
+
+/* The speedometer SVG element. */
+.srv-speedometer-svg {
     width: 100%;
     height: 100%;
-    background: rgba(0, 0, 0, 0.7);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1000;
+    overflow: visible;
 }
-.modal.hidden { display: none; }
 
-.modal-content {
-    background: #252526;
-    border: 1px solid #404040;
-    border-radius: 8px;
-    min-width: 400px;
-    max-width: 800px;
-    max-height: 80vh;
+/* A colored arc zone on the speedometer. */
+.srv-speedo-zone {
+    fill: none;
+    stroke-width: 12;
+}
+
+/* The speedometer needle. */
+.srv-speedo-needle {
+    fill: var(--color-text-primary);
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
+}
+
+/* The speedometer center hub. */
+.srv-speedo-center {
+    fill: var(--color-bg-card-hover);
+    stroke: var(--color-border-strong);
+    stroke-width: 2;
+}
+
+/* The speedometer scale labels. */
+.srv-speedo-label {
+    font-size: var(--font-size-sm);
+    fill: var(--color-text-subtle);
+}
+
+/* ============================================================================
+   CONTENT: XE ACTIVITY CARDS
+   ----------------------------------------------------------------------------
+   The Extended Events activity cards. Each card is a clickable tile showing a
+   category label, a count value, and a time caption, with warning and critical
+   frame and value treatments.
+   Prefix: srv
+   ============================================================================ */
+
+/* A single Extended Events activity card. */
+.srv-xe-card {
     display: flex;
     flex-direction: column;
+    align-items: center;
+    padding: var(--size-spacing-xl);
+    background: var(--color-bg-card-hover);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-lg);
+    cursor: pointer;
+    transition: border-color var(--duration-fast), background var(--duration-fast);
+    flex: 1;
+    min-height: 150px;
 }
-.modal-content.wide { width: 800px; }
 
-.modal-header {
+.srv-xe-card:hover { /* hover state for an XE activity card */ border-color: var(--color-accent-platform); }
+
+.srv-xe-card.srv-card-warning {
+    border-color: var(--color-accent-departmental);
+    background: var(--color-tint-warning);
+}
+
+.srv-xe-card.srv-card-critical {
+    border-color: var(--color-status-critical);
+    background: var(--color-tint-critical);
+}
+
+/* The category label on an XE activity card. */
+.srv-xe-card-label {
+    font-size: var(--font-size-body);
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    text-align: left;
+    align-self: flex-start;
+    margin-bottom: auto;
+}
+
+/* The count value on an XE activity card. */
+.srv-xe-card-value {
+    font-size: 28px;
+    font-weight: 400;
+    color: var(--color-accent-shared);
+}
+
+/* Warning coloring for an XE card value. */
+.srv-xe-card-value.srv-card-warning { color: var(--color-accent-departmental); }
+
+/* Critical coloring for an XE card value. */
+.srv-xe-card-value.srv-card-critical { color: var(--color-status-critical); }
+
+/* The time caption on an XE activity card. */
+.srv-xe-card-time {
+    font-size: var(--font-size-default);
+    color: var(--color-text-subtle);
+    margin-top: auto;
+}
+
+/* ============================================================================
+   CONTENT: INFO PANEL
+   ----------------------------------------------------------------------------
+   The server info panel content: a server name header followed by labeled
+   rows of server properties, with primary and secondary value treatments.
+   Prefix: srv
+   ============================================================================ */
+
+/* Bottom spacing applied to an info-column panel. */
+.srv-info-panel { margin-bottom: var(--size-spacing-lg); }
+
+/* The server info content wrapper. */
+.srv-server-info-content {
+    font-size: var(--font-size-content-lg);
+    line-height: 1.8;
+}
+
+/* The server name heading at the top of the info panel. */
+.srv-server-name-header {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--color-accent-platform);
+    margin-bottom: var(--size-spacing-lg);
+    padding-bottom: var(--size-spacing-md);
+    border-bottom: var(--size-border-thin) solid var(--color-border-default);
+}
+
+/* A labeled property row in the info panel. */
+.srv-info-row {
+    display: flex;
+    justify-content: space-between;
+    padding: var(--size-spacing-xs) 0;
+    border-bottom: var(--size-border-thin) solid var(--color-border-divider);
+}
+
+.srv-info-row:last-child { /* last info row drops its divider */ border-bottom: none; }
+
+/* The label cell of an info row. */
+.srv-info-label { color: var(--color-text-muted); }
+
+/* The value cell of an info row. */
+.srv-info-value {
+    color: var(--color-text-primary);
+    font-weight: 500;
+}
+
+/* Primary-accent treatment for an info value. */
+.srv-value-primary { }
+
+.srv-info-value.srv-value-primary { color: var(--color-accent-shared); }
+
+/* Secondary-accent treatment for an info value. */
+.srv-value-secondary { }
+
+.srv-info-value.srv-value-secondary { color: var(--color-accent-departmental); }
+
+/* ============================================================================
+   CONTENT: DISK SPACE
+   ----------------------------------------------------------------------------
+   The disk space panel content: per-drive rows with a label, free-space
+   caption, and a segmented usage bar whose active segments are colored by
+   severity.
+   Prefix: srv
+   ============================================================================ */
+
+/* The disk space panel content wrapper. */
+.srv-disk-space-content {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+
+/* A single drive entry in the disk space panel. */
+.srv-disk-item { margin-bottom: var(--size-spacing-lg); }
+
+.srv-disk-item:last-child { /* last disk item drops its spacing */ margin-bottom: 0; }
+
+/* The header row of a disk item (label left, free caption right). */
+.srv-disk-header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: var(--size-spacing-xs);
+    font-size: var(--font-size-content);
+}
+
+/* The drive label. */
+.srv-disk-label {
+    color: var(--color-text-primary);
+    font-weight: 500;
+}
+
+/* The free-space caption. */
+.srv-disk-free { color: var(--color-text-muted); }
+
+/* The segmented disk usage bar. */
+.srv-disk-segment-bar {
+    display: flex;
+    gap: 2px;
+    height: var(--size-spacing-lg);
+}
+
+/* A single segment in the disk usage bar. */
+.srv-disk-segment {
+    flex: 1;
+    background: var(--color-border-default);
+    border-radius: 1px;
+}
+
+/* Active disk segment coloring at the healthy level. */
+.srv-disk-segment.srv-active-healthy { background: var(--color-accent-shared); }
+
+/* Active disk segment coloring at the warning level. */
+.srv-disk-segment.srv-active-warning { background: var(--color-accent-departmental); }
+
+/* Active disk segment coloring at the critical level. */
+.srv-disk-segment.srv-active-critical { background: var(--color-status-critical); }
+
+/* Active disk segment coloring at the crisis level. */
+.srv-disk-segment.srv-active-crisis { background: #ff4444; }
+
+/* ============================================================================
+   CONTENT: AG HEALTH
+   ----------------------------------------------------------------------------
+   The availability group health panel content: summary cards with labeled
+   rows, status badges by severity, a drill-down link, and the not-available
+   placeholder shown for non-AG servers.
+   Prefix: srv
+   ============================================================================ */
+
+/* The AG health panel content wrapper. */
+.srv-ag-health-content {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+
+/* A summary card in the AG health panel. */
+.srv-ag-summary-card {
+    background: var(--color-bg-card-hover);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-lg);
+    padding: var(--size-spacing-lg);
+    transition: border-color var(--duration-fast), background var(--duration-fast);
+}
+
+/* Warning frame treatment for an AG summary card. */
+.srv-ag-summary-card.srv-card-warning {
+    border-color: var(--color-accent-departmental);
+    background: rgba(220, 220, 170, 0.1);
+}
+
+/* Critical frame treatment for an AG summary card. */
+.srv-ag-summary-card.srv-card-critical {
+    border-color: var(--color-status-critical);
+    background: rgba(244, 135, 113, 0.1);
+}
+
+/* A labeled row inside an AG summary card. */
+.srv-ag-summary-row {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 15px 20px;
-    border-bottom: 1px solid #404040;
+    padding: var(--size-spacing-sm) 0;
+    font-size: var(--font-size-content);
+    border-bottom: var(--size-border-thin) solid var(--color-border-divider);
 }
-.modal-header h3 { margin: 0; color: #4ec9b0; font-size: 16px; }
 
-.modal-close {
-    background: none;
-    border: none;
-    color: #888;
-    font-size: 24px;
+.srv-ag-summary-row:last-child { /* last AG summary row drops its divider */
+    border-bottom: none;
+}
+
+/* The label cell of an AG summary row. */
+.srv-ag-summary-label { color: var(--color-text-muted); }
+
+/* The value cell of an AG summary row. */
+.srv-ag-summary-value {
+    font-weight: 500;
+    color: var(--color-text-primary);
+}
+
+/* A status badge inside an AG summary card. */
+.srv-ag-summary-badge {
+    font-size: var(--font-size-body);
+    padding: 2px var(--size-spacing-md);
+    border-radius: 10px;
+    font-weight: 500;
+    text-transform: uppercase;
+}
+
+/* Healthy coloring for a status badge. */
+.srv-badge-healthy { }
+
+.srv-ag-summary-badge.srv-badge-healthy {
+    background: rgba(78, 201, 176, 0.2);
+    color: var(--color-accent-shared);
+}
+
+/* Warning coloring for a status badge. */
+.srv-badge-warning { }
+
+.srv-ag-summary-badge.srv-badge-warning {
+    background: rgba(220, 220, 170, 0.2);
+    color: var(--color-accent-departmental);
+}
+
+/* Critical coloring for a status badge. */
+.srv-badge-critical { }
+
+.srv-ag-summary-badge.srv-badge-critical {
+    background: rgba(244, 135, 113, 0.2);
+    color: var(--color-status-critical);
+}
+
+/* A clickable drill-down link in the AG panel. */
+.srv-ag-summary-link {
+    color: var(--color-text-link);
     cursor: pointer;
-    padding: 0;
-    line-height: 1;
-}
-.modal-close:hover { color: #fff; }
-
-.modal-body { padding: 20px; overflow-y: auto; color: #d4d4d4; }
-
-.modal-footer {
-    display: flex;
-    justify-content: flex-end;
-    gap: 10px;
-    padding: 15px 20px;
-    border-top: 1px solid #404040;
+    transition: color var(--duration-fast);
 }
 
-/* Zombie Modal */
-.zombie-icon { font-size: 48px; text-align: center; margin-bottom: 15px; }
-.zombie-message { text-align: center; font-size: 16px; margin-bottom: 20px; }
-.zombie-count { color: #f48771; font-weight: bold; font-size: 24px; }
-.zombie-threshold { color: #888; font-size: 13px; margin-top: 10px; text-align: center; }
+.srv-ag-summary-link:hover { /* hover state for an AG summary link */
+    color: var(--color-accent-shared);
+    text-decoration: underline;
+}
+
+/* The placeholder shown when a server is not an AG member. */
+.srv-ag-not-available {
+    color: var(--color-text-muted);
+    font-style: italic;
+    text-align: center;
+    padding: var(--size-spacing-lg);
+    font-size: var(--font-size-content);
+}
 
 /* ============================================================================
-   Button Styles
+   CONTENT: AG DETAIL
+   ----------------------------------------------------------------------------
+   The availability group replica detail slideout content: the role and health
+   summary chips, the replica info block, and per-database cards with their
+   synchronization metrics, suspend badge, and timing footer.
+   Prefix: srv
    ============================================================================ */
-.btn {
-    padding: 10px 20px;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 14px;
+
+/* The role/health summary row at the top of the AG detail slideout. */
+.srv-ag-detail-summary {
+    display: flex;
+    gap: var(--size-spacing-lg);
+    margin-bottom: var(--size-spacing-lg);
+    justify-content: center;
+}
+
+/* The replica role chip. */
+.srv-ag-detail-role {
+    padding: var(--size-spacing-sm) var(--size-spacing-xl);
+    border-radius: var(--size-radius-default);
+    font-weight: 600;
+    font-size: var(--font-size-heading-sm);
+    text-transform: uppercase;
+}
+
+/* Primary-replica coloring for the role chip. */
+.srv-role-primary { }
+
+.srv-ag-detail-role.srv-role-primary {
+    background: #264f78;
+    color: var(--color-text-link);
+}
+
+/* Secondary-replica coloring for the role chip. */
+.srv-role-secondary { }
+
+.srv-ag-detail-role.srv-role-secondary {
+    background: #3d3d3d;
+    color: var(--color-text-primary);
+}
+
+/* The replica health chip. */
+.srv-ag-detail-health {
+    padding: var(--size-spacing-sm) var(--size-spacing-xl);
+    border-radius: var(--size-radius-default);
     font-weight: 500;
-    transition: background 0.2s;
-    text-decoration: none;
+    font-size: var(--font-size-heading-sm);
+    text-transform: uppercase;
+}
+
+/* Healthy coloring for the health chip. */
+.srv-ag-detail-health.srv-badge-healthy {
+    background: #1e3a2f;
+    color: var(--color-accent-shared);
+}
+
+/* Warning coloring for the health chip. */
+.srv-ag-detail-health.srv-badge-warning {
+    background: #3d3a1e;
+    color: var(--color-accent-departmental);
+}
+
+/* Critical coloring for the health chip. */
+.srv-ag-detail-health.srv-badge-critical {
+    background: #3a1e1e;
+    color: var(--color-status-critical);
+}
+
+/* The replica info block in the AG detail slideout. */
+.srv-ag-detail-info {
+    background: var(--color-bg-card);
+    border-radius: var(--size-radius-lg);
+    padding: var(--size-spacing-lg);
+    margin-bottom: var(--size-spacing-lg);
+}
+
+/* A labeled row in the replica info block. */
+.srv-ag-detail-row {
+    display: flex;
+    justify-content: space-between;
+    padding: var(--size-spacing-xs) 0;
+    font-size: var(--font-size-content);
+    border-bottom: var(--size-border-thin) solid var(--color-border-divider);
+}
+
+.srv-ag-detail-row:last-child { /* last AG detail row drops its divider */ border-bottom: none; }
+
+/* The databases section heading in the AG detail slideout. */
+.srv-ag-databases-header {
+    font-size: var(--font-size-content-lg);
+    font-weight: 600;
+    color: var(--color-accent-platform);
+    margin-bottom: var(--size-spacing-lg);
+    padding-bottom: var(--size-spacing-sm);
+    border-bottom: var(--size-border-thin) solid var(--color-border-default);
+}
+
+/* A per-database card in the AG detail slideout. */
+.srv-ag-database-card {
+    background: var(--color-bg-card);
+    border: var(--size-border-thin) solid var(--color-border-divider);
+    border-radius: var(--size-radius-lg);
+    padding: var(--size-spacing-lg);
+    margin-bottom: var(--size-spacing-lg);
+}
+
+/* The header row of a database card. */
+.srv-ag-database-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--size-spacing-md);
+}
+
+/* The database name in a database card. */
+.srv-ag-database-name {
+    font-weight: 600;
+    color: var(--color-text-primary);
+    font-size: var(--font-size-content-lg);
+}
+
+/* The synchronization state badge on a database card. */
+.srv-ag-database-state {
+    font-size: var(--font-size-body);
+    padding: 2px var(--size-spacing-md);
+    border-radius: var(--size-radius-sm);
+    text-transform: uppercase;
+}
+
+/* Healthy coloring for a database state badge. */
+.srv-ag-database-state.srv-badge-healthy {
+    background: #1e3a2f;
+    color: var(--color-accent-shared);
+}
+
+/* Warning coloring for a database state badge. */
+.srv-ag-database-state.srv-badge-warning {
+    background: #3d3a1e;
+    color: var(--color-accent-departmental);
+}
+
+/* Critical coloring for a database state badge. */
+.srv-ag-database-state.srv-badge-critical {
+    background: #3a1e1e;
+    color: var(--color-status-critical);
+}
+
+/* The suspended badge shown on a suspended database. */
+.srv-suspended-badge {
     display: inline-block;
+    background: #5c2020;
+    color: var(--color-status-critical);
+    font-size: var(--font-size-default);
+    padding: 2px var(--size-spacing-sm);
+    border-radius: var(--size-radius-sm);
+    margin-bottom: var(--size-spacing-md);
 }
-.btn-primary { background: #0e639c; color: #fff; }
-.btn-primary:hover { background: #1177bb; }
-.btn-danger { background: #c42b1c; color: #fff; }
-.btn-danger:hover { background: #d63b2c; }
-.btn-secondary { background: #3c3c3c; color: #d4d4d4; }
-.btn-secondary:hover { background: #4a4a4a; }
-.btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-/* Result Messages */
-.result-success {
-    background: rgba(78, 201, 176, 0.15);
-    border: 1px solid #4ec9b0;
-    border-radius: 4px;
-    padding: 12px 15px;
-    color: #4ec9b0;
-    text-align: center;
+/* The two-column metrics grid inside a database card. */
+.srv-ag-database-metrics {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--size-spacing-sm) var(--size-spacing-lg);
+    font-size: var(--font-size-body);
+    margin-bottom: var(--size-spacing-md);
 }
-.result-error {
-    background: rgba(244, 135, 113, 0.15);
-    border: 1px solid #f48771;
-    border-radius: 4px;
-    padding: 12px 15px;
-    color: #f48771;
-    text-align: center;
+
+/* A single labeled metric in a database card. */
+.srv-ag-metric {
+    display: flex;
+    justify-content: space-between;
+}
+
+/* The label cell of a database metric. */
+.srv-ag-metric-label { color: var(--color-text-muted); }
+
+/* The value cell of a database metric. */
+.srv-ag-metric-value {
+    color: var(--color-accent-shared);
+    font-weight: 500;
+}
+
+/* The timing footer of a database card. */
+.srv-ag-database-times {
+    font-size: var(--font-size-default);
+    color: var(--color-text-subtle);
+    border-top: var(--size-border-thin) solid var(--color-border-divider);
+    padding-top: var(--size-spacing-md);
+    margin-top: var(--size-spacing-xs);
+}
+
+/* The state-transition row in an AG event card. */
+.srv-state-transition {
+    margin-top: var(--size-spacing-sm);
+    padding: var(--size-spacing-sm);
+    background: var(--color-bg-card);
+    border-radius: var(--size-radius-default);
+    font-size: var(--font-size-content);
+}
+
+/* The previous-state value in an AG event transition. */
+.srv-state-from { color: var(--color-status-critical); }
+
+/* The current-state value in an AG event transition. */
+.srv-state-to { color: var(--color-accent-shared); }
+
+/* The error line in an AG event card. */
+.srv-event-error {
+    font-size: var(--font-size-body);
+    color: var(--color-status-critical);
+    margin-top: var(--size-spacing-sm);
 }
 
 /* ============================================================================
-   Slide Panel Width Overrides
-   ============================================================================
-   Base styles come from engine-events.css (.slide-panel.wide is 700px).
-   engine-events.css loads AFTER this file, so an unscoped .slide-panel.wide
-   override would be cascaded over. ID-scoped selectors raise specificity
-   above the shared rule. All panels on this page use 950px for comfortable
-   query text and detail viewing.
+   CONTENT: STATE INDICATORS
+   ----------------------------------------------------------------------------
+   Shared in-panel state messages: the loading, error, and no-data
+   placeholders used across the metric sections and slideout bodies.
+   Prefix: srv
    ============================================================================ */
-#trans-panel.slide-panel.wide,
-#blocking-panel.slide-panel.wide,
-#requests-panel.slide-panel.wide,
-#xe-lrq-panel.slide-panel.wide,
-#xe-blocking-panel.slide-panel.wide,
-#xe-deadlock-panel.slide-panel.wide,
-#xe-ls-inbound-panel.slide-panel.wide,
-#xe-ls-outbound-panel.slide-panel.wide,
-#xe-ag-events-panel.slide-panel.wide,
-#ag-detail-panel.slide-panel.wide,
-#xe-system-health-panel.slide-panel.wide {
-    width: 950px;
-    right: -970px;
-}
-#trans-panel.slide-panel.wide.open,
-#blocking-panel.slide-panel.wide.open,
-#requests-panel.slide-panel.wide.open,
-#xe-lrq-panel.slide-panel.wide.open,
-#xe-blocking-panel.slide-panel.wide.open,
-#xe-deadlock-panel.slide-panel.wide.open,
-#xe-ls-inbound-panel.slide-panel.wide.open,
-#xe-ls-outbound-panel.slide-panel.wide.open,
-#xe-ag-events-panel.slide-panel.wide.open,
-#ag-detail-panel.slide-panel.wide.open,
-#xe-system-health-panel.slide-panel.wide.open {
-    right: 0;
+
+/* Centered loading placeholder text. */
+.srv-loading {
+    color: var(--color-text-muted);
+    font-style: italic;
+    text-align: center;
+    padding: 30px;
 }
 
-/* Slide Panel Footer */
-.slide-panel-footer {
-    padding: 12px 16px;
-    border-top: 1px solid #404040;
-    background: #2d2d2d;
-    display: flex;
-    justify-content: flex-end;
-    gap: 8px;
-    flex-shrink: 0;
+/* Centered error placeholder text. */
+.srv-error {
+    color: var(--color-status-critical);
+    text-align: center;
+    padding: 30px;
 }
 
-/* Transactions Table */
-.trans-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-.trans-table th {
-    background: #1e1e1e;
-    padding: 8px 10px;
+/* Centered no-data placeholder text. */
+.srv-no-data {
+    color: var(--color-text-muted);
+    font-style: italic;
+    text-align: center;
+    padding: var(--size-spacing-lg);
+}
+
+/* The small time-window subtitle shown beside a slideout title. */
+.srv-slideout-subtitle {
+    font-size: var(--font-size-content);
+    font-weight: 400;
+    color: var(--color-text-muted);
+    margin-left: var(--size-spacing-sm);
+}
+
+/* The count summary line at the top of a detail slideout body. */
+.srv-panel-summary {
+    margin-bottom: var(--size-spacing-md);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body);
+}
+
+/* Utility class hiding a collapsible element. */
+.srv-hidden { display: none; }
+
+/* ============================================================================
+   CONTENT: TRANSACTIONS TABLE
+   ----------------------------------------------------------------------------
+   The open transactions table shown in the transactions slideout: a sticky
+   header, hover-highlighted rows, and spid and idle severity cell
+   treatments.
+   Prefix: srv
+   ============================================================================ */
+
+/* The open transactions table. */
+.srv-trans-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--font-size-content);
+}
+
+/* The sticky header cells of the transactions table. */
+.srv-trans-th {
+    background: var(--color-bg-page);
+    padding: var(--size-spacing-md) var(--size-spacing-lg);
     text-align: left;
-    color: #888;
+    color: var(--color-text-muted);
     font-weight: 500;
-    border-bottom: 1px solid #404040;
+    border-bottom: var(--size-border-thin) solid var(--color-border-default);
     position: sticky;
     top: 0;
 }
-.trans-table td { padding: 8px 10px; border-bottom: 1px solid #333; color: #d4d4d4; }
-.trans-table tr:hover td { background: rgba(86, 156, 214, 0.1); }
-.trans-table .spid { font-weight: bold; color: #569cd6; }
-.trans-table .idle-warning { color: #dcdcaa; }
-.trans-table .idle-critical { color: #f48771; }
 
-/* Blocking Panel */
-.blocker-section { margin-bottom: 20px; }
-.blocker-section h4 {
-    color: #f48771;
-    margin: 0 0 10px 0;
-    font-size: 13px;
+/* The body cells of the transactions table. */
+.srv-trans-td {
+    padding: var(--size-spacing-md) var(--size-spacing-lg);
+    border-bottom: var(--size-border-thin) solid var(--color-border-divider);
+    color: var(--color-text-primary);
+}
+
+/* A data row in the transactions table. */
+.srv-trans-row { }
+
+.srv-trans-row:hover { /* hover highlight for a transaction row */
+    background: rgba(86, 156, 214, 0.1);
+}
+
+/* The spid cell treatment in the transactions table. */
+.srv-trans-spid {
+    font-weight: bold;
+    color: var(--color-accent-platform);
+}
+
+/* Warning treatment for an idle-time cell. */
+.srv-idle-warning { color: var(--color-accent-departmental); }
+
+/* Critical treatment for an idle-time cell. */
+.srv-idle-critical { color: var(--color-status-critical); }
+
+/* ============================================================================
+   CONTENT: BLOCKING PANEL
+   ----------------------------------------------------------------------------
+   The blocking details slideout content: blocker and blocked sections, blocker
+   cards with lead-blocker emphasis, status badges, detail rows, query blocks,
+   and the wait-info caption.
+   Prefix: srv
+   ============================================================================ */
+
+/* A section grouping blocker or blocked cards. */
+.srv-blocker-section { margin-bottom: var(--size-spacing-2xl); }
+
+/* The heading of a blocker section. */
+.srv-blocker-section-title {
+    color: var(--color-status-critical);
+    margin: 0 0 var(--size-spacing-lg) 0;
+    font-size: var(--font-size-content-lg);
     text-transform: uppercase;
     letter-spacing: 0.5px;
 }
-.blocker-section.blocked h4 { color: #dcdcaa; }
-.blocker-card {
-    background: #1e1e1e;
-    border: 1px solid #404040;
-    border-radius: 4px;
-    padding: 12px;
-    margin-bottom: 10px;
+
+/* Modifier marking the blocked-victims section. */
+.srv-section-blocked { }
+
+/* Heading treatment for the blocked-victims section title. */
+.srv-blocker-section-title-blocked { color: var(--color-accent-departmental); }
+
+/* A blocker or blocked session card. */
+.srv-blocker-card {
+    background: var(--color-bg-page);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-default);
+    padding: var(--size-spacing-lg);
+    margin-bottom: var(--size-spacing-lg);
 }
-.blocker-card.lead-blocker {
-    border-color: #f48771;
+
+/* Emphasis treatment for the lead blocker card. */
+.srv-lead-blocker { }
+
+.srv-blocker-card.srv-lead-blocker {
+    border-color: var(--color-status-critical);
     border-width: 2px;
 }
-.blocker-header {
+
+/* The header row of a blocker card. */
+.srv-blocker-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 8px;
+    margin-bottom: var(--size-spacing-md);
 }
-.blocker-spid {
+
+/* The spid label on a blocker card. */
+.srv-blocker-spid {
     font-weight: bold;
-    color: #569cd6;
-    font-size: 14px;
+    color: var(--color-accent-platform);
+    font-size: var(--font-size-heading-sm);
 }
-.blocker-status {
-    font-size: 11px;
-    padding: 2px 8px;
+
+/* The status badge on a blocker card. */
+.srv-blocker-status {
+    font-size: var(--font-size-body);
+    padding: 2px var(--size-spacing-md);
     border-radius: 10px;
     background: rgba(244, 135, 113, 0.2);
-    color: #f48771;
+    color: var(--color-status-critical);
     text-transform: uppercase;
 }
-.blocker-status.sleeping {
+
+/* Sleeping-state coloring for a blocker status badge. */
+.srv-status-sleeping { }
+
+.srv-blocker-status.srv-status-sleeping {
     background: rgba(220, 220, 170, 0.2);
-    color: #dcdcaa;
+    color: var(--color-accent-departmental);
 }
-.blocker-details {
-    font-size: 12px;
-    color: #888;
+
+/* The detail text block on a blocker card. */
+.srv-blocker-details {
+    font-size: var(--font-size-content);
+    color: var(--color-text-muted);
     line-height: 1.6;
 }
-.blocker-details span { color: #d4d4d4; }
-.blocker-query {
-    background: #2d2d2d;
-    border: 1px solid #404040;
-    border-radius: 4px;
-    padding: 8px;
-    margin-top: 8px;
-    font-family: 'Consolas', monospace;
-    font-size: 11px;
-    color: #ce9178;
+
+/* A highlighted value inside a blocker, request, or detail line. */
+.srv-detail-value { color: var(--color-text-primary); }
+
+/* The query text block on a blocker card. */
+.srv-blocker-query {
+    background: var(--color-bg-card-hover);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-default);
+    padding: var(--size-spacing-md);
+    margin-top: var(--size-spacing-md);
+    font-family: var(--font-family-monospace);
+    font-size: var(--font-size-body);
+    color: var(--color-text-pre);
     max-height: 80px;
     overflow-y: auto;
     white-space: pre-wrap;
     word-break: break-all;
 }
-.blocked-by {
-    font-size: 11px;
-    color: #888;
-    margin-bottom: 5px;
-}
-.blocked-by span { color: #f48771; }
-.wait-info {
-    display: inline-block;
-    font-size: 11px;
-    padding: 2px 6px;
-    background: rgba(220, 220, 170, 0.15);
-    color: #dcdcaa;
-    border-radius: 3px;
-    margin-left: 10px;
+
+/* The blocked-by caption on a victim card. */
+.srv-blocked-by {
+    font-size: var(--font-size-body);
+    color: var(--color-text-muted);
+    margin-bottom: var(--size-spacing-sm);
 }
 
-/* Active Requests Panel */
-.request-card {
-    background: #1e1e1e;
-    border: 1px solid #404040;
-    border-radius: 4px;
-    padding: 12px;
-    margin-bottom: 10px;
+/* A highlighted SPID value inside the blocked-by caption. */
+.srv-blocked-by-value { color: var(--color-status-critical); }
+
+/* The wait-info chip shown on a victim row. */
+.srv-wait-info {
+    display: inline-block;
+    font-size: var(--font-size-body);
+    padding: 2px var(--size-spacing-sm);
+    background: rgba(220, 220, 170, 0.15);
+    color: var(--color-accent-departmental);
+    border-radius: var(--size-radius-sm);
+    margin-left: var(--size-spacing-lg);
 }
-.request-card.long-running {
-    border-color: #dcdcaa;
+
+/* ============================================================================
+   CONTENT: ACTIVE REQUESTS PANEL
+   ----------------------------------------------------------------------------
+   The active requests slideout content: request cards with long-running
+   emphasis, header with spid and duration badge, detail rows, a stats row, a
+   wait caption, and a query block.
+   Prefix: srv
+   ============================================================================ */
+
+/* A single active request card. */
+.srv-request-card {
+    background: var(--color-bg-page);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-default);
+    padding: var(--size-spacing-lg);
+    margin-bottom: var(--size-spacing-lg);
 }
-.request-card.very-long-running {
-    border-color: #f48771;
-}
-.request-header {
+
+/* Emphasis for a long-running request. */
+.srv-long-running { }
+
+.srv-request-card.srv-long-running { border-color: var(--color-accent-departmental); }
+
+/* Emphasis for a very-long-running request. */
+.srv-very-long-running { }
+
+.srv-request-card.srv-very-long-running { border-color: var(--color-status-critical); }
+
+/* The header row of a request card. */
+.srv-request-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 8px;
+    margin-bottom: var(--size-spacing-md);
 }
-.request-spid {
+
+/* The spid label on a request card. */
+.srv-request-spid {
     font-weight: bold;
-    color: #569cd6;
-    font-size: 14px;
+    color: var(--color-accent-platform);
+    font-size: var(--font-size-heading-sm);
 }
-.request-duration {
-    font-size: 12px;
-    padding: 2px 8px;
+
+/* The duration badge on a request card. */
+.srv-request-duration {
+    font-size: var(--font-size-content);
+    padding: 2px var(--size-spacing-md);
     border-radius: 10px;
     background: rgba(78, 201, 176, 0.2);
-    color: #4ec9b0;
+    color: var(--color-accent-shared);
     text-transform: uppercase;
 }
-.request-duration.warning {
+
+/* Warning coloring for a request duration badge. */
+.srv-duration-warning { }
+
+.srv-request-duration.srv-duration-warning {
     background: rgba(220, 220, 170, 0.2);
-    color: #dcdcaa;
+    color: var(--color-accent-departmental);
 }
-.request-duration.critical {
+
+/* Critical coloring for a request duration badge. */
+.srv-duration-critical { }
+
+.srv-request-duration.srv-duration-critical {
     background: rgba(244, 135, 113, 0.2);
-    color: #f48771;
+    color: var(--color-status-critical);
 }
-.request-details {
-    font-size: 12px;
-    color: #888;
+
+/* The detail text block on a request card. */
+.srv-request-details {
+    font-size: var(--font-size-content);
+    color: var(--color-text-muted);
     line-height: 1.6;
 }
-.request-details span { color: #d4d4d4; }
-.request-stats {
+
+/* The stats row on a request card. */
+.srv-request-stats {
     display: flex;
-    gap: 15px;
-    margin-top: 8px;
-    font-size: 11px;
-    color: #888;
+    gap: var(--size-spacing-lg);
+    margin-top: var(--size-spacing-md);
+    font-size: var(--font-size-body);
+    color: var(--color-text-muted);
 }
-.request-stats .stat-value { color: #4ec9b0; }
-.request-wait {
-    margin-top: 6px;
-    font-size: 11px;
-    padding: 4px 8px;
+
+/* A highlighted stat value in the request stats row. */
+.srv-stat-value { color: var(--color-accent-shared); }
+
+/* The wait caption on a request card. */
+.srv-request-wait {
+    margin-top: var(--size-spacing-sm);
+    font-size: var(--font-size-body);
+    padding: var(--size-spacing-xs) var(--size-spacing-md);
     background: rgba(220, 220, 170, 0.1);
-    border-radius: 3px;
-    color: #dcdcaa;
+    border-radius: var(--size-radius-sm);
+    color: var(--color-accent-departmental);
 }
-.request-wait.blocked {
+
+/* Blocked-state coloring for a request wait caption. */
+.srv-wait-blocked { }
+
+.srv-request-wait.srv-wait-blocked {
     background: rgba(244, 135, 113, 0.1);
-    color: #f48771;
+    color: var(--color-status-critical);
 }
-.request-query {
-    background: #2d2d2d;
-    border: 1px solid #404040;
-    border-radius: 4px;
-    padding: 8px;
-    margin-top: 8px;
-    font-family: 'Consolas', monospace;
-    font-size: 11px;
-    color: #ce9178;
+
+/* The query text block on a request card. */
+.srv-request-query {
+    background: var(--color-bg-card-hover);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-default);
+    padding: var(--size-spacing-md);
+    margin-top: var(--size-spacing-md);
+    font-family: var(--font-family-monospace);
+    font-size: var(--font-size-body);
+    color: var(--color-text-pre);
     max-height: 80px;
     overflow-y: auto;
     white-space: pre-wrap;
     word-break: break-all;
 }
 
-/* Query Text Section (scrollable) */
-.query-text-section {
-    margin-top: 10px;
-    border-top: 1px solid #404040;
-    padding-top: 8px;
+/* ============================================================================
+   CONTENT: QUERY TEXT
+   ----------------------------------------------------------------------------
+   Shared scrollable query-text presentation used inside detail cards: the
+   labeled query section, the scrollable content blocks, and the
+   expand/collapse control for long detail bodies.
+   Prefix: srv
+   ============================================================================ */
+
+/* A bordered query-text section within a detail card. */
+.srv-query-text-section {
+    margin-top: var(--size-spacing-lg);
+    border-top: var(--size-border-thin) solid var(--color-border-default);
+    padding-top: var(--size-spacing-md);
 }
-.query-text-label {
-    font-size: 11px;
-    color: #888;
-    margin-bottom: 4px;
+
+/* The label above a query-text block. */
+.srv-query-text-label {
+    font-size: var(--font-size-body);
+    color: var(--color-text-muted);
+    margin-bottom: var(--size-spacing-xs);
 }
-.query-text-content {
-    background: #1e1e1e;
-    border: 1px solid #404040;
-    border-radius: 4px;
-    padding: 8px;
-    font-family: 'Consolas', monospace;
-    font-size: 11px;
-    color: #ce9178;
-    max-height: 120px;
-    overflow-y: auto;
-    white-space: pre-wrap;
-    word-break: break-all;
-    line-height: 1.4;
-}
-.query-text-scroll {
-    background: #1e1e1e;
-    border: 1px solid #404040;
-    border-radius: 4px;
-    padding: 8px;
-    font-family: 'Consolas', monospace;
-    font-size: 11px;
-    color: #ce9178;
+
+/* A taller scrollable query-text block. */
+.srv-query-text-scroll {
+    background: var(--color-bg-page);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-default);
+    padding: var(--size-spacing-md);
+    font-family: var(--font-family-monospace);
+    font-size: var(--font-size-body);
+    color: var(--color-text-pre);
     max-height: 150px;
     overflow-y: auto;
     white-space: pre-wrap;
@@ -971,115 +1415,316 @@ a { color: #9cdcfe; }
     line-height: 1.4;
 }
 
-/* Expand/Collapse Section */
-.expand-collapse-section {
-    margin-top: 10px;
-    border-top: 1px solid #404040;
-    padding-top: 8px;
-}
-.expand-toggle {
-    cursor: pointer;
-    color: #4ec9b0;
-    font-size: 12px;
-    padding: 4px 0;
-    user-select: none;
-}
-.expand-toggle:hover {
-    color: #6ed7c5;
-}
-.expand-icon {
-    display: inline-block;
-    width: 12px;
-    font-size: 10px;
-    transition: transform 0.2s ease;
-}
-.expand-content {
-    margin-top: 8px;
-    padding-left: 12px;
-    border-left: 2px solid #404040;
+/* An expand/collapse section within a detail card. */
+.srv-expand-collapse-section {
+    margin-top: var(--size-spacing-lg);
+    border-top: var(--size-border-thin) solid var(--color-border-default);
+    padding-top: var(--size-spacing-md);
 }
 
-/* Victim Card Styles */
-.victim-card {
-    background: #252526;
-    border: 1px solid #383838;
-    border-radius: 4px;
-    padding: 10px;
-    margin-bottom: 8px;
+/* The clickable expand/collapse toggle. */
+.srv-expand-toggle {
+    cursor: pointer;
+    color: var(--color-accent-shared);
+    font-size: var(--font-size-content);
+    padding: var(--size-spacing-xs) 0;
+    user-select: none;
 }
-.victim-card:last-child {
-    margin-bottom: 0;
+
+.srv-expand-toggle:hover { /* hover state for the expand toggle */ color: #6ed7c5; }
+
+/* The rotating chevron icon on the expand toggle. */
+.srv-expand-icon {
+    display: inline-block;
+    width: var(--size-spacing-lg);
+    font-size: var(--font-size-default);
+    transition: transform var(--duration-fast) ease;
 }
-.victim-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 6px;
+
+/* The revealed content under an expand toggle. */
+.srv-expand-content {
+    margin-top: var(--size-spacing-md);
+    padding-left: var(--size-spacing-lg);
+    border-left: 2px solid var(--color-border-default);
 }
-.victim-spid {
-    font-weight: 600;
-    color: #dcdcaa;
-}
-.victim-wait {
-    font-size: 12px;
-    color: #888;
-}
-.victim-wait.warning {
-    color: #dcdcaa;
-}
-.victim-wait.critical {
-    color: #f48771;
-}
-.victim-details {
-    font-size: 11px;
-    color: #888;
-    margin-bottom: 4px;
-}
-.victim-details span {
-    color: #9cdcfe;
+
+/* The first/last occurrence caption under a detail card body. */
+.srv-query-meta {
+    font-size: var(--font-size-default);
+    color: var(--color-text-subtle);
+    margin-top: var(--size-spacing-sm);
 }
 
 /* ============================================================================
-   Trend Chart
+   CONTENT: VICTIM CARDS
+   ----------------------------------------------------------------------------
+   The blocking-victim cards shown in the blocking detail views: a header with
+   spid and wait severity, and a detail line with emphasized values.
+   Prefix: srv
    ============================================================================ */
-.trend-chart-container { width: 100%; height: 300px; margin-top: 10px; }
-.trend-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px; }
-.trend-left { display: flex; flex-direction: column; gap: 10px; }
-.trend-metric-name { font-size: 14px; color: #888; }
-.trend-current-value { font-size: 24px; font-weight: 400; }
 
-/* Trend Range Selector */
-.trend-range-selector { display: flex; gap: 4px; }
-.trend-range-btn {
-    background: #3c3c3c;
-    border: 1px solid #555;
-    color: #888;
-    padding: 4px 12px;
-    font-size: 12px;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    border-radius: 3px;
+/* A single blocking-victim card. */
+.srv-victim-card {
+    background: var(--color-bg-card);
+    border: var(--size-border-thin) solid var(--color-border-subtle);
+    border-radius: var(--size-radius-default);
+    padding: var(--size-spacing-lg);
+    margin-bottom: var(--size-spacing-md);
 }
-.trend-range-btn:hover { border-color: #4ec9b0; color: #d4d4d4; }
-.trend-range-btn.active {
-    background: #4ec9b0;
-    border-color: #4ec9b0;
-    color: #1e1e1e;
+
+.srv-victim-card:last-child { /* last victim card drops its spacing */ margin-bottom: 0; }
+
+/* The header row of a victim card. */
+.srv-victim-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--size-spacing-sm);
+}
+
+/* The spid label on a victim card. */
+.srv-victim-spid {
+    font-weight: 600;
+    color: var(--color-accent-departmental);
+}
+
+/* The wait caption on a victim card. */
+.srv-victim-wait {
+    font-size: var(--font-size-content);
+    color: var(--color-text-muted);
+}
+
+/* Warning coloring for a victim wait caption. */
+.srv-wait-warning { }
+
+.srv-victim-wait.srv-wait-warning { color: var(--color-accent-departmental); }
+
+/* Critical coloring for a victim wait caption. */
+.srv-wait-critical { }
+
+.srv-victim-wait.srv-wait-critical { color: var(--color-status-critical); }
+
+/* The detail line on a victim card. */
+.srv-victim-details {
+    font-size: var(--font-size-body);
+    color: var(--color-text-muted);
+    margin-bottom: var(--size-spacing-xs);
+}
+
+/* A highlighted value inside a victim detail line. */
+.srv-victim-value { color: var(--color-text-link); }
+
+/* The deadlock victim block in a deadlock detail card. */
+.srv-deadlock-victim {
+    margin: var(--size-spacing-md) 0;
+    padding: var(--size-spacing-md);
+    background: #3a2020;
+    border-radius: var(--size-radius-default);
+    border-left: 3px solid var(--color-status-critical);
+}
+
+/* The label heading the deadlock victim block. */
+.srv-deadlock-victim-label {
+    color: var(--color-status-critical);
+    font-weight: 500;
+    margin-bottom: var(--size-spacing-sm);
+}
+
+/* The deadlock survivor block in a deadlock detail card. */
+.srv-deadlock-survivor {
+    margin: var(--size-spacing-md) 0;
+    padding: var(--size-spacing-md);
+    background: #203a20;
+    border-radius: var(--size-radius-default);
+    border-left: 3px solid var(--color-accent-shared);
+}
+
+/* The label heading the deadlock survivor block. */
+.srv-deadlock-survivor-label {
+    color: var(--color-accent-shared);
+    font-weight: 500;
+    margin-bottom: var(--size-spacing-sm);
+}
+
+/* ============================================================================
+   CONTENT: TREND CHART
+   ----------------------------------------------------------------------------
+   The metric trend modal content: the chart container, the header with metric
+   name and current value, the range selector buttons, and the loading and
+   aggregation-note captions.
+   Prefix: srv
+   ============================================================================ */
+
+/* The trend chart canvas container. */
+.srv-trend-chart-container {
+    width: 100%;
+    height: 300px;
+    margin-top: var(--size-spacing-lg);
+}
+
+/* The header row of the trend modal. */
+.srv-trend-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: var(--size-spacing-lg);
+}
+
+/* The left side of the trend header (name and range selector). */
+.srv-trend-left {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-spacing-lg);
+}
+
+/* The trend metric name caption. */
+.srv-trend-metric-name {
+    font-size: var(--font-size-heading-sm);
+    color: var(--color-text-muted);
+}
+
+/* The current-value readout in the trend header. */
+.srv-trend-current-value {
+    font-size: 24px;
+    font-weight: 400;
+}
+
+/* The range selector button group. */
+.srv-trend-range-selector {
+    display: flex;
+    gap: var(--size-spacing-xs);
+}
+
+/* Centered modifier for the range selector (used in the time-window modal). */
+.srv-centered { }
+
+.srv-trend-range-selector.srv-centered { justify-content: center; }
+
+/* A range selector button. */
+.srv-trend-range-btn {
+    background: var(--color-bg-card-hover);
+    border: var(--size-border-thin) solid var(--color-border-strong);
+    color: var(--color-text-muted);
+    padding: var(--size-spacing-xs) var(--size-spacing-lg);
+    font-size: var(--font-size-content);
+    cursor: pointer;
+    transition: all var(--duration-fast) ease;
+    border-radius: var(--size-radius-sm);
+}
+
+.srv-trend-range-btn:hover { /* hover state for a range selector button */
+    border-color: var(--color-accent-shared);
+    color: var(--color-text-primary);
+}
+
+/* Active state for a range selector button. */
+.srv-active { }
+
+.srv-trend-range-btn.srv-active {
+    background: var(--color-accent-shared);
+    border-color: var(--color-accent-shared);
+    color: var(--color-bg-page);
     font-weight: 600;
 }
-.trend-loading {
+
+/* The loading caption shown while trend data loads. */
+.srv-trend-loading {
     text-align: center;
-    padding: 20px;
-    color: #888;
-    font-style: italic;
-}
-.trend-loading.hidden { display: none; }
-.trend-note {
-    text-align: center;
-    font-size: 11px;
-    color: #666;
-    margin-top: 8px;
+    padding: var(--size-spacing-2xl);
+    color: var(--color-text-muted);
     font-style: italic;
 }
 
-/* Engine Indicator Cards: base styles are provided by engine-events.css */
+/* The aggregation note caption under the trend chart. */
+.srv-trend-note {
+    text-align: center;
+    font-size: var(--font-size-body);
+    color: var(--color-text-subtle);
+    margin-top: var(--size-spacing-md);
+    font-style: italic;
+}
+
+/* ============================================================================
+   CONTENT: TIME WINDOW CONTROL
+   ----------------------------------------------------------------------------
+   The Extended Events time-window control in the activity section header and
+   the prompt and buttons inside the time-window selector modal.
+   Prefix: srv
+   ============================================================================ */
+
+/* The inline time-window control in the XE activity section header. */
+.srv-time-window-control {
+    display: flex;
+    align-items: center;
+    gap: var(--size-spacing-xs);
+    font-size: var(--font-size-content);
+    color: var(--color-text-muted);
+}
+
+/* The gear button that opens the time-window modal. */
+.srv-time-window-btn {
+    background: var(--color-bg-card-hover);
+    border: var(--size-border-thin) solid var(--color-border-strong);
+    color: var(--color-text-muted);
+    width: 20px;
+    height: 20px;
+    border-radius: var(--size-radius-sm);
+    cursor: pointer;
+    font-size: var(--font-size-body);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.srv-time-window-btn:hover { /* hover state for the time-window button */
+    background: #4a4a4a;
+    border-color: var(--color-accent-platform);
+    color: var(--color-text-primary);
+}
+
+/* The prompt text in the time-window selector modal. */
+.srv-xe-time-prompt {
+    text-align: center;
+    color: var(--color-text-muted);
+    margin: 0 0 var(--size-spacing-lg) 0;
+}
+
+/* A time-window choice button in the selector modal. */
+.srv-xe-time-btn { min-width: 48px; }
+
+/* ============================================================================
+   CONTENT: ZOMBIE MODAL
+   ----------------------------------------------------------------------------
+   The zombie-kill confirmation modal content: the icon, the confirmation
+   message with its highlighted count, and the threshold caption.
+   Prefix: srv
+   ============================================================================ */
+
+/* The icon block at the top of the zombie modal. */
+.srv-zombie-icon {
+    font-size: 48px;
+    text-align: center;
+    margin-bottom: var(--size-spacing-lg);
+}
+
+/* The confirmation message in the zombie modal. */
+.srv-zombie-message {
+    text-align: center;
+    font-size: var(--font-size-heading-lg);
+    margin-bottom: var(--size-spacing-2xl);
+}
+
+/* The highlighted zombie count in the confirmation message. */
+.srv-zombie-count {
+    color: var(--color-status-critical);
+    font-weight: bold;
+    font-size: 24px;
+}
+
+/* The threshold caption under the confirmation message. */
+.srv-zombie-threshold {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-content-lg);
+    margin-top: var(--size-spacing-lg);
+    text-align: center;
+}
