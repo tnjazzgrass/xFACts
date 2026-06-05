@@ -104,6 +104,7 @@ The header bar is the first content element after `$navHtml`. Its structure is e
     <div>
         $headerHtml
     </div>
+    <div class="cc-header-center">...</div>     <!-- optional, see §2.1.2 -->
     <div class="cc-header-right">
         <div class="cc-refresh-info">...</div>
         <div class="cc-engine-row">...</div>     <!-- optional, see §2.3 -->
@@ -113,10 +114,16 @@ The header bar is the first content element after `$navHtml`. Its structure is e
 
 #### 2.1.1 Rules
 
-- The outer container is exactly `<div class="cc-header-bar">`.
+- The outer container is `<div class="cc-header-bar">`, carrying `cc-has-center` when a center column is present (§2.1.2).
 - The first child is exactly an unattributed `<div>` containing only the `$headerHtml` substitution from `Get-PageHeaderHtml`. The route file declares `$headerHtml = Get-PageHeaderHtml -PageRoute '<route>'` before the HTML here-string. No hardcoded title content.
-- The second child is exactly `<div class="cc-header-right">`.
+- An optional `<div class="cc-header-center">` child follows the `$headerHtml` div when present (§2.1.2).
+- The next child is exactly `<div class="cc-header-right">`.
 - `cc-header-right` contains exactly `<div class="cc-refresh-info">` followed optionally by `<div class="cc-engine-row">`. No other children.
+
+#### 2.1.2 Center column
+
+- The center column is optional; it hosts a page-owned control. When present, the outer container carries `cc-has-center`. The column's contents follow §4 and §6-§10.
+- `cc-has-center` and the `cc-header-center` child are paired: one without the other is drift.
 
 ### 2.2 Refresh info block
 
@@ -623,6 +630,8 @@ The chrome classes and platform-owned attributes referenced by this spec are def
 |---|---|
 | `cc-header-bar` | Page header bar outer container (§2.1) |
 | `cc-header-right` | Header bar right-side container (§2.1) |
+| `cc-has-center` | Header bar center-column modifier (§2.1.2) |
+| `cc-header-center` | Header bar center column container (§2.1.2) |
 | `cc-refresh-info` | Refresh info block container (§2.2) |
 | `cc-live-indicator` | Pulsing live-state dot (§2.2) |
 | `cc-last-updated` | Last-update timestamp span (§2.2) |
@@ -702,7 +711,7 @@ Each rule that the populator enforces produces one drift code. This table is the
 | `FORBIDDEN_HARDCODED_PAGE_HEADER` | Page header hardcoded instead of `$headerHtml`. | §2.1 |
 | `MISSING_HEADER_HTML_VAR` | Route file does not declare `$headerHtml` from `Get-PageHeaderHtml`. | §2.1 |
 | `MISSING_BANNER_HTML_VAR` | Route file does not declare `$bannerHtml` from `Get-ChromeBannersHtml`. | §2.4 |
-| `MALFORMED_HEADER_BAR_STRUCTURE` | Header bar children deviate from the mandated structure. | §2.1 |
+| `MALFORMED_HEADER_BAR_STRUCTURE` | Header bar children deviate from the mandated structure; `cc-header-center` present without `cc-has-center` (or the reverse); center child out of position. | §2.1 |
 | `MALFORMED_REFRESH_INFO_STRUCTURE` | Refresh info block deviates from mandated markup. | §2.2 |
 | `DUPLICATE_LAST_UPDATE_ID` | `cc-last-update` ID appears more than once. | §2.2 |
 | `MALFORMED_ENGINE_ROW_STRUCTURE` | Engine row container or children deviate from mandated structure. | §2.3 |
