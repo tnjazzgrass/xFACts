@@ -1,1015 +1,1454 @@
 /* ============================================================================
-   xFACts Control Center - Platform Monitoring JavaScript
+   xFACts Control Center - Platform Monitoring JavaScript (platform-monitoring.js)
    Location: E:\xFACts-ControlCenter\public\js\platform-monitoring.js
    Version: Tracked in dbo.System_Metadata (component: ControlCenter.Platform)
+
+   Drives the Platform Monitoring dashboard: the CPU-impact hero gauge and
+   per-server mini gauges, the narrative summary strip, the Platform
+   Performance and Control Center API metric cards, the CPU trend chart, the
+   Process Breakdown and Top API Endpoints tables, the per-metric info modal,
+   and the blocking / LRQ / API-error / API-user detail slideout. Data is
+   pulled on load, on manual refresh, and on tab resume; there is no polling
+   schedule and there are no engine cards. Consumes the shared fetch wrapper,
+   HTML escaping, alert modal, and page-chrome lifecycle from cc-shared.js.
+
+   FILE ORGANIZATION
+   -----------------
+   CONSTANTS: ENGINE PROCESSES
+   CONSTANTS: INFO CONTENT
+   CONSTANTS: ACTION DISPATCH
+   STATE: PAGE STATE
+   FUNCTIONS: INITIALIZATION
+   FUNCTIONS: ACTION DISPATCH
+   FUNCTIONS: REFRESH
+   FUNCTIONS: SERVER SELECTION
+   FUNCTIONS: TIME RANGE
+   FUNCTIONS: NARRATIVE STRIP
+   FUNCTIONS: INFO MODAL
+   FUNCTIONS: HERO GAUGE
+   FUNCTIONS: MINI GAUGES
+   FUNCTIONS: SUMMARY CARDS
+   FUNCTIONS: TREND CHART
+   FUNCTIONS: PROCESS BREAKDOWN
+   FUNCTIONS: API PERFORMANCE
+   FUNCTIONS: DETAIL SLIDEOUT
+   FUNCTIONS: FORMATTING
+   FUNCTIONS: PAGE LIFECYCLE HOOKS
    ============================================================================ */
 
-// ============================================================================
-// REFRESH ARCHITECTURE (Shared plumbing)
-// ============================================================================
+/* ============================================================================
+   CONSTANTS: ENGINE PROCESSES
+   ----------------------------------------------------------------------------
+   Empty engine-process map. Platform Monitoring has no orchestrator-registered
+   collector processes and renders no engine cards; its data comes from the
+   ServerOps activity tables and the API request log. The map is declared so
+   cc_connectEngineEvents wires up the shared page-chrome lifecycle (idle
+   detection, visibility-resume, the connection banner, and the global
+   keydown/click handlers), which sit behind the same presence check in the
+   shared module.
+   Prefix: plt
+   ============================================================================ */
 
-// ENGINE_PROCESSES: maps orchestrator process names to card slugs.
-// Empty -- no engine cards on this page. Plumbing ready for future use.
-var ENGINE_PROCESSES = {};
+/* Engine-process map consumed by cc_connectEngineEvents. Intentionally empty:
+   this page registers no orchestrator processes and shows no engine cards. */
+var plt_ENGINE_PROCESSES = {};
 
-// Midnight rollover check
-var pageLoadDate = new Date().toDateString();
-setInterval(function() {
-    if (new Date().toDateString() !== pageLoadDate) window.location.reload();
-}, 60000);
+/* ============================================================================
+   CONSTANTS: INFO CONTENT
+   ----------------------------------------------------------------------------
+   Plain-language explanations rendered into the info modal when a metric or
+   section info icon is clicked. Keyed by the data-action-plt-info-key value
+   the markup carries; each entry supplies a title and a body HTML string.
+   Prefix: plt
+   ============================================================================ */
 
-// Engine-events hooks (called by engine-events.js)
-function onEngineProcessCompleted(processName, event) {
-    // No event-driven sections on this page
+/* Per-metric info modal content, keyed by info key. */
+const plt_INFO = {
+    'cpu-impact': {
+        title: 'CPU Impact',
+        body: '<p class="cc-dialog-paragraph">This is the headline number for the entire page. It answers: <strong>"What percentage of the server\'s total processing capacity did xFACts use?"</strong></p>' +
+            '<p class="cc-dialog-paragraph"><strong>How it\'s calculated:</strong> xFACts CPU time \u00F7 Total CPU capacity. Total capacity = number of CPU cores \u00D7 time period \u00D7 1,000 (converting to milliseconds). This is the same model used by Windows Task Manager \u2014 a process using 5% means 5% of the machine\'s total horsepower, regardless of what else is running.</p>' +
+            '<p class="cc-dialog-paragraph">For example, a 16-core server over 1 hour has 57,600,000ms of total CPU capacity (16 \u00D7 3,600 \u00D7 1,000). If xFACts consumed 60,000ms of CPU time during that hour, the result is 0.10%.</p>' +
+            '<div class="plt-info-thresholds">' +
+                '<span class="plt-info-threshold-line"><span class="plt-info-green">\u25CF Under 2%</span> \u2014 Minimal impact. xFACts is virtually invisible.</span>' +
+                '<span class="plt-info-threshold-line"><span class="plt-info-yellow">\u25CF 2% \u2013 5%</span> \u2014 Moderate. Worth monitoring but unlikely to affect users.</span>' +
+                '<span class="plt-info-threshold-line"><span class="plt-info-red">\u25CF Over 5%</span> \u2014 Elevated. Investigate which processes are consuming resources.</span>' +
+            '</div>' +
+            '<p class="cc-dialog-paragraph cc-last">If someone asks <em>"is your system causing slowdowns?"</em>, this number is the answer.</p>'
+    },
+    'perf-section': {
+        title: 'Platform Performance',
+        body: '<p class="cc-dialog-paragraph">This section measures the database activity generated by xFACts processes \u2014 the monitoring scripts, data collectors, and automation jobs that run on schedule.</p>' +
+            '<p class="cc-dialog-paragraph">These metrics are derived from Extended Events (XE) and Dynamic Management Views (DMVs) on each monitored server. They reflect only xFACts activity, not total server activity.</p>' +
+            '<p class="cc-dialog-paragraph cc-last">The three metrics on the bottom row (<span class="plt-info-label">Blocking Events</span>, <span class="plt-info-label">LRQ Crossovers</span>, <span class="plt-info-label">Open Transactions</span>) are alert indicators \u2014 they show <span class="plt-info-green">green 0</span> when healthy and <span class="plt-info-red">red</span> when attention is needed.</p>'
+    },
+    'active-sessions': {
+        title: 'Active Sessions',
+        body: '<p class="cc-dialog-paragraph">How many xFACts processes have active connections to the database right now. This is a <strong>real-time snapshot</strong>, not a time-range total.</p>' +
+            '<p class="cc-dialog-paragraph cc-last">Think of it like "how many xFACts workers are currently clocked in." A handful is normal \u2014 these are the monitoring and collection scripts that run on schedule.</p>'
+    },
+    'total-queries': {
+        title: 'Total Queries',
+        body: '<p class="cc-dialog-paragraph">The total number of SQL queries xFACts executed during the selected time range. This includes everything \u2014 data collection, alert checks, API responses, health checks.</p>' +
+            '<p class="cc-dialog-paragraph cc-last">A high number by itself is not concerning. What matters is how much CPU those queries consumed, which is what the CPU Impact gauge shows. Thousands of lightweight queries can have less impact than a single heavy one.</p>'
+    },
+    'avg-duration': {
+        title: 'Average Duration (ms)',
+        body: '<p class="cc-dialog-paragraph">The average time each xFACts query took to complete, in milliseconds. Lower is better.</p>' +
+            '<p class="cc-dialog-paragraph cc-last">A value under 10ms means xFACts queries are executing almost instantly. If this climbs significantly, it could indicate the server is under pressure from other workloads (not necessarily from xFACts itself).</p>'
+    },
+    'blocking-events': {
+        title: 'Blocking Events',
+        body: '<p class="cc-dialog-paragraph">This card shows two separate counts of blocking events involving xFACts during the selected time range:</p>' +
+            '<p class="cc-dialog-paragraph"><span class="plt-info-label">Blocked by others</span> \u2014 How many times an xFACts process had to wait because another process (like a Debt Manager query or user report) was holding a lock. This means xFACts was the <em>victim</em> \u2014 it was slowed down, but it didn\'t cause problems for anyone else.</p>' +
+            '<p class="cc-dialog-paragraph"><span class="plt-info-label">Caused by xFACts</span> \u2014 How many times an xFACts process held a lock that blocked a <em>non-xFACts</em> process. This is the more important number \u2014 it means xFACts was causing another application or user to wait.</p>' +
+            '<p class="cc-dialog-paragraph cc-last"><span class="plt-info-green">Zero for both is the goal.</span> Occasional blocking is normal in busy databases, but a sustained pattern in "caused by xFACts" would need investigation.</p>'
+    },
+    'lrq-crossovers': {
+        title: 'LRQ Crossovers',
+        body: '<p class="cc-dialog-paragraph">"Long-Running Query" crossovers \u2014 the number of xFACts queries that exceeded the configured duration threshold (tracked by Extended Events).</p>' +
+            '<p class="cc-dialog-paragraph cc-last">Think of this as a speed trap: queries that ran longer than expected. <span class="plt-info-green">Zero means all xFACts queries finished quickly.</span> A nonzero value doesn\'t necessarily mean a problem \u2014 it could be a one-time slow query during a busy period \u2014 but a pattern would warrant attention.</p>'
+    },
+    'open-transactions': {
+        title: 'Open Transactions',
+        body: '<p class="cc-dialog-paragraph">The number of xFACts database connections that currently have an uncommitted transaction. This is a <strong>real-time snapshot</strong>.</p>' +
+            '<p class="cc-dialog-paragraph cc-last"><span class="plt-info-green">Zero is normal.</span> An open transaction holds locks that can block other queries, so a persistent nonzero value here would be a concern worth investigating.</p>'
+    },
+    'api-section': {
+        title: 'Control Center API',
+        body: '<p class="cc-dialog-paragraph">This section measures the performance of the Control Center web interface itself \u2014 the dashboards, pages, and API endpoints you\'re using right now.</p>' +
+            '<p class="cc-dialog-paragraph cc-last">These metrics come from the API Request Log and reflect how quickly the web server responds when someone opens a dashboard page. They are <strong>separate from database monitoring activity</strong> \u2014 this is about the UI, not the background processes.</p>'
+    },
+    'api-requests': {
+        title: 'API Requests',
+        body: '<p class="cc-dialog-paragraph">Total number of HTTP requests the Control Center handled during the selected time range. Every time a dashboard page loads or auto-refreshes, it makes several API calls to fetch data.</p>' +
+            '<p class="cc-dialog-paragraph cc-last">This is a measure of how much the Control Center UI is being used, not a performance concern.</p>'
+    },
+    'api-rpm': {
+        title: 'API Requests Per Minute',
+        body: '<p class="cc-dialog-paragraph">Average requests per minute to the Control Center. Gives a sense of how active the UI is.</p>' +
+            '<p class="cc-dialog-paragraph cc-last">Higher numbers usually just mean more people have dashboards open, since each open page auto-refreshes on a timer (typically every 5\u201360 seconds depending on the page).</p>'
+    },
+    'api-avg': {
+        title: 'API Average Response (ms)',
+        body: '<p class="cc-dialog-paragraph">The average time the Control Center took to respond to an API request, in milliseconds.</p>' +
+            '<p class="cc-dialog-paragraph cc-last">This measures the <strong>web server\'s responsiveness</strong>, not database performance. Under 50ms means pages load and refresh instantly. If this climbs, it could indicate the Pode web server is under load or a specific query behind an API endpoint is slow.</p>'
+    },
+    'api-p95': {
+        title: 'API P95 Response (ms)',
+        body: '<p class="cc-dialog-paragraph">The <strong>95th percentile</strong> response time \u2014 meaning 95% of all API requests completed faster than this value.</p>' +
+            '<p class="cc-dialog-paragraph">This is more useful than the average because it reveals the "worst typical experience." If the average is 7ms but the P95 is 200ms, it means most requests are fast but 1 in 20 is noticeably slower.</p>' +
+            '<p class="cc-dialog-paragraph cc-last">A low P95 means consistently fast performance with no outlier spikes.</p>'
+    },
+    'api-users': {
+        title: 'API Users',
+        body: '<p class="cc-dialog-paragraph">The number of distinct users who accessed the Control Center during the selected time range.</p>' +
+            '<p class="cc-dialog-paragraph cc-last">Helps gauge adoption \u2014 are people actually using the dashboards?</p>'
+    },
+    'api-errors': {
+        title: 'API Errors',
+        body: '<p class="cc-dialog-paragraph">API requests that returned an error (HTTP status 400 or higher). <span class="plt-info-green">Zero is the goal.</span></p>' +
+            '<p class="cc-dialog-paragraph cc-last">Errors could indicate a bug in an API endpoint, a database connectivity issue, or a permissions problem. Any nonzero value here is worth investigating.</p>'
+    },
+    'process-breakdown': {
+        title: 'Process Breakdown',
+        body: '<p class="cc-dialog-paragraph">A ranked list of every xFACts process that ran queries during the selected time range.</p>' +
+            '<p class="cc-dialog-paragraph">The <span class="plt-info-label">% xFACts</span> column shows each process\'s share of total xFACts CPU \u2014 useful for comparing which processes are the heaviest <strong>relative to each other</strong>.</p>' +
+            '<p class="cc-dialog-paragraph">The <span class="plt-info-label">% Server</span> column puts it in real-world context \u2014 what percentage of the server\'s total CPU did this individual process consume. When every row shows values like 0.07%, 0.02%, 0.01%, that\'s a clear indicator that xFACts processes are not contributing to performance issues.</p>' +
+            '<p class="cc-dialog-paragraph">Hover over any row to see a plain-English summary combining both perspectives.</p>' +
+            '<p class="cc-dialog-paragraph">Other columns: <strong>Qry</strong> = query count, <strong>CPU</strong> = total CPU time, <strong>Avg</strong> = average query duration, <strong>Reads</strong> = logical reads (data touched in memory).</p>' +
+            '<p class="cc-dialog-paragraph cc-last"><em>Click any column header to sort by that column. Click again to reverse the sort direction.</em></p>'
+    },
+    'cpu-trend': {
+        title: 'CPU Impact Over Time',
+        body: '<p class="cc-dialog-paragraph">A timeline showing how xFACts CPU usage and query volume changed over the selected period.</p>' +
+            '<p class="cc-dialog-paragraph">The <span class="plt-info-green">green line</span> is CPU percentage (left axis) \u2014 calculated as xFACts CPU time divided by total server CPU capacity for each time bucket. Hover over any point to see the actual values used in the calculation. The <span class="plt-nar-highlight">blue bars</span> are query count (right axis) \u2014 these typically spike when scheduled collection processes run.</p>' +
+            '<p class="cc-dialog-paragraph cc-last">The two together tell a story: if query volume spikes but CPU stays flat, the queries are lightweight. If both spike together, a heavier process was running during that window.</p>'
+    },
+    'api-endpoints': {
+        title: 'Top API Endpoints',
+        body: '<p class="cc-dialog-paragraph">The most-called Control Center API endpoints, ranked by total processing time. This shows which dashboard features are generating the most server-side work.</p>' +
+            '<p class="cc-dialog-paragraph">Useful for identifying if a specific endpoint is slow (high Avg ms) or just heavily used (high Calls but low Avg ms).</p>' +
+            '<p class="cc-dialog-paragraph cc-last"><em>Click any column header to sort by that column. Click again to reverse the sort direction.</em></p>'
+    }
+};
+
+/* ============================================================================
+   CONSTANTS: ACTION DISPATCH
+   ----------------------------------------------------------------------------
+   Per-event dispatch tables mapping the data-action-click values declared in
+   the page markup (and emitted by the table and gauge renderers) to handler
+   functions. Registered as a single delegated body listener in plt_init.
+   Prefix: plt
+   ============================================================================ */
+
+/* Click-action dispatch table. Keys match data-action-click values. */
+const plt_clickActions = {
+    'plt-show-info':       plt_showInfo,
+    'plt-close-info':      plt_closeInfo,
+    'plt-open-slideout':   plt_openSlideout,
+    'plt-close-slideout':  plt_closeSlideout,
+    'plt-select-server':   plt_selectServer,
+    'plt-set-range':       plt_setRange,
+    'plt-open-date':       plt_openDateModal,
+    'plt-close-date':      plt_closeDateModal,
+    'plt-apply-range':     plt_applyCustomRange,
+    'plt-sort-process':    plt_sortProcess,
+    'plt-sort-api':        plt_sortApi,
+    'plt-toggle-sql':      plt_toggleSqlRow
+};
+
+/* ============================================================================
+   STATE: PAGE STATE
+   ----------------------------------------------------------------------------
+   Mutable selection, chart-instance, table-sort, and last-response state
+   backing the dashboard. Reset or repopulated as the user changes the
+   server, time range, or table sort, and on every refresh.
+   Prefix: plt
+   ============================================================================ */
+
+/* Currently selected server name, or 'all' for the aggregate view. */
+var plt_currentServer = 'all';
+
+/* Currently selected preset time range key (1h, 12h, 24h, 7d). */
+var plt_currentRange = '1h';
+
+/* Custom-range start date (YYYY-MM-DD), or null when a preset range is active. */
+var plt_customFrom = null;
+
+/* Custom-range end date (YYYY-MM-DD), or null when a preset range is active. */
+var plt_customTo = null;
+
+/* The Chart.js trend chart instance, or null before first render. */
+var plt_trendChart = null;
+
+/* The Chart.js hero gauge instance, or null before first render. */
+var plt_gaugeChart = null;
+
+/* Map of mini-gauge canvas id to its Chart.js instance. */
+var plt_miniGaugeCharts = {};
+
+/* Latest Process Breakdown rows from the API. */
+var plt_processData = [];
+
+/* Active sort column for the Process Breakdown table. */
+var plt_sortCol = 'total_cpu_ms';
+
+/* Active sort direction for the Process Breakdown table. */
+var plt_sortDir = 'desc';
+
+/* Latest Top API Endpoints rows from the API. */
+var plt_apiData = [];
+
+/* Active sort column for the Top API Endpoints table. */
+var plt_apiSortCol = 'call_count';
+
+/* Active sort direction for the Top API Endpoints table. */
+var plt_apiSortDir = 'desc';
+
+/* Latest impact-summary response for the selected server and range. */
+var plt_serverImpactData = null;
+
+/* Latest summary-cards response for the selected server and range. */
+var plt_summaryCardData = null;
+
+/* Latest all-servers impact-summary response backing the mini gauges. */
+var plt_allServersCache = null;
+
+/* Page load date string, compared on a timer to roll the day window on
+   pages left open past midnight. */
+var plt_pageLoadDate = new Date().toDateString();
+
+/* ============================================================================
+   FUNCTIONS: INITIALIZATION
+   ----------------------------------------------------------------------------
+   The page boot function invoked by the cc-shared.js bootloader after the
+   module loads. Registers the delegated click listener, connects the shared
+   page-chrome lifecycle, starts the midnight-rollover timer, and pulls the
+   first snapshot.
+   Prefix: plt
+   ============================================================================ */
+
+/* Page boot entry point. Wires the delegated click dispatcher, the shared
+   chrome lifecycle, the midnight-rollover timer, and loads initial data. */
+function plt_init() {
+    document.body.addEventListener('click', plt_dispatchClick);
+    cc_connectEngineEvents();
+    setInterval(plt_checkMidnightRollover, 60000);
+    plt_refreshAll();
 }
 
-// ============================================================================
-// PLATFORM MONITORING
-// ============================================================================
+/* ============================================================================
+   FUNCTIONS: ACTION DISPATCH
+   ----------------------------------------------------------------------------
+   The delegated click handler. Resolves the nearest element carrying a
+   data-action-click value to its handler in plt_clickActions and invokes it
+   with the triggering element and event.
+   Prefix: plt
+   ============================================================================ */
 
-var PM = (function() {
+/* Delegated click dispatcher. Routes data-action-click values to handlers. */
+function plt_dispatchClick(event) {
+    var el = event.target.closest('[data-action-click]');
+    if (!el) {
+        return;
+    }
+    var action = el.getAttribute('data-action-click');
+    var handler = plt_clickActions[action];
+    if (handler) {
+        handler(el, event);
+    }
+}
 
-    var currentServer = 'all';
-    var currentRange = '1h';
+/* ============================================================================
+   FUNCTIONS: REFRESH
+   ----------------------------------------------------------------------------
+   The top-level data refresh that reloads every section, the per-section
+   query-parameter builder, and the midnight-rollover check.
+   Prefix: plt
+   ============================================================================ */
 
-// Page hooks for engine-events.js shared module
-function onPageResumed() { pageRefresh(); }
-function onSessionExpired() { }
+/* Reloads every dashboard section and stamps the last-updated time. */
+function plt_refreshAll() {
+    plt_loadImpactSummary();
+    plt_loadSummaryCards();
+    plt_loadTrend();
+    plt_loadProcessBreakdown();
+    plt_loadApiPerformance();
+    plt_setText('plt-last-update', new Date().toLocaleTimeString());
+}
 
-    var customFrom = null;
-    var customTo = null;
-    var trendChart = null;
-    var gaugeChart = null;
-    var miniGaugeCharts = {};
+/* Builds the server and range query string shared by every section fetch. */
+function plt_buildParams() {
+    var p = 'server=' + encodeURIComponent(plt_currentServer);
+    if (plt_customFrom && plt_customTo) {
+        p += '&range=custom&from=' + plt_customFrom + '&to=' + plt_customTo;
+    } else {
+        p += '&range=' + plt_currentRange;
+    }
+    return p;
+}
 
-    // Process Breakdown table state
-    var processData = [];
-    var sortCol = 'total_cpu_ms';
-    var sortDir = 'desc';
+/* Reloads the page when left open past midnight so the day window rolls. */
+function plt_checkMidnightRollover() {
+    if (new Date().toDateString() !== plt_pageLoadDate) {
+        window.location.reload();
+    }
+}
 
-    // Top API Endpoints table state
-    var apiData = [];
-    var apiSortCol = 'call_count';
-    var apiSortDir = 'desc';
+/* ============================================================================
+   FUNCTIONS: SERVER SELECTION
+   ----------------------------------------------------------------------------
+   Handlers for the ALL pill and the per-server mini gauges. Selecting a
+   server filters every section to that server; re-selecting the active
+   server returns to the aggregate view.
+   Prefix: plt
+   ============================================================================ */
 
-    var serverImpactData = null;
-    var summaryCardData = null;
-    var allServersCache = null;
+/* Selects a server (or toggles back to all), updates the selector visuals,
+   and refreshes every section. Reads the server name from the element. */
+function plt_selectServer(el) {
+    var name = el.getAttribute('data-action-plt-server');
+    if (name !== 'all' && plt_currentServer === name) {
+        name = 'all';
+    }
+    plt_currentServer = name;
 
-    function init() {
-        refreshAll();
-        connectEngineEvents();
-        initEngineCardClicks();
+    var allPill = document.getElementById('plt-srv-all');
+    if (allPill) {
+        allPill.classList.toggle('plt-active', name === 'all');
     }
 
-    function pageRefresh() {
-        var btn = document.querySelector('.page-refresh-btn');
-        if (btn) {
-            btn.classList.add('spinning');
-            btn.addEventListener('animationend', function() {
-                btn.classList.remove('spinning');
-            }, { once: true });
+    document.querySelectorAll('.plt-mini-gauge').forEach(function(g) {
+        var isSel = g.getAttribute('data-action-plt-server') === name;
+        g.classList.toggle('plt-selected', isSel);
+        var nameEl = g.querySelector('.plt-mini-gauge-name');
+        if (nameEl) {
+            nameEl.classList.toggle('plt-mini-gauge-name-selected', isSel);
         }
-        refreshAll();
+    });
+
+    var serverEl = document.getElementById('plt-gauge-server');
+    if (serverEl) {
+        serverEl.textContent = name === 'all' ? 'ALL SERVERS' : name;
     }
 
-    function refreshAll() {
-        loadImpactSummary();
-        loadSummaryCards();
-        loadTrend();
-        loadProcessBreakdown();
-        loadApiPerformance();
-        setText('last-update', new Date().toLocaleTimeString());
+    plt_refreshAll();
+}
+
+/* ============================================================================
+   FUNCTIONS: TIME RANGE
+   ----------------------------------------------------------------------------
+   The preset time-range buttons and the custom-range date modal. Changing
+   the range clears any custom range and refreshes; applying a custom range
+   validates the dates, marks the custom button active, and refreshes.
+   Prefix: plt
+   ============================================================================ */
+
+/* Selects a preset time range, clears any custom range, and refreshes. */
+function plt_setRange(el) {
+    var range = el.getAttribute('data-action-plt-range');
+    plt_currentRange = range;
+    plt_customFrom = null;
+    plt_customTo = null;
+    document.querySelectorAll('.plt-time-btn').forEach(function(b) {
+        b.classList.toggle('plt-active', b.getAttribute('data-action-plt-range') === range);
+    });
+    plt_refreshAll();
+}
+
+/* Opens the custom-range date modal, seeding the inputs with the last week. */
+function plt_openDateModal() {
+    var today = new Date();
+    var weekAgo = new Date(today.getTime() - 7 * 86400000);
+    document.getElementById('plt-date-from').value = plt_fmtDate(weekAgo);
+    document.getElementById('plt-date-to').value = plt_fmtDate(today);
+    document.getElementById('plt-modal-date').classList.remove('cc-hidden');
+}
+
+/* Closes the custom-range date modal. Ignores backdrop clicks bubbling from
+   the dialog interior. */
+function plt_closeDateModal(target, event) {
+    if (event && target.id === 'plt-modal-date' && event.target !== target) {
+        return;
+    }
+    document.getElementById('plt-modal-date').classList.add('cc-hidden');
+}
+
+/* Validates and applies the custom date range, then refreshes. */
+function plt_applyCustomRange() {
+    var f = document.getElementById('plt-date-from').value;
+    var t = document.getElementById('plt-date-to').value;
+    if (!f || !t) {
+        cc_showAlert('Please select both dates');
+        return;
+    }
+    if (f > t) {
+        cc_showAlert('From must be before To');
+        return;
+    }
+    plt_customFrom = f;
+    plt_customTo = t;
+    document.querySelectorAll('.plt-time-btn').forEach(function(b) {
+        b.classList.remove('plt-active');
+    });
+    var customBtn = document.querySelector('.plt-time-btn[data-action-plt-range="custom"]');
+    if (customBtn) {
+        customBtn.classList.add('plt-active');
+    }
+    plt_closeDateModal();
+    plt_refreshAll();
+}
+
+/* Formats a Date as YYYY-MM-DD for the date inputs. */
+function plt_fmtDate(d) {
+    return d.getFullYear() + '-' +
+        String(d.getMonth() + 1).padStart(2, '0') + '-' +
+        String(d.getDate()).padStart(2, '0');
+}
+
+/* ============================================================================
+   FUNCTIONS: NARRATIVE STRIP
+   ----------------------------------------------------------------------------
+   Builds the plain-language summary sentence from the latest impact, process,
+   and summary-card data, and sets the severity accent color.
+   Prefix: plt
+   ============================================================================ */
+
+/* Rebuilds the narrative summary strip from the current section data. */
+function plt_updateNarrative() {
+    if (!plt_serverImpactData) {
+        return;
+    }
+    var agg = plt_serverImpactData.aggregate;
+    var textEl = document.getElementById('plt-narrative-text');
+    var accentEl = document.querySelector('.plt-narrative-accent');
+    if (!textEl || !accentEl) {
+        return;
     }
 
-    function buildParams() {
-        var p = 'server=' + encodeURIComponent(currentServer);
-        if (customFrom && customTo) p += '&range=custom&from=' + customFrom + '&to=' + customTo;
-        else p += '&range=' + currentRange;
-        return p;
+    var pct = agg.cpu_pct;
+    var queries = agg.total_queries || 0;
+    var cpuMs = agg.total_cpu_ms || 0;
+
+    var rangeLabel;
+    if (plt_customFrom && plt_customTo) {
+        rangeLabel = plt_customFrom + ' to ' + plt_customTo;
+    } else {
+        rangeLabel = { '1h': 'the last hour', '12h': 'the last 12 hours', '24h': 'the last 24 hours', '7d': 'the last 7 days' }[plt_currentRange] || 'the selected period';
     }
 
-    function showError(msg) { var el = document.getElementById('connection-error'); el.textContent = msg; el.classList.add('visible'); }
-    function clearError() { document.getElementById('connection-error').classList.remove('visible'); }
+    var serverLabel = plt_currentServer === 'all' ? 'across all servers' : 'on ' + plt_currentServer;
 
-    // ========================================================================
-    // SERVER SELECTION — via mini gauges and ALL pill
-    // ========================================================================
-    function selectServer(name) {
-        // Clicking the already-selected server toggles back to ALL
-        if (name !== 'all' && currentServer === name) {
-            name = 'all';
+    var colorCls = 'plt-green';
+    var narCls = 'plt-nar-green';
+    if (pct !== null && pct !== undefined) {
+        if (pct >= 5) {
+            colorCls = 'plt-red';
+            narCls = 'plt-nar-red';
+        } else if (pct >= 2) {
+            colorCls = 'plt-yellow';
+            narCls = 'plt-nar-yellow';
         }
-        currentServer = name;
+    }
+    accentEl.className = 'plt-narrative-accent ' + colorCls;
 
-        // Update ALL pill
-        var allPill = document.getElementById('srv-all');
-        if (allPill) allPill.classList.toggle('active', name === 'all');
-
-        // Update mini gauge highlights
-        document.querySelectorAll('.pm-mini-gauge').forEach(function(g) {
-            g.classList.toggle('selected', g.getAttribute('data-server') === name);
-        });
-
-        // Update hero label
-        var serverEl = document.getElementById('gauge-server');
-        if (serverEl) serverEl.textContent = name === 'all' ? 'ALL SERVERS' : name;
-
-        refreshAll();
+    if (pct === null || pct === undefined) {
+        textEl.innerHTML = 'Insufficient data for ' + rangeLabel + ' ' + serverLabel + '. Extended Events data may not be available for this period.';
+        return;
     }
 
-    // ========================================================================
-    // TIME
-    // ========================================================================
-    function setRange(range) {
-        currentRange = range; customFrom = null; customTo = null;
-        document.querySelectorAll('.pm-time-btn').forEach(function(b) {
-            b.classList.toggle('active', b.getAttribute('data-range') === range);
-        });
-        refreshAll();
-    }
-    function openDateModal() {
-        var today = new Date(); var wa = new Date(today.getTime() - 7*86400000);
-        document.getElementById('date-from').value = fmtDate(wa);
-        document.getElementById('date-to').value = fmtDate(today);
-        document.getElementById('date-modal-overlay').classList.add('open');
-    }
-    function closeDateModal() { document.getElementById('date-modal-overlay').classList.remove('open'); }
-    function applyCustomRange() {
-        var f = document.getElementById('date-from').value, t = document.getElementById('date-to').value;
-        if (!f || !t) { alert('Please select both dates'); return; }
-        if (f > t) { alert('From must be before To'); return; }
-        customFrom = f; customTo = t;
-        document.querySelectorAll('.pm-time-btn').forEach(function(b) { b.classList.remove('active'); });
-        document.querySelector('.pm-time-btn[data-range="custom"]').classList.add('active');
-        closeDateModal(); refreshAll();
-    }
-    function fmtDate(d) { return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); }
+    var parts = [];
+    parts.push('Over <span class="plt-narrative-strong">' + rangeLabel + '</span>, xFACts executed <span class="plt-nar-highlight">' + plt_fmtCompact(queries) + ' queries</span> consuming <span class="' + narCls + '">' + pct.toFixed(2) + '%</span> of total server CPU capacity ' + serverLabel + ' (' + plt_fmtMs(cpuMs) + ' CPU time).');
 
-    // ========================================================================
-    // NARRATIVE SUMMARY STRIP
-    // ========================================================================
-    function updateNarrative() {
-        if (!serverImpactData) return;
-        var agg = serverImpactData.aggregate;
-        var textEl = document.getElementById('narrative-text');
-        var accentEl = document.querySelector('.pm-narrative-accent');
-        if (!textEl || !accentEl) return;
+    if (plt_processData && plt_processData.length > 0) {
+        var top = plt_processData[0];
+        var topName = top.process_name || '';
+        if (topName.indexOf('xFACts ') === 0) {
+            topName = topName.substring(7);
+        }
+        parts.push('Heaviest process: <span class="plt-nar-highlight">' + cc_escapeHtml(topName) + '</span> (' + plt_fmtMs(top.total_cpu_ms) + ' CPU).');
+    }
 
-        var pct = agg.cpu_pct;
-        var queries = agg.total_queries || 0;
-        var cpuMs = agg.total_cpu_ms || 0;
-
-        // Time range label
-        var rangeLabel;
-        if (customFrom && customTo) {
-            rangeLabel = customFrom + ' to ' + customTo;
+    if (plt_summaryCardData) {
+        var alerts = [];
+        var blockedBy = plt_summaryCardData.blocked_by_others || 0;
+        var causedBy = plt_summaryCardData.caused_by_xfacts || 0;
+        if (blockedBy > 0) {
+            alerts.push('xFACts was blocked ' + blockedBy + ' time' + (blockedBy !== 1 ? 's' : '') + ' by other processes');
+        }
+        if (causedBy > 0) {
+            alerts.push('xFACts caused ' + causedBy + ' blocking event' + (causedBy !== 1 ? 's' : ''));
+        }
+        if (plt_summaryCardData.lrq_crossovers > 0) {
+            alerts.push(plt_summaryCardData.lrq_crossovers + ' long-running quer' + (plt_summaryCardData.lrq_crossovers !== 1 ? 'ies' : 'y'));
+        }
+        if (plt_summaryCardData.open_transactions > 0) {
+            alerts.push(plt_summaryCardData.open_transactions + ' open transaction' + (plt_summaryCardData.open_transactions !== 1 ? 's' : ''));
+        }
+        if (alerts.length > 0) {
+            parts.push('<span class="plt-nar-red">Attention:</span> ' + alerts.join(', ') + ' detected.');
         } else {
-            rangeLabel = { '1h': 'the last hour', '12h': 'the last 12 hours', '24h': 'the last 24 hours', '7d': 'the last 7 days' }[currentRange] || 'the selected period';
+            parts.push('No blocking events, long-running queries, or open transactions detected.');
         }
+    }
 
-        // Server label
-        var serverLabel = currentServer === 'all' ? 'across all servers' : 'on ' + currentServer;
+    textEl.innerHTML = parts.join(' ');
+}
 
-        // Color class
-        var colorCls = 'green';
-        if (pct !== null && pct !== undefined) {
-            if (pct >= 5) colorCls = 'red';
-            else if (pct >= 2) colorCls = 'yellow';
-        }
-        accentEl.className = 'pm-narrative-accent ' + colorCls;
+/* ============================================================================
+   FUNCTIONS: INFO MODAL
+   ----------------------------------------------------------------------------
+   Opens and closes the per-metric info modal, populating it from plt_INFO.
+   Prefix: plt
+   ============================================================================ */
 
-        // Null/no data case
-        if (pct === null || pct === undefined) {
-            textEl.innerHTML = 'Insufficient data for ' + rangeLabel + ' ' + serverLabel + '. Extended Events data may not be available for this period.';
-            return;
-        }
+/* Opens the info modal for the metric key carried by the clicked icon. */
+function plt_showInfo(el) {
+    var key = el.getAttribute('data-action-plt-info-key');
+    var info = plt_INFO[key];
+    if (!info) {
+        return;
+    }
+    document.getElementById('plt-info-title').textContent = info.title;
+    document.getElementById('plt-info-body').innerHTML = info.body;
+    document.getElementById('plt-modal-info').classList.remove('cc-hidden');
+}
 
-        // Build narrative
-        var parts = [];
+/* Closes the info modal. Ignores backdrop clicks bubbling from the dialog
+   interior. */
+function plt_closeInfo(target, event) {
+    if (event && target.id === 'plt-modal-info' && event.target !== target) {
+        return;
+    }
+    document.getElementById('plt-modal-info').classList.add('cc-hidden');
+}
 
-        // Main statement
-        parts.push('Over <strong>' + rangeLabel + '</strong>, xFACts executed <span class="nar-highlight">' + fmtCompact(queries) + ' queries</span> consuming <span class="nar-' + colorCls + '">' + pct.toFixed(2) + '%</span> of total server CPU capacity ' + serverLabel + ' (' + fmtMs(cpuMs) + ' CPU time).');
+/* ============================================================================
+   FUNCTIONS: HERO GAUGE
+   ----------------------------------------------------------------------------
+   Loads the impact summary for the selected server (and the all-servers data
+   for the mini gauges), renders the hero donut gauge, and updates the
+   percentage, label, and detail line.
+   Prefix: plt
+   ============================================================================ */
 
-        // Heaviest process
-        if (processData && processData.length > 0) {
-            var top = processData[0];
-            var topName = top.process_name || '';
-            // Strip "xFACts " prefix for readability
-            if (topName.indexOf('xFACts ') === 0) topName = topName.substring(7);
-            parts.push('Heaviest process: <span class="nar-highlight">' + esc(topName) + '</span> (' + fmtMs(top.total_cpu_ms) + ' CPU).');
-        }
+/* Fetches impact summary data for the hero gauge, mini gauges, and narrative. */
+function plt_loadImpactSummary() {
+    var allParams = plt_buildParams().replace(/server=[^&]*/, 'server=all');
+    var filteredParams = plt_buildParams();
 
-        // Alert conditions
-        if (summaryCardData) {
-            var alerts = [];
-            var blockedBy = summaryCardData.blocked_by_others || 0;
-            var causedBy = summaryCardData.caused_by_xfacts || 0;
-            if (blockedBy > 0) alerts.push('xFACts was blocked ' + blockedBy + ' time' + (blockedBy !== 1 ? 's' : '') + ' by other processes');
-            if (causedBy > 0) alerts.push('xFACts caused ' + causedBy + ' blocking event' + (causedBy !== 1 ? 's' : ''));
-            if (summaryCardData.lrq_crossovers > 0) alerts.push(summaryCardData.lrq_crossovers + ' long-running quer' + (summaryCardData.lrq_crossovers !== 1 ? 'ies' : 'y'));
-            if (summaryCardData.open_transactions > 0) alerts.push(summaryCardData.open_transactions + ' open transaction' + (summaryCardData.open_transactions !== 1 ? 's' : ''));
+    var allFetch = cc_engineFetch('/api/platform-monitoring/impact-summary?' + allParams);
 
-            if (alerts.length > 0) {
-                parts.push('<span class="nar-red">Attention:</span> ' + alerts.join(', ') + ' detected.');
-            } else {
-                parts.push('No blocking events, long-running queries, or open transactions detected.');
+    var filteredFetch = (plt_currentServer === 'all')
+        ? allFetch
+        : cc_engineFetch('/api/platform-monitoring/impact-summary?' + filteredParams);
+
+    Promise.all([allFetch, filteredFetch])
+        .then(function(results) {
+            var allData = results[0];
+            var filteredData = results[1];
+
+            if (allData.Error) {
+                cc_renderPageError(allData.Error);
+                return;
             }
-        }
 
-        textEl.innerHTML = parts.join(' ');
-    }
+            plt_allServersCache = allData;
+            plt_serverImpactData = filteredData;
 
-    // ========================================================================
-    // INFO MODAL — plain-English explanations for every metric
-    // ========================================================================
-    var INFO = {
-        'cpu-impact': {
-            title: 'CPU Impact',
-            body: '<p>This is the headline number for the entire page. It answers: <strong>"What percentage of the server\'s total processing capacity did xFACts use?"</strong></p>' +
-                '<p><strong>How it\'s calculated:</strong> xFACts CPU time \u00F7 Total CPU capacity. Total capacity = number of CPU cores \u00D7 time period \u00D7 1,000 (converting to milliseconds). This is the same model used by Windows Task Manager \u2014 a process using 5% means 5% of the machine\'s total horsepower, regardless of what else is running.</p>' +
-                '<p>For example, a 16-core server over 1 hour has 57,600,000ms of total CPU capacity (16 \u00D7 3,600 \u00D7 1,000). If xFACts consumed 60,000ms of CPU time during that hour, the result is 0.10%.</p>' +
-                '<div class="info-thresholds">' +
-                    '<span><span class="info-green">\u25CF Under 2%</span> \u2014 Minimal impact. xFACts is virtually invisible.</span>' +
-                    '<span><span class="info-yellow">\u25CF 2% \u2013 5%</span> \u2014 Moderate. Worth monitoring but unlikely to affect users.</span>' +
-                    '<span><span class="info-red">\u25CF Over 5%</span> \u2014 Elevated. Investigate which processes are consuming resources.</span>' +
-                '</div>' +
-                '<p>If someone asks <em>"is your system causing slowdowns?"</em>, this number is the answer.</p>'
-        },
-        'perf-section': {
-            title: 'Platform Performance',
-            body: '<p>This section measures the database activity generated by xFACts processes \u2014 the monitoring scripts, data collectors, and automation jobs that run on schedule.</p>' +
-                '<p>These metrics are derived from Extended Events (XE) and Dynamic Management Views (DMVs) on each monitored server. They reflect only xFACts activity, not total server activity.</p>' +
-                '<p>The three metrics on the bottom row (<span class="info-label">Blocking Events</span>, <span class="info-label">LRQ Crossovers</span>, <span class="info-label">Open Transactions</span>) are alert indicators \u2014 they show <span class="info-green">green 0</span> when healthy and <span class="info-red">red</span> when attention is needed.</p>'
-        },
-        'active-sessions': {
-            title: 'Active Sessions',
-            body: '<p>How many xFACts processes have active connections to the database right now. This is a <strong>real-time snapshot</strong>, not a time-range total.</p>' +
-                '<p>Think of it like "how many xFACts workers are currently clocked in." A handful is normal \u2014 these are the monitoring and collection scripts that run on schedule.</p>'
-        },
-        'total-queries': {
-            title: 'Total Queries',
-            body: '<p>The total number of SQL queries xFACts executed during the selected time range. This includes everything \u2014 data collection, alert checks, API responses, health checks.</p>' +
-                '<p>A high number by itself is not concerning. What matters is how much CPU those queries consumed, which is what the CPU Impact gauge shows. Thousands of lightweight queries can have less impact than a single heavy one.</p>'
-        },
-        'avg-duration': {
-            title: 'Average Duration (ms)',
-            body: '<p>The average time each xFACts query took to complete, in milliseconds. Lower is better.</p>' +
-                '<p>A value under 10ms means xFACts queries are executing almost instantly. If this climbs significantly, it could indicate the server is under pressure from other workloads (not necessarily from xFACts itself).</p>'
-        },
-        'blocking-events': {
-            title: 'Blocking Events',
-            body: '<p>This card shows two separate counts of blocking events involving xFACts during the selected time range:</p>' +
-                '<p><span class="info-label">Blocked by others</span> \u2014 How many times an xFACts process had to wait because another process (like a Debt Manager query or user report) was holding a lock. This means xFACts was the <em>victim</em> \u2014 it was slowed down, but it didn\'t cause problems for anyone else.</p>' +
-                '<p><span class="info-label">Caused by xFACts</span> \u2014 How many times an xFACts process held a lock that blocked a <em>non-xFACts</em> process. This is the more important number \u2014 it means xFACts was causing another application or user to wait.</p>' +
-                '<p><span class="info-green">Zero for both is the goal.</span> Occasional blocking is normal in busy databases, but a sustained pattern in "caused by xFACts" would need investigation.</p>'
-        },
-        'lrq-crossovers': {
-            title: 'LRQ Crossovers',
-            body: '<p>"Long-Running Query" crossovers \u2014 the number of xFACts queries that exceeded the configured duration threshold (tracked by Extended Events).</p>' +
-                '<p>Think of this as a speed trap: queries that ran longer than expected. <span class="info-green">Zero means all xFACts queries finished quickly.</span> A nonzero value doesn\'t necessarily mean a problem \u2014 it could be a one-time slow query during a busy period \u2014 but a pattern would warrant attention.</p>'
-        },
-        'open-transactions': {
-            title: 'Open Transactions',
-            body: '<p>The number of xFACts database connections that currently have an uncommitted transaction. This is a <strong>real-time snapshot</strong>.</p>' +
-                '<p><span class="info-green">Zero is normal.</span> An open transaction holds locks that can block other queries, so a persistent nonzero value here would be a concern worth investigating.</p>'
-        },
-        'api-section': {
-            title: 'Control Center API',
-            body: '<p>This section measures the performance of the Control Center web interface itself \u2014 the dashboards, pages, and API endpoints you\'re using right now.</p>' +
-                '<p>These metrics come from the API Request Log and reflect how quickly the web server responds when someone opens a dashboard page. They are <strong>separate from database monitoring activity</strong> \u2014 this is about the UI, not the background processes.</p>'
-        },
-        'api-requests': {
-            title: 'API Requests',
-            body: '<p>Total number of HTTP requests the Control Center handled during the selected time range. Every time a dashboard page loads or auto-refreshes, it makes several API calls to fetch data.</p>' +
-                '<p>This is a measure of how much the Control Center UI is being used, not a performance concern.</p>'
-        },
-        'api-rpm': {
-            title: 'API Requests Per Minute',
-            body: '<p>Average requests per minute to the Control Center. Gives a sense of how active the UI is.</p>' +
-                '<p>Higher numbers usually just mean more people have dashboards open, since each open page auto-refreshes on a timer (typically every 5\u201360 seconds depending on the page).</p>'
-        },
-        'api-avg': {
-            title: 'API Average Response (ms)',
-            body: '<p>The average time the Control Center took to respond to an API request, in milliseconds.</p>' +
-                '<p>This measures the <strong>web server\'s responsiveness</strong>, not database performance. Under 50ms means pages load and refresh instantly. If this climbs, it could indicate the Pode web server is under load or a specific query behind an API endpoint is slow.</p>'
-        },
-        'api-p95': {
-            title: 'API P95 Response (ms)',
-            body: '<p>The <strong>95th percentile</strong> response time \u2014 meaning 95% of all API requests completed faster than this value.</p>' +
-                '<p>This is more useful than the average because it reveals the "worst typical experience." If the average is 7ms but the P95 is 200ms, it means most requests are fast but 1 in 20 is noticeably slower.</p>' +
-                '<p>A low P95 means consistently fast performance with no outlier spikes.</p>'
-        },
-        'api-users': {
-            title: 'API Users',
-            body: '<p>The number of distinct users who accessed the Control Center during the selected time range.</p>' +
-                '<p>Helps gauge adoption \u2014 are people actually using the dashboards?</p>'
-        },
-        'api-errors': {
-            title: 'API Errors',
-            body: '<p>API requests that returned an error (HTTP status 400 or higher). <span class="info-green">Zero is the goal.</span></p>' +
-                '<p>Errors could indicate a bug in an API endpoint, a database connectivity issue, or a permissions problem. Any nonzero value here is worth investigating.</p>'
-        },
-        'process-breakdown': {
-            title: 'Process Breakdown',
-            body: '<p>A ranked list of every xFACts process that ran queries during the selected time range.</p>' +
-                '<p>The <span class="info-label">% xFACts</span> column shows each process\'s share of total xFACts CPU \u2014 useful for comparing which processes are the heaviest <strong>relative to each other</strong>.</p>' +
-                '<p>The <span class="info-label">% Server</span> column puts it in real-world context \u2014 what percentage of the server\'s total CPU did this individual process consume. When every row shows values like 0.07%, 0.02%, 0.01%, that\'s a clear indicator that xFACts processes are not contributing to performance issues.</p>' +
-                '<p>Hover over any row to see a plain-English summary combining both perspectives.</p>' +
-                '<p>Other columns: <strong>Qry</strong> = query count, <strong>CPU</strong> = total CPU time, <strong>Avg</strong> = average query duration, <strong>Reads</strong> = logical reads (data touched in memory).</p>' +
-                '<p><em>Click any column header to sort by that column. Click again to reverse the sort direction.</em></p>'
-        },
-        'cpu-trend': {
-            title: 'CPU Impact Over Time',
-            body: '<p>A timeline showing how xFACts CPU usage and query volume changed over the selected period.</p>' +
-                '<p>The <span class="info-green">green line</span> is CPU percentage (left axis) \u2014 calculated as xFACts CPU time divided by total server CPU capacity for each time bucket. Hover over any point to see the actual values used in the calculation. The <span style="color:#569cd6">blue bars</span> are query count (right axis) \u2014 these typically spike when scheduled collection processes run.</p>' +
-                '<p>The two together tell a story: if query volume spikes but CPU stays flat, the queries are lightweight. If both spike together, a heavier process was running during that window.</p>'
-        },
-        'api-endpoints': {
-            title: 'Top API Endpoints',
-            body: '<p>The most-called Control Center API endpoints, ranked by total processing time. This shows which dashboard features are generating the most server-side work.</p>' +
-                '<p>Useful for identifying if a specific endpoint is slow (high Avg ms) or just heavily used (high Calls but low Avg ms).</p>' +
-                '<p><em>Click any column header to sort by that column. Click again to reverse the sort direction.</em></p>'
-        }
-    };
-
-    function showInfo(key) {
-        var info = INFO[key];
-        if (!info) return;
-        document.getElementById('info-modal-title').textContent = info.title;
-        document.getElementById('info-modal-body').innerHTML = info.body;
-        document.getElementById('info-modal-overlay').classList.add('open');
-    }
-
-    function closeInfo(event) {
-        // If called from overlay click, only close if clicking the overlay itself
-        if (event && event.target !== document.getElementById('info-modal-overlay')) return;
-        document.getElementById('info-modal-overlay').classList.remove('open');
-    }
-
-    // ========================================================================
-    // HERO GAUGE (full donut)
-    // ========================================================================
-    function loadImpactSummary() {
-        // Always fetch all-servers data for mini gauges
-        var allParams = buildParams().replace(/server=[^&]*/, 'server=all');
-        var filteredParams = buildParams();
-
-        // Fetch all-servers for mini gauges (always)
-        var allFetch = engineFetch('/api/platform-monitoring/impact-summary?' + allParams);
-
-        // Fetch filtered data for hero gauge + narrative
-        var filteredFetch = (currentServer === 'all')
-            ? allFetch  // Reuse same request when viewing all
-            : engineFetch('/api/platform-monitoring/impact-summary?' + filteredParams);
-
-        Promise.all([allFetch, filteredFetch])
-            .then(function(results) {
-                var allData = results[0];
-                var filteredData = results[1];
-
-                if (allData.Error) { showError(allData.Error); return; }
-                clearError();
-
-                allServersCache = allData;
-                serverImpactData = filteredData;
-
-                renderHeroGauge(filteredData);
-                renderMiniGauges(allData);
-                updateNarrative();
-            }).catch(function(e) { showError('Load failed: ' + e.message); });
-    }
-
-    function renderHeroGauge(data) {
-        var agg = data.aggregate;
-        var pct = agg.cpu_pct;
-        var pctEl = document.getElementById('gauge-pct');
-        var detailEl = document.getElementById('gauge-detail');
-
-        if (pct === null || pct === undefined) {
-            pctEl.textContent = 'N/A'; pctEl.className = 'pm-hero-pct na';
-            detailEl.textContent = 'Insufficient data';
-            drawHeroDonut(0, '#555'); return;
-        }
-        pctEl.textContent = pct.toFixed(2) + '%';
-        var color;
-        if (pct < 2) { color = '#4ec9b0'; pctEl.className = 'pm-hero-pct green'; }
-        else if (pct < 5) { color = '#dcdcaa'; pctEl.className = 'pm-hero-pct yellow'; }
-        else { color = '#f48771'; pctEl.className = 'pm-hero-pct red'; }
-        // Derive core count from capacity: capacity_cpu_ms / (rangeMinutes * 60 * 1000)
-        var cores = '';
-        if (agg.capacity_cpu_ms) {
-            // For standard ranges, compute cores from capacity
-            var rangeMs = { '1h': 3600000, '12h': 43200000, '24h': 86400000, '7d': 604800000 };
-            var rMs = (customFrom && customTo) ? null : rangeMs[currentRange];
-            if (rMs && agg.capacity_cpu_ms > 0) cores = ' \u2022 ' + Math.round(agg.capacity_cpu_ms / rMs) + ' cores';
-        }
-        detailEl.textContent = 'xFACts: ' + fmtMs(agg.total_cpu_ms) + ' CPU' + cores;
-        drawHeroDonut(pct, color);
-    }
-
-    function drawHeroDonut(pct, color) {
-        var canvas = document.getElementById('gauge-chart');
-        var ctx = canvas.getContext('2d');
-        var display = pct > 0 && pct < 10 ? Math.max(pct * 8, 3) : pct;
-        display = Math.min(display, 100);
-        if (gaugeChart) gaugeChart.destroy();
-        gaugeChart = new Chart(ctx, {
-            type: 'doughnut',
-            data: { datasets: [{ data: [display, 100 - display], backgroundColor: [color, '#2d2d2d'], borderWidth: 0, circumference: 270, rotation: 225 }] },
-            options: { responsive: false, cutout: '72%', plugins: { legend: { display: false }, tooltip: { enabled: false } }, animation: { animateRotate: true, duration: 600 } }
+            plt_renderHeroGauge(filteredData);
+            plt_renderMiniGauges(allData);
+            plt_updateNarrative();
+        }).catch(function(e) {
+            cc_renderPageError('Load failed: ' + e.message);
         });
+}
+
+/* Renders the hero percentage, detail line, and donut from impact data. */
+function plt_renderHeroGauge(data) {
+    var agg = data.aggregate;
+    var pct = agg.cpu_pct;
+    var pctEl = document.getElementById('plt-gauge-pct');
+    var detailEl = document.getElementById('plt-gauge-detail');
+
+    if (pct === null || pct === undefined) {
+        pctEl.textContent = 'N/A';
+        pctEl.className = 'plt-hero-pct plt-na';
+        detailEl.textContent = 'Insufficient data';
+        plt_drawHeroDonut(0, '#555');
+        return;
+    }
+    pctEl.textContent = pct.toFixed(2) + '%';
+    var color;
+    if (pct < 2) {
+        color = '#4ec9b0';
+        pctEl.className = 'plt-hero-pct plt-green';
+    } else if (pct < 5) {
+        color = '#dcdcaa';
+        pctEl.className = 'plt-hero-pct plt-yellow';
+    } else {
+        color = '#f48771';
+        pctEl.className = 'plt-hero-pct plt-red';
+    }
+    var cores = '';
+    if (agg.capacity_cpu_ms) {
+        var rangeMs = { '1h': 3600000, '12h': 43200000, '24h': 86400000, '7d': 604800000 };
+        var rMs = (plt_customFrom && plt_customTo) ? null : rangeMs[plt_currentRange];
+        if (rMs && agg.capacity_cpu_ms > 0) {
+            cores = ' \u2022 ' + Math.round(agg.capacity_cpu_ms / rMs) + ' cores';
+        }
+    }
+    detailEl.textContent = 'xFACts: ' + plt_fmtMs(agg.total_cpu_ms) + ' CPU' + cores;
+    plt_drawHeroDonut(pct, color);
+}
+
+/* Draws (or redraws) the hero donut gauge with a scaled fill for low values. */
+function plt_drawHeroDonut(pct, color) {
+    var canvas = document.getElementById('plt-gauge-chart');
+    var ctx = canvas.getContext('2d');
+    var display = pct > 0 && pct < 10 ? Math.max(pct * 8, 3) : pct;
+    display = Math.min(display, 100);
+    if (plt_gaugeChart) {
+        plt_gaugeChart.destroy();
+    }
+    plt_gaugeChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: { datasets: [{ data: [display, 100 - display], backgroundColor: [color, '#2d2d2d'], borderWidth: 0, circumference: 270, rotation: 225 }] },
+        options: { responsive: false, cutout: '72%', plugins: { legend: { display: false }, tooltip: { enabled: false } }, animation: { animateRotate: true, duration: 600 } }
+    });
+}
+
+/* ============================================================================
+   FUNCTIONS: MINI GAUGES
+   ----------------------------------------------------------------------------
+   Renders the row of per-server mini gauge cards from the all-servers data,
+   each a clickable server selector with its own small donut, percentage, and
+   name.
+   Prefix: plt
+   ============================================================================ */
+
+/* Renders the per-server mini gauge cards and their donuts. */
+function plt_renderMiniGauges(data) {
+    var container = document.getElementById('plt-mini-gauges');
+    var servers = data.servers || [];
+    if (servers.length === 0) {
+        container.innerHTML = '';
+        return;
     }
 
-    // ========================================================================
-    // MINI GAUGES — clickable server selectors in card frames
-    // ========================================================================
-    function renderMiniGauges(data) {
-        var container = document.getElementById('mini-gauges');
-        var servers = data.servers || [];
-        if (servers.length === 0) { container.innerHTML = ''; return; }
+    Object.keys(plt_miniGaugeCharts).forEach(function(k) {
+        if (plt_miniGaugeCharts[k]) {
+            plt_miniGaugeCharts[k].destroy();
+        }
+    });
+    plt_miniGaugeCharts = {};
 
-        // Destroy existing
-        Object.keys(miniGaugeCharts).forEach(function(k) { if (miniGaugeCharts[k]) miniGaugeCharts[k].destroy(); });
-        miniGaugeCharts = {};
+    var html = '';
+    servers.forEach(function(s) {
+        var id = 'plt-mg-' + s.server_name.replace(/[^a-zA-Z0-9]/g, '_');
+        var selCls = (plt_currentServer === s.server_name) ? ' plt-selected' : '';
+        var nameSelCls = (plt_currentServer === s.server_name) ? ' plt-mini-gauge-name-selected' : '';
+        html += '<button type="button" class="plt-mini-gauge' + selCls + '" data-action-click="plt-select-server" data-action-plt-server="' + cc_escapeHtml(s.server_name) + '">' +
+            '<div class="plt-mini-gauge-wrap"><canvas class="plt-mini-gauge-canvas" id="' + id + '" width="60" height="60"></canvas></div>' +
+            '<div class="plt-mini-gauge-pct" id="' + id + '-pct">-</div>' +
+            '<div class="plt-mini-gauge-name' + nameSelCls + '">' + cc_escapeHtml(s.server_name) + '</div></button>';
+    });
+    container.innerHTML = html;
 
-        var html = '';
-        servers.forEach(function(s) {
-            var id = 'mg-' + s.server_name.replace(/[^a-zA-Z0-9]/g, '_');
-            var sel = (currentServer === s.server_name) ? ' selected' : '';
-            html += '<div class="pm-mini-gauge' + sel + '" data-server="' + s.server_name + '" onclick="PM.selectServer(\'' + s.server_name + '\')">' +
-                '<div class="pm-mini-gauge-wrap"><canvas id="' + id + '" width="60" height="60"></canvas></div>' +
-                '<div class="pm-mini-gauge-pct" id="' + id + '-pct">-</div>' +
-                '<div class="pm-mini-gauge-name">' + s.server_name + '</div></div>';
-        });
-        container.innerHTML = html;
+    setTimeout(function() {
+        servers.forEach(plt_renderOneMiniGauge);
+    }, 50);
+}
 
-        setTimeout(function() {
-            servers.forEach(function(s) {
-                var id = 'mg-' + s.server_name.replace(/[^a-zA-Z0-9]/g, '_');
-                var pct = s.cpu_pct;
-                var pctEl = document.getElementById(id + '-pct');
-                var canvas = document.getElementById(id);
-                if (!canvas) return;
+/* Renders a single mini gauge's percentage label and donut. */
+function plt_renderOneMiniGauge(s) {
+    var id = 'plt-mg-' + s.server_name.replace(/[^a-zA-Z0-9]/g, '_');
+    var pct = s.cpu_pct;
+    var pctEl = document.getElementById(id + '-pct');
+    var canvas = document.getElementById(id);
+    if (!canvas) {
+        return;
+    }
 
-                var color = '#555';
-                if (pct === null || pct === undefined) {
-                    if (pctEl) { pctEl.textContent = 'N/A'; pctEl.className = 'pm-mini-gauge-pct na'; }
-                } else {
-                    if (pctEl) {
-                        pctEl.textContent = pct.toFixed(1) + '%';
-                        if (pct < 2) { color = '#4ec9b0'; pctEl.className = 'pm-mini-gauge-pct green'; }
-                        else if (pct < 5) { color = '#dcdcaa'; pctEl.className = 'pm-mini-gauge-pct yellow'; }
-                        else { color = '#f48771'; pctEl.className = 'pm-mini-gauge-pct red'; }
-                    }
+    var color = '#555';
+    if (pct === null || pct === undefined) {
+        if (pctEl) {
+            pctEl.textContent = 'N/A';
+            pctEl.className = 'plt-mini-gauge-pct plt-na';
+        }
+    } else if (pctEl) {
+        pctEl.textContent = pct.toFixed(1) + '%';
+        if (pct < 2) {
+            color = '#4ec9b0';
+            pctEl.className = 'plt-mini-gauge-pct plt-green';
+        } else if (pct < 5) {
+            color = '#dcdcaa';
+            pctEl.className = 'plt-mini-gauge-pct plt-yellow';
+        } else {
+            color = '#f48771';
+            pctEl.className = 'plt-mini-gauge-pct plt-red';
+        }
+    }
+
+    var display = pct || 0;
+    if (display > 0 && display < 10) {
+        display = Math.max(display * 8, 4);
+    }
+    display = Math.min(display, 100);
+
+    var existing = Chart.getChart(canvas);
+    if (existing) {
+        existing.destroy();
+    }
+
+    plt_miniGaugeCharts[id] = new Chart(canvas.getContext('2d'), {
+        type: 'doughnut',
+        data: { datasets: [{ data: [display, 100 - display], backgroundColor: [color, '#333'], borderWidth: 0, circumference: 180, rotation: 270 }] },
+        options: { responsive: false, cutout: '65%', plugins: { legend: { display: false }, tooltip: { enabled: false } }, animation: { duration: 400 } }
+    });
+}
+
+/* ============================================================================
+   FUNCTIONS: SUMMARY CARDS
+   ----------------------------------------------------------------------------
+   Loads the Platform Performance summary cards and writes the session, query,
+   duration, and alert values. Alert values are colored red when nonzero.
+   Prefix: plt
+   ============================================================================ */
+
+/* Loads the summary-card metrics and populates the Platform Performance cards. */
+function plt_loadSummaryCards() {
+    cc_engineFetch('/api/platform-monitoring/summary-cards?' + plt_buildParams())
+        .then(function(data) {
+            if (!data || data.Error) {
+                return;
+            }
+            plt_summaryCardData = data;
+            plt_setText('plt-card-sessions', plt_fmtNum(data.active_sessions));
+            plt_setText('plt-card-queries', plt_fmtCompact(data.total_queries));
+            plt_setText('plt-card-avg-dur', data.avg_duration_ms > 0 ? data.avg_duration_ms.toFixed(0) : '0');
+            plt_setAlertVal('plt-card-blocked-by', data.blocked_by_others, true);
+            plt_setAlertVal('plt-card-caused-by', data.caused_by_xfacts, true);
+            plt_setAlertVal('plt-card-lrq', data.lrq_crossovers, false);
+            plt_setAlertVal('plt-card-open-tx', data.open_transactions, false);
+            plt_updateNarrative();
+        }).catch(function() {});
+}
+
+/* Writes an alert value, coloring it red when nonzero and green otherwise.
+   Dual-metric values (blocking card) use the smaller dual value base class. */
+function plt_setAlertVal(id, val, isDual) {
+    var el = document.getElementById(id);
+    var v = (val === null || val === undefined) ? 0 : val;
+    el.textContent = plt_fmtNum(v);
+    var base = isDual ? 'plt-card-dual-val' : 'plt-card-val';
+    el.className = base + (v > 0 ? ' plt-red' : ' plt-green');
+}
+
+/* ============================================================================
+   FUNCTIONS: TREND CHART
+   ----------------------------------------------------------------------------
+   Loads the CPU trend series and renders the dual-axis chart: CPU percentage
+   as a line on the left axis and query count as bars on the right axis, with
+   auto-scaled axes and a capacity-breakdown tooltip.
+   Prefix: plt
+   ============================================================================ */
+
+/* Loads the trend series and renders the trend chart. */
+function plt_loadTrend() {
+    cc_engineFetch('/api/platform-monitoring/trend?' + plt_buildParams())
+        .then(function(data) {
+            if (!data || data.Error) {
+                return;
+            }
+            plt_renderTrendChart(data);
+        }).catch(function() {});
+}
+
+/* Renders (or redraws) the dual-axis CPU and query-count trend chart. */
+function plt_renderTrendChart(data) {
+    var canvas = document.getElementById('plt-trend-chart');
+    var points = data.points || [];
+
+    var labels = points.map(function(p) {
+        var b = p.bucket;
+        if (b.indexOf('/') >= 0) {
+            return b;
+        }
+        var segs = b.split(' ');
+        return segs.length > 1 ? segs[1] : b;
+    });
+    var pctData = points.map(function(p) { return p.cpu_pct; });
+    var queryData = points.map(function(p) { return p.query_count; });
+
+    var maxPct = 0;
+    pctData.forEach(function(v) { if (v !== null && v !== undefined && v > maxPct) { maxPct = v; } });
+    var yMax;
+    if (maxPct === 0) {
+        yMax = 1;
+    } else if (maxPct < 0.5) {
+        yMax = Math.ceil(maxPct * 20) / 20 + 0.05;
+    } else if (maxPct < 2) {
+        yMax = Math.ceil(maxPct * 10) / 10 + 0.1;
+    } else if (maxPct < 10) {
+        yMax = Math.ceil(maxPct) + 1;
+    } else {
+        yMax = Math.ceil(maxPct * 1.3);
+    }
+
+    var maxQ = 0;
+    queryData.forEach(function(v) { if (v !== null && v !== undefined && v > maxQ) { maxQ = v; } });
+    var y1Max = maxQ > 0 ? Math.ceil(maxQ * 1.3) : 100;
+
+    if (plt_trendChart) {
+        plt_trendChart.destroy();
+    }
+    plt_trendChart = new Chart(canvas, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    label: 'CPU %', type: 'line', data: pctData,
+                    borderColor: '#4ec9b0', backgroundColor: 'rgba(78,201,176,0.12)',
+                    borderWidth: 2, pointRadius: 2, pointHoverRadius: 5,
+                    pointBackgroundColor: '#4ec9b0',
+                    fill: true, yAxisID: 'y', tension: 0.3, spanGaps: true,
+                    order: 0
+                },
+                {
+                    label: 'Queries', data: queryData,
+                    backgroundColor: 'rgba(86,156,214,0.3)',
+                    borderColor: 'rgba(86,156,214,0.5)',
+                    borderWidth: 1, yAxisID: 'y1',
+                    order: 1
                 }
-
-                // Semi-circle: 180 degree arc
-                var display = pct || 0;
-                if (display > 0 && display < 10) display = Math.max(display * 8, 4);
-                display = Math.min(display, 100);
-
-                var existing = Chart.getChart(canvas);
-                if (existing) existing.destroy();
-
-                miniGaugeCharts[id] = new Chart(canvas.getContext('2d'), {
-                    type: 'doughnut',
-                    data: { datasets: [{ data: [display, 100 - display], backgroundColor: [color, '#333'], borderWidth: 0, circumference: 180, rotation: 270 }] },
-                    options: { responsive: false, cutout: '65%', plugins: { legend: { display: false }, tooltip: { enabled: false } }, animation: { duration: 400 } }
-                });
-            });
-        }, 50);
-    }
-
-    // ========================================================================
-    // SUMMARY CARDS
-    // ========================================================================
-    function loadSummaryCards() {
-        engineFetch('/api/platform-monitoring/summary-cards?' + buildParams())
-            .then(function(data) {
-                if (!data) return;
-                if (data.Error) return;
-                summaryCardData = data;
-                setText('card-sessions', fmtNum(data.active_sessions));
-                setText('card-queries', fmtCompact(data.total_queries));
-                setText('card-avg-dur', data.avg_duration_ms > 0 ? data.avg_duration_ms.toFixed(0) : '0');
-                setAlertVal('card-blocked-by', data.blocked_by_others);
-                setAlertVal('card-caused-by', data.caused_by_xfacts);
-                setAlertVal('card-lrq', data.lrq_crossovers);
-                setAlertVal('card-open-tx', data.open_transactions);
-                updateNarrative();
-            }).catch(function() {});
-    }
-    function setAlertVal(id, val) {
-        var el = document.getElementById(id);
-        var v = (val === null || val === undefined) ? 0 : val;
-        el.textContent = fmtNum(v);
-        el.className = 'pm-card-val' + (v > 0 ? ' red' : ' green');
-    }
-
-    // ========================================================================
-    // TREND CHART — auto-scaling both axes
-    // ========================================================================
-    function loadTrend() {
-        engineFetch('/api/platform-monitoring/trend?' + buildParams())
-            .then(function(data) {
-                if (!data) return;
-                if (data.Error) return;
-                renderTrendChart(data);
-            }).catch(function() {});
-    }
-
-    function renderTrendChart(data) {
-        var canvas = document.getElementById('trend-chart');
-        var points = data.points || [];
-
-        var labels = points.map(function(p) {
-            var b = p.bucket;
-            if (b.indexOf('/') >= 0) return b;
-            var parts = b.split(' ');
-            return parts.length > 1 ? parts[1] : b;
-        });
-        var pctData = points.map(function(p) { return p.cpu_pct; });
-        var queryData = points.map(function(p) { return p.query_count; });
-
-        var maxPct = 0;
-        pctData.forEach(function(v) { if (v !== null && v !== undefined && v > maxPct) maxPct = v; });
-        var yMax;
-        if (maxPct === 0) yMax = 1;
-        else if (maxPct < 0.5) yMax = Math.ceil(maxPct * 20) / 20 + 0.05;
-        else if (maxPct < 2) yMax = Math.ceil(maxPct * 10) / 10 + 0.1;
-        else if (maxPct < 10) yMax = Math.ceil(maxPct) + 1;
-        else yMax = Math.ceil(maxPct * 1.3);
-
-        var maxQ = 0;
-        queryData.forEach(function(v) { if (v !== null && v !== undefined && v > maxQ) maxQ = v; });
-        var y1Max = maxQ > 0 ? Math.ceil(maxQ * 1.3) : 100;
-
-        if (trendChart) trendChart.destroy();
-        trendChart = new Chart(canvas, {
-            type: 'bar',
-            data: {
-                labels: labels,
-                datasets: [
-                    {
-                        label: 'CPU %', type: 'line', data: pctData,
-                        borderColor: '#4ec9b0', backgroundColor: 'rgba(78,201,176,0.12)',
-                        borderWidth: 2, pointRadius: 2, pointHoverRadius: 5,
-                        pointBackgroundColor: '#4ec9b0',
-                        fill: true, yAxisID: 'y', tension: 0.3, spanGaps: true,
-                        order: 0
-                    },
-                    {
-                        label: 'Queries', data: queryData,
-                        backgroundColor: 'rgba(86,156,214,0.3)',
-                        borderColor: 'rgba(86,156,214,0.5)',
-                        borderWidth: 1, yAxisID: 'y1',
-                        order: 1
-                    }
-                ]
-            },
-            options: {
-                responsive: true, maintainAspectRatio: false,
-                interaction: { mode: 'index', intersect: false },
-                plugins: {
-                    legend: { labels: { color: '#888', font: { size: 11 }, boxWidth: 14, padding: 12 } },
-                    tooltip: { titleFont: { size: 11 }, bodyFont: { size: 11 },
-                        footerFont: { size: 10, weight: 'normal' },
-                        footerColor: '#999',
-                        callbacks: {
+            ]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: { labels: { color: '#888', font: { size: 11 }, boxWidth: 14, padding: 12 } },
+                tooltip: { titleFont: { size: 11 }, bodyFont: { size: 11 },
+                    footerFont: { size: 10, weight: 'normal' },
+                    footerColor: '#999',
+                    callbacks: {
                         label: function(item) {
-                            if (item.datasetIndex === 0) return 'CPU: ' + (item.raw !== null ? item.raw.toFixed(3) + '%' : 'N/A');
-                            return 'Queries: ' + fmtNum(item.raw);
+                            if (item.datasetIndex === 0) {
+                                return 'CPU: ' + (item.raw !== null ? item.raw.toFixed(3) + '%' : 'N/A');
+                            }
+                            return 'Queries: ' + plt_fmtNum(item.raw);
                         },
                         afterBody: function(items) {
                             var idx = items[0].dataIndex;
                             var pt = points[idx];
-                            if (!pt || pt.cpu_pct === null || pt.cpu_pct === undefined) return [];
+                            if (!pt || pt.cpu_pct === null || pt.cpu_pct === undefined) {
+                                return [];
+                            }
                             var lines = [];
                             lines.push('');
-                            lines.push(fmtNum(pt.xfacts_cpu_ms) + 'ms \u00F7 ' + fmtNum(pt.capacity_cpu_ms) + 'ms capacity');
+                            lines.push(plt_fmtNum(pt.xfacts_cpu_ms) + 'ms \u00F7 ' + plt_fmtNum(pt.capacity_cpu_ms) + 'ms capacity');
                             return lines;
                         },
                         footer: function() {
                             return 'Capacity = CPU cores \u00D7 bucket duration \u00D7 1000';
                         }
-                    }}
-                },
-                scales: {
-                    x: { ticks: { color: '#888', font: { size: 10 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 12 }, grid: { color: '#2d2d2d' } },
-                    y: { type: 'linear', position: 'left', min: 0, suggestedMax: yMax,
-                        title: { display: true, text: 'CPU %', color: '#4ec9b0', font: { size: 10 } },
-                        ticks: { color: '#4ec9b0', font: { size: 10 } }, grid: { color: '#2d2d2d' } },
-                    y1: { type: 'linear', position: 'right', min: 0, suggestedMax: y1Max,
-                        title: { display: true, text: 'Queries', color: '#569cd6', font: { size: 10 } },
-                        ticks: { color: '#569cd6', font: { size: 10 } }, grid: { display: false } }
-                }
-            }
-        });
-    }
-
-    // ========================================================================
-    // PROCESS BREAKDOWN
-    // ========================================================================
-    function loadProcessBreakdown() {
-        engineFetch('/api/platform-monitoring/process-breakdown?' + buildParams())
-            .then(function(data) {
-                if (!data) return;
-                if (data.Error) return;
-                processData = data; renderProcessTable();
-                updateNarrative();
-            }).catch(function() {});
-    }
-
-    function renderProcessTable() {
-        var wrap = document.getElementById('process-table-wrap');
-        if (!processData || processData.length === 0) { wrap.innerHTML = '<div class="pm-loading">No data</div>'; return; }
-
-        var d = processData.slice();
-        d.sort(function(a, b) {
-            var va = a[sortCol] || 0, vb = b[sortCol] || 0;
-            if (typeof va === 'string') return sortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
-            return sortDir === 'desc' ? vb - va : va - vb;
-        });
-
-        // Calculate totals for percentage columns
-        var totalXfactsCpu = 0;
-        d.forEach(function(r) { totalXfactsCpu += (r.total_cpu_ms || 0); });
-        var serverCpuMs = (serverImpactData && serverImpactData.aggregate) ? serverImpactData.aggregate.capacity_cpu_ms : null;
-
-        // Columns: sortKey is the actual data field used for sorting; the derived
-        // percentage columns share total_cpu_ms as their sort basis, but they must
-        // NOT display the sort arrow — the arrow belongs on the real column only.
-        var cols = [
-            { key: 'process_name',        label: 'Process',   cls: '',    sortKey: 'process_name' },
-            { key: 'query_count',         label: 'Qry',       cls: 'num', sortKey: 'query_count' },
-            { key: 'total_cpu_ms',        label: 'CPU',       cls: 'num', sortKey: 'total_cpu_ms' },
-            { key: 'avg_duration_ms',     label: 'Avg',       cls: 'num', sortKey: 'avg_duration_ms' },
-            { key: 'total_logical_reads', label: 'Reads',     cls: 'num', sortKey: 'total_logical_reads' },
-            { key: '_pct_xfacts',         label: '% xFACts',  cls: 'num', sortKey: 'total_cpu_ms' },
-            { key: '_pct_server',         label: '% Server',  cls: 'num', sortKey: 'total_cpu_ms' }
-        ];
-
-        var html = '<table class="pm-table"><thead><tr>';
-        cols.forEach(function(c) {
-            // Arrow displays only on the column whose OWN key matches the sort column.
-            // Derived % columns (which sort via total_cpu_ms) don't get the indicator.
-            var arrow = (c.key === sortCol) ? '<span class="sort-arrow">' + (sortDir === 'asc' ? '\u25B2' : '\u25BC') + '</span>' : '';
-            html += '<th class="' + c.cls + '" onclick="PM.sortProcess(\'' + c.sortKey + '\')">' + c.label + arrow + '</th>';
-        });
-        html += '</tr></thead><tbody>';
-
-        d.forEach(function(row) {
-            var pctXfacts = totalXfactsCpu > 0 ? ((row.total_cpu_ms || 0) / totalXfactsCpu * 100) : 0;
-            var pctServer = (serverCpuMs && serverCpuMs > 0) ? ((row.total_cpu_ms || 0) / serverCpuMs * 100) : null;
-
-            var procName = row.process_name || '';
-            var shortName = procName.indexOf('xFACts ') === 0 ? procName.substring(7) : procName;
-            var tooltip = shortName + ' used ' + pctXfacts.toFixed(1) + '% of all xFACts CPU';
-            if (pctServer !== null) tooltip += ', but only ' + pctServer.toFixed(3) + '% of total server CPU capacity';
-
-            var displayName = row.process_name || '';
-            if (displayName.indexOf('xFACts ') === 0) displayName = displayName.substring(7);
-
-            html += '<tr data-tooltip="' + esc(tooltip) + '"><td class="process-name" title="' + esc(row.process_name) + '">' + esc(displayName) + '</td>' +
-                '<td class="num">' + fmtCompact(row.query_count) + '</td>' +
-                '<td class="num">' + fmtMs(row.total_cpu_ms) + '</td>' +
-                '<td class="num">' + fmtDur(row.avg_duration_ms) + '</td>' +
-                '<td class="num">' + fmtCompact(row.total_logical_reads) + '</td>' +
-                '<td class="num">' + pctXfacts.toFixed(1) + '%</td>' +
-                '<td class="num pct-server">' + (pctServer !== null ? pctServer.toFixed(3) + '%' : '-') + '</td></tr>';
-        });
-        html += '</tbody></table>';
-        wrap.innerHTML = html;
-    }
-
-    function sortProcess(col) {
-        if (sortCol === col) sortDir = sortDir === 'desc' ? 'asc' : 'desc';
-        else { sortCol = col; sortDir = col === 'process_name' ? 'asc' : 'desc'; }
-        renderProcessTable();
-    }
-
-    // ========================================================================
-    // API PERFORMANCE
-    // ========================================================================
-    function loadApiPerformance() {
-        engineFetch('/api/platform-monitoring/api-performance?' + buildParams())
-            .then(function(data) {
-                if (!data) return;
-                if (data.Error) return;
-                apiData = data.top_endpoints || [];
-                renderApiTable();
-                setText('card-api-reqs', fmtCompact(data.total_requests));
-                setText('card-api-rpm', data.requests_per_min !== null ? data.requests_per_min : '-');
-                setText('card-api-avg', data.avg_duration_ms > 0 ? Math.round(data.avg_duration_ms) : '0');
-                setText('card-api-p95', data.p95_ms > 0 ? Math.round(data.p95_ms) : '0');
-                setText('card-api-users', data.unique_users || '0');
-                var errEl = document.getElementById('card-api-errors');
-                var errCount = data.error_count || 0;
-                errEl.textContent = fmtNum(errCount);
-                errEl.className = 'pm-card-val' + (errCount > 0 ? ' red' : ' green');
-            }).catch(function() {});
-    }
-
-    function renderApiTable() {
-        var wrap = document.getElementById('api-table-wrap');
-        if (!apiData || apiData.length === 0) { wrap.innerHTML = '<div class="pm-loading">No API data</div>'; return; }
-
-        var d = apiData.slice();
-        d.sort(function(a, b) {
-            var va = a[apiSortCol], vb = b[apiSortCol];
-            if (va === null || va === undefined) va = (typeof vb === 'string') ? '' : 0;
-            if (vb === null || vb === undefined) vb = (typeof va === 'string') ? '' : 0;
-            if (typeof va === 'string') return apiSortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
-            return apiSortDir === 'desc' ? vb - va : va - vb;
-        });
-
-        var cols = [
-            { key: 'endpoint',   label: 'Endpoint', cls: '' },
-            { key: 'call_count', label: 'Calls',    cls: 'num' },
-            { key: 'avg_ms',     label: 'Avg ms',   cls: 'num' },
-            { key: 'max_ms',     label: 'Max ms',   cls: 'num' }
-        ];
-
-        var html = '<table class="pm-api-table"><thead><tr>';
-        cols.forEach(function(c) {
-            var arrow = (c.key === apiSortCol) ? '<span class="sort-arrow">' + (apiSortDir === 'asc' ? '\u25B2' : '\u25BC') + '</span>' : '';
-            html += '<th class="' + c.cls + '" onclick="PM.sortApi(\'' + c.key + '\')">' + c.label + arrow + '</th>';
-        });
-        html += '</tr></thead><tbody>';
-
-        d.forEach(function(ep) {
-            html += '<tr><td class="endpoint" title="' + esc(ep.endpoint) + '">' + esc(ep.endpoint) + '</td>' +
-                '<td class="num">' + fmtCompact(ep.call_count) + '</td>' +
-                '<td class="num">' + fmtNum(ep.avg_ms) + '</td>' +
-                '<td class="num">' + fmtNum(ep.max_ms) + '</td></tr>';
-        });
-        html += '</tbody></table>';
-        wrap.innerHTML = html;
-    }
-
-    function sortApi(col) {
-        if (apiSortCol === col) apiSortDir = apiSortDir === 'desc' ? 'asc' : 'desc';
-        else { apiSortCol = col; apiSortDir = col === 'endpoint' ? 'asc' : 'desc'; }
-        renderApiTable();
-    }
-
-    // ========================================================================
-    // SLIDEOUT PANEL — card click-through detail views
-    // ========================================================================
-    function openSlideout(type) {
-        var overlay = document.getElementById('slideout-overlay');
-        var panel = document.getElementById('slideout-panel');
-        var title = document.getElementById('slideout-title');
-        var summary = document.getElementById('slideout-summary');
-        var body = document.getElementById('slideout-body');
-
-        body.innerHTML = '<div class="pm-so-empty">Loading...</div>';
-        summary.innerHTML = '';
-
-        var titles = {
-            'blocking': 'Blocking Event Detail',
-            'lrq': 'Long-Running Query Detail',
-            'api-errors': 'API Error Detail',
-            'api-users': 'API User Breakdown'
-        };
-        title.textContent = titles[type] || 'Detail';
-
-        overlay.classList.add('visible');
-        panel.classList.add('visible');
-
-        if (type === 'blocking') loadBlockingDetail(summary, body);
-        else if (type === 'lrq') loadLRQDetail(summary, body);
-        else if (type === 'api-errors') loadAPIErrorDetail(summary, body);
-        else if (type === 'api-users') loadAPIUserDetail(summary, body);
-    }
-
-    function closeSlideout() {
-        document.getElementById('slideout-overlay').classList.remove('visible');
-        document.getElementById('slideout-panel').classList.remove('visible');
-    }
-
-    function loadBlockingDetail(summary, body) {
-        engineFetch('/api/platform-monitoring/blocking-detail?' + buildParams())
-            .then(function(data) {
-                if (!data) return;
-                if (!data || data.length === 0) {
-                    summary.innerHTML = 'No blocking events involving xFACts during this period.';
-                    body.innerHTML = '<div class="pm-so-empty">Nothing to show \u2014 this is good!</div>';
-                    return;
-                }
-                summary.innerHTML = '<strong>' + data.length + '</strong> blocking event' + (data.length !== 1 ? 's' : '') + ' found. Click a row to see query details.';
-                var html = '<table class="pm-so-table"><thead><tr><th>Time</th><th>Server</th><th>Direction</th><th class="num">Wait</th><th>Wait Type</th><th>Blocked App</th><th>Blocker App</th></tr></thead><tbody>';
-                data.forEach(function(e, idx) {
-                    var dirCls = e.direction === 'Caused by xFACts' ? 'dir-caused' : (e.direction === 'Blocked by Others' ? 'dir-blocked' : 'dir-both');
-                    var waitSec = e.blocked_wait_time_ms ? (e.blocked_wait_time_ms / 1000).toFixed(1) + 's' : '-';
-                    var hasSql = (e.blocked_query || e.blocker_query);
-                    html += '<tr' + (hasSql ? ' class="pm-so-expandable" onclick="PM.toggleSqlRow(\'blk-sql-' + idx + '\')"' : '') + '>' +
-                        '<td class="dim">' + fmtTimestamp(e.event_timestamp) + '</td>' +
-                        '<td>' + esc(e.server_name) + '</td>' +
-                        '<td class="' + dirCls + '">' + esc(e.direction) + '</td>' +
-                        '<td class="num">' + waitSec + '</td>' +
-                        '<td class="dim">' + esc(e.blocked_wait_type || '-') + '</td>' +
-                        '<td class="mono">' + esc(truncApp(e.blocked_client_app)) + '</td>' +
-                        '<td class="mono">' + esc(truncApp(e.blocked_by_client_app)) + '</td>' +
-                        '</tr>';
-                    if (hasSql) {
-                        var sqlContent = '';
-                        if (e.blocked_query) sqlContent += '<div class="pm-so-sql-label">Blocked Query:</div><div class="pm-so-sql-box">' + esc(e.blocked_query) + '</div>';
-                        if (e.blocker_query) sqlContent += '<div class="pm-so-sql-label">Blocker Query:</div><div class="pm-so-sql-box">' + esc(e.blocker_query) + '</div>';
-                        html += '<tr class="pm-so-sql-row" id="blk-sql-' + idx + '"><td colspan="7">' + sqlContent + '</td></tr>';
                     }
-                });
-                html += '</tbody></table>';
-                body.innerHTML = html;
-            }).catch(function(e) { body.innerHTML = '<div class="pm-so-empty">Error: ' + esc(e.message) + '</div>'; });
+                }
+            },
+            scales: {
+                x: { ticks: { color: '#888', font: { size: 10 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 12 }, grid: { color: '#2d2d2d' } },
+                y: { type: 'linear', position: 'left', min: 0, suggestedMax: yMax,
+                    title: { display: true, text: 'CPU %', color: '#4ec9b0', font: { size: 10 } },
+                    ticks: { color: '#4ec9b0', font: { size: 10 } }, grid: { color: '#2d2d2d' } },
+                y1: { type: 'linear', position: 'right', min: 0, suggestedMax: y1Max,
+                    title: { display: true, text: 'Queries', color: '#569cd6', font: { size: 10 } },
+                    ticks: { color: '#569cd6', font: { size: 10 } }, grid: { display: false } }
+            }
+        }
+    });
+}
+
+/* ============================================================================
+   FUNCTIONS: PROCESS BREAKDOWN
+   ----------------------------------------------------------------------------
+   Loads, sorts, and renders the Process Breakdown table, including the
+   derived per-xFACts and per-server percentage columns and the hover tooltip
+   that combines both perspectives in plain language.
+   Prefix: plt
+   ============================================================================ */
+
+/* Loads the process breakdown rows and renders the table. */
+function plt_loadProcessBreakdown() {
+    cc_engineFetch('/api/platform-monitoring/process-breakdown?' + plt_buildParams())
+        .then(function(data) {
+            if (!data || data.Error) {
+                return;
+            }
+            plt_processData = data;
+            plt_renderProcessTable();
+            plt_updateNarrative();
+        }).catch(function() {});
+}
+
+/* Sorts and renders the Process Breakdown table with derived percent columns. */
+function plt_renderProcessTable() {
+    var wrap = document.getElementById('plt-process-table-wrap');
+    if (!plt_processData || plt_processData.length === 0) {
+        wrap.innerHTML = '<div class="plt-loading">No data</div>';
+        return;
     }
 
-    function loadLRQDetail(summary, body) {
-        engineFetch('/api/platform-monitoring/lrq-detail?' + buildParams())
-            .then(function(data) {
-                if (!data) return;
-                if (!data || data.length === 0) {
-                    summary.innerHTML = 'No long-running xFACts queries during this period.';
-                    body.innerHTML = '<div class="pm-so-empty">All queries completed within threshold \u2014 this is good!</div>';
-                    return;
-                }
-                summary.innerHTML = '<strong>' + data.length + '</strong> long-running quer' + (data.length !== 1 ? 'ies' : 'y') + ' found. Click a row to see the full query text.';
-                var html = '<table class="pm-so-table"><thead><tr><th>Time</th><th>Server</th><th>Process</th><th>Database</th><th class="num">Duration</th><th class="num">CPU</th><th class="num">Reads</th></tr></thead><tbody>';
-                data.forEach(function(e, idx) {
-                    var proc = e.client_app_name || '';
-                    if (proc.indexOf('xFACts ') === 0) proc = proc.substring(7);
-                    html += '<tr class="pm-so-expandable" onclick="PM.toggleSqlRow(\'lrq-sql-' + idx + '\')">' +
-                        '<td class="dim">' + fmtTimestamp(e.event_timestamp) + '</td>' +
-                        '<td>' + esc(e.server_name) + '</td>' +
-                        '<td>' + esc(proc) + '</td>' +
-                        '<td class="dim">' + esc(e.database_name || '-') + '</td>' +
-                        '<td class="num">' + fmtMs(e.duration_ms) + '</td>' +
-                        '<td class="num">' + fmtMs(e.cpu_time_ms) + '</td>' +
-                        '<td class="num">' + fmtCompact(e.logical_reads) + '</td>' +
-                        '</tr>' +
-                        '<tr class="pm-so-sql-row" id="lrq-sql-' + idx + '"><td colspan="7"><div class="pm-so-sql-box">' + esc(e.sql_preview || 'No query text available') + '</div></td></tr>';
-                });
-                html += '</tbody></table>';
-                body.innerHTML = html;
-            }).catch(function(e) { body.innerHTML = '<div class="pm-so-empty">Error: ' + esc(e.message) + '</div>'; });
+    var d = plt_processData.slice();
+    d.sort(function(a, b) {
+        var va = a[plt_sortCol] || 0, vb = b[plt_sortCol] || 0;
+        if (typeof va === 'string') {
+            return plt_sortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
+        }
+        return plt_sortDir === 'desc' ? vb - va : va - vb;
+    });
+
+    var totalXfactsCpu = 0;
+    d.forEach(function(r) { totalXfactsCpu += (r.total_cpu_ms || 0); });
+    var serverCpuMs = (plt_serverImpactData && plt_serverImpactData.aggregate) ? plt_serverImpactData.aggregate.capacity_cpu_ms : null;
+
+    var cols = [
+        { key: 'process_name',        label: 'Process',   cls: '',         sortKey: 'process_name' },
+        { key: 'query_count',         label: 'Qry',       cls: 'plt-num',  sortKey: 'query_count' },
+        { key: 'total_cpu_ms',        label: 'CPU',       cls: 'plt-num',  sortKey: 'total_cpu_ms' },
+        { key: 'avg_duration_ms',     label: 'Avg',       cls: 'plt-num',  sortKey: 'avg_duration_ms' },
+        { key: 'total_logical_reads', label: 'Reads',     cls: 'plt-num',  sortKey: 'total_logical_reads' },
+        { key: '_pct_xfacts',         label: '% xFACts',  cls: 'plt-num',  sortKey: 'total_cpu_ms' },
+        { key: '_pct_server',         label: '% Server',  cls: 'plt-num',  sortKey: 'total_cpu_ms' }
+    ];
+
+    var html = '<table class="plt-table"><thead><tr>';
+    cols.forEach(function(c) {
+        var arrow = (c.key === plt_sortCol) ? '<span class="plt-table-sort-arrow">' + (plt_sortDir === 'asc' ? '\u25B2' : '\u25BC') + '</span>' : '';
+        html += '<th class="plt-table-th ' + c.cls + '" data-action-click="plt-sort-process" data-action-plt-sort-col="' + c.sortKey + '">' + c.label + arrow + '</th>';
+    });
+    html += '</tr></thead><tbody>';
+
+    d.forEach(function(row) {
+        var pctXfacts = totalXfactsCpu > 0 ? ((row.total_cpu_ms || 0) / totalXfactsCpu * 100) : 0;
+        var pctServer = (serverCpuMs && serverCpuMs > 0) ? ((row.total_cpu_ms || 0) / serverCpuMs * 100) : null;
+
+        var procName = row.process_name || '';
+        var shortName = procName.indexOf('xFACts ') === 0 ? procName.substring(7) : procName;
+        var tooltip = shortName + ' used ' + pctXfacts.toFixed(1) + '% of all xFACts CPU';
+        if (pctServer !== null) {
+            tooltip += ', but only ' + pctServer.toFixed(3) + '% of total server CPU capacity';
+        }
+
+        var displayName = row.process_name || '';
+        if (displayName.indexOf('xFACts ') === 0) {
+            displayName = displayName.substring(7);
+        }
+
+        html += '<tr class="plt-table-row" data-tooltip="' + cc_escapeHtml(tooltip) + '"><td class="plt-table-td plt-process-name" title="' + cc_escapeHtml(row.process_name) + '">' + cc_escapeHtml(displayName) + '</td>' +
+            '<td class="plt-table-td plt-num">' + plt_fmtCompact(row.query_count) + '</td>' +
+            '<td class="plt-table-td plt-num">' + plt_fmtMs(row.total_cpu_ms) + '</td>' +
+            '<td class="plt-table-td plt-num">' + plt_fmtDur(row.avg_duration_ms) + '</td>' +
+            '<td class="plt-table-td plt-num">' + plt_fmtCompact(row.total_logical_reads) + '</td>' +
+            '<td class="plt-table-td plt-num">' + pctXfacts.toFixed(1) + '%</td>' +
+            '<td class="plt-table-td plt-num plt-pct-server">' + (pctServer !== null ? pctServer.toFixed(3) + '%' : '-') + '</td></tr>';
+    });
+    html += '</tbody></table>';
+    wrap.innerHTML = html;
+}
+
+/* Applies a new sort column or toggles direction, then re-renders the table. */
+function plt_sortProcess(el) {
+    var col = el.getAttribute('data-action-plt-sort-col');
+    if (plt_sortCol === col) {
+        plt_sortDir = plt_sortDir === 'desc' ? 'asc' : 'desc';
+    } else {
+        plt_sortCol = col;
+        plt_sortDir = col === 'process_name' ? 'asc' : 'desc';
+    }
+    plt_renderProcessTable();
+}
+
+/* ============================================================================
+   FUNCTIONS: API PERFORMANCE
+   ----------------------------------------------------------------------------
+   Loads the Control Center API metrics, writes the API summary cards, and
+   renders the sortable Top API Endpoints table.
+   Prefix: plt
+   ============================================================================ */
+
+/* Loads the API performance metrics and populates the cards and table. */
+function plt_loadApiPerformance() {
+    cc_engineFetch('/api/platform-monitoring/api-performance?' + plt_buildParams())
+        .then(function(data) {
+            if (!data || data.Error) {
+                return;
+            }
+            plt_apiData = data.top_endpoints || [];
+            plt_renderApiTable();
+            plt_setText('plt-card-api-reqs', plt_fmtCompact(data.total_requests));
+            plt_setText('plt-card-api-rpm', data.requests_per_min !== null ? data.requests_per_min : '-');
+            plt_setText('plt-card-api-avg', data.avg_duration_ms > 0 ? Math.round(data.avg_duration_ms) : '0');
+            plt_setText('plt-card-api-p95', data.p95_ms > 0 ? Math.round(data.p95_ms) : '0');
+            plt_setText('plt-card-api-users', data.unique_users || '0');
+            var errEl = document.getElementById('plt-card-api-errors');
+            var errCount = data.error_count || 0;
+            errEl.textContent = plt_fmtNum(errCount);
+            errEl.className = 'plt-card-val' + (errCount > 0 ? ' plt-red' : ' plt-green');
+        }).catch(function() {});
+}
+
+/* Sorts and renders the Top API Endpoints table. */
+function plt_renderApiTable() {
+    var wrap = document.getElementById('plt-api-table-wrap');
+    if (!plt_apiData || plt_apiData.length === 0) {
+        wrap.innerHTML = '<div class="plt-loading">No API data</div>';
+        return;
     }
 
-    function loadAPIErrorDetail(summary, body) {
-        engineFetch('/api/platform-monitoring/api-errors?' + buildParams())
-            .then(function(data) {
-                if (!data) return;
-                if (data.Error) { body.innerHTML = '<div class="pm-so-empty">Error: ' + esc(data.Error) + '</div>'; return; }
-                var errors = data.errors || [];
-                var timeouts = data.timeouts || [];
-                var totalTimeouts = data.total_timeouts || 0;
+    var d = plt_apiData.slice();
+    d.sort(function(a, b) {
+        var va = a[plt_apiSortCol], vb = b[plt_apiSortCol];
+        if (va === null || va === undefined) { va = (typeof vb === 'string') ? '' : 0; }
+        if (vb === null || vb === undefined) { vb = (typeof va === 'string') ? '' : 0; }
+        if (typeof va === 'string') {
+            return plt_apiSortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
+        }
+        return plt_apiSortDir === 'desc' ? vb - va : va - vb;
+    });
 
-                var parts = [];
-                if (errors.length > 0) parts.push('<strong>' + errors.length + '</strong> error' + (errors.length !== 1 ? 's' : ''));
-                if (totalTimeouts > 0) parts.push('<strong>' + fmtCompact(totalTimeouts) + '</strong> client timeout' + (totalTimeouts !== 1 ? 's' : '') + ' (408)');
-                if (parts.length === 0) parts.push('No errors or timeouts');
-                summary.innerHTML = parts.join(', ') + ' during this period.';
+    var cols = [
+        { key: 'endpoint',   label: 'Endpoint', cls: '' },
+        { key: 'call_count', label: 'Calls',    cls: 'plt-num' },
+        { key: 'avg_ms',     label: 'Avg ms',   cls: 'plt-num' },
+        { key: 'max_ms',     label: 'Max ms',   cls: 'plt-num' }
+    ];
 
-                var html = '';
+    var html = '<table class="plt-api-table"><thead><tr>';
+    cols.forEach(function(c) {
+        var arrow = (c.key === plt_apiSortCol) ? '<span class="plt-api-table-sort-arrow">' + (plt_apiSortDir === 'asc' ? '\u25B2' : '\u25BC') + '</span>' : '';
+        html += '<th class="plt-api-table-th ' + c.cls + '" data-action-click="plt-sort-api" data-action-plt-sort-col="' + c.key + '">' + c.label + arrow + '</th>';
+    });
+    html += '</tr></thead><tbody>';
 
-                // Real errors section
-                if (errors.length > 0) {
-                    html += '<table class="pm-so-table"><thead><tr><th>Time</th><th>Endpoint</th><th>Method</th><th class="num">Status</th><th>User</th><th class="num">Duration</th></tr></thead><tbody>';
-                    errors.forEach(function(e) {
-                        html += '<tr>' +
-                            '<td class="dim">' + fmtTimestamp(e.request_dttm) + '</td>' +
-                            '<td class="mono">' + esc(e.endpoint) + '</td>' +
-                            '<td class="dim">' + esc(e.http_method) + '</td>' +
-                            '<td class="num" style="color:#f48771">' + (e.status_code || '-') + '</td>' +
-                            '<td>' + esc(e.user_name || 'Anonymous') + '</td>' +
-                            '<td class="num">' + (e.duration_ms !== null ? e.duration_ms + 'ms' : '-') + '</td>' +
-                            '</tr>';
-                    });
-                    html += '</tbody></table>';
-                } else {
-                    html += '<div class="pm-so-empty">No application errors \u2014 clean slate!</div>';
-                }
+    d.forEach(function(ep) {
+        html += '<tr class="plt-api-table-row"><td class="plt-api-table-td plt-endpoint" title="' + cc_escapeHtml(ep.endpoint) + '">' + cc_escapeHtml(ep.endpoint) + '</td>' +
+            '<td class="plt-api-table-td plt-num">' + plt_fmtCompact(ep.call_count) + '</td>' +
+            '<td class="plt-api-table-td plt-num">' + plt_fmtNum(ep.avg_ms) + '</td>' +
+            '<td class="plt-api-table-td plt-num">' + plt_fmtNum(ep.max_ms) + '</td></tr>';
+    });
+    html += '</tbody></table>';
+    wrap.innerHTML = html;
+}
 
-                // Client timeouts section (collapsible)
-                if (totalTimeouts > 0) {
-                    html += '<div class="pm-so-timeout-section">' +
-                        '<div class="pm-so-timeout-header pm-so-expandable" onclick="PM.toggleSqlRow(\'timeout-detail\')">' +
-                        '<span class="pm-so-timeout-chevron" id="timeout-chevron">\u25B6</span> ' +
-                        'Client Timeouts (408) \u2014 <strong>' + fmtCompact(totalTimeouts) + '</strong> total across <strong>' + timeouts.length + '</strong> endpoint' + (timeouts.length !== 1 ? 's' : '') +
-                        '<span class="pm-so-timeout-note">Typically caused by backgrounded browser tabs or expired sessions</span>' +
-                        '</div>' +
-                        '<div class="pm-so-timeout-body" id="timeout-detail">';
-                    html += '<table class="pm-so-table"><thead><tr><th>Endpoint</th><th class="num">Timeouts</th><th>Last Seen</th></tr></thead><tbody>';
-                    timeouts.forEach(function(t) {
-                        html += '<tr>' +
-                            '<td class="mono">' + esc(t.endpoint) + '</td>' +
-                            '<td class="num">' + fmtCompact(t.timeout_count) + '</td>' +
-                            '<td class="dim">' + fmtTimestamp(t.last_timeout) + '</td>' +
-                            '</tr>';
-                    });
-                    html += '</tbody></table></div></div>';
-                }
-
-                body.innerHTML = html;
-            }).catch(function(e) { body.innerHTML = '<div class="pm-so-empty">Error: ' + esc(e.message) + '</div>'; });
+/* Applies a new API sort column or toggles direction, then re-renders. */
+function plt_sortApi(el) {
+    var col = el.getAttribute('data-action-plt-sort-col');
+    if (plt_apiSortCol === col) {
+        plt_apiSortDir = plt_apiSortDir === 'desc' ? 'asc' : 'desc';
+    } else {
+        plt_apiSortCol = col;
+        plt_apiSortDir = col === 'endpoint' ? 'asc' : 'desc';
     }
+    plt_renderApiTable();
+}
 
-    function loadAPIUserDetail(summary, body) {
-        engineFetch('/api/platform-monitoring/api-users?' + buildParams())
-            .then(function(data) {
-                if (!data) return;
-                if (data.Error) { body.innerHTML = '<div class="pm-so-empty">Error: ' + esc(data.Error) + '</div>'; return; }
-                var users = data.users || [];
-                var unauthCount = data.unauthenticated_requests || 0;
-                var totalAuth = data.total_authenticated || 0;
+/* ============================================================================
+   FUNCTIONS: DETAIL SLIDEOUT
+   ----------------------------------------------------------------------------
+   Opens the card click-through detail slideout and loads the matching detail
+   feed (blocking events, long-running queries, API errors, or API users).
+   Each loader renders a page-local detail table; expandable rows reveal SQL.
+   Prefix: plt
+   ============================================================================ */
 
-                summary.innerHTML = '<strong>' + users.length + '</strong> active user' + (users.length !== 1 ? 's' : '') +
-                    ' \u2014 <strong>' + fmtCompact(totalAuth) + '</strong> authenticated requests, ' +
-                    '<strong>' + fmtCompact(unauthCount) + '</strong> unauthenticated (login page, expired sessions)';
+/* Opens the detail slideout for the card type and loads its detail feed. */
+function plt_openSlideout(el) {
+    var type = el.getAttribute('data-action-plt-slideout');
+    var overlay = document.getElementById('plt-slideout-detail');
+    var dialog = overlay.querySelector('.cc-dialog');
+    var title = document.getElementById('plt-slideout-title');
+    var summary = document.getElementById('plt-slideout-summary');
+    var body = document.getElementById('plt-slideout-body');
 
-                if (users.length === 0) {
-                    body.innerHTML = '<div class="pm-so-empty">No authenticated user activity during this period.</div>';
-                    return;
+    body.innerHTML = '<div class="plt-so-empty">Loading...</div>';
+    summary.innerHTML = '';
+
+    var titles = {
+        'blocking': 'Blocking Event Detail',
+        'lrq': 'Long-Running Query Detail',
+        'api-errors': 'API Error Detail',
+        'api-users': 'API User Breakdown'
+    };
+    title.textContent = titles[type] || 'Detail';
+
+    overlay.classList.add('cc-open');
+    requestAnimationFrame(function() {
+        dialog.classList.add('cc-open');
+    });
+
+    if (type === 'blocking') {
+        plt_loadBlockingDetail(summary, body);
+    } else if (type === 'lrq') {
+        plt_loadLRQDetail(summary, body);
+    } else if (type === 'api-errors') {
+        plt_loadAPIErrorDetail(summary, body);
+    } else if (type === 'api-users') {
+        plt_loadAPIUserDetail(summary, body);
+    }
+}
+
+/* Closes the detail slideout via the shared slide transition pattern. */
+function plt_closeSlideout() {
+    var overlay = document.getElementById('plt-slideout-detail');
+    var dialog = overlay.querySelector('.cc-dialog');
+    dialog.addEventListener('transitionend', function handler() {
+        dialog.removeEventListener('transitionend', handler);
+        overlay.classList.remove('cc-open');
+    });
+    dialog.classList.remove('cc-open');
+}
+
+/* Loads and renders the blocking-event detail table. */
+function plt_loadBlockingDetail(summary, body) {
+    cc_engineFetch('/api/platform-monitoring/blocking-detail?' + plt_buildParams())
+        .then(function(data) {
+            if (!data || data.length === 0) {
+                summary.innerHTML = 'No blocking events involving xFACts during this period.';
+                body.innerHTML = '<div class="plt-so-empty">Nothing to show \u2014 this is good!</div>';
+                return;
+            }
+            summary.innerHTML = '<span class="plt-narrative-strong">' + data.length + '</span> blocking event' + (data.length !== 1 ? 's' : '') + ' found. Click a row to see query details.';
+            var html = '<table class="plt-so-table"><thead><tr><th class="plt-so-th">Time</th><th class="plt-so-th">Server</th><th class="plt-so-th">Direction</th><th class="plt-so-th plt-so-num">Wait</th><th class="plt-so-th">Wait Type</th><th class="plt-so-th">Blocked App</th><th class="plt-so-th">Blocker App</th></tr></thead><tbody>';
+            data.forEach(function(e, idx) {
+                var dirCls = e.direction === 'Caused by xFACts' ? 'plt-so-dir-caused' : (e.direction === 'Blocked by Others' ? 'plt-so-dir-blocked' : 'plt-so-dir-both');
+                var waitSec = e.blocked_wait_time_ms ? (e.blocked_wait_time_ms / 1000).toFixed(1) + 's' : '-';
+                var hasSql = (e.blocked_query || e.blocker_query);
+                html += '<tr class="plt-so-row' + (hasSql ? ' plt-so-expandable' : '') + '"' + (hasSql ? ' data-action-click="plt-toggle-sql" data-action-plt-sql-id="plt-blk-sql-' + idx + '"' : '') + '>' +
+                    '<td class="plt-so-td plt-so-dim">' + plt_fmtTimestamp(e.event_timestamp) + '</td>' +
+                    '<td class="plt-so-td">' + cc_escapeHtml(e.server_name) + '</td>' +
+                    '<td class="plt-so-td ' + dirCls + '">' + cc_escapeHtml(e.direction) + '</td>' +
+                    '<td class="plt-so-td plt-so-num">' + waitSec + '</td>' +
+                    '<td class="plt-so-td plt-so-dim">' + cc_escapeHtml(e.blocked_wait_type || '-') + '</td>' +
+                    '<td class="plt-so-td plt-so-mono">' + cc_escapeHtml(plt_truncApp(e.blocked_client_app)) + '</td>' +
+                    '<td class="plt-so-td plt-so-mono">' + cc_escapeHtml(plt_truncApp(e.blocked_by_client_app)) + '</td>' +
+                    '</tr>';
+                if (hasSql) {
+                    var sqlContent = '';
+                    if (e.blocked_query) {
+                        sqlContent += '<div class="plt-so-sql-label">Blocked Query:</div><div class="plt-so-sql-box">' + cc_escapeHtml(e.blocked_query) + '</div>';
+                    }
+                    if (e.blocker_query) {
+                        sqlContent += '<div class="plt-so-sql-label">Blocker Query:</div><div class="plt-so-sql-box">' + cc_escapeHtml(e.blocker_query) + '</div>';
+                    }
+                    html += '<tr class="plt-so-sql-row" id="plt-blk-sql-' + idx + '"><td class="plt-so-sql-cell" colspan="7">' + sqlContent + '</td></tr>';
                 }
-                var html = '<table class="pm-so-table"><thead><tr><th>User</th><th class="num">Requests</th><th class="num">Pages</th><th>Last Active</th></tr></thead><tbody>';
-                users.forEach(function(u) {
-                    html += '<tr>' +
-                        '<td>' + esc(u.user_name) + '</td>' +
-                        '<td class="num">' + fmtCompact(u.request_count) + '</td>' +
-                        '<td class="num">' + (u.pages_used || '-') + '</td>' +
-                        '<td class="dim">' + fmtTimestamp(u.last_active) + '</td>' +
+            });
+            html += '</tbody></table>';
+            body.innerHTML = html;
+        }).catch(function(e) { body.innerHTML = '<div class="plt-so-empty">Error: ' + cc_escapeHtml(e.message) + '</div>'; });
+}
+
+/* Loads and renders the long-running-query detail table. */
+function plt_loadLRQDetail(summary, body) {
+    cc_engineFetch('/api/platform-monitoring/lrq-detail?' + plt_buildParams())
+        .then(function(data) {
+            if (!data || data.length === 0) {
+                summary.innerHTML = 'No long-running xFACts queries during this period.';
+                body.innerHTML = '<div class="plt-so-empty">All queries completed within threshold \u2014 this is good!</div>';
+                return;
+            }
+            summary.innerHTML = '<span class="plt-narrative-strong">' + data.length + '</span> long-running quer' + (data.length !== 1 ? 'ies' : 'y') + ' found. Click a row to see the full query text.';
+            var html = '<table class="plt-so-table"><thead><tr><th class="plt-so-th">Time</th><th class="plt-so-th">Server</th><th class="plt-so-th">Process</th><th class="plt-so-th">Database</th><th class="plt-so-th plt-so-num">Duration</th><th class="plt-so-th plt-so-num">CPU</th><th class="plt-so-th plt-so-num">Reads</th></tr></thead><tbody>';
+            data.forEach(function(e, idx) {
+                var proc = e.client_app_name || '';
+                if (proc.indexOf('xFACts ') === 0) {
+                    proc = proc.substring(7);
+                }
+                html += '<tr class="plt-so-row plt-so-expandable" data-action-click="plt-toggle-sql" data-action-plt-sql-id="plt-lrq-sql-' + idx + '">' +
+                    '<td class="plt-so-td plt-so-dim">' + plt_fmtTimestamp(e.event_timestamp) + '</td>' +
+                    '<td class="plt-so-td">' + cc_escapeHtml(e.server_name) + '</td>' +
+                    '<td class="plt-so-td">' + cc_escapeHtml(proc) + '</td>' +
+                    '<td class="plt-so-td plt-so-dim">' + cc_escapeHtml(e.database_name || '-') + '</td>' +
+                    '<td class="plt-so-td plt-so-num">' + plt_fmtMs(e.duration_ms) + '</td>' +
+                    '<td class="plt-so-td plt-so-num">' + plt_fmtMs(e.cpu_time_ms) + '</td>' +
+                    '<td class="plt-so-td plt-so-num">' + plt_fmtCompact(e.logical_reads) + '</td>' +
+                    '</tr>' +
+                    '<tr class="plt-so-sql-row" id="plt-lrq-sql-' + idx + '"><td class="plt-so-sql-cell" colspan="7"><div class="plt-so-sql-box">' + cc_escapeHtml(e.sql_preview || 'No query text available') + '</div></td></tr>';
+            });
+            html += '</tbody></table>';
+            body.innerHTML = html;
+        }).catch(function(e) { body.innerHTML = '<div class="plt-so-empty">Error: ' + cc_escapeHtml(e.message) + '</div>'; });
+}
+
+/* Loads and renders the API-error detail table plus the collapsible client
+   timeout section. */
+function plt_loadAPIErrorDetail(summary, body) {
+    cc_engineFetch('/api/platform-monitoring/api-errors?' + plt_buildParams())
+        .then(function(data) {
+            if (!data) {
+                return;
+            }
+            if (data.Error) {
+                body.innerHTML = '<div class="plt-so-empty">Error: ' + cc_escapeHtml(data.Error) + '</div>';
+                return;
+            }
+            var errors = data.errors || [];
+            var timeouts = data.timeouts || [];
+            var totalTimeouts = data.total_timeouts || 0;
+
+            var parts = [];
+            if (errors.length > 0) {
+                parts.push('<span class="plt-narrative-strong">' + errors.length + '</span> error' + (errors.length !== 1 ? 's' : ''));
+            }
+            if (totalTimeouts > 0) {
+                parts.push('<span class="plt-narrative-strong">' + plt_fmtCompact(totalTimeouts) + '</span> client timeout' + (totalTimeouts !== 1 ? 's' : '') + ' (408)');
+            }
+            if (parts.length === 0) {
+                parts.push('No errors or timeouts');
+            }
+            summary.innerHTML = parts.join(', ') + ' during this period.';
+
+            var html = '';
+            if (errors.length > 0) {
+                html += '<table class="plt-so-table"><thead><tr><th class="plt-so-th">Time</th><th class="plt-so-th">Endpoint</th><th class="plt-so-th">Method</th><th class="plt-so-th plt-so-num">Status</th><th class="plt-so-th">User</th><th class="plt-so-th plt-so-num">Duration</th></tr></thead><tbody>';
+                errors.forEach(function(e) {
+                    html += '<tr class="plt-so-row">' +
+                        '<td class="plt-so-td plt-so-dim">' + plt_fmtTimestamp(e.request_dttm) + '</td>' +
+                        '<td class="plt-so-td plt-so-mono">' + cc_escapeHtml(e.endpoint) + '</td>' +
+                        '<td class="plt-so-td plt-so-dim">' + cc_escapeHtml(e.http_method) + '</td>' +
+                        '<td class="plt-so-td plt-so-num plt-so-dir-caused">' + (e.status_code || '-') + '</td>' +
+                        '<td class="plt-so-td">' + cc_escapeHtml(e.user_name || 'Anonymous') + '</td>' +
+                        '<td class="plt-so-td plt-so-num">' + (e.duration_ms !== null ? e.duration_ms + 'ms' : '-') + '</td>' +
                         '</tr>';
                 });
                 html += '</tbody></table>';
-                body.innerHTML = html;
-            }).catch(function(e) { body.innerHTML = '<div class="pm-so-empty">Error: ' + esc(e.message) + '</div>'; });
-    }
-
-    // Slideout helpers
-    function truncApp(name) { if (!name) return '-'; if (name.indexOf('xFACts ') === 0) return name.substring(7); return name.length > 30 ? name.substring(0, 27) + '...' : name; }
-    function truncSql(sql) { if (!sql) return '-'; return sql.length > 60 ? sql.substring(0, 57) + '...' : sql; }
-    function toggleSqlRow(id) {
-        var row = document.getElementById(id);
-        if (row) {
-            row.classList.toggle('visible');
-            // Rotate chevron if this is the timeout section
-            if (id === 'timeout-detail') {
-                var chev = document.getElementById('timeout-chevron');
-                if (chev) chev.textContent = row.classList.contains('visible') ? '\u25BC' : '\u25B6';
+            } else {
+                html += '<div class="plt-so-empty">No application errors \u2014 clean slate!</div>';
             }
+
+            if (totalTimeouts > 0) {
+                html += '<div class="plt-so-timeout-section">' +
+                    '<div class="plt-so-timeout-header plt-so-expandable" data-action-click="plt-toggle-sql" data-action-plt-sql-id="plt-timeout-detail">' +
+                    '<span class="plt-so-timeout-chevron" id="plt-timeout-chevron">\u25B6</span> ' +
+                    'Client Timeouts (408) \u2014 <span class="plt-narrative-strong">' + plt_fmtCompact(totalTimeouts) + '</span> total across <span class="plt-narrative-strong">' + timeouts.length + '</span> endpoint' + (timeouts.length !== 1 ? 's' : '') +
+                    '<span class="plt-so-timeout-note">Typically caused by backgrounded browser tabs or expired sessions</span>' +
+                    '</div>' +
+                    '<div class="plt-so-timeout-body" id="plt-timeout-detail">';
+                html += '<table class="plt-so-table"><thead><tr><th class="plt-so-th">Endpoint</th><th class="plt-so-th plt-so-num">Timeouts</th><th class="plt-so-th">Last Seen</th></tr></thead><tbody>';
+                timeouts.forEach(function(t) {
+                    html += '<tr class="plt-so-row">' +
+                        '<td class="plt-so-td plt-so-mono">' + cc_escapeHtml(t.endpoint) + '</td>' +
+                        '<td class="plt-so-td plt-so-num">' + plt_fmtCompact(t.timeout_count) + '</td>' +
+                        '<td class="plt-so-td plt-so-dim">' + plt_fmtTimestamp(t.last_timeout) + '</td>' +
+                        '</tr>';
+                });
+                html += '</tbody></table></div></div>';
+            }
+
+            body.innerHTML = html;
+        }).catch(function(e) { body.innerHTML = '<div class="plt-so-empty">Error: ' + cc_escapeHtml(e.message) + '</div>'; });
+}
+
+/* Loads and renders the API-user breakdown table. */
+function plt_loadAPIUserDetail(summary, body) {
+    cc_engineFetch('/api/platform-monitoring/api-users?' + plt_buildParams())
+        .then(function(data) {
+            if (!data) {
+                return;
+            }
+            if (data.Error) {
+                body.innerHTML = '<div class="plt-so-empty">Error: ' + cc_escapeHtml(data.Error) + '</div>';
+                return;
+            }
+            var users = data.users || [];
+            var unauthCount = data.unauthenticated_requests || 0;
+            var totalAuth = data.total_authenticated || 0;
+
+            summary.innerHTML = '<span class="plt-narrative-strong">' + users.length + '</span> active user' + (users.length !== 1 ? 's' : '') +
+                ' \u2014 <span class="plt-narrative-strong">' + plt_fmtCompact(totalAuth) + '</span> authenticated requests, ' +
+                '<span class="plt-narrative-strong">' + plt_fmtCompact(unauthCount) + '</span> unauthenticated (login page, expired sessions)';
+
+            if (users.length === 0) {
+                body.innerHTML = '<div class="plt-so-empty">No authenticated user activity during this period.</div>';
+                return;
+            }
+            var html = '<table class="plt-so-table"><thead><tr><th class="plt-so-th">User</th><th class="plt-so-th plt-so-num">Requests</th><th class="plt-so-th plt-so-num">Pages</th><th class="plt-so-th">Last Active</th></tr></thead><tbody>';
+            users.forEach(function(u) {
+                html += '<tr class="plt-so-row">' +
+                    '<td class="plt-so-td">' + cc_escapeHtml(u.user_name) + '</td>' +
+                    '<td class="plt-so-td plt-so-num">' + plt_fmtCompact(u.request_count) + '</td>' +
+                    '<td class="plt-so-td plt-so-num">' + (u.pages_used || '-') + '</td>' +
+                    '<td class="plt-so-td plt-so-dim">' + plt_fmtTimestamp(u.last_active) + '</td>' +
+                    '</tr>';
+            });
+            html += '</tbody></table>';
+            body.innerHTML = html;
+        }).catch(function(e) { body.innerHTML = '<div class="plt-so-empty">Error: ' + cc_escapeHtml(e.message) + '</div>'; });
+}
+
+/* Toggles an expandable SQL detail row (or the timeout section), rotating the
+   timeout chevron when that section is toggled. Reads the target id. */
+function plt_toggleSqlRow(el) {
+    var id = el.getAttribute('data-action-plt-sql-id');
+    var row = document.getElementById(id);
+    if (!row) {
+        return;
+    }
+    row.classList.toggle('plt-visible');
+    if (id === 'plt-timeout-detail') {
+        var chev = document.getElementById('plt-timeout-chevron');
+        if (chev) {
+            chev.textContent = row.classList.contains('plt-visible') ? '\u25BC' : '\u25B6';
         }
     }
-    function fmtTimestamp(ts) {
-        if (!ts) return '-';
-        // Handle .NET JSON date format: /Date(1234567890)/
-        var dotnetMatch = String(ts).match(/\/Date\((\d+)\)\//);
-        if (dotnetMatch) {
-            var d = new Date(parseInt(dotnetMatch[1]));
-            return (d.getMonth()+1) + '/' + d.getDate() + ' ' + d.toLocaleTimeString();
-        }
-        var d = new Date(ts);
-        if (isNaN(d.getTime())) return String(ts).substring(0, 19);
-        return (d.getMonth()+1) + '/' + d.getDate() + ' ' + d.toLocaleTimeString();
-    }
+}
 
-    // ========================================================================
-    // FORMATTING
-    // ========================================================================
-    function fmtNum(n) { if (n === null || n === undefined) return '-'; return Number(n).toLocaleString(); }
-    function fmtCompact(n) {
-        if (n === null || n === undefined) return '-';
-        if (n >= 1000000) return (n/1000000).toFixed(1) + 'M';
-        if (n >= 1000) return (n/1000).toFixed(1) + 'K';
-        return Number(n).toLocaleString();
+/* Shortens an application name, stripping the xFACts prefix and truncating. */
+function plt_truncApp(name) {
+    if (!name) {
+        return '-';
     }
-    function fmtMs(ms) {
-        if (ms === null || ms === undefined) return '-';
-        if (ms < 1000) return ms + 'ms';
-        if (ms < 60000) return (ms/1000).toFixed(1) + 's';
-        if (ms < 3600000) return (ms/60000).toFixed(1) + 'm';
-        return (ms/3600000).toFixed(1) + 'h';
+    if (name.indexOf('xFACts ') === 0) {
+        return name.substring(7);
     }
-    function fmtDur(ms) {
-        if (ms === null || ms === undefined) return '-';
-        if (ms < 1) return '<1ms'; return Number(ms).toFixed(0) + 'ms';
-    }
-    function setText(id, val) { var el = document.getElementById(id); if (el) el.textContent = val; }
-    function esc(s) { if (!s) return ''; return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+    return name.length > 30 ? name.substring(0, 27) + '...' : name;
+}
 
-    document.addEventListener('DOMContentLoaded', init);
-    return {
-        selectServer: selectServer,
-        setRange: setRange,
-        openDateModal: openDateModal,
-        closeDateModal: closeDateModal,
-        applyCustomRange: applyCustomRange,
-        sortProcess: sortProcess,
-        sortApi: sortApi,
-        showInfo: showInfo,
-        closeInfo: closeInfo,
-        openSlideout: openSlideout,
-        closeSlideout: closeSlideout,
-        toggleSqlRow: toggleSqlRow,
-        pageRefresh: pageRefresh
-    };
-})();
+/* Formats a timestamp value, handling the .NET /Date(...)/ JSON form. */
+function plt_fmtTimestamp(ts) {
+    if (!ts) {
+        return '-';
+    }
+    var dotnetMatch = String(ts).match(/\/Date\((\d+)\)\//);
+    if (dotnetMatch) {
+        var dm = new Date(parseInt(dotnetMatch[1], 10));
+        return (dm.getMonth() + 1) + '/' + dm.getDate() + ' ' + dm.toLocaleTimeString();
+    }
+    var d = new Date(ts);
+    if (isNaN(d.getTime())) {
+        return String(ts).substring(0, 19);
+    }
+    return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + d.toLocaleTimeString();
+}
+
+/* ============================================================================
+   FUNCTIONS: FORMATTING
+   ----------------------------------------------------------------------------
+   Number, compact-number, millisecond, and duration formatters, plus the
+   small text-setter helper used across the dashboard.
+   Prefix: plt
+   ============================================================================ */
+
+/* Formats a number with thousands separators, or '-' for null. */
+function plt_fmtNum(n) {
+    if (n === null || n === undefined) {
+        return '-';
+    }
+    return Number(n).toLocaleString();
+}
+
+/* Formats a number compactly (K/M suffixes), or '-' for null. */
+function plt_fmtCompact(n) {
+    if (n === null || n === undefined) {
+        return '-';
+    }
+    if (n >= 1000000) {
+        return (n / 1000000).toFixed(1) + 'M';
+    }
+    if (n >= 1000) {
+        return (n / 1000).toFixed(1) + 'K';
+    }
+    return Number(n).toLocaleString();
+}
+
+/* Formats a millisecond duration with a scaled unit, or '-' for null. */
+function plt_fmtMs(ms) {
+    if (ms === null || ms === undefined) {
+        return '-';
+    }
+    if (ms < 1000) {
+        return ms + 'ms';
+    }
+    if (ms < 60000) {
+        return (ms / 1000).toFixed(1) + 's';
+    }
+    if (ms < 3600000) {
+        return (ms / 60000).toFixed(1) + 'm';
+    }
+    return (ms / 3600000).toFixed(1) + 'h';
+}
+
+/* Formats a short query duration in milliseconds, or '-' for null. */
+function plt_fmtDur(ms) {
+    if (ms === null || ms === undefined) {
+        return '-';
+    }
+    if (ms < 1) {
+        return '<1ms';
+    }
+    return Number(ms).toFixed(0) + 'ms';
+}
+
+/* Sets an element's text content by id when the element exists. */
+function plt_setText(id, val) {
+    var el = document.getElementById(id);
+    if (el) {
+        el.textContent = val;
+    }
+}
+
+/* ============================================================================
+   FUNCTIONS: PAGE LIFECYCLE HOOKS
+   ----------------------------------------------------------------------------
+   Page lifecycle callbacks invoked by cc-shared.js. Platform Monitoring
+   re-pulls its snapshot when the tab regains visibility.
+   Prefix: plt
+   ============================================================================ */
+
+/* Re-pulls the snapshot when the tab regains visibility. */
+function plt_onPageResumed() {
+    plt_refreshAll();
+}
