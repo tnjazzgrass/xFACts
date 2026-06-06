@@ -1,67 +1,93 @@
-# ============================================================================
-# xFACts Control Center - Client Portal API Routes
-# Location: E:\xFACts-ControlCenter\scripts\routes\ClientPortal-API.ps1
-# 
-# API endpoints for the Client Portal consumer/account lookup tool.
-# All queries are read-only against crs5_oltp via the AG secondary replica.
-# No xFACts database tables are used — this is a pure passthrough to DM data.
-#
-# Cross-database references:
-#   DBA.dbo.fn_Clients(@filter) - TVF returning crdtr_id, crdtr_shrt_nm
-#                                  for any creditor or group short name
-#   DBA.dbo.fn_GetSSN(@cnsmr_id) - Scalar function returning decrypted SSN
-#
-# Dependencies (from xFACts-Helpers.psm1):
-#   Invoke-CRS5ReadQuery, Get-CachedResult, Invoke-XFActsQuery,
-#   ConvertTo-SafeValue, ConvertTo-SafeDate, ConvertTo-SafeDateTime,
-#   ConvertTo-SafeDecimal
-#
-# Endpoints:
-#   GET  /api/client-portal/lookups                 - All lookup tables (cached)
-#   GET  /api/client-portal/creditors               - Creditor lookup via fn_Clients
-#   GET  /api/client-portal/search                  - Consumer search (with optional creditor filter)
-#   GET  /api/client-portal/consumer/:id            - Consumer header (with decrypted SSN)
-#   GET  /api/client-portal/consumer/:id/accounts   - Account list with financials
-#   GET  /api/client-portal/consumer/:id/addresses  - Consumer addresses
-#   GET  /api/client-portal/consumer/:id/phones     - Consumer phones (non-deleted)
-#   GET  /api/client-portal/consumer/:id/events     - Consumer-level AR log
-#   GET  /api/client-portal/consumer/:id/documents  - Consumer-level outreach
-#   GET  /api/client-portal/account/:id             - Account detail with financials
-#   GET  /api/client-portal/account/:id/transactions - Account transactions (reportable)
-#   GET  /api/client-portal/account/:id/events      - Account-level AR log
-#   GET  /api/client-portal/account/:id/documents   - Account-level outreach
-#
-# Version: Tracked in dbo.System_Metadata (component: Tools.Operations)
-# ============================================================================
+<#
+.SYNOPSIS
+    Provides the Client Portal consumer/account lookup API endpoints.
 
-# ============================================================================
-# LOOKUPS - All reference/lookup tables, cached with long TTL
-# ============================================================================
+.DESCRIPTION
+    API routes for the Client Portal lookup tool. All endpoints are read-only
+    GET routes that query Debt Manager data in crs5_oltp via the AG secondary
+    read replica using the shared cached/read query helpers. The endpoints
+    cover reference lookups, creditor resolution, consumer search, consumer
+    detail (header, accounts, addresses, phones, events, documents), and
+    account detail (header, transactions, events, documents). No xFACts
+    database tables are written; this is a pure read passthrough to DM data.
+
+.COMPONENT
+    Tools.ClientPortal
+
+.NOTES
+    File Name : ClientPortal-API.ps1
+    Location  : E:\xFACts-ControlCenter\scripts\routes\ClientPortal-API.ps1
+
+    FILE ORGANIZATION
+    -----------------
+    ROUTE: API ENDPOINTS
+#>
+
+<# ============================================================================
+   ROUTE: API ENDPOINTS
+   ----------------------------------------------------------------------------
+   Registers the Client Portal GET endpoints. Each endpoint guards with
+   Test-ActionEndpoint, reads the per-query command timeout from GlobalConfig,
+   runs read-only queries against crs5_oltp via the shared read helpers, shapes
+   the result with the ConvertTo-Safe* helpers, and returns it via
+   Write-PodeJsonResponse.
+   Prefix: (none)
+   ============================================================================ #>
+
 Add-PodeRoute -Method Get -Path '/api/client-portal/lookups' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
     try {
         $forceRefresh = ($WebEvent.Query['refresh'] -eq 'true')
 
         $results = Get-CachedResult -CacheKey 'portal_lookups' -ForceRefresh:$forceRefresh -ScriptBlock {
 
-            # Get timeout from GlobalConfig (inline — cannot use file-level functions in Pode runspaces)
+            # Get timeout from GlobalConfig (inline -- cannot use file-level functions in Pode runspaces)
             $timeout = 60
             try {
-                $tCfg = Invoke-XFActsQuery -Query "SELECT setting_value FROM dbo.GlobalConfig WHERE module_name = 'Tools' AND category = 'Portal' AND setting_name = 'crs5_portal_query_timeout_seconds' AND is_active = 1"
+                $tCfg = Invoke-XFActsQuery -Query @"
+                    SELECT setting_value FROM dbo.GlobalConfig WHERE module_name = 'Tools' AND category = 'Portal' AND setting_name = 'crs5_portal_query_timeout_seconds' AND is_active = 1
+"@
                 if ($tCfg -and $tCfg.Count -gt 0 -and $tCfg[0].setting_value) { $timeout = [int]$tCfg[0].setting_value }
             } catch { }
 
-            $actions = Invoke-CRS5ReadQuery -TimeoutSeconds $timeout -Query "SELECT actn_cd, actn_cd_shrt_val_txt FROM dbo.actn_cd"
-            $results_lookup = Invoke-CRS5ReadQuery -TimeoutSeconds $timeout -Query "SELECT rslt_cd, rslt_cd_shrt_val_txt FROM dbo.rslt_cd"
-            $addressStatuses = Invoke-CRS5ReadQuery -TimeoutSeconds $timeout -Query "SELECT addrss_stts_cd, addrss_stts_val_txt FROM dbo.ref_addrss_stts_cd"
-            $buckets = Invoke-CRS5ReadQuery -TimeoutSeconds $timeout -Query "SELECT bckt_id, bckt_nm FROM dbo.bckt"
-            $txnTypes = Invoke-CRS5ReadQuery -TimeoutSeconds $timeout -Query "SELECT bckt_trnsctn_typ_cd, bckt_trnsctn_val_txt FROM dbo.ref_bckt_trnsctn_typ_cd"
-            $balanceNames = Invoke-CRS5ReadQuery -TimeoutSeconds $timeout -Query "SELECT bal_nm_id, bal_nm FROM dbo.bal_nm"
-            $users = Invoke-CRS5ReadQuery -TimeoutSeconds $timeout -Query "SELECT usr_id, usr_usrnm FROM dbo.usr"
-            $phoneStatuses = Invoke-CRS5ReadQuery -TimeoutSeconds $timeout -Query "SELECT phn_stts_cd, phn_stts_val_txt FROM dbo.ref_phn_stts_cd"
-            $phoneTypes = Invoke-CRS5ReadQuery -TimeoutSeconds $timeout -Query "SELECT phn_typ_cd, phn_typ_val_txt FROM dbo.ref_phn_typ_cd"
-            $paymentLocations = Invoke-CRS5ReadQuery -TimeoutSeconds $timeout -Query "SELECT pymnt_lctn_cd, pymnt_lctn_val_txt FROM dbo.ref_pymnt_lctn_cd"
-            $tags = Invoke-CRS5ReadQuery -TimeoutSeconds $timeout -Query "SELECT tag_id, tag_typ_id, tag_shrt_nm, tag_nm FROM dbo.tag WHERE tag_typ_id IN (113, 115)"
-            $portalEvents = Invoke-CRS5ReadQuery -TimeoutSeconds $timeout -Query "SELECT rslt_cd FROM dbo.rslt_cd_class_assctn WHERE rslt_cd_class_id = 41"
+            $actions = Invoke-CRS5ReadQuery -TimeoutSeconds $timeout -Query @"
+
+                SELECT actn_cd, actn_cd_shrt_val_txt FROM dbo.actn_cd
+"@
+            $results_lookup = Invoke-CRS5ReadQuery -TimeoutSeconds $timeout -Query @"
+                SELECT rslt_cd, rslt_cd_shrt_val_txt FROM dbo.rslt_cd
+"@
+            $addressStatuses = Invoke-CRS5ReadQuery -TimeoutSeconds $timeout -Query @"
+                SELECT addrss_stts_cd, addrss_stts_val_txt FROM dbo.ref_addrss_stts_cd
+"@
+            $buckets = Invoke-CRS5ReadQuery -TimeoutSeconds $timeout -Query @"
+                SELECT bckt_id, bckt_nm FROM dbo.bckt
+"@
+            $txnTypes = Invoke-CRS5ReadQuery -TimeoutSeconds $timeout -Query @"
+                SELECT bckt_trnsctn_typ_cd, bckt_trnsctn_val_txt FROM dbo.ref_bckt_trnsctn_typ_cd
+"@
+            $balanceNames = Invoke-CRS5ReadQuery -TimeoutSeconds $timeout -Query @"
+                SELECT bal_nm_id, bal_nm FROM dbo.bal_nm
+"@
+            $users = Invoke-CRS5ReadQuery -TimeoutSeconds $timeout -Query @"
+                SELECT usr_id, usr_usrnm FROM dbo.usr
+"@
+            $phoneStatuses = Invoke-CRS5ReadQuery -TimeoutSeconds $timeout -Query @"
+                SELECT phn_stts_cd, phn_stts_val_txt FROM dbo.ref_phn_stts_cd
+"@
+            $phoneTypes = Invoke-CRS5ReadQuery -TimeoutSeconds $timeout -Query @"
+                SELECT phn_typ_cd, phn_typ_val_txt FROM dbo.ref_phn_typ_cd
+"@
+            $paymentLocations = Invoke-CRS5ReadQuery -TimeoutSeconds $timeout -Query @"
+                SELECT pymnt_lctn_cd, pymnt_lctn_val_txt FROM dbo.ref_pymnt_lctn_cd
+"@
+            $tags = Invoke-CRS5ReadQuery -TimeoutSeconds $timeout -Query @"
+                SELECT tag_id, tag_typ_id, tag_shrt_nm, tag_nm FROM dbo.tag WHERE tag_typ_id IN (113, 115)
+"@
+            $portalEvents = Invoke-CRS5ReadQuery -TimeoutSeconds $timeout -Query @"
+                SELECT rslt_cd FROM dbo.rslt_cd_class_assctn WHERE rslt_cd_class_id = 41
+"@
 
             return @{
                 actions            = $actions
@@ -89,10 +115,9 @@ Add-PodeRoute -Method Get -Path '/api/client-portal/lookups' -Authentication 'AD
     }
 }
 
-# ============================================================================
-# CREDITOR LOOKUP - Resolve client/group short name via fn_Clients
-# ============================================================================
 Add-PodeRoute -Method Get -Path '/api/client-portal/creditors' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
     try {
         $filter = $WebEvent.Query['filter']
 
@@ -103,7 +128,9 @@ Add-PodeRoute -Method Get -Path '/api/client-portal/creditors' -Authentication '
 
         $timeout = 60
         try {
-            $tCfg = Invoke-XFActsQuery -Query "SELECT setting_value FROM dbo.GlobalConfig WHERE module_name = 'Tools' AND category = 'Portal' AND setting_name = 'crs5_portal_query_timeout_seconds' AND is_active = 1"
+            $tCfg = Invoke-XFActsQuery -Query @"
+                SELECT setting_value FROM dbo.GlobalConfig WHERE module_name = 'Tools' AND category = 'Portal' AND setting_name = 'crs5_portal_query_timeout_seconds' AND is_active = 1
+"@
             if ($tCfg -and $tCfg.Count -gt 0 -and $tCfg[0].setting_value) { $timeout = [int]$tCfg[0].setting_value }
         } catch { }
 
@@ -132,10 +159,9 @@ Add-PodeRoute -Method Get -Path '/api/client-portal/creditors' -Authentication '
     }
 }
 
-# ============================================================================
-# SEARCH - Single-query approach: search + enrichment in one round trip
-# ============================================================================
 Add-PodeRoute -Method Get -Path '/api/client-portal/search' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
     try {
         $searchType = $WebEvent.Query['type']
         $searchTerm = $WebEvent.Query['term']
@@ -143,7 +169,9 @@ Add-PodeRoute -Method Get -Path '/api/client-portal/search' -Authentication 'ADL
 
         $timeout = 60
         try {
-            $tCfg = Invoke-XFActsQuery -Query "SELECT setting_value FROM dbo.GlobalConfig WHERE module_name = 'Tools' AND category = 'Portal' AND setting_name = 'crs5_portal_query_timeout_seconds' AND is_active = 1"
+            $tCfg = Invoke-XFActsQuery -Query @"
+                SELECT setting_value FROM dbo.GlobalConfig WHERE module_name = 'Tools' AND category = 'Portal' AND setting_name = 'crs5_portal_query_timeout_seconds' AND is_active = 1
+"@
             if ($tCfg -and $tCfg.Count -gt 0 -and $tCfg[0].setting_value) { $timeout = [int]$tCfg[0].setting_value }
         } catch { }
 
@@ -183,7 +211,7 @@ Add-PodeRoute -Method Get -Path '/api/client-portal/search' -Authentication 'ADL
             $cfWhereCA3 = "AND ca3.crdtr_id IN (SELECT crdtr_id FROM DBA.dbo.fn_Clients(@clientFilter))"
         }
 
-        # Enrichment OUTER APPLYs — appended to every search query
+        # Enrichment OUTER APPLYs -- appended to every search query
         # These run correlated to each matched consumer, all in a single query
         $enrichmentApplies = @"
             OUTER APPLY (
@@ -226,7 +254,7 @@ Add-PodeRoute -Method Get -Path '/api/client-portal/search' -Authentication 'ADL
 
         switch ($searchType) {
             'cnsmr_accnt_crdtr_rfrnc_id_txt' {
-                # TWO-STEP: Client Account Number — varchar column, can match many account rows
+                # TWO-STEP: Client Account Number -- varchar column, can match many account rows
                 $whereClause = if ($useWildcard) { "ca.cnsmr_accnt_crdtr_rfrnc_id_txt LIKE @term" } else { "ca.cnsmr_accnt_crdtr_rfrnc_id_txt = @term" }
                 $leanQuery = @"
                     $ctePrefix
@@ -242,7 +270,7 @@ Add-PodeRoute -Method Get -Path '/api/client-portal/search' -Authentication 'ADL
                 $params['term'] = $sqlTerm
             }
             'cnsmr_phn_nmbr_txt' {
-                # TWO-STEP: Phone Number — joins through cnsmr_phn
+                # TWO-STEP: Phone Number -- joins through cnsmr_phn
                 $phoneTerm = ($sqlTerm -replace '[^0-9%]', '')
                 $whereClause = if ($useWildcard) { "cp.cnsmr_phn_nmbr_txt LIKE @term" } else { "cp.cnsmr_phn_nmbr_txt = @term" }
                 if ($hasClientFilter) {
@@ -276,7 +304,7 @@ Add-PodeRoute -Method Get -Path '/api/client-portal/search' -Authentication 'ADL
                 # Credentials retrieved from dbo.Credentials (DM_Encryption service)
                 $ssnTerm = ($searchTerm -replace '[^0-9]', '')
                 if ($ssnTerm.Length -lt 4) {
-                    Write-PodeJsonResponse -Value @{ 
+                    Write-PodeJsonResponse -Value @{
                         error = "Please enter at least 4 digits for SSN search."
                         consumers = @(); count = 0
                     } -StatusCode 200
@@ -287,8 +315,8 @@ Add-PodeRoute -Method Get -Path '/api/client-portal/search' -Authentication 'ADL
                     $dmCreds = Get-ServiceCredentials -ServiceName 'DM_Encryption'
                     $hashSalt = $dmCreds['DMPassphrase']
                 } catch {
-                    Write-PodeJsonResponse -Value @{ 
-                        error = "SSN search is unavailable — encryption credentials could not be retrieved."
+                    Write-PodeJsonResponse -Value @{
+                        error = "SSN search is unavailable -- encryption credentials could not be retrieved."
                         consumers = @(); count = 0
                     } -StatusCode 200
                     return
@@ -322,7 +350,7 @@ Add-PodeRoute -Method Get -Path '/api/client-portal/search' -Authentication 'ADL
                 }
             }
             'cnsmr_nm_lst_txt' {
-                # TWO-STEP: Name search — can return many consumers
+                # TWO-STEP: Name search -- can return many consumers
                 $lastTerm = $sqlTerm
                 $firstTerm = $null
                 if ($sqlTerm -match '^\s*(.+?)\s*,\s*(.+?)\s*$') {
@@ -361,7 +389,7 @@ Add-PodeRoute -Method Get -Path '/api/client-portal/search' -Authentication 'ADL
                 }
             }
             'cnsmr_idntfr_agncy_id' {
-                # SINGLE-QUERY: FA Consumer Number — direct cnsmr lookup, fast
+                # SINGLE-QUERY: FA Consumer Number -- direct cnsmr lookup, fast
                 if ($useWildcard) {
                     $query = @"
                         SELECT TOP 100
@@ -387,7 +415,7 @@ Add-PodeRoute -Method Get -Path '/api/client-portal/search' -Authentication 'ADL
                 }
             }
             'cnsmr_accnt_idntfr_agncy_id' {
-                # SINGLE-QUERY: FA Account Number — integer column, small result set
+                # SINGLE-QUERY: FA Account Number -- integer column, small result set
                 if ($useWildcard) {
                     $leanQuery = @"
                         $ctePrefix
@@ -424,8 +452,10 @@ Add-PodeRoute -Method Get -Path '/api/client-portal/search' -Authentication 'ADL
         $consumers = @()
 
         if ($leanQuery) {
-            # ---- TWO-STEP PATH ----
-            # Step 1: Lean search — get distinct consumer IDs only
+
+            # -- Two-step path --
+
+            # Step 1: Lean search -- get distinct consumer IDs only
             $searchResults = Invoke-CRS5ReadQuery -Query $leanQuery -Parameters $params -TimeoutSeconds $timeout
 
             if ($searchResults -and $searchResults.Count -gt 0) {
@@ -468,7 +498,9 @@ Add-PodeRoute -Method Get -Path '/api/client-portal/search' -Authentication 'ADL
             }
         }
         elseif ($query) {
-            # ---- SINGLE-QUERY PATH ----
+
+            # -- Single-query path --
+
             $searchResults = Invoke-CRS5ReadQuery -Query $query -Parameters $params -TimeoutSeconds $timeout
 
             foreach ($row in $searchResults) {
@@ -503,15 +535,16 @@ Add-PodeRoute -Method Get -Path '/api/client-portal/search' -Authentication 'ADL
     }
 }
 
-# ============================================================================
-# CONSUMER HEADER - Demographics, status tag, and decrypted SSN
-# ============================================================================
 Add-PodeRoute -Method Get -Path '/api/client-portal/consumer/:id' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
     try {
         $cnsmrId = $WebEvent.Parameters['id']
         $timeout = 60
         try {
-            $tCfg = Invoke-XFActsQuery -Query "SELECT setting_value FROM dbo.GlobalConfig WHERE module_name = 'Tools' AND category = 'Portal' AND setting_name = 'crs5_portal_query_timeout_seconds' AND is_active = 1"
+            $tCfg = Invoke-XFActsQuery -Query @"
+                SELECT setting_value FROM dbo.GlobalConfig WHERE module_name = 'Tools' AND category = 'Portal' AND setting_name = 'crs5_portal_query_timeout_seconds' AND is_active = 1
+"@
             if ($tCfg -and $tCfg.Count -gt 0 -and $tCfg[0].setting_value) { $timeout = [int]$tCfg[0].setting_value }
         } catch { }
 
@@ -562,15 +595,16 @@ Add-PodeRoute -Method Get -Path '/api/client-portal/consumer/:id' -Authenticatio
     }
 }
 
-# ============================================================================
-# CONSUMER ACCOUNTS - Account list with pre-computed financials
-# ============================================================================
 Add-PodeRoute -Method Get -Path '/api/client-portal/consumer/:id/accounts' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
     try {
         $cnsmrId = $WebEvent.Parameters['id']
         $timeout = 60
         try {
-            $tCfg = Invoke-XFActsQuery -Query "SELECT setting_value FROM dbo.GlobalConfig WHERE module_name = 'Tools' AND category = 'Portal' AND setting_name = 'crs5_portal_query_timeout_seconds' AND is_active = 1"
+            $tCfg = Invoke-XFActsQuery -Query @"
+                SELECT setting_value FROM dbo.GlobalConfig WHERE module_name = 'Tools' AND category = 'Portal' AND setting_name = 'crs5_portal_query_timeout_seconds' AND is_active = 1
+"@
             if ($tCfg -and $tCfg.Count -gt 0 -and $tCfg[0].setting_value) { $timeout = [int]$tCfg[0].setting_value }
         } catch { }
 
@@ -654,15 +688,16 @@ Add-PodeRoute -Method Get -Path '/api/client-portal/consumer/:id/accounts' -Auth
     }
 }
 
-# ============================================================================
-# CONSUMER ADDRESSES
-# ============================================================================
 Add-PodeRoute -Method Get -Path '/api/client-portal/consumer/:id/addresses' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
     try {
         $cnsmrId = $WebEvent.Parameters['id']
         $timeout = 60
         try {
-            $tCfg = Invoke-XFActsQuery -Query "SELECT setting_value FROM dbo.GlobalConfig WHERE module_name = 'Tools' AND category = 'Portal' AND setting_name = 'crs5_portal_query_timeout_seconds' AND is_active = 1"
+            $tCfg = Invoke-XFActsQuery -Query @"
+                SELECT setting_value FROM dbo.GlobalConfig WHERE module_name = 'Tools' AND category = 'Portal' AND setting_name = 'crs5_portal_query_timeout_seconds' AND is_active = 1
+"@
             if ($tCfg -and $tCfg.Count -gt 0 -and $tCfg[0].setting_value) { $timeout = [int]$tCfg[0].setting_value }
         } catch { }
 
@@ -690,15 +725,16 @@ Add-PodeRoute -Method Get -Path '/api/client-portal/consumer/:id/addresses' -Aut
     }
 }
 
-# ============================================================================
-# CONSUMER PHONES
-# ============================================================================
 Add-PodeRoute -Method Get -Path '/api/client-portal/consumer/:id/phones' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
     try {
         $cnsmrId = $WebEvent.Parameters['id']
         $timeout = 60
         try {
-            $tCfg = Invoke-XFActsQuery -Query "SELECT setting_value FROM dbo.GlobalConfig WHERE module_name = 'Tools' AND category = 'Portal' AND setting_name = 'crs5_portal_query_timeout_seconds' AND is_active = 1"
+            $tCfg = Invoke-XFActsQuery -Query @"
+                SELECT setting_value FROM dbo.GlobalConfig WHERE module_name = 'Tools' AND category = 'Portal' AND setting_name = 'crs5_portal_query_timeout_seconds' AND is_active = 1
+"@
             if ($tCfg -and $tCfg.Count -gt 0 -and $tCfg[0].setting_value) { $timeout = [int]$tCfg[0].setting_value }
         } catch { }
 
@@ -722,15 +758,16 @@ Add-PodeRoute -Method Get -Path '/api/client-portal/consumer/:id/phones' -Authen
     }
 }
 
-# ============================================================================
-# CONSUMER EVENTS
-# ============================================================================
 Add-PodeRoute -Method Get -Path '/api/client-portal/consumer/:id/events' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
     try {
         $cnsmrId = $WebEvent.Parameters['id']
         $timeout = 60
         try {
-            $tCfg = Invoke-XFActsQuery -Query "SELECT setting_value FROM dbo.GlobalConfig WHERE module_name = 'Tools' AND category = 'Portal' AND setting_name = 'crs5_portal_query_timeout_seconds' AND is_active = 1"
+            $tCfg = Invoke-XFActsQuery -Query @"
+                SELECT setting_value FROM dbo.GlobalConfig WHERE module_name = 'Tools' AND category = 'Portal' AND setting_name = 'crs5_portal_query_timeout_seconds' AND is_active = 1
+"@
             if ($tCfg -and $tCfg.Count -gt 0 -and $tCfg[0].setting_value) { $timeout = [int]$tCfg[0].setting_value }
         } catch { }
 
@@ -756,15 +793,16 @@ Add-PodeRoute -Method Get -Path '/api/client-portal/consumer/:id/events' -Authen
     }
 }
 
-# ============================================================================
-# CONSUMER DOCUMENTS
-# ============================================================================
 Add-PodeRoute -Method Get -Path '/api/client-portal/consumer/:id/documents' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
     try {
         $cnsmrId = $WebEvent.Parameters['id']
         $timeout = 60
         try {
-            $tCfg = Invoke-XFActsQuery -Query "SELECT setting_value FROM dbo.GlobalConfig WHERE module_name = 'Tools' AND category = 'Portal' AND setting_name = 'crs5_portal_query_timeout_seconds' AND is_active = 1"
+            $tCfg = Invoke-XFActsQuery -Query @"
+                SELECT setting_value FROM dbo.GlobalConfig WHERE module_name = 'Tools' AND category = 'Portal' AND setting_name = 'crs5_portal_query_timeout_seconds' AND is_active = 1
+"@
             if ($tCfg -and $tCfg.Count -gt 0 -and $tCfg[0].setting_value) { $timeout = [int]$tCfg[0].setting_value }
         } catch { }
 
@@ -792,15 +830,16 @@ Add-PodeRoute -Method Get -Path '/api/client-portal/consumer/:id/documents' -Aut
     }
 }
 
-# ============================================================================
-# ACCOUNT DETAIL
-# ============================================================================
 Add-PodeRoute -Method Get -Path '/api/client-portal/account/:id' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
     try {
         $acctId = $WebEvent.Parameters['id']
         $timeout = 60
         try {
-            $tCfg = Invoke-XFActsQuery -Query "SELECT setting_value FROM dbo.GlobalConfig WHERE module_name = 'Tools' AND category = 'Portal' AND setting_name = 'crs5_portal_query_timeout_seconds' AND is_active = 1"
+            $tCfg = Invoke-XFActsQuery -Query @"
+                SELECT setting_value FROM dbo.GlobalConfig WHERE module_name = 'Tools' AND category = 'Portal' AND setting_name = 'crs5_portal_query_timeout_seconds' AND is_active = 1
+"@
             if ($tCfg -and $tCfg.Count -gt 0 -and $tCfg[0].setting_value) { $timeout = [int]$tCfg[0].setting_value }
         } catch { }
 
@@ -839,7 +878,10 @@ Add-PodeRoute -Method Get -Path '/api/client-portal/account/:id' -Authentication
 "@ -Parameters @{ acctId = [int]$acctId }
         $totalPaid = if ($paidResult -and $paidResult.Count -gt 0) { ConvertTo-SafeDecimal $paidResult[0].total_paid } else { 0 }
 
-        $balances = Invoke-CRS5ReadQuery -TimeoutSeconds $timeout -Query "SELECT cab.bal_nm_id, cab.cnsmr_accnt_bal_amnt FROM dbo.cnsmr_accnt_bal cab WHERE cab.cnsmr_accnt_id = @acctId" -Parameters @{ acctId = [int]$acctId }
+        $balances = Invoke-CRS5ReadQuery -TimeoutSeconds $timeout -Query @"
+
+            SELECT cab.bal_nm_id, cab.cnsmr_accnt_bal_amnt FROM dbo.cnsmr_accnt_bal cab WHERE cab.cnsmr_accnt_id = @acctId
+"@ -Parameters @{ acctId = [int]$acctId }
         $balanceList = @()
         foreach ($b in $balances) { $balanceList += @{ bal_nm_id = ConvertTo-SafeValue $b.bal_nm_id; amount = ConvertTo-SafeDecimal $b.cnsmr_accnt_bal_amnt } }
 
@@ -875,15 +917,16 @@ Add-PodeRoute -Method Get -Path '/api/client-portal/account/:id' -Authentication
     }
 }
 
-# ============================================================================
-# ACCOUNT TRANSACTIONS
-# ============================================================================
 Add-PodeRoute -Method Get -Path '/api/client-portal/account/:id/transactions' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
     try {
         $acctId = $WebEvent.Parameters['id']
         $timeout = 60
         try {
-            $tCfg = Invoke-XFActsQuery -Query "SELECT setting_value FROM dbo.GlobalConfig WHERE module_name = 'Tools' AND category = 'Portal' AND setting_name = 'crs5_portal_query_timeout_seconds' AND is_active = 1"
+            $tCfg = Invoke-XFActsQuery -Query @"
+                SELECT setting_value FROM dbo.GlobalConfig WHERE module_name = 'Tools' AND category = 'Portal' AND setting_name = 'crs5_portal_query_timeout_seconds' AND is_active = 1
+"@
             if ($tCfg -and $tCfg.Count -gt 0 -and $tCfg[0].setting_value) { $timeout = [int]$tCfg[0].setting_value }
         } catch { }
 
@@ -912,15 +955,16 @@ Add-PodeRoute -Method Get -Path '/api/client-portal/account/:id/transactions' -A
     }
 }
 
-# ============================================================================
-# ACCOUNT EVENTS
-# ============================================================================
 Add-PodeRoute -Method Get -Path '/api/client-portal/account/:id/events' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
     try {
         $acctId = $WebEvent.Parameters['id']
         $timeout = 60
         try {
-            $tCfg = Invoke-XFActsQuery -Query "SELECT setting_value FROM dbo.GlobalConfig WHERE module_name = 'Tools' AND category = 'Portal' AND setting_name = 'crs5_portal_query_timeout_seconds' AND is_active = 1"
+            $tCfg = Invoke-XFActsQuery -Query @"
+                SELECT setting_value FROM dbo.GlobalConfig WHERE module_name = 'Tools' AND category = 'Portal' AND setting_name = 'crs5_portal_query_timeout_seconds' AND is_active = 1
+"@
             if ($tCfg -and $tCfg.Count -gt 0 -and $tCfg[0].setting_value) { $timeout = [int]$tCfg[0].setting_value }
         } catch { }
 
@@ -946,15 +990,16 @@ Add-PodeRoute -Method Get -Path '/api/client-portal/account/:id/events' -Authent
     }
 }
 
-# ============================================================================
-# ACCOUNT DOCUMENTS
-# ============================================================================
 Add-PodeRoute -Method Get -Path '/api/client-portal/account/:id/documents' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
     try {
         $acctId = $WebEvent.Parameters['id']
         $timeout = 60
         try {
-            $tCfg = Invoke-XFActsQuery -Query "SELECT setting_value FROM dbo.GlobalConfig WHERE module_name = 'Tools' AND category = 'Portal' AND setting_name = 'crs5_portal_query_timeout_seconds' AND is_active = 1"
+            $tCfg = Invoke-XFActsQuery -Query @"
+                SELECT setting_value FROM dbo.GlobalConfig WHERE module_name = 'Tools' AND category = 'Portal' AND setting_name = 'crs5_portal_query_timeout_seconds' AND is_active = 1
+"@
             if ($tCfg -and $tCfg.Count -gt 0 -and $tCfg[0].setting_value) { $timeout = [int]$tCfg[0].setting_value }
         } catch { }
 
