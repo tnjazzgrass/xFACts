@@ -912,7 +912,14 @@
                        }
                    ],
     "triggers":  [
-
+                     {
+                         "name":  "DisableETL",
+                         "parentTable":  "MonitorLog",
+                         "firesOnInsert":  0,
+                         "firesOnUpdate":  1,
+                         "firesOnDelete":  0,
+                         "isEnabled":  1
+                     }
                  ],
     "functions":  [
 
