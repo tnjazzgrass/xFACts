@@ -1,19 +1,38 @@
-# ============================================================================
-# xFACts Control Center - Platform Monitoring API
-# Location: E:\xFACts-ControlCenter\scripts\routes\PlatformMonitoring-API.ps1
-#
-# API endpoints for the Platform Monitoring page.
-# All endpoints read from existing Activity tables - no live server queries.
-#
-# NOTE: Helper functions are defined inside each ScriptBlock because Pode
-#       routes execute in isolated runspaces. File-scope functions are not
-#       visible inside route scriptblocks.
-#
-# Version: Tracked in dbo.System_Metadata (component: ControlCenter.Platform)
-# ============================================================================
+<#
+.SYNOPSIS
+    Control Center API route file for the Platform Monitoring dashboard.
 
-# GET /api/platform-monitoring/servers
+.DESCRIPTION
+    Registers the GET API endpoints backing the Platform Monitoring page. All
+    endpoints are read-only and query the existing ServerOps.Activity_* tables
+    and dbo.API_RequestLog for xFACts resource-impact and Control Center API
+    metrics; none issue live server queries. Endpoints: server list, impact
+    summary, summary cards, process breakdown, CPU trend, API performance, and
+    the blocking, LRQ, API-error, and API-user detail feeds.
+
+.COMPONENT
+    ControlCenter.Platform
+
+.NOTES
+    File Name : PlatformMonitoring-API.ps1
+    Location  : E:\xFACts-ControlCenter\scripts\routes\PlatformMonitoring-API.ps1
+
+    FILE ORGANIZATION
+    -----------------
+    ROUTE: API ENDPOINTS
+#>
+
+<# ============================================================================
+   ROUTE: API ENDPOINTS
+   ----------------------------------------------------------------------------
+   GET endpoints backing the Platform Monitoring page. Each endpoint calls
+   Test-ActionEndpoint as its first statement and ends with
+   Write-PodeJsonResponse. All reads route through Invoke-XFActsQuery.
+   Prefix: (none)
+   ============================================================================ #>
+
 Add-PodeRoute -Method Get -Path '/api/platform-monitoring/servers' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
         $servers = Invoke-XFActsQuery -Query @"
             SELECT server_id, server_name
@@ -30,15 +49,16 @@ Add-PodeRoute -Method Get -Path '/api/platform-monitoring/servers' -Authenticati
     }
 }
 
-# GET /api/platform-monitoring/impact-summary
 Add-PodeRoute -Method Get -Path '/api/platform-monitoring/impact-summary' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
         $server = $WebEvent.Query['server']
         $range = $WebEvent.Query['range']; $from = $WebEvent.Query['from']; $to = $WebEvent.Query['to']
 
         if ($from -and $to) {
             $xeDF = " AND event_timestamp >= '$from' AND event_timestamp < DATEADD(DAY, 1, CAST('$to' AS DATE))"
-            $rangeMinutes = ([datetime]$to - [datetime]$from).TotalMinutes + 1440  # include end day
+            # include end day
+            $rangeMinutes = ([datetime]$to - [datetime]$from).TotalMinutes + 1440
         } else {
             $hours = switch ($range) { '1h' { 1 } '12h' { 12 } '7d' { 168 } default { 24 } }
             $xeDF = " AND event_timestamp >= DATEADD(HOUR, -$hours, GETDATE())"
@@ -92,7 +112,12 @@ Add-PodeRoute -Method Get -Path '/api/platform-monitoring/impact-summary' -Authe
 
         # Sort results by server_id for consistent display order
         $serverOrder = @{}
-        $srvReg = Invoke-XFActsQuery -Query "SELECT server_id, server_name FROM dbo.ServerRegistry WHERE is_active = 1 AND server_id > 0 ORDER BY server_id"
+        $srvReg = Invoke-XFActsQuery -Query @"
+            SELECT server_id, server_name
+            FROM dbo.ServerRegistry
+            WHERE is_active = 1 AND server_id > 0
+            ORDER BY server_id
+"@
         if ($srvReg) { foreach ($sr in $srvReg) { $serverOrder[$sr.server_name] = $sr.server_id } }
         $results = @($results | Sort-Object { if ($serverOrder.ContainsKey($_.server_name)) { $serverOrder[$_.server_name] } else { 9999 } })
 
@@ -110,8 +135,8 @@ Add-PodeRoute -Method Get -Path '/api/platform-monitoring/impact-summary' -Authe
     catch { Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = $_.Exception.Message }) -StatusCode 500 }
 }
 
-# GET /api/platform-monitoring/summary-cards
 Add-PodeRoute -Method Get -Path '/api/platform-monitoring/summary-cards' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
         $server = $WebEvent.Query['server']
         $range = $WebEvent.Query['range']; $from = $WebEvent.Query['from']; $to = $WebEvent.Query['to']
@@ -132,7 +157,7 @@ Add-PodeRoute -Method Get -Path '/api/platform-monitoring/summary-cards' -Authen
 "@
 
         $blocking = Invoke-XFActsQuery -Query @"
-            SELECT 
+            SELECT
                 SUM(CASE WHEN blocked_client_app LIKE 'xFACts%' THEN 1 ELSE 0 END) AS blocked_by_others,
                 SUM(CASE WHEN blocked_by_client_app LIKE 'xFACts%' AND (blocked_client_app NOT LIKE 'xFACts%' OR blocked_client_app IS NULL) THEN 1 ELSE 0 END) AS caused_by_xfacts,
                 COUNT(*) AS block_count,
@@ -178,8 +203,8 @@ Add-PodeRoute -Method Get -Path '/api/platform-monitoring/summary-cards' -Authen
     catch { Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = $_.Exception.Message }) -StatusCode 500 }
 }
 
-# GET /api/platform-monitoring/process-breakdown
 Add-PodeRoute -Method Get -Path '/api/platform-monitoring/process-breakdown' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
         $server = $WebEvent.Query['server']
         $range = $WebEvent.Query['range']; $from = $WebEvent.Query['from']; $to = $WebEvent.Query['to']
@@ -193,7 +218,7 @@ Add-PodeRoute -Method Get -Path '/api/platform-monitoring/process-breakdown' -Au
         $srvF = if ($server -and $server -ne 'all') { " AND server_name = '$($server -replace "'","''")'" } else { '' }
 
         $results = Invoke-XFActsQuery -Query @"
-            SELECT 
+            SELECT
                 client_app_name AS process_name,
                 COUNT(*) AS query_count,
                 ISNULL(SUM(duration_ms), 0) AS total_duration_ms,
@@ -214,8 +239,8 @@ Add-PodeRoute -Method Get -Path '/api/platform-monitoring/process-breakdown' -Au
     catch { Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = $_.Exception.Message }) -StatusCode 500 }
 }
 
-# GET /api/platform-monitoring/trend
 Add-PodeRoute -Method Get -Path '/api/platform-monitoring/trend' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
         $server = $WebEvent.Query['server']
         $range = $WebEvent.Query['range']; $from = $WebEvent.Query['from']; $to = $WebEvent.Query['to']
@@ -253,7 +278,7 @@ Add-PodeRoute -Method Get -Path '/api/platform-monitoring/trend' -Authentication
         $capacityPerBucket = if ($totalCores) { $bucketMinutes * 60 * 1000 * $totalCores } else { $null }
 
         $xfactsData = Invoke-XFActsQuery -Query @"
-            SELECT 
+            SELECT
                 DATEADD(MINUTE, (DATEDIFF(MINUTE, '2000-01-01', event_timestamp) / $bucketMinutes) * $bucketMinutes, '2000-01-01') AS bucket,
                 COUNT(*) AS query_count,
                 ISNULL(SUM(cpu_time_ms), 0) AS cpu_ms,
@@ -270,10 +295,10 @@ Add-PodeRoute -Method Get -Path '/api/platform-monitoring/trend' -Authentication
             foreach ($x in $xfactsData) {
                 $key = $x.bucket.ToString('yyyy-MM-dd HH:mm')
                 $pct = if ($capacityPerBucket) { [math]::Round(($x.cpu_ms / $capacityPerBucket) * 100, 3) } else { $null }
-                
+
                 # Format label: include date for 7d+ ranges
                 $label = if ($bucketMinutes -ge 360) { $x.bucket.ToString('MM/dd HH:mm') } else { $key }
-                
+
                 $trendPoints += [PSCustomObject]@{
                     bucket = $label; query_count = $x.query_count; xfacts_cpu_ms = $x.cpu_ms
                     capacity_cpu_ms = $capacityPerBucket; cpu_pct = $pct; logical_reads = $x.logical_reads; duration_ms = $x.duration_ms
@@ -286,8 +311,8 @@ Add-PodeRoute -Method Get -Path '/api/platform-monitoring/trend' -Authentication
     catch { Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = $_.Exception.Message }) -StatusCode 500 }
 }
 
-# GET /api/platform-monitoring/api-performance
 Add-PodeRoute -Method Get -Path '/api/platform-monitoring/api-performance' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
         $range = $WebEvent.Query['range']; $from = $WebEvent.Query['from']; $to = $WebEvent.Query['to']
 
@@ -337,10 +362,8 @@ Add-PodeRoute -Method Get -Path '/api/platform-monitoring/api-performance' -Auth
     catch { Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = $_.Exception.Message }) -StatusCode 500 }
 }
 
-# ============================================================================
-# GET /api/platform-monitoring/blocking-detail
-# ============================================================================
 Add-PodeRoute -Method Get -Path '/api/platform-monitoring/blocking-detail' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
         $server = $WebEvent.Query['server']
         $range = $WebEvent.Query['range']; $from = $WebEvent.Query['from']; $to = $WebEvent.Query['to']
@@ -357,7 +380,7 @@ Add-PodeRoute -Method Get -Path '/api/platform-monitoring/blocking-detail' -Auth
             SELECT TOP 50
                 server_name,
                 event_timestamp,
-                CASE 
+                CASE
                     WHEN blocked_client_app LIKE 'xFACts%' AND (blocked_by_client_app NOT LIKE 'xFACts%' OR blocked_by_client_app IS NULL) THEN 'Blocked by Others'
                     WHEN blocked_by_client_app LIKE 'xFACts%' AND (blocked_client_app NOT LIKE 'xFACts%' OR blocked_client_app IS NULL) THEN 'Caused by xFACts'
                     ELSE 'xFACts on Both Sides'
@@ -380,10 +403,8 @@ Add-PodeRoute -Method Get -Path '/api/platform-monitoring/blocking-detail' -Auth
     catch { Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = $_.Exception.Message }) -StatusCode 500 }
 }
 
-# ============================================================================
-# GET /api/platform-monitoring/lrq-detail
-# ============================================================================
 Add-PodeRoute -Method Get -Path '/api/platform-monitoring/lrq-detail' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
         $server = $WebEvent.Query['server']
         $range = $WebEvent.Query['range']; $from = $WebEvent.Query['from']; $to = $WebEvent.Query['to']
@@ -417,10 +438,8 @@ Add-PodeRoute -Method Get -Path '/api/platform-monitoring/lrq-detail' -Authentic
     catch { Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = $_.Exception.Message }) -StatusCode 500 }
 }
 
-# ============================================================================
-# GET /api/platform-monitoring/api-errors
-# ============================================================================
 Add-PodeRoute -Method Get -Path '/api/platform-monitoring/api-errors' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
         $range = $WebEvent.Query['range']; $from = $WebEvent.Query['from']; $to = $WebEvent.Query['to']
 
@@ -448,7 +467,7 @@ Add-PodeRoute -Method Get -Path '/api/platform-monitoring/api-errors' -Authentic
 "@
 
         $timeouts = Invoke-XFActsQuery -Query @"
-            SELECT 
+            SELECT
                 endpoint,
                 COUNT(*) AS timeout_count,
                 MAX(request_dttm) AS last_timeout
@@ -472,10 +491,8 @@ Add-PodeRoute -Method Get -Path '/api/platform-monitoring/api-errors' -Authentic
     catch { Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = $_.Exception.Message }) -StatusCode 500 }
 }
 
-# ============================================================================
-# GET /api/platform-monitoring/api-users
-# ============================================================================
 Add-PodeRoute -Method Get -Path '/api/platform-monitoring/api-users' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
         $range = $WebEvent.Query['range']; $from = $WebEvent.Query['from']; $to = $WebEvent.Query['to']
 
@@ -487,7 +504,7 @@ Add-PodeRoute -Method Get -Path '/api/platform-monitoring/api-users' -Authentica
         }
 
         $users = Invoke-XFActsQuery -Query @"
-            SELECT 
+            SELECT
                 user_name,
                 COUNT(*) AS request_count,
                 COUNT(DISTINCT endpoint) AS pages_used,
