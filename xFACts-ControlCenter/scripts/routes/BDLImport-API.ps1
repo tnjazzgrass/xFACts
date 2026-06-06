@@ -1,43 +1,50 @@
-# ============================================================================
-# xFACts Control Center - BDL Import API
-# Location: E:\xFACts-ControlCenter\scripts\routes\BDLImport-API.ps1
-# 
-# API endpoints for the BDL Import workflow.
-# Version: Tracked in dbo.System_Metadata (component: ControlCenter.BDLImport)
-#
-# CHANGELOG
-# ---------
-# 2026-04-16  Import History panel support:
-#             - Rewrote GET /api/bdl-import/history: calls Invoke-BDLImportLogReconcile,
-#               accepts env/user_scope filters, returns active_rows + years tree
-#               + poll_interval_seconds
-#             - Added GET /api/bdl-import/history-month for lazy day-level loading
-#             - All other endpoints unchanged
-# 2026-04-15  Tag entity filtering: CONSUMER_TAG/ACCOUNT_TAG lookups restricted
-#             to correct entity association level via tag_typ subquery
-# 2026-04-13  ServerConfig → EnvironmentConfig migration; API URLs from ServerRegistry
-#             ActionAuditLog wired into BDL import execution
-# 2026-04-11  Added set-nullify-fields endpoint for blanket field nullification
-# 2026-04-04  Added AR log (Jira ticket link) support to execute endpoint
-# 2026-04-04  Added drop_existing support to stage endpoint for re-staging
-# 2026-04-04  Added template CRUD endpoints (list, save, update, delete)
-# ============================================================================
+<#
+.SYNOPSIS
+    Control Center API routes for the BDL Import workflow.
 
-# ----------------------------------------------------------------------------
+.DESCRIPTION
+    Registers the /api/bdl-import/* endpoints backing the BDL Import wizard:
+    environment and entity discovery, file staging, validation and remediation,
+    lookup search, row alignment, execution against the DM API, import-history
+    reporting, and mapping-template CRUD. Each endpoint authenticates via
+    ADLogin and guards through Test-ActionEndpoint.
+
+.COMPONENT
+    Tools.BDLImport
+
+.NOTES
+    File Name : BDLImport-API.ps1
+    Location  : E:\xFACts-ControlCenter\scripts\routes\BDLImport-API.ps1
+
+    FILE ORGANIZATION
+    -----------------
+    ROUTE: API ENDPOINTS
+#>
+
+<# ============================================================================
+   ROUTE: API ENDPOINTS
+   ----------------------------------------------------------------------------
+   Registers all /api/bdl-import/* endpoints for the BDL Import wizard. Each
+   endpoint authenticates via ADLogin, guards through Test-ActionEndpoint, and
+   returns its result via Write-PodeJsonResponse.
+   Prefix: (none)
+   ============================================================================ #>
+
 # GET /api/bdl-import/environments
-# ----------------------------------------------------------------------------
 Add-PodeRoute -Method Get -Path '/api/bdl-import/environments' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
     try {
         $results = Invoke-XFActsQuery -Query @"
             SELECT config_id, environment, dmfs_base_path
             FROM Tools.EnvironmentConfig
             WHERE is_active = 1
-            ORDER BY 
-                CASE environment 
-                    WHEN 'TEST' THEN 1 
-                    WHEN 'STAGE' THEN 2 
-                    WHEN 'PROD' THEN 3 
-                    ELSE 4 
+            ORDER BY
+                CASE environment
+                    WHEN 'TEST' THEN 1
+                    WHEN 'STAGE' THEN 2
+                    WHEN 'PROD' THEN 3
+                    ELSE 4
                 END
 "@
         Write-PodeJsonResponse -Value @{ environments = @($results) }
@@ -47,13 +54,13 @@ Add-PodeRoute -Method Get -Path '/api/bdl-import/environments' -Authentication '
     }
 }
 
-# ----------------------------------------------------------------------------
 # GET /api/bdl-import/entities
-# ----------------------------------------------------------------------------
 Add-PodeRoute -Method Get -Path '/api/bdl-import/entities' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
     try {
         $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/bdl-import'
-        
+
         if ($access.Tier -eq 'admin') {
             $results = Invoke-XFActsQuery -Query @"
                 SELECT f.entity_type, f.type_name, f.folder, f.element_count,
@@ -68,18 +75,18 @@ Add-PodeRoute -Method Get -Path '/api/bdl-import/entities' -Authentication 'ADLo
             $deptScope = ''
             if ($access.DepartmentScopes -and $access.DepartmentScopes.Count -gt 0) {
                 foreach ($scope in $access.DepartmentScopes) {
-                    if ($scope -and $scope -isnot [System.DBNull]) { 
+                    if ($scope -and $scope -isnot [System.DBNull]) {
                         $deptScope = $scope
-                        break 
+                        break
                     }
                 }
             }
-            
+
             $results = Invoke-XFActsQuery -Query @"
                 SELECT f.entity_type, f.type_name, f.folder, f.element_count,
                        f.has_parent_ref, f.has_nullify_fields, f.action_type, f.entity_key
                 FROM Tools.Catalog_BDLFormatRegistry f
-                INNER JOIN Tools.AccessConfig ac 
+                INNER JOIN Tools.AccessConfig ac
                     ON ac.item_key = f.entity_type
                     AND ac.tool_type = 'BDL'
                     AND ac.department_scope = @deptScope
@@ -89,7 +96,7 @@ Add-PodeRoute -Method Get -Path '/api/bdl-import/entities' -Authentication 'ADLo
                 ORDER BY f.folder, f.entity_type
 "@ -Parameters @{ deptScope = $deptScope }
         }
-        
+
         Write-PodeJsonResponse -Value @{ entities = @($results) }
     }
     catch {
@@ -97,13 +104,13 @@ Add-PodeRoute -Method Get -Path '/api/bdl-import/entities' -Authentication 'ADLo
     }
 }
 
-# ----------------------------------------------------------------------------
 # GET /api/bdl-import/entity-fields?entity_type=PHONE
 # Returns BDL element fields for a specific entity type.
 # Admin tier: all visible fields.
 # Department tier: only fields whitelisted in AccessFieldConfig.
-# ----------------------------------------------------------------------------
 Add-PodeRoute -Method Get -Path '/api/bdl-import/entity-fields' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
     try {
         $entityType = $WebEvent.Query['entity_type']
         if (-not $entityType) {
@@ -112,11 +119,11 @@ Add-PodeRoute -Method Get -Path '/api/bdl-import/entity-fields' -Authentication 
         }
 
         $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/bdl-import'
-        
+
         if ($access.Tier -eq 'admin') {
             $fields = Invoke-XFActsQuery -Query @"
                 SELECT e.element_name, e.display_name, e.data_type, e.max_length,
-                       e.table_column, e.lookup_table, e.is_not_nullifiable, 
+                       e.table_column, e.lookup_table, e.is_not_nullifiable,
                        e.is_primary_id, e.is_visible, e.is_import_required,
                        e.field_description, e.import_guidance, e.sort_order,
                        e.is_conditional_eligible
@@ -132,16 +139,16 @@ Add-PodeRoute -Method Get -Path '/api/bdl-import/entity-fields' -Authentication 
             $deptScope = ''
             if ($access.DepartmentScopes -and $access.DepartmentScopes.Count -gt 0) {
                 foreach ($scope in $access.DepartmentScopes) {
-                    if ($scope -and $scope -isnot [System.DBNull]) { 
+                    if ($scope -and $scope -isnot [System.DBNull]) {
                         $deptScope = $scope
-                        break 
+                        break
                     }
                 }
             }
 
             $fields = Invoke-XFActsQuery -Query @"
                 SELECT e.element_name, e.display_name, e.data_type, e.max_length,
-                       e.table_column, e.lookup_table, e.is_not_nullifiable, 
+                       e.table_column, e.lookup_table, e.is_not_nullifiable,
                        e.is_primary_id, e.is_visible, e.is_import_required,
                        e.field_description, e.import_guidance, e.sort_order,
                        e.is_conditional_eligible
@@ -162,7 +169,7 @@ Add-PodeRoute -Method Get -Path '/api/bdl-import/entity-fields' -Authentication 
                 ORDER BY e.sort_order
 "@ -Parameters @{ entityType = $entityType; deptScope = $deptScope }
         }
-        
+
         $wrapper = Invoke-XFActsQuery -Query @"
             SELECT w.type_name AS wrapper, we.element_name AS entity_ref, we.data_type
             FROM Tools.Catalog_BDLFormatRegistry w
@@ -172,8 +179,8 @@ Add-PodeRoute -Method Get -Path '/api/bdl-import/entity-fields' -Authentication 
                 ON we.data_type = f.type_name
             WHERE f.entity_type = @entityType
 "@ -Parameters @{ entityType = $entityType }
-        
-        Write-PodeJsonResponse -Value @{ 
+
+        Write-PodeJsonResponse -Value @{
             fields = @($fields)
             wrapper = @($wrapper)
             entity_type = $entityType
@@ -184,14 +191,14 @@ Add-PodeRoute -Method Get -Path '/api/bdl-import/entity-fields' -Authentication 
     }
 }
 
-# ----------------------------------------------------------------------------
 # POST /api/bdl-import/stage
 # Creates a staging table and inserts all rows from the uploaded file.
 # Optional: drop_existing parameter drops a prior staging table before creating.
 # Optional: fixed_values parameter applies uniform values to all rows (for
 #           FIXED_VALUE entity types like tags).
-# ----------------------------------------------------------------------------
 Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
     try {
         $body = $WebEvent.Data
         $entityType = $body.entity_type
@@ -201,28 +208,28 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogi
         $rows = $body.rows
         $fixedValues = $body.fixed_values
         $assignments = $body.assignments
- 
+
         if (-not $entityType -or -not $configId -or -not $headers -or -not $rows) {
             Write-PodeJsonResponse -Value @{ error = 'Missing required fields: entity_type, config_id, headers, rows' } -StatusCode 400
             return
         }
- 
+
         if (-not $mapping) { $mapping = [PSCustomObject]@{} }
- 
+
         $envConfig = Invoke-XFActsQuery -Query @"
             SELECT db_instance, environment
             FROM Tools.EnvironmentConfig
             WHERE config_id = @configId AND is_active = 1
 "@ -Parameters @{ configId = $configId }
- 
+
         if (-not $envConfig -or $envConfig.Count -eq 0) {
             Write-PodeJsonResponse -Value @{ error = 'Environment configuration not found' } -StatusCode 404
             return
         }
- 
+
         $environment = $envConfig[0].environment
- 
-        # ── Drop existing staging table if re-staging ───────────────────
+
+        # Drop existing staging table if re-staging
         $dropExisting = $body.drop_existing
         if ($dropExisting) {
             $dropCheck = Invoke-XFActsQuery -Query @"
@@ -235,10 +242,10 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogi
                 Invoke-XFActsNonQuery -Query "DROP TABLE $safeDrop;"
             }
         }
- 
+
         $username = $WebEvent.Auth.User.Username
         if ($username -and $username.Contains('\')) { $username = $username.Split('\')[1] }
- 
+
         $fieldMeta = Invoke-XFActsQuery -Query @"
             SELECT e.element_name, e.data_type, e.max_length, e.lookup_table, e.is_import_required
             FROM Tools.Catalog_BDLElementRegistry e
@@ -246,23 +253,21 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogi
             WHERE f.entity_type = @entityType
               AND e.is_visible = 1
 "@ -Parameters @{ entityType = $entityType }
- 
+
         $fieldMetaMap = @{}
         foreach ($f in $fieldMeta) { $fieldMetaMap[$f.element_name] = $f }
- 
+
         $timestamp = (Get-Date).ToString('yyyyMMdd_HHmmss')
         $tableName = "BDL_${entityType}_${username}_${timestamp}"
         $fullTableName = "Staging.[$tableName]"
- 
+
         $mappingHash = @{}
         foreach ($key in $mapping.PSObject.Properties) { $mappingHash[$key.Name] = $key.Value }
 
-        # ══════════════════════════════════════════════════════════════════
         # PATH A: Assignments-based staging (multi-assignment expansion)
-        # ══════════════════════════════════════════════════════════════════
         if ($assignments -and $assignments.Count -gt 0) {
- 
-            # ── Determine identifier from mapping ───────────────────────
+
+            # Determine identifier from mapping
             $idElementName = $null
             $idHeaderIndex = -1
             foreach ($key in $mappingHash.Keys) {
@@ -273,60 +278,68 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogi
                     break
                 }
             }
- 
+
             if (-not $idElementName -or $idHeaderIndex -lt 0) {
                 Write-PodeJsonResponse -Value @{ error = 'Identifier column mapping is required' } -StatusCode 400
                 return
             }
- 
-            # ── Helper: resolve SQL type from field metadata ────────────
-            function Get-SqlTypeFromMeta {
-                param($Meta)
-                if (-not $Meta) { return 'VARCHAR(MAX)' }
-                $bdlType = if ($Meta.data_type -and $Meta.data_type -isnot [System.DBNull]) { $Meta.data_type.ToLower() } else { '' }
-                $maxLen = $Meta.max_length
-                switch ($bdlType) {
-                    'string'   { if ($maxLen) { return "VARCHAR($maxLen)" } else { return 'VARCHAR(MAX)' } }
-                    'int'      { return 'VARCHAR(20)' }
-                    'long'     { return 'VARCHAR(20)' }
-                    'short'    { return 'VARCHAR(10)' }
-                    'decimal'  { return 'VARCHAR(30)' }
-                    'boolean'  { return 'VARCHAR(10)' }
-                    'dateTime' { return 'VARCHAR(50)' }
-                    default    { if ($maxLen) { return "VARCHAR($maxLen)" } else { return 'VARCHAR(MAX)' } }
-                }
-            }
- 
-            # ── Build CREATE TABLE with all visible entity element columns ──
+
+            # Build CREATE TABLE with all visible entity element columns
             $colDefs = @()
             $colDefs += '    [_row_number] INT IDENTITY(1,1)'
             $colDefs += '    [_skip] BIT NOT NULL DEFAULT 0'
             $colDefs += '    [_trigger_value] VARCHAR(200) NULL'
             $colDefs += '    [_assignment_index] INT NULL'
- 
+
             # Add identifier column
             $idMeta = $fieldMetaMap[$idElementName]
-            $idSqlType = Get-SqlTypeFromMeta -Meta $idMeta
+            $idSqlType = 'VARCHAR(MAX)'
+            if ($idMeta) {
+                $idBdlType = if ($idMeta.data_type -and $idMeta.data_type -isnot [System.DBNull]) { $idMeta.data_type.ToLower() } else { '' }
+                $idMaxLen = $idMeta.max_length
+                switch ($idBdlType) {
+                    'string'   { $idSqlType = if ($idMaxLen) { "VARCHAR($idMaxLen)" } else { 'VARCHAR(MAX)' } }
+                    'int'      { $idSqlType = 'VARCHAR(20)' }
+                    'long'     { $idSqlType = 'VARCHAR(20)' }
+                    'short'    { $idSqlType = 'VARCHAR(10)' }
+                    'decimal'  { $idSqlType = 'VARCHAR(30)' }
+                    'boolean'  { $idSqlType = 'VARCHAR(10)' }
+                    'dateTime' { $idSqlType = 'VARCHAR(50)' }
+                    default    { $idSqlType = if ($idMaxLen) { "VARCHAR($idMaxLen)" } else { 'VARCHAR(MAX)' } }
+                }
+            }
             $colDefs += "    [$idElementName] $idSqlType NULL"
- 
+
             # Add all visible non-identifier entity element columns
             $entityColumns = @()
             foreach ($f in $fieldMeta) {
                 if ($f.element_name -eq $idElementName) { continue }
-                $sqlType = Get-SqlTypeFromMeta -Meta $f
+                $sqlType = 'VARCHAR(MAX)'
+                $fBdlType = if ($f.data_type -and $f.data_type -isnot [System.DBNull]) { $f.data_type.ToLower() } else { '' }
+                $fMaxLen = $f.max_length
+                switch ($fBdlType) {
+                    'string'   { $sqlType = if ($fMaxLen) { "VARCHAR($fMaxLen)" } else { 'VARCHAR(MAX)' } }
+                    'int'      { $sqlType = 'VARCHAR(20)' }
+                    'long'     { $sqlType = 'VARCHAR(20)' }
+                    'short'    { $sqlType = 'VARCHAR(10)' }
+                    'decimal'  { $sqlType = 'VARCHAR(30)' }
+                    'boolean'  { $sqlType = 'VARCHAR(10)' }
+                    'dateTime' { $sqlType = 'VARCHAR(50)' }
+                    default    { $sqlType = if ($fMaxLen) { "VARCHAR($fMaxLen)" } else { 'VARCHAR(MAX)' } }
+                }
                 $colDefs += "    [$($f.element_name)] $sqlType NULL"
                 $entityColumns += $f.element_name
             }
- 
+
             $createDdl = "CREATE TABLE $fullTableName (`n" + ($colDefs -join ",`n") + "`n);"
             Invoke-XFActsNonQuery -Query $createDdl
- 
-            # ── Process assignments: iterate rows first, then assignments ───
+
+            # Process assignments: iterate rows first, then assignments
             $batchSize = 500
             $totalInserted = 0
             $valuesClauses = @()
 
-            # ── Pre-build assignment metadata for efficient inner loop ──
+            # Pre-build assignment metadata for efficient inner loop
             $assignmentMeta = @()
             for ($aIdx = 0; $aIdx -lt $assignments.Count; $aIdx++) {
                 $assignment = $assignments[$aIdx]
@@ -407,7 +420,7 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogi
                 $assignmentMeta += $meta
             }
 
-            # ── Check if all assignments share the same column list ──────
+            # Check if all assignments share the same column list
             $allSameColumns = $true
             $firstColList = $assignmentMeta[0].ColumnList
             for ($a = 1; $a -lt $assignmentMeta.Count; $a++) {
@@ -415,7 +428,7 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogi
             }
 
             if ($allSameColumns) {
-                # ── Fast path: all assignments use same column structure ─
+                # Fast path: all assignments use same column structure
                 $colList = $firstColList
                 for ($r = 0; $r -lt $rows.Count; $r++) {
                     $row = $rows[$r]
@@ -482,7 +495,7 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogi
                 }
             }
             else {
-                # ── Mixed path: assignments have different column structures
+                # Mixed path: assignments have different column structures
                 $colGroups = @{}
                 foreach ($am in $assignmentMeta) {
                     if (-not $colGroups.ContainsKey($am.ColumnList)) { $colGroups[$am.ColumnList] = @() }
@@ -567,34 +580,32 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogi
             }
             return
         }
- 
-        # ══════════════════════════════════════════════════════════════════
+
         # PATH B: Original staging logic (FILE_MAPPED or single FIXED_VALUE)
-        # ══════════════════════════════════════════════════════════════════
- 
+
         $mappedElementNames = @{}
         foreach ($val in $mappingHash.Values) { $mappedElementNames[$val] = $true }
- 
-        # ── Build CREATE TABLE DDL ──────────────────────────────────────
+
+        # Build CREATE TABLE DDL
         $colDefs = @()
         $colDefs += '    [_row_number] INT IDENTITY(1,1)'
         $colDefs += '    [_skip] BIT NOT NULL DEFAULT 0'
- 
+
         $mappedColumns = @()
         $unmappedColumns = @()
         $requiredExtraColumns = @()
- 
+
         for ($i = 0; $i -lt $headers.Count; $i++) {
             $header = $headers[$i]
             if ($mappingHash.ContainsKey($header)) {
                 $elementName = $mappingHash[$header]
                 $meta = $fieldMetaMap[$elementName]
-                
+
                 $sqlType = 'VARCHAR(MAX)'
                 if ($meta) {
                     $bdlType = if ($meta.data_type -and $meta.data_type -isnot [System.DBNull]) { $meta.data_type.ToLower() } else { '' }
                     $maxLen = $meta.max_length
-                    
+
                     switch ($bdlType) {
                         'string'   { $sqlType = if ($maxLen) { "VARCHAR($maxLen)" } else { 'VARCHAR(MAX)' } }
                         'int'      { $sqlType = 'VARCHAR(20)' }
@@ -606,7 +617,7 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogi
                         default    { $sqlType = if ($maxLen) { "VARCHAR($maxLen)" } else { 'VARCHAR(MAX)' } }
                     }
                 }
-                
+
                 $colDefs += "    [$elementName] $sqlType NULL"
                 $mappedColumns += @{ headerIndex = $i; elementName = $elementName }
             }
@@ -617,13 +628,13 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogi
                 $unmappedColumns += @{ headerIndex = $i; columnName = "${safeName}_unmapped" }
             }
         }
- 
+
         foreach ($f in $fieldMeta) {
             if ($f.is_import_required -and -not $mappedElementNames.ContainsKey($f.element_name)) {
                 $bdlType = if ($f.data_type -and $f.data_type -isnot [System.DBNull]) { $f.data_type.ToLower() } else { '' }
                 $maxLen = $f.max_length
                 $sqlType = 'VARCHAR(MAX)'
-                
+
                 switch ($bdlType) {
                     'string'   { $sqlType = if ($maxLen) { "VARCHAR($maxLen)" } else { 'VARCHAR(MAX)' } }
                     'int'      { $sqlType = 'VARCHAR(20)' }
@@ -634,32 +645,32 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogi
                     'dateTime' { $sqlType = 'VARCHAR(50)' }
                     default    { $sqlType = if ($maxLen) { "VARCHAR($maxLen)" } else { 'VARCHAR(MAX)' } }
                 }
- 
+
                 $colDefs += "    [$($f.element_name)] $sqlType NULL"
                 $requiredExtraColumns += @{ elementName = $f.element_name; sqlType = $sqlType }
             }
         }
- 
+
         $createDdl = "CREATE TABLE $fullTableName (`n" + ($colDefs -join ",`n") + "`n);"
         Invoke-XFActsNonQuery -Query $createDdl
- 
-        # ── Bulk INSERT rows ────────────────────────────────────────────
+
+        # Bulk INSERT rows
         $allInsertColumns = @()
         foreach ($mc in $mappedColumns) { $allInsertColumns += "[$($mc.elementName)]" }
         foreach ($uc in $unmappedColumns) { $allInsertColumns += "[$($uc.columnName)]" }
         $columnList = $allInsertColumns -join ', '
- 
+
         $allColumnIndices = @()
         foreach ($mc in $mappedColumns) { $allColumnIndices += $mc.headerIndex }
         foreach ($uc in $unmappedColumns) { $allColumnIndices += $uc.headerIndex }
- 
+
         $batchSize = 500
         $totalRows = $rows.Count
-        
+
         for ($batchStart = 0; $batchStart -lt $totalRows; $batchStart += $batchSize) {
             $batchEnd = [Math]::Min($batchStart + $batchSize, $totalRows)
             $valuesClauses = @()
- 
+
             for ($r = $batchStart; $r -lt $batchEnd; $r++) {
                 $row = $rows[$r]
                 $vals = @()
@@ -670,24 +681,24 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogi
                 }
                 $valuesClauses += "(" + ($vals -join ', ') + ")"
             }
- 
+
             $insertSql = "INSERT INTO $fullTableName ($columnList) VALUES`n" + ($valuesClauses -join ",`n")
             Invoke-XFActsNonQuery -Query $insertSql
         }
- 
-        # ── Apply fixed values (for FIXED_VALUE entity types) ──────────
+
+        # Apply fixed values (for FIXED_VALUE entity types)
         if ($fixedValues) {
             foreach ($prop in $fixedValues.PSObject.Properties) {
                 $fvElementName = $prop.Name
                 $fvValue = $prop.Value
- 
+
                 $colExists = Invoke-XFActsQuery -Query @"
                     SELECT 1 FROM sys.columns c
                     INNER JOIN sys.tables t ON t.object_id = c.object_id
                     INNER JOIN sys.schemas s ON s.schema_id = t.schema_id
                     WHERE s.name = 'Staging' AND t.name = @tableName AND c.name = @colName
 "@ -Parameters @{ tableName = $tableName; colName = $fvElementName }
- 
+
                 if (-not $colExists -or $colExists.Count -eq 0) {
                     $fvMeta = $fieldMetaMap[$fvElementName]
                     $fvSqlType = 'VARCHAR(MAX)'
@@ -708,7 +719,7 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogi
                     $safeCol = "[$fvElementName]"
                     Invoke-XFActsNonQuery -Query "ALTER TABLE $fullTableName ADD $safeCol $fvSqlType NULL"
                 }
- 
+
                 $safeCol = "[$fvElementName]"
                 Invoke-XFActsNonQuery -Query @"
                     UPDATE $fullTableName SET $safeCol = @fixedVal WHERE _skip = 0
@@ -716,7 +727,7 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogi
             }
         }
 
-        # ── Apply field assignments (per-field mode overrides on FILE_MAPPED entities) ──
+        # Apply field assignments (per-field mode overrides on FILE_MAPPED entities)
         $fieldAssignments = $body.field_assignments
         if ($fieldAssignments) {
             foreach ($prop in $fieldAssignments.PSObject.Properties) {
@@ -792,9 +803,9 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogi
                 }
             }
         }
- 
+
         $reqExtraNames = @($requiredExtraColumns | ForEach-Object { $_.elementName })
- 
+
         Write-PodeJsonResponse -Value @{
             staging_table         = $tableName
             row_count             = $totalRows
@@ -807,54 +818,54 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogi
     }
 }
 
-# ----------------------------------------------------------------------------
 # POST /api/bdl-import/validate
-# ----------------------------------------------------------------------------
 Add-PodeRoute -Method Post -Path '/api/bdl-import/validate' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
     try {
         $body = $WebEvent.Data
         $stagingTable = $body.staging_table
         $entityType = $body.entity_type
         $configId = $body.config_id
- 
+
         if (-not $stagingTable -or -not $entityType -or -not $configId) {
             Write-PodeJsonResponse -Value @{ error = 'staging_table, entity_type, and config_id are required' } -StatusCode 400
             return
         }
- 
+
         $tableCheck = Invoke-XFActsQuery -Query @"
             SELECT 1 FROM sys.tables t
             INNER JOIN sys.schemas s ON s.schema_id = t.schema_id
             WHERE s.name = 'Staging' AND t.name = @tableName
 "@ -Parameters @{ tableName = $stagingTable }
- 
+
         if (-not $tableCheck -or $tableCheck.Count -eq 0) {
             Write-PodeJsonResponse -Value @{ error = "Staging table not found: $stagingTable" } -StatusCode 404
             return
         }
- 
+
         $envConfig = Invoke-XFActsQuery -Query @"
             SELECT db_instance, environment
             FROM Tools.EnvironmentConfig
             WHERE config_id = @configId AND is_active = 1
 "@ -Parameters @{ configId = $configId }
- 
+
         if (-not $envConfig -or $envConfig.Count -eq 0) {
             Write-PodeJsonResponse -Value @{ error = 'Environment configuration not found' } -StatusCode 404
             return
         }
- 
+
         $dbInstance = $envConfig[0].db_instance
         $environment = $envConfig[0].environment
- 
+
         $safeTable = "Staging.[" + $stagingTable.Replace(']', ']]') + "]"
         $stagingRows = Invoke-XFActsQuery -Query "SELECT * FROM $safeTable WHERE _skip = 0 ORDER BY _row_number"
- 
+
         $mappedColumnNames = @()
         if ($stagingRows -and $stagingRows.Count -gt 0) {
             $mappedColumnNames = @($stagingRows[0].Keys | Where-Object { $_ -ne '_row_number' -and $_ -ne '_skip' -and $_ -notlike '*_unmapped' -and $_ -ne '_trigger_value' -and $_ -ne '_assignment_index' -and $_ -ne '_nullify_fields' })
         }
- 
+
         $fieldMeta = Invoke-XFActsQuery -Query @"
             SELECT e.element_name, e.data_type, e.max_length, e.lookup_table
             FROM Tools.Catalog_BDLElementRegistry e
@@ -862,17 +873,17 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/validate' -Authentication 'ADL
             WHERE f.entity_type = @entityType
               AND e.is_visible = 1
 "@ -Parameters @{ entityType = $entityType }
- 
+
         $lookupFields = $fieldMeta | Where-Object { $_.lookup_table -and $_.lookup_table -isnot [System.DBNull] }
         $lookups = @{}
         $lookupErrors = @{}
         $discoveredTables = @{}
- 
+
         foreach ($field in $lookupFields) {
             if ($mappedColumnNames -notcontains $field.element_name) { continue }
             $tblName = $field.lookup_table
             $elementName = $field.element_name
- 
+
             try {
                 # Cache table structure (columns + active flag) per table
                 if (-not $discoveredTables.ContainsKey($tblName)) {
@@ -882,22 +893,22 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/validate' -Authentication 'ADL
                         WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = @tableName
                         ORDER BY ORDINAL_POSITION
 "@ -Parameters @{ tableName = $tblName }
- 
+
                     $colNames = @($columns | ForEach-Object { $_.COLUMN_NAME })
                     $actvColumn = $colNames | Where-Object { $_ -like '*_actv_flg' } | Select-Object -First 1
- 
+
                     $discoveredTables[$tblName] = @{
                         ActvColumn = $actvColumn
                         AllColumns = $colNames
                     }
                 }
- 
+
                 $tableInfo = $discoveredTables[$tblName]
                 $colNames = $tableInfo.AllColumns
- 
+
                 # 4-step value column resolution (per element, not per table)
                 $valCol = $null
-                # Step 1: Direct match — element_name is a column in the table
+                # Step 1: Direct match - element_name is a column in the table
                 if ($colNames -contains $elementName) {
                     $valCol = $elementName
                 }
@@ -913,15 +924,15 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/validate' -Authentication 'ADL
                 if (-not $valCol) {
                     $valCol = $colNames | Where-Object { $_ -like '*_nm' -and $_ -notlike '*_shrt_nm' } | Select-Object -First 1
                 }
- 
+
                 if (-not $valCol) {
                     $lookupErrors[$elementName] = "Could not resolve value column for '$elementName' in $tblName (columns: $($colNames -join ', '))"
                     continue
                 }
- 
+
                 $actvCol = $tableInfo.ActvColumn
 
-                # ── Tag entity filtering for validation lookups ──────────
+                # Tag entity filtering for validation lookups
                 $tagFilterClause = ''
                 if ($tblName -eq 'tag' -and $entityType) {
                     $tagAssocCd = $null
@@ -931,7 +942,7 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/validate' -Authentication 'ADL
                         $tagFilterClause = " AND [tag_typ_id] IN (SELECT [tag_typ_id] FROM dbo.[tag_typ] WHERE [tag_typ_entty_assctn_cd] = $tagAssocCd)"
                     }
                 }
- 
+
                 if ($actvCol) {
                     $values = Invoke-CRS5ReadQuery -TargetInstance $dbInstance -Query @"
                         SELECT DISTINCT [$valCol] AS val FROM dbo.[$tblName] WHERE [$actvCol] = 'Y'$tagFilterClause ORDER BY [$valCol]
@@ -942,7 +953,7 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/validate' -Authentication 'ADL
                         SELECT DISTINCT [$valCol] AS val FROM dbo.[$tblName] WHERE 1=1$tagFilterClause ORDER BY [$valCol]
 "@
                 }
- 
+
                 $lookups[$elementName] = @{
                     values      = @($values | ForEach-Object { $_.val })
                     table       = $tblName
@@ -954,7 +965,7 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/validate' -Authentication 'ADL
                 $lookupErrors[$elementName] = "Failed to query $tblName on ${dbInstance}: $($_.Exception.Message)"
             }
         }
- 
+
         $rowArrays = @()
         foreach ($sRow in $stagingRows) {
             $rowVals = @()
@@ -965,10 +976,10 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/validate' -Authentication 'ADL
             }
             $rowArrays += ,@($rowVals)
         }
- 
+
         $skipCount = Invoke-XFActsQuery -Query "SELECT COUNT(*) AS cnt FROM $safeTable WHERE _skip = 1"
         $skippedCount = if ($skipCount -and $skipCount.Count -gt 0) { $skipCount[0].cnt } else { 0 }
- 
+
         Write-PodeJsonResponse -Value @{
             columns       = @($mappedColumnNames)
             rows          = @($rowArrays)
@@ -985,54 +996,54 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/validate' -Authentication 'ADL
     }
 }
 
-# ----------------------------------------------------------------------------
 # GET /api/bdl-import/lookup-search
 # Typeahead search against DM lookup tables for BDL entity fields.
-# Uses 4-step column resolution: element_name → *_val_txt → *_shrt_nm → *_nm
+# Uses 4-step column resolution: element_name -> *_val_txt -> *_shrt_nm -> *_nm
 # Tag entity filtering: CONSUMER_TAG/ACCOUNT_TAG restricted by tag_typ association
-# ----------------------------------------------------------------------------
 Add-PodeRoute -Method Get -Path '/api/bdl-import/lookup-search' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
     try {
         $lookupTable = $WebEvent.Query['lookup_table']
         $elementName = $WebEvent.Query['element_name']
         $search = $WebEvent.Query['search']
         $configId = $WebEvent.Query['config_id']
- 
+
         if (-not $lookupTable -or -not $elementName -or -not $search -or -not $configId) {
             Write-PodeJsonResponse -Value @{ error = 'lookup_table, element_name, search, and config_id are required' } -StatusCode 400
             return
         }
- 
+
         if ($search.Length -lt 2) {
             Write-PodeJsonResponse -Value @{ values = @() }
             return
         }
- 
+
         $envConfig = Invoke-XFActsQuery -Query @"
             SELECT db_instance
             FROM Tools.EnvironmentConfig
             WHERE config_id = @configId AND is_active = 1
 "@ -Parameters @{ configId = $configId }
- 
+
         if (-not $envConfig -or $envConfig.Count -eq 0) {
             Write-PodeJsonResponse -Value @{ error = 'Environment configuration not found' } -StatusCode 404
             return
         }
- 
+
         $dbInstance = $envConfig[0].db_instance
- 
+
         $columns = Invoke-CRS5ReadQuery -TargetInstance $dbInstance -Query @"
             SELECT COLUMN_NAME
             FROM INFORMATION_SCHEMA.COLUMNS
             WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = @tableName
             ORDER BY ORDINAL_POSITION
 "@ -Parameters @{ tableName = $lookupTable }
- 
+
         $colNames = @($columns | ForEach-Object { $_.COLUMN_NAME })
- 
+
         # 4-step value column resolution
         $resolvedCol = $null
-        # Step 1: Direct match — element_name is a column in the table
+        # Step 1: Direct match - element_name is a column in the table
         if ($colNames -contains $elementName) {
             $resolvedCol = $elementName
         }
@@ -1048,28 +1059,28 @@ Add-PodeRoute -Method Get -Path '/api/bdl-import/lookup-search' -Authentication 
         if (-not $resolvedCol) {
             $resolvedCol = $colNames | Where-Object { $_ -like '*_nm' -and $_ -notlike '*_shrt_nm' } | Select-Object -First 1
         }
- 
+
         if (-not $resolvedCol) {
             Write-PodeJsonResponse -Value @{ error = "Could not resolve value column for '$elementName' in table '$lookupTable'" } -StatusCode 404
             return
         }
- 
+
         $actvColumn = $colNames | Where-Object { $_ -like '*_actv_flg' } | Select-Object -First 1
         # Description: *_nm (excluding resolved column) first, then *_dscrptn_txt
         $descColumn = $colNames | Where-Object { $_ -like '*_nm' -and $_ -ne $resolvedCol } | Select-Object -First 1
         if (-not $descColumn) {
             $descColumn = $colNames | Where-Object { $_ -like '*_dscrptn_txt' } | Select-Object -First 1
         }
- 
+
         $safeResolvedCol = "[$resolvedCol]"
         $safeTable = "dbo.[$lookupTable]"
         $selectColumns = "$safeResolvedCol AS val"
         if ($descColumn) { $selectColumns += ", [$descColumn] AS description" }
- 
+
         $whereClause = "$safeResolvedCol LIKE @searchPattern"
         if ($actvColumn) { $whereClause += " AND [$actvColumn] = 'Y'" }
 
-        # ── Tag entity filtering: restrict to consumer or account level tags ──
+        # Tag entity filtering: restrict to consumer or account level tags
         $entityType = $WebEvent.Query['entity_type']
         if ($lookupTable -eq 'tag' -and $entityType) {
             $tagAssocCd = $null
@@ -1079,14 +1090,14 @@ Add-PodeRoute -Method Get -Path '/api/bdl-import/lookup-search' -Authentication 
                 $whereClause += " AND [tag_typ_id] IN (SELECT [tag_typ_id] FROM dbo.[tag_typ] WHERE [tag_typ_entty_assctn_cd] = $tagAssocCd)"
             }
         }
- 
+
         $values = Invoke-CRS5ReadQuery -TargetInstance $dbInstance -Query @"
             SELECT DISTINCT TOP 10 $selectColumns
             FROM $safeTable
             WHERE $whereClause
             ORDER BY $safeResolvedCol
 "@ -Parameters @{ searchPattern = "%$search%" }
- 
+
         $results = @($values | ForEach-Object {
             $item = @{ value = $_.val }
             if ($descColumn -and $_.description -and $_.description -isnot [System.DBNull]) {
@@ -1094,7 +1105,7 @@ Add-PodeRoute -Method Get -Path '/api/bdl-import/lookup-search' -Authentication 
             }
             $item
         })
- 
+
         Write-PodeJsonResponse -Value @{ values = @($results) }
     }
     catch {
@@ -1102,10 +1113,10 @@ Add-PodeRoute -Method Get -Path '/api/bdl-import/lookup-search' -Authentication 
     }
 }
 
-# ----------------------------------------------------------------------------
 # POST /api/bdl-import/replace-values
-# ----------------------------------------------------------------------------
 Add-PodeRoute -Method Post -Path '/api/bdl-import/replace-values' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
     try {
         $body = $WebEvent.Data
         $stagingTable = $body.staging_table
@@ -1163,10 +1174,10 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/replace-values' -Authenticatio
     }
 }
 
-# ----------------------------------------------------------------------------
 # POST /api/bdl-import/skip-rows
-# ----------------------------------------------------------------------------
 Add-PodeRoute -Method Post -Path '/api/bdl-import/skip-rows' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
     try {
         $body = $WebEvent.Data
         $stagingTable = $body.staging_table
@@ -1211,10 +1222,10 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/skip-rows' -Authentication 'AD
     }
 }
 
-# ----------------------------------------------------------------------------
 # GET /api/bdl-import/staging-cleanup
-# ----------------------------------------------------------------------------
 Add-PodeRoute -Method Get -Path '/api/bdl-import/staging-cleanup' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
     try {
         $results = Invoke-XFActsQuery -Query @"
             SELECT t.name, t.create_date, DATEDIFF(HOUR, t.create_date, GETDATE()) AS age_hours
@@ -1229,10 +1240,10 @@ Add-PodeRoute -Method Get -Path '/api/bdl-import/staging-cleanup' -Authenticatio
     }
 }
 
-# ----------------------------------------------------------------------------
 # POST /api/bdl-import/staging-cleanup
-# ----------------------------------------------------------------------------
 Add-PodeRoute -Method Post -Path '/api/bdl-import/staging-cleanup' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
     try {
         $expired = Invoke-XFActsQuery -Query @"
             SELECT t.name FROM sys.tables t INNER JOIN sys.schemas s ON s.schema_id = t.schema_id
@@ -1251,22 +1262,22 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/staging-cleanup' -Authenticati
     }
 }
 
-# ----------------------------------------------------------------------------
 # GET /api/bdl-import/history
 # Reconciles in-flight imports against DM File_Registry, then returns:
 #   - active_rows: non-terminal imports (is_complete=0), filtered, top 50
-#   - years: aggregate counts for terminal rows, grouped by year → month
+#   - years: aggregate counts for terminal rows, grouped by year -> month
 #   - poll_interval_seconds: GlobalConfig refresh_bdl-import_seconds
 #   - environments: distinct env list for filter chips
 #   - reconcile_summary: what the reconcile step did this call
 #
 # Query params:
-#   env         — comma-separated environments (e.g., "TEST,PROD"); empty = all
-#   user_scope  — "me" (default) or "all"
-# ----------------------------------------------------------------------------
+#   env         - comma-separated environments (e.g., "TEST,PROD"); empty = all
+#   user_scope  - "me" (default) or "all"
 Add-PodeRoute -Method Get -Path '/api/bdl-import/history' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
     try {
-        # ── Step 1: On-demand reconciliation ─────────────────────────────
+        # Step 1: On-demand reconciliation
         # Syncs any non-terminal xFACts rows against DM File_Registry.
         # Runs across all envs/users (filter applies to display only).
         $reconcileResult = @{ reconciled = 0; still_active = 0; not_found = 0; errors = @(); environments = @{} }
@@ -1277,7 +1288,7 @@ Add-PodeRoute -Method Get -Path '/api/bdl-import/history' -Authentication 'ADLog
             $reconcileResult.errors = @(@{ message = $_.Exception.Message })
         }
 
-        # ── Step 2: Parse filters ────────────────────────────────────────
+        # Step 2: Parse filters
         $envFilter = $WebEvent.Query['env']
         $userScope = $WebEvent.Query['user_scope']
         if (-not $userScope) { $userScope = 'me' }
@@ -1308,7 +1319,7 @@ Add-PodeRoute -Method Get -Path '/api/bdl-import/history' -Authentication 'ADLog
             $params['currentUser'] = $currentUser
         }
 
-        # ── Step 3: Active rows (is_complete=0), top 50, most recent first ──
+        # Step 3: Active rows (is_complete=0), top 50, most recent first
         $activeRows = Invoke-XFActsQuery -Query @"
             SELECT TOP 50
                 log_id,
@@ -1341,7 +1352,7 @@ Add-PodeRoute -Method Get -Path '/api/bdl-import/history' -Authentication 'ADLog
             ORDER BY started_dttm DESC, log_id DESC
 "@ -Parameters $params
 
-        # ── Step 4: Terminal rows grouped by year/month ───────────────────
+        # Step 4: Terminal rows grouped by year/month
         $terminalMonths = Invoke-XFActsQuery -Query @"
             SELECT
                 YEAR(started_dttm) AS year_num,
@@ -1363,7 +1374,7 @@ Add-PodeRoute -Method Get -Path '/api/bdl-import/history' -Authentication 'ADLog
 "@ -Parameters $params
 
         # Group months into years
-        # NOTE: using regular @{} not [ordered]@{} — OrderedDictionary treats
+        # NOTE: using regular @{} not [ordered]@{} - OrderedDictionary treats
         # integer keys as positional indices and throws on $yearMap[$y] access.
         # Field names match the month-level object shape so JS can read them uniformly.
         $yearMap = @{}
@@ -1394,12 +1405,12 @@ Add-PodeRoute -Method Get -Path '/api/bdl-import/history' -Authentication 'ADLog
                 orphaned = [int]$m.orphaned_count
             }
         }
-        # Sort by sorting keys — Sort-Object -Property on a plain Hashtable's
+        # Sort by sorting keys - Sort-Object -Property on a plain Hashtable's
         # Values collection doesn't reliably honor property access on each entry.
         # Keys are integer years; sorting them descending gives newest first.
         $years = @($yearMap.Keys | Sort-Object -Descending | ForEach-Object { $yearMap[$_] })
 
-        # ── Step 5: Distinct environments (for filter chip list) ──────────
+        # Step 5: Distinct environments (for filter chip list)
         $envList = Invoke-XFActsQuery -Query @"
             SELECT environment
             FROM Tools.EnvironmentConfig
@@ -1414,7 +1425,7 @@ Add-PodeRoute -Method Get -Path '/api/bdl-import/history' -Authentication 'ADLog
 "@
         $environments = @($envList | ForEach-Object { $_.environment })
 
-        # ── Step 6: Poll interval (shared GlobalConfig endpoint key) ──────
+        # Step 6: Poll interval (shared GlobalConfig endpoint key)
         $pollInterval = 20
         $pollCfg = Invoke-XFActsQuery -Query @"
             SELECT setting_value
@@ -1431,7 +1442,7 @@ Add-PodeRoute -Method Get -Path '/api/bdl-import/history' -Authentication 'ADLog
             }
         }
 
-        # ── Step 7: Response ──────────────────────────────────────────────
+        # Step 7: Response
         Write-PodeJsonResponse -Value @{
             active_rows            = @($activeRows)
             years                  = $years
@@ -1448,18 +1459,18 @@ Add-PodeRoute -Method Get -Path '/api/bdl-import/history' -Authentication 'ADLog
     }
 }
 
-# ----------------------------------------------------------------------------
 # GET /api/bdl-import/history-month?year=2026&month=4&env=&user_scope=me
 # Returns day-level detail for a single month. Each day includes both
 # the aggregate counts AND the individual import rows for that date.
 #
 # Query params:
-#   year       — required, e.g. 2026
-#   month      — required, 1-12
-#   env        — comma-separated environments; empty = all
-#   user_scope — "me" (default) or "all"
-# ----------------------------------------------------------------------------
+#   year       - required, e.g. 2026
+#   month      - required, 1-12
+#   env        - comma-separated environments; empty = all
+#   user_scope - "me" (default) or "all"
 Add-PodeRoute -Method Get -Path '/api/bdl-import/history-month' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
     try {
         $year = $WebEvent.Query['year']
         $month = $WebEvent.Query['month']
@@ -1545,7 +1556,7 @@ Add-PodeRoute -Method Get -Path '/api/bdl-import/history-month' -Authentication 
 "@ -Parameters $params
 
         # Group by day
-        # NOTE: regular @{} (not [ordered]) for consistency — we sort at the end.
+        # NOTE: regular @{} (not [ordered]) for consistency - we sort at the end.
         $dayMap = @{}
         foreach ($row in $imports) {
             $dateKey = [string]$row.import_date
@@ -1570,7 +1581,7 @@ Add-PodeRoute -Method Get -Path '/api/bdl-import/history-month' -Authentication 
             $dayMap[$dateKey].imports += $row
         }
 
-        # Sort by sorting keys — Sort-Object -Property on a plain Hashtable's
+        # Sort by sorting keys - Sort-Object -Property on a plain Hashtable's
         # Values collection doesn't reliably honor property access on each entry.
         # Keys are "yyyy-MM-dd" strings; descending order = newest date first.
         $days = @($dayMap.Keys | Sort-Object -Descending | ForEach-Object { $dayMap[$_] })
@@ -1588,12 +1599,12 @@ Add-PodeRoute -Method Get -Path '/api/bdl-import/history-month' -Authentication 
     }
 }
 
-# ----------------------------------------------------------------------------
 # POST /api/bdl-import/build-preview
 # Builds the BDL XML from staging data and returns it for preview.
 # Does NOT write the file or call DM APIs.
-# ----------------------------------------------------------------------------
 Add-PodeRoute -Method Post -Path '/api/bdl-import/build-preview' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
     try {
         $body = $WebEvent.Data
         $stagingTable = $body.staging_table
@@ -1633,13 +1644,13 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/build-preview' -Authentication
     }
 }
 
-# ----------------------------------------------------------------------------
 # POST /api/bdl-import/execute
 # Full execute: build XML -> write to dmfs -> register -> trigger import.
 # Handles a single entity type per call. Called sequentially by the client
 # for multi-entity imports. AR log is handled separately via execute-ar-log.
-# ----------------------------------------------------------------------------
 Add-PodeRoute -Method Post -Path '/api/bdl-import/execute' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
     try {
         $body = $WebEvent.Data
         $stagingTable = $body.staging_table
@@ -1657,20 +1668,20 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/execute' -Authentication 'ADLo
         $username = $WebEvent.Auth.User.Username
         if ($username -and $username.Contains('\')) { $username = $username.Split('\')[1] }
 
-        # ── Step 1: Build the XML ───────────────────────────────────────
+        # Step 1: Build the XML
         $xmlResult = Build-BDLXml -StagingTable $stagingTable -EntityType $entityType -ConfigId $configId -WebEvent $WebEvent
         if ($xmlResult.Error) {
             Write-PodeJsonResponse -Value @{ error = $xmlResult.Error } -StatusCode $xmlResult.StatusCode
             return
         }
 
-        # ── Step 2: Create ImportLog row (BUILDING status) ──────────────
+        # Step 2: Create ImportLog row (BUILDING status)
         $logInsert = Invoke-XFActsQuery -Query @"
-            INSERT INTO Tools.BDL_ImportLog 
+            INSERT INTO Tools.BDL_ImportLog
                 (server_config_id, environment, entity_type, source_filename,
                  xml_filename, staging_table, row_count, column_mapping, status, executed_by)
             OUTPUT INSERTED.log_id
-            VALUES 
+            VALUES
                 (@configId, @environment, @entityType, @sourceFilename,
                  @xmlFilename, @stagingTable, @rowCount, @columnMapping, 'BUILDING', @executedBy)
 "@ -Parameters @{
@@ -1687,7 +1698,7 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/execute' -Authentication 'ADLo
 
         $logId = $logInsert[0].log_id
 
-        # ── Step 3: Get environment config (file paths) and API URL ─────
+        # Step 3: Get environment config (file paths) and API URL
         $envConfig = Invoke-XFActsQuery -Query @"
             SELECT dmfs_base_path, dmfs_bdl_folder, environment
             FROM Tools.EnvironmentConfig
@@ -1705,7 +1716,7 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/execute' -Authentication 'ADLo
 
         if (-not $apiServer -or $apiServer.Count -eq 0) {
             Invoke-XFActsNonQuery -Query @"
-                UPDATE Tools.BDL_ImportLog 
+                UPDATE Tools.BDL_ImportLog
                 SET status = 'FAILED', error_message = @errorMsg, completed_dttm = GETDATE()
                 WHERE log_id = @logId
 "@ -Parameters @{ logId = $logId; errorMsg = "No primary API server found for environment $environment" }
@@ -1716,7 +1727,7 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/execute' -Authentication 'ADLo
 
         $apiBaseUrl = $apiServer[0].api_base_url
 
-        # ── Step 4: Write XML file to dmfs ──────────────────────────────
+        # Step 4: Write XML file to dmfs
         try {
             $fullFilePath = $dmfsPath + $xmlResult.Filename
             $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
@@ -1724,7 +1735,7 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/execute' -Authentication 'ADLo
         }
         catch {
             Invoke-XFActsNonQuery -Query @"
-                UPDATE Tools.BDL_ImportLog 
+                UPDATE Tools.BDL_ImportLog
                 SET status = 'FAILED', error_message = @errorMsg, completed_dttm = GETDATE()
                 WHERE log_id = @logId
 "@ -Parameters @{ logId = $logId; errorMsg = "File write failed: $($_.Exception.Message)" }
@@ -1733,13 +1744,13 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/execute' -Authentication 'ADLo
             return
         }
 
-        # ── Step 5: Get DM API credentials ──────────────────────────────
+        # Step 5: Get DM API credentials
         try {
             $creds = Get-ServiceCredentials -ServiceName 'DM_REST_API'
         }
         catch {
             Invoke-XFActsNonQuery -Query @"
-                UPDATE Tools.BDL_ImportLog 
+                UPDATE Tools.BDL_ImportLog
                 SET status = 'FAILED', error_message = @errorMsg, completed_dttm = GETDATE()
                 WHERE log_id = @logId
 "@ -Parameters @{ logId = $logId; errorMsg = "Credential retrieval failed: $($_.Exception.Message)" }
@@ -1754,7 +1765,7 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/execute' -Authentication 'ADLo
             'Content-Type'  = 'application/vnd.fico.dm.v1+json'
         }
 
-        # ── Step 6: Register file with DM (POST /fileregistry) ──────────
+        # Step 6: Register file with DM (POST /fileregistry)
         try {
             $regBody = @{
                 fileName = $xmlResult.Filename
@@ -1780,14 +1791,14 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/execute' -Authentication 'ADLo
             }
 
             Invoke-XFActsNonQuery -Query @"
-                UPDATE Tools.BDL_ImportLog 
+                UPDATE Tools.BDL_ImportLog
                 SET status = 'REGISTERED', file_registry_id = @regId
                 WHERE log_id = @logId
 "@ -Parameters @{ logId = $logId; regId = $fileRegistryId }
         }
         catch {
             Invoke-XFActsNonQuery -Query @"
-                UPDATE Tools.BDL_ImportLog 
+                UPDATE Tools.BDL_ImportLog
                 SET status = 'FAILED', error_message = @errorMsg, completed_dttm = GETDATE()
                 WHERE log_id = @logId
 "@ -Parameters @{ logId = $logId; errorMsg = "File registration failed: $($_.Exception.Message)" }
@@ -1796,7 +1807,7 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/execute' -Authentication 'ADLo
             return
         }
 
-        # ── Step 6b: Poll File_Registry until READY ──────────────────────
+        # Step 6b: Poll File_Registry until READY
         $maxWaitSeconds = 30
         $pollIntervalSeconds = 2
         $elapsed = 0
@@ -1809,30 +1820,24 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/execute' -Authentication 'ADLo
 
         if ($targetDbConfig -and $targetDbConfig.Count -gt 0 -and -not [string]::IsNullOrEmpty($targetDbConfig[0].db_instance)) {
             $pollInstance = $targetDbConfig[0].db_instance
-            $pollConnString = "Server=$pollInstance;Database=crs5_oltp;Integrated Security=True;Application Name=xFACts BDL-PollReady;"
+            $pollRegId = [int]$fileRegistryId
 
             while ($elapsed -lt $maxWaitSeconds) {
                 try {
-                    $pollConn = New-Object System.Data.SqlClient.SqlConnection($pollConnString)
-                    $pollConn.Open()
-                    $pollCmd = $pollConn.CreateCommand()
-                    $pollCmd.CommandText = "SELECT file_stts_cd FROM dbo.File_Registry WHERE File_registry_id = @regId"
-                    $pollCmd.Parameters.AddWithValue("@regId", $fileRegistryId) | Out-Null
-                    $pollCmd.CommandTimeout = 10
-                    $statusCd = $pollCmd.ExecuteScalar()
-                    $pollConn.Close()
+                    $pollRow = Invoke-Sqlcmd -ServerInstance $pollInstance -Database 'crs5_oltp' -Query @'
+                        SELECT file_stts_cd FROM dbo.File_Registry WHERE File_registry_id = $(regId)
+'@ -Variable "regId=$pollRegId" -QueryTimeout 10 -TrustServerCertificate -ApplicationName 'xFACts Control Center'
 
-                    if ($statusCd -eq 3) { $fileReady = $true; break }
+                    if ($pollRow -and $pollRow.file_stts_cd -eq 3) { $fileReady = $true; break }
                 }
                 catch { }
-                finally { if ($pollConn -and $pollConn.State -eq 'Open') { $pollConn.Close() } }
 
                 Start-Sleep -Seconds $pollIntervalSeconds
                 $elapsed += $pollIntervalSeconds
             }
         }
         else {
-            # No db_instance configured — skip polling, fire immediately (legacy behavior)
+            # No db_instance configured - skip polling, fire immediately (legacy behavior)
             $fileReady = $true
         }
 
@@ -1849,20 +1854,20 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/execute' -Authentication 'ADLo
             return
         }
 
-        # ── Step 7: Trigger BDL import (POST /fileregistry/{id}/bdlimport)
+        # Step 7: Trigger BDL import (POST /fileregistry/{id}/bdlimport)
         try {
             $importResponse = Invoke-RestMethod -Uri "$apiBaseUrl/fileregistry/$fileRegistryId/bdlimport" `
                 -Method POST -Headers $apiHeaders -Body '' -ErrorAction Stop
 
             Invoke-XFActsNonQuery -Query @"
-                UPDATE Tools.BDL_ImportLog 
+                UPDATE Tools.BDL_ImportLog
                 SET status = 'SUBMITTED', completed_dttm = GETDATE()
                 WHERE log_id = @logId
 "@ -Parameters @{ logId = $logId }
         }
         catch {
             Invoke-XFActsNonQuery -Query @"
-                UPDATE Tools.BDL_ImportLog 
+                UPDATE Tools.BDL_ImportLog
                 SET status = 'FAILED', error_message = @errorMsg, completed_dttm = GETDATE()
                 WHERE log_id = @logId
 "@ -Parameters @{ logId = $logId; errorMsg = "BDL import trigger failed: $($_.Exception.Message)" }
@@ -1871,12 +1876,12 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/execute' -Authentication 'ADLo
             return
         }
 
-        # ── ActionAuditLog ──────────────────────────────────────────────
+        # ActionAuditLog
         try {
             Invoke-XFActsNonQuery -Query @"
-                INSERT INTO dbo.ActionAuditLog 
+                INSERT INTO dbo.ActionAuditLog
                     (page_route, action_type, action_summary, environment, result, executed_by)
-                VALUES 
+                VALUES
                     ('/bdl-import', 'BDL_IMPORT', @summary, @environment, 'SUCCESS', @executedBy)
 "@ -Parameters @{
                 summary     = "$entityType`: $($xmlResult.RowCount.ToString('N0')) rows submitted (File Registry ID: $fileRegistryId)"
@@ -1885,7 +1890,7 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/execute' -Authentication 'ADLo
             }
         } catch { }
 
-        # ── Primary BDL Success ─────────────────────────────────────────
+        # Primary BDL Success
         $primaryResult = @{
             success          = $true
             log_id           = $logId
@@ -1897,7 +1902,7 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/execute' -Authentication 'ADLo
             message          = "BDL file $($xmlResult.Filename) has been submitted to Debt Manager."
         }
 
-        # ── Promote metadata for non-PROD environments ─────────────────
+        # Promote metadata for non-PROD environments
         if ($xmlResult.Environment -ne 'PROD') {
             $cooldownConfig = Invoke-XFActsQuery -Query @"
                 SELECT setting_value
@@ -1922,7 +1927,7 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/execute' -Authentication 'ADLo
             }
         }
 
-        # ── Final response ──────────────────────────────────────────────
+        # Final response
         Write-PodeJsonResponse -Value $primaryResult
     }
     catch {
@@ -1930,14 +1935,14 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/execute' -Authentication 'ADLo
     }
 }
 
-# ----------------------------------------------------------------------------
 # POST /api/bdl-import/retry-trigger
 # Retries the BDL import trigger for a failed import that has a file_registry_id.
 # The file was registered with DM but the trigger call failed (e.g., file not
 # yet in READY status). This endpoint re-fires the trigger without re-registering.
 # Access: original executed_by user OR admin tier on /bdl-import page.
-# ----------------------------------------------------------------------------
 Add-PodeRoute -Method Post -Path '/api/bdl-import/retry-trigger' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
     try {
         $body = $WebEvent.Data
         $logId = $body.log_id
@@ -1949,7 +1954,7 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/retry-trigger' -Authentication
 
         $user = "FAC\$($WebEvent.Auth.User.Username)"
 
-        # ── Validate the import log row ──────────────────────────────────
+        # Validate the import log row
         $logRow = Invoke-XFActsQuery -Query @"
             SELECT log_id, environment, entity_type, file_registry_id, status,
                    executed_by, server_config_id, source_filename
@@ -1971,11 +1976,11 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/retry-trigger' -Authentication
         }
 
         if (-not $row.file_registry_id -or $row.file_registry_id -is [System.DBNull]) {
-            Write-PodeJsonResponse -Value @{ error = "Import $logId has no file_registry_id — file was never registered with DM. A full re-import is needed." } -StatusCode 400
+            Write-PodeJsonResponse -Value @{ error = "Import $logId has no file_registry_id - file was never registered with DM. A full re-import is needed." } -StatusCode 400
             return
         }
 
-        # ── Access check: must be original user or admin tier ────────────
+        # Access check: must be original user or admin tier
         $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/bdl-import'
         $isPageAdmin = $access.HasAccess -and $access.Tier -eq 'admin'
         $isOriginalUser = $row.executed_by -eq $user
@@ -1985,7 +1990,7 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/retry-trigger' -Authentication
             return
         }
 
-        # ── Resolve environment → API URL + credentials ──────────────────
+        # Resolve environment -> API URL + credentials
         $environment = $row.environment
         $configId = $row.server_config_id
 
@@ -2002,7 +2007,7 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/retry-trigger' -Authentication
         $apiBaseUrl = $apiServer[0].api_base_url
         $fileRegistryId = $row.file_registry_id
 
-        # ── Get DM API credentials ───────────────────────────────────────
+        # Get DM API credentials
         try {
             $creds = Get-ServiceCredentials -ServiceName 'DM_REST_API'
         }
@@ -2017,7 +2022,7 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/retry-trigger' -Authentication
             'Content-Type'  = 'application/vnd.fico.dm.v1+json'
         }
 
-        # ── Fire the trigger ─────────────────────────────────────────────
+        # Fire the trigger
         try {
             $importResponse = Invoke-RestMethod -Uri "$apiBaseUrl/fileregistry/$fileRegistryId/bdlimport" `
                 -Method POST -Headers $apiHeaders -Body '' -ErrorAction Stop
@@ -2061,12 +2066,12 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/retry-trigger' -Authentication
     }
 }
 
-# ----------------------------------------------------------------------------
 # POST /api/bdl-import/execute-ar-log
 # Builds and submits a single consolidated CONSUMER_ACCOUNT_AR_LOG BDL
 # covering all entity types in a batch execution.
-# ----------------------------------------------------------------------------
 Add-PodeRoute -Method Post -Path '/api/bdl-import/execute-ar-log' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
     try {
         $body = $WebEvent.Data
         $stagingTable   = $body.staging_table
@@ -2089,7 +2094,7 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/execute-ar-log' -Authenticatio
             $arMessage = "${jiraTicket}: ${entityTypes} update via BDL Import"
         }
 
-        # ── Determine identifier element from first entity type ─────────
+        # Determine identifier element from first entity type
         $firstEntity = ($entityTypes -split ',')[0].Trim()
         $folderInfo = Invoke-XFActsQuery -Query @"
             SELECT folder FROM Tools.Catalog_BDLFormatRegistry
@@ -2102,7 +2107,7 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/execute-ar-log' -Authenticatio
         }
         $identifierElement = if ($isAcctLevel) { 'cnsmr_accnt_idntfr_agncy_id' } else { 'cnsmr_idntfr_agncy_id' }
 
-        # ── Get environment config (file paths) ─────────────────────────
+        # Get environment config (file paths)
         $envConfig = Invoke-XFActsQuery -Query @"
             SELECT dmfs_base_path, dmfs_bdl_folder, environment
             FROM Tools.EnvironmentConfig
@@ -2117,7 +2122,7 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/execute-ar-log' -Authenticatio
         $environment = $envConfig[0].environment
         $dmfsPath = $envConfig[0].dmfs_base_path + '\' + $envConfig[0].dmfs_bdl_folder + '\'
 
-        # ── Get API URL from ServerRegistry ─────────────────────────────
+        # Get API URL from ServerRegistry
         $apiServer = Invoke-XFActsQuery -Query @"
             SELECT api_base_url FROM dbo.ServerRegistry
             WHERE environment = @env AND is_api_primary = 1 AND tools_enabled = 1
@@ -2130,7 +2135,7 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/execute-ar-log' -Authenticatio
 
         $apiBaseUrl = $apiServer[0].api_base_url
 
-        # ── Build AR log XML ────────────────────────────────────────────
+        # Build AR log XML
         $arXmlResult = Build-ARLogXml -StagingTable $stagingTable -EntityType $firstEntity `
             -JiraTicket $jiraTicket -ArMessage $arMessage `
             -IdentifierElement $identifierElement -WebEvent $WebEvent
@@ -2140,18 +2145,18 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/execute-ar-log' -Authenticatio
             return
         }
 
-        # ── Write AR log XML to dmfs ────────────────────────────────────
+        # Write AR log XML to dmfs
         $arFilePath = $dmfsPath + $arXmlResult.Filename
         $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
         [System.IO.File]::WriteAllText($arFilePath, $arXmlResult.Xml, $utf8NoBom)
 
-        # ── Create ImportLog row (BUILDING) ─────────────────────────────
+        # Create ImportLog row (BUILDING)
         $arLogInsert = Invoke-XFActsQuery -Query @"
-            INSERT INTO Tools.BDL_ImportLog 
+            INSERT INTO Tools.BDL_ImportLog
                 (server_config_id, environment, entity_type, source_filename,
                  xml_filename, staging_table, row_count, status, executed_by, parent_log_ids)
             OUTPUT INSERTED.log_id
-            VALUES 
+            VALUES
                 (@configId, @environment, 'CONSUMER_ACCOUNT_AR_LOG', @sourceFilename,
                  @xmlFilename, @stagingTable, @rowCount, 'BUILDING', @executedBy, @parentLogIds)
 "@ -Parameters @{
@@ -2167,14 +2172,14 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/execute-ar-log' -Authenticatio
 
         $arLogId = $arLogInsert[0].log_id
 
-        # ── Get DM API credentials ──────────────────────────────────────
+        # Get DM API credentials
         $creds = Get-ServiceCredentials -ServiceName 'DM_REST_API'
         $apiHeaders = @{
             'Authorization' = $creds.AuthHeader
             'Content-Type'  = 'application/vnd.fico.dm.v1+json'
         }
 
-        # ── Register AR log file with DM ────────────────────────────────
+        # Register AR log file with DM
         $arRegBody = @{ fileName = $arXmlResult.Filename; fileType = 'BDL_IMPORT' } | ConvertTo-Json
         $arRegResponse = Invoke-RestMethod -Uri "$apiBaseUrl/fileregistry" `
             -Method POST -Headers $apiHeaders -Body $arRegBody -ErrorAction Stop
@@ -2187,17 +2192,17 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/execute-ar-log' -Authenticatio
         if (-not $arFileRegistryId) { throw "Could not extract file_registry_id from AR log registration response" }
 
         Invoke-XFActsNonQuery -Query @"
-            UPDATE Tools.BDL_ImportLog 
+            UPDATE Tools.BDL_ImportLog
             SET status = 'REGISTERED', file_registry_id = @regId
             WHERE log_id = @logId
 "@ -Parameters @{ logId = $arLogId; regId = $arFileRegistryId }
 
-        # ── Trigger AR log import ───────────────────────────────────────
+        # Trigger AR log import
         Invoke-RestMethod -Uri "$apiBaseUrl/fileregistry/$arFileRegistryId/bdlimport" `
             -Method POST -Headers $apiHeaders -Body '' -ErrorAction Stop
 
         Invoke-XFActsNonQuery -Query @"
-            UPDATE Tools.BDL_ImportLog 
+            UPDATE Tools.BDL_ImportLog
             SET status = 'SUBMITTED', completed_dttm = GETDATE()
             WHERE log_id = @logId
 "@ -Parameters @{ logId = $arLogId }
@@ -2216,7 +2221,7 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/execute-ar-log' -Authenticatio
         if ($arLogId) {
             try {
                 Invoke-XFActsNonQuery -Query @"
-                    UPDATE Tools.BDL_ImportLog 
+                    UPDATE Tools.BDL_ImportLog
                     SET status = 'FAILED', error_message = @errorMsg, completed_dttm = GETDATE()
                     WHERE log_id = @logId
 "@ -Parameters @{ logId = $arLogId; errorMsg = "AR log failed: $($_.Exception.Message)" }
@@ -2226,10 +2231,10 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/execute-ar-log' -Authenticatio
     }
 }
 
-# ----------------------------------------------------------------------------
 # POST /api/bdl-import/align-rows
-# ----------------------------------------------------------------------------
 Add-PodeRoute -Method Post -Path '/api/bdl-import/align-rows' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
     try {
         $body = $WebEvent.Data
         $sourceTable = $body.source_table
@@ -2282,7 +2287,7 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/align-rows' -Authentication 'A
 "@
 
         $countResult = Invoke-XFActsQuery -Query @"
-            SELECT 
+            SELECT
                 COUNT(CASE WHEN _skip = 0 THEN 1 END) AS active_count,
                 COUNT(CASE WHEN _skip = 1 THEN 1 END) AS skipped_count
             FROM $safeTarget
@@ -2304,10 +2309,10 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/align-rows' -Authentication 'A
     }
 }
 
-# ----------------------------------------------------------------------------
 # POST /api/bdl-import/reset-alignment
-# ----------------------------------------------------------------------------
 Add-PodeRoute -Method Post -Path '/api/bdl-import/reset-alignment' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
     try {
         $body = $WebEvent.Data
         $stagingTable = $body.staging_table
@@ -2351,10 +2356,10 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/reset-alignment' -Authenticati
     }
 }
 
-# ----------------------------------------------------------------------------
 # POST /api/bdl-import/set-nullify-fields
-# ----------------------------------------------------------------------------
 Add-PodeRoute -Method Post -Path '/api/bdl-import/set-nullify-fields' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
     try {
         $body = $WebEvent.Data
         $stagingTable = $body.staging_table
@@ -2417,10 +2422,10 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/set-nullify-fields' -Authentic
     }
 }
 
-# ----------------------------------------------------------------------------
 # GET /api/bdl-import/templates?entity_type=PHONE
-# ----------------------------------------------------------------------------
 Add-PodeRoute -Method Get -Path '/api/bdl-import/templates' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
     try {
         $entityType = $WebEvent.Query['entity_type']
         if (-not $entityType) {
@@ -2438,17 +2443,21 @@ Add-PodeRoute -Method Get -Path '/api/bdl-import/templates' -Authentication 'ADL
             ORDER BY template_name
 "@ -Parameters @{ entityType = $entityType }
 
-        Write-PodeJsonResponse -Value @{ templates = @($results) }
+        # Server-computed delete capability: admin tier may delete templates.
+        $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/bdl-import'
+        $canDelete = ($access.Tier -eq 'admin')
+
+        Write-PodeJsonResponse -Value @{ templates = @($results); can_delete = $canDelete }
     }
     catch {
         Write-PodeJsonResponse -Value @{ error = $_.Exception.Message } -StatusCode 500
     }
 }
 
-# ----------------------------------------------------------------------------
 # POST /api/bdl-import/templates
-# ----------------------------------------------------------------------------
 Add-PodeRoute -Method Post -Path '/api/bdl-import/templates' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
     try {
         $body = $WebEvent.Data
         $entityType = $body.entity_type
@@ -2500,10 +2509,10 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/templates' -Authentication 'AD
     }
 }
 
-# ----------------------------------------------------------------------------
 # PUT /api/bdl-import/templates/:id
-# ----------------------------------------------------------------------------
 Add-PodeRoute -Method Put -Path '/api/bdl-import/templates/:id' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
     try {
         $templateId = $WebEvent.Parameters['id']
         $body = $WebEvent.Data
@@ -2563,10 +2572,10 @@ Add-PodeRoute -Method Put -Path '/api/bdl-import/templates/:id' -Authentication 
     }
 }
 
-# ----------------------------------------------------------------------------
 # DELETE /api/bdl-import/templates/:id
-# ----------------------------------------------------------------------------
 Add-PodeRoute -Method Delete -Path '/api/bdl-import/templates/:id' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
     try {
         $templateId = $WebEvent.Parameters['id']
         $user = "FAC\$($WebEvent.Auth.User.Username)"
