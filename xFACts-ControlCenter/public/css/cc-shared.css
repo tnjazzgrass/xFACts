@@ -262,6 +262,12 @@ a { color: var(--color-text-link); }
     to   { opacity: 1; }
 }
 
+/* Fades and rises an element into view (entrance for panels, cards, accordions). */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
 /* Animation utility class: continuous spin (used inline by gear icons). */
 .cc-spinning-gear {
     display: inline-block;
