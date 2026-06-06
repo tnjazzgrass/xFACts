@@ -1,261 +1,261 @@
-# ============================================================================
-# xFACts Control Center - Platform Monitoring Page
-# Location: E:\xFACts-ControlCenter\scripts\routes\PlatformMonitoring.ps1
-#
-# Admin-only page measuring the resource impact of xFACts on the SQL Server
-# environment. Top section: Platform Performance + Hero Gauge + Control
-# Center API. Bottom section: Process Breakdown + CPU Trend + Top API
-# Endpoints. Slideouts for blocking events, LRQ crossovers, API users,
-# and API errors.
-#
-# Version: Tracked in dbo.System_Metadata (component: ControlCenter.Platform)
-#
-# CHANGELOG
-# ---------
+<#
+.SYNOPSIS
+    Control Center page route for the Platform Monitoring dashboard.
+
+.DESCRIPTION
+    Registers the GET /platform-monitoring page route. Renders the admin-only
+    platform impact dashboard shell: the narrative summary strip, the top
+    section (Platform Performance frame, CPU-impact hero gauge with per-server
+    mini gauges, Control Center API frame), and the bottom three-column section
+    (Process Breakdown, CPU Impact Over Time chart, Top API Endpoints), plus the
+    page's info, detail, and custom-range overlay constructs. All interactive
+    behavior and charting is supplied by the page JavaScript loaded via the
+    cc-shared.js bootloader; this route emits only the static shell and chrome.
+
+.COMPONENT
+    ControlCenter.Platform
+
+.NOTES
+    File Name : PlatformMonitoring.ps1
+    Location  : E:\xFACts-ControlCenter\scripts\routes\PlatformMonitoring.ps1
+
+    FILE ORGANIZATION
+    -----------------
+    CHANGELOG: CHANGE HISTORY
+    ROUTE: PAGE PATH
+#>
+
+<# ============================================================================
+   CHANGELOG: CHANGE HISTORY
+   ----------------------------------------------------------------------------
+   Dated change history for this route file, most-recent first.
+   Prefix: (none)
+   ============================================================================ #>
+
+# 2026-06-06  Migrated to the CC file-format spec. Adopted the cc-shared
+#             bootloader shell: cc-header-bar, cc-refresh-info, the chrome
+#             banner substitution, and the body data attributes for the admin
+#             section. Renamed every identifier from the pm- prefix to the
+#             registered plt- prefix. Converted all interactive markup from
+#             inline onclick handlers to data-action attributes; clickable
+#             cards and the ALL pill became button elements (full-cover hit
+#             button where a card contains a nested info button). Rebuilt the
+#             info modal, detail slideout, and custom-range modal as cc- overlay
+#             constructs in a contiguous overlay block. Moved Chart.js from the
+#             CDN to the vendored /js/chart.min.js reference. Removed the
+#             vestigial back-link and its inline script (a pre-RBAC navigation
+#             guardrail made obsolete by the permission-filtered dynamic nav)
+#             and the retired engine-events.css/js references.
 # 2026-04-29  Phase 3d of dynamic nav: replaced hardcoded nav block with
-#             Get-NavBarHtml helper. Page H1 link, title, subtitle, and
-#             browser tab title now render from RBAC_NavRegistry via
-#             Get-PageHeaderHtml and Get-PageBrowserTitle. Fixed the access
-#             check to use '/platform-monitoring' (was '/admin') for proper
-#             permission validation against this route's registry entry.
-#             Hardcoded admin gear removed from nav (Get-NavBarHtml renders
-#             it). Added a "Back to <originating page>" link below the
-#             header that resolves the referrer via /api/nav-registry/label
-#             (engine-events-API.ps1), falling back to Home if available
-#             or hiding entirely if the user has no Home access.
-# ============================================================================
+#             Get-NavBarHtml helper. Page H1 link, title, subtitle, and browser
+#             tab title now render from RBAC_NavRegistry via Get-PageHeaderHtml
+#             and Get-PageBrowserTitle. Fixed the access check to use
+#             '/platform-monitoring' for proper permission validation against
+#             this route's registry entry.
+
+<# ============================================================================
+   ROUTE: PAGE PATH
+   ----------------------------------------------------------------------------
+   Registers the GET /platform-monitoring page route. Resolves access, composes
+   the nav, header, and banner chrome, and emits the dashboard shell HTML.
+   Prefix: (none)
+   ============================================================================ #>
 
 Add-PodeRoute -Method Get -Path '/platform-monitoring' -Authentication 'ADLogin' -ScriptBlock {
-
-    # --- RBAC Access Check ---
+    Import-Module -Name "E:\xFACts-ControlCenter\scripts\modules\xFACts-CCShared.psm1" -Force -DisableNameChecking
     $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/platform-monitoring'
     if (-not $access.HasAccess) {
         Write-PodeHtmlResponse -Value (Get-AccessDeniedHtml -DisplayName $access.DisplayName -PageRoute '/platform-monitoring') -StatusCode 403
         return
     }
 
-    # --- User context (used by helper for nav rendering) ---
     $ctx = Get-UserContext -WebEvent $WebEvent
-
-    # --- Render dynamic nav bar and page header from RBAC_NavRegistry ---
-    $navHtml      = Get-NavBarHtml      -UserContext $ctx -CurrentPageRoute '/platform-monitoring'
-    $headerHtml   = Get-PageHeaderHtml   -PageRoute '/platform-monitoring'
-    $browserTitle = Get-PageBrowserTitle -PageRoute '/platform-monitoring'
+    $navHtml      = Get-NavBarHtml       -UserContext $ctx -CurrentPageRoute '/platform-monitoring'
+    $headerHtml   = Get-PageHeaderHtml    -PageRoute '/platform-monitoring'
+    $browserTitle = Get-PageBrowserTitle  -PageRoute '/platform-monitoring'
+    $bannerHtml   = Get-ChromeBannersHtml
 
     $html = @"
 <!DOCTYPE html>
 <html>
 <head>
     <title>$browserTitle</title>
+
     <link rel="stylesheet" href="/css/platform-monitoring.css">
-    <link rel="stylesheet" href="/css/engine-events.css">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <link rel="stylesheet" href="/css/cc-shared.css">
 </head>
-<body>
+
+<body class="cc-section-admin" data-cc-page="platform-monitoring" data-cc-prefix="plt">
 $navHtml
 
-    <div class="page-wrap">
-        <!-- Header -->
-        <div class="header-bar">
-            <div class="header-left">
-                $headerHtml
-                <a href="#" id="back-link" class="back-link" style="display:none;"></a>
+    <div class="cc-header-bar">
+        <div>
+            $headerHtml
+        </div>
+        <div class="cc-header-right">
+            <div class="cc-refresh-info">
+                <span class="cc-live-indicator"></span>
+                <span>Live</span> | Updated: <span id="cc-last-update" class="cc-last-updated">-</span>
+                <button class="cc-page-refresh-btn" data-action-click="cc-page-refresh" title="Refresh all data">&#8635;</button>
             </div>
-            <div class="header-right">
-                <div class="refresh-info">Updated: <span id="last-update">-</span>
-                    <button class="page-refresh-btn" onclick="PM.pageRefresh()" title="Refresh all data">&#8635;</button>
+        </div>
+    </div>
+
+    $bannerHtml
+
+    <div class="plt-narrative" id="plt-narrative-strip">
+        <div class="plt-narrative-accent"></div>
+        <div class="plt-narrative-text" id="plt-narrative-text">Loading summary...</div>
+    </div>
+
+    <div class="plt-content">
+
+        <div class="plt-top-section">
+
+            <div class="plt-card-frame">
+                <div class="plt-card-frame-title">
+                    <span>Platform Performance <button type="button" class="plt-info-icon" data-action-click="plt-show-info" data-action-plt-info-key="perf-section">?</button></span>
+                    <span class="plt-refresh-badge" title="Refreshes on server or time range selection">&#128260;</span>
+                </div>
+                <div class="plt-card-grid">
+                    <div class="plt-card"><div class="plt-card-header"><span class="plt-card-title">Active Sessions</span><button type="button" class="plt-info-icon" data-action-click="plt-show-info" data-action-plt-info-key="active-sessions">?</button></div><div class="plt-card-body"><div class="plt-card-val" id="plt-card-sessions">-</div></div></div>
+                    <div class="plt-card"><div class="plt-card-header"><span class="plt-card-title">Total Queries</span><button type="button" class="plt-info-icon" data-action-click="plt-show-info" data-action-plt-info-key="total-queries">?</button></div><div class="plt-card-body"><div class="plt-card-val" id="plt-card-queries">-</div></div></div>
+                    <div class="plt-card"><div class="plt-card-header"><span class="plt-card-title">Avg Duration (ms)</span><button type="button" class="plt-info-icon" data-action-click="plt-show-info" data-action-plt-info-key="avg-duration">?</button></div><div class="plt-card-body"><div class="plt-card-val" id="plt-card-avg-dur">-</div></div></div>
+                    <div class="plt-card plt-clickable">
+                        <button type="button" class="plt-card-hit" data-action-click="plt-open-slideout" data-action-plt-slideout="blocking"></button>
+                        <div class="plt-card-header"><span class="plt-card-title">Blocking Events</span><button type="button" class="plt-info-icon" data-action-click="plt-show-info" data-action-plt-info-key="blocking-events">?</button></div>
+                        <div class="plt-card-body plt-dual"><div class="plt-card-dual"><div class="plt-card-val" id="plt-card-blocked-by">-</div><div class="plt-card-sublbl">blocked by others</div></div><div class="plt-card-dual-sep"></div><div class="plt-card-dual"><div class="plt-card-val" id="plt-card-caused-by">-</div><div class="plt-card-sublbl">caused by xFACts</div></div></div>
+                    </div>
+                    <div class="plt-card plt-clickable">
+                        <button type="button" class="plt-card-hit" data-action-click="plt-open-slideout" data-action-plt-slideout="lrq"></button>
+                        <div class="plt-card-header"><span class="plt-card-title">LRQ Crossovers</span><button type="button" class="plt-info-icon" data-action-click="plt-show-info" data-action-plt-info-key="lrq-crossovers">?</button></div>
+                        <div class="plt-card-body"><div class="plt-card-val" id="plt-card-lrq">-</div></div>
+                    </div>
+                    <div class="plt-card"><div class="plt-card-header"><span class="plt-card-title">Open Transactions</span><button type="button" class="plt-info-icon" data-action-click="plt-show-info" data-action-plt-info-key="open-transactions">?</button></div><div class="plt-card-body"><div class="plt-card-val" id="plt-card-open-tx">-</div></div></div>
                 </div>
             </div>
-        </div>
 
-        <!-- Connection Error -->
-        <div id="connection-error" class="pm-error"></div>
-
-        <!-- Narrative Summary Strip -->
-        <div class="pm-narrative" id="narrative-strip">
-            <div class="pm-narrative-accent"></div>
-            <div class="pm-narrative-text" id="narrative-text">Loading summary...</div>
-        </div>
-
-        <!-- Main Content -->
-        <div class="pm-content">
-
-            <!-- TOP SECTION -->
-            <div class="pm-top-section">
-                <!-- Left: Performance frame -->
-                <div class="pm-card-frame">
-                    <div class="pm-card-frame-title"><span>Platform Performance <span class="pm-info-icon" onclick="PM.showInfo('perf-section')">?</span></span> <span class="refresh-badge-action" title="Refreshes on server or time range selection">&#128260;</span></div>
-                    <div class="pm-card-grid">
-                        <div class="pm-card"><div class="pm-card-header"><span class="pm-card-title">Active Sessions</span><span class="pm-info-icon" onclick="PM.showInfo('active-sessions')">?</span></div><div class="pm-card-body"><div class="pm-card-val" id="card-sessions">-</div></div></div>
-                        <div class="pm-card"><div class="pm-card-header"><span class="pm-card-title">Total Queries</span><span class="pm-info-icon" onclick="PM.showInfo('total-queries')">?</span></div><div class="pm-card-body"><div class="pm-card-val" id="card-queries">-</div></div></div>
-                        <div class="pm-card"><div class="pm-card-header"><span class="pm-card-title">Avg Duration (ms)</span><span class="pm-info-icon" onclick="PM.showInfo('avg-duration')">?</span></div><div class="pm-card-body"><div class="pm-card-val" id="card-avg-dur">-</div></div></div>
-                        <div class="pm-card alert clickable" onclick="PM.openSlideout('blocking')"><div class="pm-card-header"><span class="pm-card-title">Blocking Events</span><span class="pm-info-icon" onclick="event.stopPropagation(); PM.showInfo('blocking-events')">?</span></div><div class="pm-card-body dual"><div class="pm-card-dual"><div class="pm-card-val" id="card-blocked-by">-</div><div class="pm-card-sublbl">blocked by others</div></div><div class="pm-card-dual-sep"></div><div class="pm-card-dual"><div class="pm-card-val" id="card-caused-by">-</div><div class="pm-card-sublbl">caused by xFACts</div></div></div></div>
-                        <div class="pm-card alert clickable" onclick="PM.openSlideout('lrq')"><div class="pm-card-header"><span class="pm-card-title">LRQ Crossovers</span><span class="pm-info-icon" onclick="event.stopPropagation(); PM.showInfo('lrq-crossovers')">?</span></div><div class="pm-card-body"><div class="pm-card-val" id="card-lrq">-</div></div></div>
-                        <div class="pm-card alert"><div class="pm-card-header"><span class="pm-card-title">Open Transactions</span><span class="pm-info-icon" onclick="PM.showInfo('open-transactions')">?</span></div><div class="pm-card-body"><div class="pm-card-val" id="card-open-tx">-</div></div></div>
+            <div class="plt-hero-col">
+                <div class="plt-hero-gauge">
+                    <canvas id="plt-gauge-chart" width="260" height="260"></canvas>
+                    <div class="plt-hero-overlay">
+                        <div class="plt-hero-pct" id="plt-gauge-pct">-</div>
+                        <div class="plt-hero-label">CPU IMPACT <button type="button" class="plt-info-icon plt-hero-info" data-action-click="plt-show-info" data-action-plt-info-key="cpu-impact">?</button></div>
                     </div>
                 </div>
+                <div class="plt-hero-detail" id="plt-gauge-detail">-</div>
+                <div class="plt-hero-server" id="plt-gauge-server">ALL SERVERS</div>
 
-                <!-- Center: Hero -->
-                <div class="pm-hero-col">
-                    <div class="pm-hero-gauge">
-                        <canvas id="gauge-chart" width="260" height="260"></canvas>
-                        <div class="pm-hero-overlay">
-                            <div class="pm-hero-pct" id="gauge-pct">-</div>
-                            <div class="pm-hero-label">CPU IMPACT <span class="pm-info-icon hero-info" onclick="PM.showInfo('cpu-impact')">?</span></div>
+                <div class="plt-server-selector">
+                    <button type="button" class="plt-server-all plt-active" id="plt-srv-all" data-action-click="plt-select-server" data-action-plt-server="all">ALL</button>
+                    <div class="plt-mini-gauges" id="plt-mini-gauges"></div>
+                </div>
+            </div>
+
+            <div class="plt-card-frame plt-api-frame">
+                <div class="plt-card-frame-title plt-api-frame-title">
+                    <span>Control Center API <button type="button" class="plt-info-icon plt-api-info" data-action-click="plt-show-info" data-action-plt-info-key="api-section">?</button></span>
+                    <span class="plt-refresh-badge" title="Refreshes on server or time range selection">&#128260;</span>
+                </div>
+                <div class="plt-card-grid">
+                    <div class="plt-card plt-api"><div class="plt-card-header"><span class="plt-card-title plt-api">API Requests</span><button type="button" class="plt-info-icon plt-api-info" data-action-click="plt-show-info" data-action-plt-info-key="api-requests">?</button></div><div class="plt-card-body"><div class="plt-card-val" id="plt-card-api-reqs">-</div></div></div>
+                    <div class="plt-card plt-api"><div class="plt-card-header"><span class="plt-card-title plt-api">API Req/Min</span><button type="button" class="plt-info-icon plt-api-info" data-action-click="plt-show-info" data-action-plt-info-key="api-rpm">?</button></div><div class="plt-card-body"><div class="plt-card-val" id="plt-card-api-rpm">-</div></div></div>
+                    <div class="plt-card plt-api"><div class="plt-card-header"><span class="plt-card-title plt-api">API Avg (ms)</span><button type="button" class="plt-info-icon plt-api-info" data-action-click="plt-show-info" data-action-plt-info-key="api-avg">?</button></div><div class="plt-card-body"><div class="plt-card-val" id="plt-card-api-avg">-</div></div></div>
+                    <div class="plt-card plt-api"><div class="plt-card-header"><span class="plt-card-title plt-api">API P95 (ms)</span><button type="button" class="plt-info-icon plt-api-info" data-action-click="plt-show-info" data-action-plt-info-key="api-p95">?</button></div><div class="plt-card-body"><div class="plt-card-val" id="plt-card-api-p95">-</div></div></div>
+                    <div class="plt-card plt-api plt-clickable">
+                        <button type="button" class="plt-card-hit" data-action-click="plt-open-slideout" data-action-plt-slideout="api-users"></button>
+                        <div class="plt-card-header"><span class="plt-card-title plt-api">API Users</span><button type="button" class="plt-info-icon plt-api-info" data-action-click="plt-show-info" data-action-plt-info-key="api-users">?</button></div>
+                        <div class="plt-card-body"><div class="plt-card-val" id="plt-card-api-users">-</div></div>
+                    </div>
+                    <div class="plt-card plt-api plt-clickable">
+                        <button type="button" class="plt-card-hit" data-action-click="plt-open-slideout" data-action-plt-slideout="api-errors"></button>
+                        <div class="plt-card-header"><span class="plt-card-title plt-api">API Errors</span><button type="button" class="plt-info-icon plt-api-info" data-action-click="plt-show-info" data-action-plt-info-key="api-errors">?</button></div>
+                        <div class="plt-card-body"><div class="plt-card-val" id="plt-card-api-errors">-</div></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="plt-bottom-section">
+            <div class="plt-col-frame">
+                <div class="plt-section-header"><h3 class="plt-section-title plt-platform-title">Process Breakdown <button type="button" class="plt-info-icon" data-action-click="plt-show-info" data-action-plt-info-key="process-breakdown">?</button></h3><span class="plt-refresh-badge" title="Refreshes on server or time range selection">&#128260;</span></div>
+                <div class="plt-table-scroll" id="plt-process-table-wrap"><div class="plt-loading">Loading...</div></div>
+            </div>
+            <div class="plt-col-frame">
+                <div class="plt-section-header">
+                    <h3 class="plt-section-title">CPU Impact Over Time <button type="button" class="plt-info-icon" data-action-click="plt-show-info" data-action-plt-info-key="cpu-trend">?</button></h3>
+                    <div class="plt-section-header-right">
+                        <div class="plt-time-controls">
+                            <button type="button" class="plt-time-btn plt-active" data-action-click="plt-set-range" data-action-plt-range="1h">1h</button>
+                            <button type="button" class="plt-time-btn" data-action-click="plt-set-range" data-action-plt-range="12h">12h</button>
+                            <button type="button" class="plt-time-btn" data-action-click="plt-set-range" data-action-plt-range="24h">24h</button>
+                            <button type="button" class="plt-time-btn" data-action-click="plt-set-range" data-action-plt-range="7d">7d</button>
+                            <button type="button" class="plt-time-btn" data-action-click="plt-open-date">Custom</button>
                         </div>
-                    </div>
-                    <div class="pm-hero-detail" id="gauge-detail">-</div>
-                    <div class="pm-hero-server" id="gauge-server">ALL SERVERS</div>
-
-                    <!-- Mini Gauges as Server Selectors -->
-                    <div class="pm-server-selector">
-                        <div class="pm-server-all active" id="srv-all" onclick="PM.selectServer('all')">ALL</div>
-                        <div class="pm-mini-gauges" id="mini-gauges"></div>
+                        <span class="plt-refresh-badge" title="Refreshes on server or time range selection">&#128260;</span>
                     </div>
                 </div>
-
-                <!-- Right: API frame -->
-                <div class="pm-card-frame api-frame">
-                    <div class="pm-card-frame-title api-frame-title"><span>Control Center API <span class="pm-info-icon api-info" onclick="PM.showInfo('api-section')">?</span></span> <span class="refresh-badge-action" title="Refreshes on server or time range selection">&#128260;</span></div>
-                    <div class="pm-card-grid">
-                        <div class="pm-card api"><div class="pm-card-header"><span class="pm-card-title api">API Requests</span><span class="pm-info-icon api-info" onclick="PM.showInfo('api-requests')">?</span></div><div class="pm-card-body"><div class="pm-card-val" id="card-api-reqs">-</div></div></div>
-                        <div class="pm-card api"><div class="pm-card-header"><span class="pm-card-title api">API Req/Min</span><span class="pm-info-icon api-info" onclick="PM.showInfo('api-rpm')">?</span></div><div class="pm-card-body"><div class="pm-card-val" id="card-api-rpm">-</div></div></div>
-                        <div class="pm-card api"><div class="pm-card-header"><span class="pm-card-title api">API Avg (ms)</span><span class="pm-info-icon api-info" onclick="PM.showInfo('api-avg')">?</span></div><div class="pm-card-body"><div class="pm-card-val" id="card-api-avg">-</div></div></div>
-                        <div class="pm-card api"><div class="pm-card-header"><span class="pm-card-title api">API P95 (ms)</span><span class="pm-info-icon api-info" onclick="PM.showInfo('api-p95')">?</span></div><div class="pm-card-body"><div class="pm-card-val" id="card-api-p95">-</div></div></div>
-                        <div class="pm-card api clickable" onclick="PM.openSlideout('api-users')"><div class="pm-card-header"><span class="pm-card-title api">API Users</span><span class="pm-info-icon api-info" onclick="event.stopPropagation(); PM.showInfo('api-users')">?</span></div><div class="pm-card-body"><div class="pm-card-val" id="card-api-users">-</div></div></div>
-                        <div class="pm-card api clickable" onclick="PM.openSlideout('api-errors')"><div class="pm-card-header"><span class="pm-card-title api">API Errors</span><span class="pm-info-icon api-info" onclick="event.stopPropagation(); PM.showInfo('api-errors')">?</span></div><div class="pm-card-body"><div class="pm-card-val" id="card-api-errors">-</div></div></div>
-                    </div>
-                </div>
+                <div class="plt-chart-inner"><canvas id="plt-trend-chart"></canvas></div>
             </div>
-
-            <!-- BOTTOM: 3-column -->
-            <div class="pm-bottom-section">
-                <div class="pm-col-frame">
-                    <div class="section-header"><h3 class="section-title platform-title">Process Breakdown <span class="pm-info-icon" onclick="PM.showInfo('process-breakdown')">?</span></h3><span class="refresh-badge-action" title="Refreshes on server or time range selection">&#128260;</span></div>
-                    <div class="pm-table-scroll" id="process-table-wrap"><div class="pm-loading">Loading...</div></div>
-                </div>
-                <div class="pm-col-frame pm-chart-col">
-                    <div class="section-header">
-                        <h3 class="section-title">CPU Impact Over Time <span class="pm-info-icon" onclick="PM.showInfo('cpu-trend')">?</span></h3>
-                        <div class="section-header-right">
-                            <div class="pm-time-controls">
-                            <button class="pm-time-btn active" data-range="1h" onclick="PM.setRange('1h')">1h</button>
-                            <button class="pm-time-btn" data-range="12h" onclick="PM.setRange('12h')">12h</button>
-                            <button class="pm-time-btn" data-range="24h" onclick="PM.setRange('24h')">24h</button>
-                            <button class="pm-time-btn" data-range="7d" onclick="PM.setRange('7d')">7d</button>
-                            <button class="pm-time-btn" data-range="custom" onclick="PM.openDateModal()">Custom</button>
-                            </div>
-                            <span class="refresh-badge-action" title="Refreshes on server or time range selection">&#128260;</span>
-                        </div>
-                    </div>
-                    <div class="pm-chart-inner"><canvas id="trend-chart"></canvas></div>
-                </div>
-                <div class="pm-col-frame">
-                    <div class="section-header"><h3 class="section-title api-title">Top API Endpoints <span class="pm-info-icon api-info" onclick="PM.showInfo('api-endpoints')">?</span></h3><span class="refresh-badge-action" title="Refreshes on server or time range selection">&#128260;</span></div>
-                    <div class="pm-table-scroll" id="api-table-wrap"><div class="pm-loading">Loading...</div></div>
-                </div>
+            <div class="plt-col-frame">
+                <div class="plt-section-header"><h3 class="plt-section-title plt-api-title">Top API Endpoints <button type="button" class="plt-info-icon plt-api-info" data-action-click="plt-show-info" data-action-plt-info-key="api-endpoints">?</button></h3><span class="plt-refresh-badge" title="Refreshes on server or time range selection">&#128260;</span></div>
+                <div class="plt-table-scroll" id="plt-api-table-wrap"><div class="plt-loading">Loading...</div></div>
             </div>
         </div>
     </div>
 
-    <!-- Info Modal -->
-    <div id="info-modal-overlay" class="pm-modal-overlay" onclick="PM.closeInfo(event)">
-        <div class="pm-info-modal">
-            <div class="pm-info-modal-header">
-                <h3 id="info-modal-title">-</h3>
-                <button class="pm-modal-close" onclick="PM.closeInfo()">&times;</button>
+    <!-- Purpose: contextual help modal explaining a metric or section -->
+    <div id="plt-modal-info" class="cc-modal-overlay cc-hidden" data-action-click="plt-close-info">
+        <div class="cc-dialog cc-dialog-modal cc-medium">
+            <div class="cc-dialog-header">
+                <h3 class="cc-dialog-title" id="plt-info-title">-</h3>
+                <button class="cc-dialog-close" data-action-click="plt-close-info">&times;</button>
             </div>
-            <div class="pm-info-modal-body" id="info-modal-body"></div>
+            <div class="cc-dialog-body" id="plt-info-body"></div>
         </div>
     </div>
 
-    <!-- Slideout Panel -->
-    <div id="slideout-overlay" class="pm-slideout-overlay" onclick="PM.closeSlideout()"></div>
-    <div id="slideout-panel" class="pm-slideout">
-        <div class="pm-slideout-header">
-            <h3 id="slideout-title">-</h3>
-            <button class="pm-modal-close" onclick="PM.closeSlideout()">&times;</button>
-        </div>
-        <div class="pm-slideout-summary" id="slideout-summary"></div>
-        <div class="pm-slideout-body" id="slideout-body"></div>
-    </div>
-
-    <!-- Date Modal -->
-    <div id="date-modal-overlay" class="pm-modal-overlay">
-        <div class="pm-modal">
-            <div class="pm-modal-header"><h3>Custom Date Range</h3><button class="pm-modal-close" onclick="PM.closeDateModal()">&times;</button></div>
-            <div class="pm-modal-body">
-                <div class="pm-date-field"><label for="date-from">From</label><input type="date" id="date-from"></div>
-                <div class="pm-date-field"><label for="date-to">To</label><input type="date" id="date-to"></div>
+    <!-- Purpose: detail slideout for blocking events, LRQ crossovers, API users, and API errors -->
+    <div id="plt-slideout-detail" class="cc-slide-overlay" data-action-click="plt-close-slideout">
+        <div class="cc-dialog cc-dialog-slide">
+            <div class="cc-dialog-header">
+                <h3 class="cc-dialog-title" id="plt-slideout-title">-</h3>
+                <button class="cc-dialog-close" data-action-click="plt-close-slideout">&times;</button>
             </div>
-            <div class="pm-modal-footer">
-                <button class="pm-modal-btn cancel" onclick="PM.closeDateModal()">Cancel</button>
-                <button class="pm-modal-btn apply" onclick="PM.applyCustomRange()">Apply</button>
+            <div class="cc-dialog-body">
+                <div class="plt-slideout-summary" id="plt-slideout-summary"></div>
+                <div id="plt-slideout-body"></div>
             </div>
         </div>
     </div>
 
-    <script>
-        // Resolve the back-link target on page load.
-        // 1. Check document.referrer; if it's a CC route the user has access to,
-        //    label the link with that page's display title and use history.back().
-        // 2. Otherwise check Home access; if granted, link to '/' as fallback.
-        // 3. Otherwise hide the link entirely.
-        (async function initBackLink() {
-            var link = document.getElementById('back-link');
-            if (!link) return;
+    <!-- Purpose: custom date-range picker for the CPU trend chart -->
+    <div id="plt-modal-date" class="cc-modal-overlay cc-hidden" data-action-click="plt-close-date">
+        <div class="cc-dialog cc-dialog-modal">
+            <div class="cc-dialog-header">
+                <h3 class="cc-dialog-title">Custom Date Range</h3>
+                <button class="cc-dialog-close" data-action-click="plt-close-date">&times;</button>
+            </div>
+            <div class="cc-dialog-body">
+                <div class="plt-date-fields">
+                    <div class="plt-date-field"><label for="plt-date-from">From</label><input type="date" id="plt-date-from"></div>
+                    <div class="plt-date-field"><label for="plt-date-to">To</label><input type="date" id="plt-date-to"></div>
+                </div>
+            </div>
+            <div class="cc-dialog-actions">
+                <button class="cc-dialog-btn-cancel" data-action-click="plt-close-date">Cancel</button>
+                <button class="cc-dialog-btn-primary" data-action-click="plt-apply-range">Apply</button>
+            </div>
+        </div>
+    </div>
 
-            async function lookup(route) {
-                try {
-                    var resp = await fetch('/api/nav-registry/label?route=' + encodeURIComponent(route));
-                    if (!resp.ok) return null;
-                    var data = await resp.json();
-                    return data && data.label ? data.label : null;
-                } catch (e) {
-                    return null;
-                }
-            }
+    <script src="/js/chart.min.js"></script>
 
-            // Step 1: try referrer
-            var referrerPath = null;
-            if (document.referrer) {
-                try {
-                    var refUrl = new URL(document.referrer);
-                    if (refUrl.origin === window.location.origin && refUrl.pathname && refUrl.pathname !== '/platform-monitoring') {
-                        referrerPath = refUrl.pathname;
-                    }
-                } catch (e) { /* ignore malformed referrer */ }
-            }
-
-            if (referrerPath) {
-                var referrerLabel = await lookup(referrerPath);
-                if (referrerLabel) {
-                    link.textContent = '\u2190 Back to ' + referrerLabel;
-                    link.href = '#';
-                    link.onclick = function(e) { e.preventDefault(); window.history.back(); };
-                    link.style.display = '';
-                    return;
-                }
-            }
-
-            // Step 2: fall back to Home if user has access
-            var homeLabel = await lookup('/');
-            if (homeLabel) {
-                link.textContent = '\u2190 Back to ' + homeLabel;
-                link.href = '/';
-                link.onclick = null;
-                link.style.display = '';
-                return;
-            }
-
-            // Step 3: no referrer match, no Home access — hide
-            link.style.display = 'none';
-        })();
-    </script>
-    <script src="/js/platform-monitoring.js"></script>
-    <script src="/js/engine-events.js"></script>
+    <script src="/js/cc-shared.js"></script>
 </body>
 </html>
 "@
+
     Write-PodeHtmlResponse -Value $html
 }
