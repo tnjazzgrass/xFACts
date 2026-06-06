@@ -1772,7 +1772,7 @@
                                            "description":  "Whether this entity supports field nullification via the nullify_fields element. A BDL-specific feature for clearing field values on update."
                                        },
                                        {
-                                           "ordinal":  11,
+                                           "ordinal":  10,
                                            "name":  "is_active",
                                            "dataType":  "bit",
                                            "nullable":  false,
@@ -1781,7 +1781,7 @@
                                            "description":  "Whether this entity type is active and available for use. 1 = active (default), 0 = deactivated. Deactivated entities do not appear in entity selection for any user including admin. Deactivation cascades naturally through query filtering — AccessConfig and AccessFieldConfig rows referencing a deactivated entity become unreachable without requiring updates to those tables."
                                        },
                                        {
-                                           "ordinal":  12,
+                                           "ordinal":  11,
                                            "name":  "action_type",
                                            "dataType":  "varchar",
                                            "length":  "20",
@@ -1791,16 +1791,16 @@
                                            "description":  "Controls which mapping UI is rendered for each entity type in the BDL Import wizard. FILE_MAPPED uses column-to-field drag-and-drop mapping panels. FIXED_VALUE presents direct value entry fields where the user enters uniform values applied to all rows (used for tagging operations). HYBRID is reserved for future entities requiring a mix of both approaches. CHECK constraint enforces valid values. Defaults to FILE_MAPPED."
                                        },
                                        {
-                                           "ordinal":  13,
+                                           "ordinal":  12,
                                            "name":  "entity_key",
                                            "dataType":  "varchar",
-                                           "length":  "20",
+                                           "length":  "30",
                                            "nullable":  true,
                                            "identity":  false,
                                            "description":  "Identifies which DM identifier field drives the import for this entity type. CONSUMER entities use cnsmr_idntfr_agncy_id as the key. ACCOUNT entities use cnsmr_accnt_idntfr_agncy_id. OTHER covers specialized entities that do not fit either pattern. Used by the BDL Import wizard to group entity type cards into visual sections on the selection screen. NULL for wrapper and deferred entity types not yet classified."
                                        },
                                        {
-                                           "ordinal":  14,
+                                           "ordinal":  13,
                                            "name":  "batch_abbreviation",
                                            "dataType":  "varchar",
                                            "length":  "14",
