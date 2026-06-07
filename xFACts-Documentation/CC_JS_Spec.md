@@ -332,12 +332,30 @@ function <prefix>_closeSomething(target, event) {
 }
 ```
 
-#### 11.5.4 Rules
+#### 11.5.4 Dock
+
+The open handler sets the dock body innerHTML, then adds `cc-open` to the dock element. The close handler removes `cc-open` from the dock element.
+
+```javascript
+function <prefix>_openDock(html) {
+    var dock = document.getElementById('<prefix>-dock-something');
+    dock.querySelector('.cc-dialog-body').innerHTML = html;
+    dock.classList.add('cc-open');
+}
+
+function <prefix>_closeDock() {
+    document.getElementById('<prefix>-dock-something').classList.remove('cc-open');
+}
+```
+
+#### 11.5.5 Rules
 
 - Dynamic-overlay open and close handlers follow §11.5.1.
 - Static-modal open and close handlers follow §11.5.2.
 - Static slide-overlay open and close handlers follow §11.5.3.
 - Static-overlay close handlers (§11.5.2, §11.5.3) take `(target, event)` and dismiss on a backdrop click — `event.target === target` when `target` is the outer overlay — and on explicit close controls. A click bubbling from the dialog interior is ignored. The dynamic modal (§11.5.1) is exempt: it is removed by its own caller, not dispatched.
+- Slide-up open and close handlers follow §11.5.3.
+- Dock open and close handlers follow §11.5.4. The dock close handler takes no arguments and is dismissed only by its `.cc-dialog-back` button.
 
 ---
 
