@@ -149,6 +149,22 @@
     --size-modal-width-default: 460px;
     --size-modal-width-medium:  600px;
     --size-modal-width-wide:    800px;
+	
+	/* -- Size tokens: slide-up panel widths -- */
+    --size-slideup-width-narrow:  340px;
+    --size-slideup-width-default: 580px;
+    --size-slideup-width-wide:    780px;
+    --size-slideup-width-xwide:   880px;
+	
+	/* -- Size tokens: slide-up panel heights -- */
+    --size-slideup-height-default: 60vh;
+    --size-slideup-height-short:   55vh;
+    --size-slideup-height-tall:    65vh;
+    --size-slideup-height-max:     90vh;
+
+    /* -- Size tokens: dock panel widths -- */
+    --size-dock-width-default:    650px;
+    --size-dock-width-xwide:      1000px;
 
     /* -- Size tokens: scrollbar -- */
     --size-scrollbar-width:     8px;
@@ -186,6 +202,7 @@
     --z-nav:                    1000;
     --z-panel-overlay:          1000;
     --z-panel:                  1001;
+    --z-dock:                   1002;	
     --z-modal-overlay:          1300;
     --z-engine-popup:           9999;
     --z-idle-overlay:           10000;
@@ -1249,6 +1266,123 @@ a { color: var(--color-text-link); }
     right: 0;
 }
 
+/* The full-viewport slide-up overlay (dimmer behind an open slide-up panel). */
+.cc-slideup-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: var(--color-bg-overlay-panel);
+    z-index: var(--z-panel-overlay);
+}
+
+.cc-slideup-overlay.cc-open { /* dimmer visible when the slide-up panel is open */
+    display: block;
+}
+
+/* Slide-up-kind dialog state. Bottom-anchored panel; off-screen below by default, slides up when .cc-open is added. Left and height are page-local. */
+.cc-dialog-slideup {
+    position: fixed;
+    bottom: 0;
+    left: var(--size-page-padding-y);
+    width: var(--size-slideup-width-default);
+    height: var(--size-slideup-height-default);
+    z-index: var(--z-panel);
+    transform: translateY(100%);
+    transition: transform var(--duration-default) ease;
+}
+
+/* Width-tier modifier tag for the narrowest slide-up variant. */
+.cc-narrow { }
+
+.cc-dialog-slideup.cc-narrow { /* narrowest slide-up panel for compact controls */
+    width: var(--size-slideup-width-narrow);
+}
+
+.cc-dialog-slideup.cc-wide { /* wider slide-up panel for tabular content */
+    width: var(--size-slideup-width-wide);
+}
+
+.cc-dialog-slideup.cc-xwide { /* widest slide-up panel for multi-column content */
+    width: var(--size-slideup-width-xwide);
+}
+
+.cc-dialog-slideup.cc-open { /* slid into view (overrides the off-screen bottom offset) */
+    transform: translateY(0);
+}
+
+/* Height-tier modifier tags for slide-up panels. */
+.cc-h-short { }
+
+.cc-dialog-slideup.cc-h-short { /* shorter slide-up panel */
+    height: var(--size-slideup-height-short);
+}
+
+/* Height-tier modifier tag for taller slide-up panels. */
+.cc-h-tall { }
+
+.cc-dialog-slideup.cc-h-tall { /* taller slide-up panel */
+    height: var(--size-slideup-height-tall);
+}
+
+/* Height-tier modifier tag for content-sized slide-up panels. */
+.cc-h-max { }
+
+.cc-dialog-slideup.cc-h-max { /* content-sized slide-up panel capped at max height */
+    height: auto;
+    max-height: var(--size-slideup-height-max);
+}
+
+/* Full-width modifier tag for slide-up panels (spans the viewport). */
+.cc-full { }
+
+.cc-dialog-slideup.cc-full { /* full-viewport-width slide-up panel */
+    left: 0;
+    right: 0;
+    width: auto;
+}
+
+/* Dock-kind dialog. Companion panel anchored beside its paired slide-up; collapsed to zero width by default, expands when .cc-open is added. Shares the paired overlay's backdrop; has no overlay element of its own. Left and height are page-local. */
+.cc-dialog-dock {
+    position: fixed;
+    bottom: 0;
+    width: var(--size-dock-width-default);
+    z-index: var(--z-dock);
+    overflow: hidden;
+    transform: translateX(-100%);
+    transition: transform var(--duration-default) ease;
+}
+
+.cc-dialog-dock.cc-wide { /* wider dock for tabular detail content */
+    width: var(--size-dock-width-wide);
+}
+
+.cc-dialog-dock.cc-xwide { /* widest dock for wide multi-column content */
+    width: var(--size-dock-width-xwide);
+}
+
+.cc-dialog-dock.cc-open { /* slid into view from behind the paired panel */
+    transform: translateX(0);
+}
+
+/* Dock header back button (returns to the paired slide-up). */
+.cc-dialog-back {
+    background: none;
+    border: none;
+    color: var(--color-text-muted);
+    font-size: 24px;
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+    transition: color var(--duration-instant);
+}
+
+.cc-dialog-back:hover { /* hover state for the back button */
+    color: var(--color-text-primary);
+}
+
 /* Dialog header row (title on the left, optional close button on the right). */
 .cc-dialog-header {
     display: flex;
@@ -1267,6 +1401,14 @@ a { color: var(--color-text-link); }
     color: var(--color-accent-shared);
     font-size: var(--font-size-heading-lg);
     font-weight: 600;
+}
+
+/* Optional header cluster holding status indicators and/or action controls. */
+.cc-dialog-header-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--size-spacing-lg);
+    margin-right: var(--size-spacing-lg);	
 }
 
 /* Dialog close button (the X glyph in the header). */
@@ -1299,9 +1441,6 @@ a { color: var(--color-text-link); }
     line-height: 1.6;
     margin: 0 0 10px 0;
 }
-
-/* Position tag marking an element as the last in a sequence (used in popups and dialog bodies). */
-.cc-last { }
 
 .cc-dialog-paragraph.cc-last { /* last paragraph in the body (no bottom margin) */
     margin-bottom: 0;
