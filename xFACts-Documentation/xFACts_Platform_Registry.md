@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-06-07 07:19:23
+Generated: 2026-06-07 13:38:49
 
 ## Module Registry
 
@@ -472,7 +472,7 @@ Generated: 2026-06-07 07:19:23
 | DeptOps | Collect-BSReviewRequests | Collects and synchronizes Business Services review request data from Debt Manager into DeptOps tracking table | Collect-BSReviewRequests.ps1 |  | FIRE_AND_FORGET | 30 | 1800 |  |  | 1 | False | collect | COLLECT | /departmental/business-services | 1 |
 | DeptOps | Distribute-BSReviewRequests | Automated distribution of unassigned BS review requests to configured users up to per-user caps | Distribute-BSReviewRequests.ps1 |  | FIRE_AND_FORGET | 30 | 14400 |  |  | 1 | False | distribute | DISTRIBUTE | /departmental/business-services | 2 |
 | FileOps | Scan-SFTPFiles | Scans configured SFTP locations for expected files, logs detection events, and triggers Teams/Jira escalations | Scan-SFTPFiles.ps1 |  | FIRE_AND_FORGET | 30 | 300 |  | 120 | 1 | False | sftp | SFTP | /file-monitoring | 1 |
-| ServerOps | Execute-DBCC | Executes scheduled DBCC operations per DBCC_ScheduleConfig. Checks for due operations on each cycle. | Execute-DBCC.ps1 |  | FIRE_AND_FORGET | 30 | 3600 |  | 86400 | 0 | True | dbcc | DBCC | /dbcc-operations | 1 |
+| ServerOps | Execute-DBCC | Executes scheduled DBCC operations per DBCC_ScheduleConfig. Checks for due operations on each cycle. | Execute-DBCC.ps1 |  | FIRE_AND_FORGET | 30 | 3600 |  | 86400 | 1 | True | dbcc | DBCC | /dbcc-operations | 1 |
 | ServerOps | Send-DiskHealthSummary | Daily disk health summary notification to Teams with Adaptive Card formatting. Queries latest snapshots, classifies drives by threshold status, and sends color-coded summary. | Send-DiskHealthSummary.ps1 |  | FIRE_AND_FORGET | 30 | 300 | 06:30:00 |  | 1 | False | disksummary | SUMMARY | /server-health | 4 |
 | Jira | Process-JiraTicketQueue | Processes pending Jira tickets from TicketQueue, creates tickets via REST API, handles email fallback | Process-JiraTicketQueue.ps1 |  | WAIT | 99 | 0 |  | 180 | 2 | False |  |  |  |  |
 | Teams | Process-TeamsAlertQueue | Processes pending Teams alerts from AlertQueue, formats Adaptive Cards, and posts to webhooks | Process-TeamsAlertQueue.ps1 |  | WAIT | 99 | 0 |  | 120 | 2 | False |  |  |  |  |
