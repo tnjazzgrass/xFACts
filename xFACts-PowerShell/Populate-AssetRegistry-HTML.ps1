@@ -337,6 +337,8 @@ $DriftDescriptions = [ordered]@{
     'MISSING_PANEL_PURPOSE_COMMENT'     = "An overlay construct is not preceded by an HTML purpose comment."
     'MISSING_OVERLAY_BACKDROP_CLOSE'    = "An overlay construct's outer element does not carry a data-action-click matching its .cc-dialog-close button's close action; a backdrop click will not dismiss the construct."
     'OVERLAY_BLOCK_NON_CONTIGUOUS'      = "A non-overlay element or non-purpose comment appears within the overlay block; only formatting whitespace and per-construct purpose comments are permitted between constructs."
+    'MALFORMED_DOCK_STRUCTURE'          = "A dock element does not carry both cc-dialog and cc-dialog-dock, is missing its .cc-dialog-header or .cc-dialog-body, has them out of order, carries a .cc-dialog-actions footer, or its header does not contain exactly one .cc-dialog-back button followed by one .cc-dialog-title."
+    'MALFORMED_DOCK_ID'                 = "A dock element ID does not follow <prefix>-dock-<purpose> form."
     'FORBIDDEN_HELPER_PAGE_PREFIX_ID'   = "A helper module function emits HTML with a page-prefixed ID."
     'FORBIDDEN_HELPER_NON_CHROME_ID'    = "A helper module function emits an ID that is not cc- prefixed; helper-emitted IDs are shared chrome and must carry the cc- prefix."
 
@@ -1739,6 +1741,16 @@ function Get-OverlayIdInfo {
         return $info
     }
 
+    # Dock: <prefix>-dock-<purpose>
+    if ($IdValue -match '^([a-z][a-z0-9]*)-dock-(.+)$') {
+        $info.OverlayKind = 'dock'
+        $purpose = $matches[2]
+        if ($purpose -notmatch '^[a-z][a-z0-9\-]*$') {
+            $info.DriftCode = 'MALFORMED_DOCK_ID'
+        }
+        return $info
+    }
+
     return $info
 }
 
@@ -1754,6 +1766,7 @@ function Get-OverlayKindFromClass {
             'cc-modal-overlay'   { return 'modal' }
             'cc-slide-overlay'   { return 'slideout' }
             'cc-slideup-overlay' { return 'slideup' }
+            'cc-dialog-dock'     { return 'dock' }
         }
     }
     return $null
@@ -3902,7 +3915,7 @@ function Test-PlatformDataAttributeClosedSet {
 #
 # An overlay construct entry records:
 #   .OuterTokenIdx       - token index of the outer overlay element's StartTag
-#   .OverlayKind         - 'modal' | 'slideout' | 'slideup'
+#   .OverlayKind         - 'modal' | 'slideout' | 'slideup' | 'dock'
 #   .IdValue             - the ID value declared on the outer element
 #   .AbsLine             - absolute source line of the outer element
 #   .HasPurposeComment   - $true when an immediately preceding HTML
@@ -4090,9 +4103,11 @@ function Invoke-HtmlTokenWalk {
             $attrs = Get-AttributesFromToken -AttrText $t.AttrText
         }
 
-        # Overlay construct discovery (outer overlay element)
-        # An outer overlay element is a StartTag whose class attribute
-        # contains cc-modal-overlay, cc-slide-overlay, or cc-slideup-overlay.
+        # Overlay construct discovery (outer overlay element, or dock)
+        # Captured when a StartTag's class attribute contains an overlay
+        # class (cc-modal-overlay, cc-slide-overlay, cc-slideup-overlay) or
+        # cc-dialog-dock. Docks are tagged OverlayKind 'dock' and validated
+        # separately in the post-walk (no outer overlay / backdrop-close).
         # Capture the construct entry here so the post-walk structural and
         # contiguity validators can find them. Class-based capture (not
         # ID-based) lets the structural validator catch overlay outer
@@ -4583,57 +4598,14 @@ function Invoke-HtmlTokenWalk {
 <# ============================================================================
    FUNCTIONS: OVERLAY POST-WALK VALIDATION
    ----------------------------------------------------------------------------
-   Validate the overlay block after the walk: contiguity, per-construct
-   structure, dialog classes, IDs, and purpose comments.
+   Per-construct structure, secondary dialog class, and overlay-block
+   contiguity. Construct shape per CC_HTML_Spec Sec. 5.4.
    Prefix: (none)
    ============================================================================ #>
-#
-# After the walker collects overlay constructs (one per outer overlay element
-# encountered), run three validators:
-#
-# 1. Per-construct structural validation: each outer overlay element must
-#    contain exactly one nested .cc-dialog child, which in turn contains
-#    .cc-dialog-header, .cc-dialog-body, and an optional .cc-dialog-actions
-#    in that order. .cc-dialog-header contains exactly one .cc-dialog-title
-#    and one .cc-dialog-close. Drift codes:
-#      MALFORMED_MODAL_STRUCTURE
-#      MALFORMED_SLIDEOUT_STRUCTURE
-#      MALFORMED_SLIDEUP_STRUCTURE
-#
-# 2. Inner dialog secondary class: when the structural check passes, the
-#    inner .cc-dialog must carry the secondary class matching the overlay
-#    kind -- cc-dialog-modal inside a cc-modal-overlay, cc-dialog-slide
-#    inside a cc-slide-overlay, or cc-dialog-slideup inside a
-#    cc-slideup-overlay. Drift code: MISSING_DIALOG_CLASS.
-#
-# 3. Overlay block contiguity: when more than one overlay construct exists
-#    on the page, they must form one contiguous block. Only formatting
-#    whitespace and per-construct purpose comments are permitted between
-#    constructs. Drift code: OVERLAY_BLOCK_NON_CONTIGUOUS.
-#    Note: the purpose comment for each construct sits BEFORE that
-#    construct, so it is part of the gap between the previous construct's
-#    end and this construct's start. The check tolerates exactly one
-#    purpose-shaped comment per gap (plus whitespace).
 
-# Test the structural shape of one overlay construct's outer element.
-# Returns $true if the structure conforms to the unified overlay shape,
-# $false otherwise. When it returns $false the caller attaches the
-# corresponding MALFORMED_<KIND>_STRUCTURE drift code. This function does
-# NOT validate the secondary cc-dialog-<kind> class on the inner dialog;
-# that check lives in Test-OverlayDialogClass and runs only when this
-# function returns $true.
-#
-# Required shape (parameterized by outer overlay element):
-#   <div class="cc-modal-overlay" id="..."> (or cc-slide-overlay / cc-slideup-overlay)
-#       <div class="cc-dialog cc-dialog-modal"> (or cc-dialog-slide / cc-dialog-slideup)
-#           <div class="cc-dialog-header">
-#               <h3 class="cc-dialog-title">...</h3>
-#               <button class="cc-dialog-close">...</button>
-#           </div>
-#           <div class="cc-dialog-body">...</div>
-#           <div class="cc-dialog-actions">...</div>   <- optional
-#       </div>
-#   </div>
+# Test the structural shape of one overlay construct's outer element (Sec.
+# 5.4). Returns $true on conformance; the caller attaches MALFORMED_<KIND>_
+# STRUCTURE on $false. Secondary dialog-class check lives in Test-OverlayDialogClass.
 function Test-OverlayConstructStructure {
     param(
         [Parameter(Mandatory)]$Tokens,
@@ -4769,11 +4741,133 @@ function Test-OverlayConstructStructure {
         }
         $cursor++
     }
-    if ($headerChildren.Count -ne 2) { return $false }
+    # Header: title first, close last, with an optional single
+    # cc-dialog-header-actions cluster between them (2 or 3 children).
+    if ($headerChildren.Count -lt 2 -or $headerChildren.Count -gt 3) { return $false }
     $titleClass = & $childClassFirstToken $headerChildren[0]
-    $closeClass = & $childClassFirstToken $headerChildren[1]
+    $closeClass = & $childClassFirstToken $headerChildren[$headerChildren.Count - 1]
     if ($titleClass -ne 'cc-dialog-title') { return $false }
     if ($closeClass -ne 'cc-dialog-close') { return $false }
+    if ($headerChildren.Count -eq 3) {
+        $midClass = & $childClassFirstToken $headerChildren[1]
+        if ($midClass -ne 'cc-dialog-header-actions') { return $false }
+    }
+
+    return $true
+}
+
+# Validate a dock construct's structure (CC_HTML_Spec Sec. 5.4.5/5.4.6).
+# A dock is a single element carrying cc-dialog and cc-dialog-dock, with
+# exactly two direct children -- a .cc-dialog-header then a .cc-dialog-body
+# (no .cc-dialog-actions). The header contains exactly one .cc-dialog-back
+# button then exactly one .cc-dialog-title. Returns $true on conformance,
+# $false otherwise. Drift code: MALFORMED_DOCK_STRUCTURE.
+function Test-DockConstructStructure {
+    param(
+        [Parameter(Mandatory)]$Tokens,
+        [Parameter(Mandatory)][int]$DockTokenIdx
+    )
+
+    if ($DockTokenIdx -lt 0 -or $DockTokenIdx -ge $Tokens.Count) { return $false }
+    $dockTok = $Tokens[$DockTokenIdx]
+    if ($dockTok.Kind -ne 'StartTag') { return $false }
+    if ($dockTok.TagName -ne 'div') { return $false }
+
+    # The dock element must carry both cc-dialog and cc-dialog-dock.
+    $dockAttrs = if (-not [string]::IsNullOrWhiteSpace($dockTok.AttrText)) {
+        Get-AttributesFromToken -AttrText $dockTok.AttrText
+    } else { @() }
+    $dockClass = Get-AttributeByName -Attrs $dockAttrs -Name 'class'
+    if ($null -eq $dockClass) { return $false }
+    $dockClassTokens = @($dockClass.Value.Trim() -split '\s+')
+    if ($dockClassTokens -notcontains 'cc-dialog')      { return $false }
+    if ($dockClassTokens -notcontains 'cc-dialog-dock') { return $false }
+
+    $dockCloseIdx = Find-MatchingClose -Tokens $Tokens -StartTagIdx $DockTokenIdx
+    if ($dockCloseIdx -le $DockTokenIdx) { return $false }
+
+    # Collect direct-child StartTag indices of the dock element.
+    $children = @()
+    $cursor = $DockTokenIdx + 1
+    while ($cursor -lt $dockCloseIdx) {
+        $tt = $Tokens[$cursor]
+        if ($tt.Kind -eq 'Text' -and [string]::IsNullOrWhiteSpace($tt.Raw)) { $cursor++; continue }
+        if ($tt.Kind -eq 'Comment') { $cursor++; continue }
+        if ($tt.Kind -eq 'EndTag') { $cursor++; continue }
+        if ($tt.Kind -eq 'PsInterp') { $cursor++; continue }
+        if ($tt.Kind -eq 'Entity') { $cursor++; continue }
+        if ($tt.Kind -eq 'StartTag' -or $tt.Kind -eq 'SelfClose') {
+            $children += $cursor
+            if ($tt.Kind -eq 'SelfClose') { $cursor++; continue }
+            $childClose = Find-MatchingClose -Tokens $Tokens -StartTagIdx $cursor
+            if ($childClose -lt 0 -or $childClose -ge $dockCloseIdx) {
+                $cursor = $dockCloseIdx
+            } else {
+                $cursor = $childClose + 1
+            }
+            continue
+        }
+        if ($tt.Kind -eq 'Text') { return $false }
+        $cursor++
+    }
+
+    # Helper to extract first class token of a child element.
+    $childClassFirstToken = {
+        param([int]$idx)
+        $tok = $Tokens[$idx]
+        if ($null -eq $tok -or [string]::IsNullOrWhiteSpace($tok.AttrText)) { return $null }
+        $aa = Get-AttributesFromToken -AttrText $tok.AttrText
+        $cc = Get-AttributeByName -Attrs $aa -Name 'class'
+        if ($null -eq $cc -or [string]::IsNullOrEmpty($cc.Value)) { return $null }
+        $tokens = @($cc.Value.Trim() -split '\s+')
+        if ($tokens.Count -eq 0) { return $null }
+        return $tokens[0]
+    }
+
+    # Exactly two children: header then body. No actions footer.
+    if ($children.Count -ne 2) { return $false }
+    $headerClass = & $childClassFirstToken $children[0]
+    $bodyClass   = & $childClassFirstToken $children[1]
+    if ($headerClass -ne 'cc-dialog-header') { return $false }
+    if ($bodyClass   -ne 'cc-dialog-body')   { return $false }
+
+    # Header must contain exactly one .cc-dialog-back then one .cc-dialog-title.
+    $headerIdx = $children[0]
+    $headerCloseIdx = Find-MatchingClose -Tokens $Tokens -StartTagIdx $headerIdx
+    if ($headerCloseIdx -le $headerIdx) { return $false }
+    $headerChildren = @()
+    $cursor = $headerIdx + 1
+    while ($cursor -lt $headerCloseIdx) {
+        $tt = $Tokens[$cursor]
+        if ($tt.Kind -eq 'Text' -and [string]::IsNullOrWhiteSpace($tt.Raw)) { $cursor++; continue }
+        if ($tt.Kind -eq 'Comment') { $cursor++; continue }
+        if ($tt.Kind -eq 'EndTag') { $cursor++; continue }
+        if ($tt.Kind -eq 'PsInterp') { $cursor++; continue }
+        if ($tt.Kind -eq 'Entity') { $cursor++; continue }
+        if ($tt.Kind -eq 'StartTag' -or $tt.Kind -eq 'SelfClose') {
+            $headerChildren += $cursor
+            if ($tt.Kind -eq 'SelfClose') { $cursor++; continue }
+            $childClose = Find-MatchingClose -Tokens $Tokens -StartTagIdx $cursor
+            if ($childClose -lt 0 -or $childClose -ge $headerCloseIdx) {
+                $cursor = $headerCloseIdx
+            } else {
+                $cursor = $childClose + 1
+            }
+            continue
+        }
+        $cursor++
+    }
+    # Header: back first, title second, with an optional single
+    # cc-dialog-header-actions cluster last (2 or 3 children).
+    if ($headerChildren.Count -lt 2 -or $headerChildren.Count -gt 3) { return $false }
+    $backClass  = & $childClassFirstToken $headerChildren[0]
+    $titleClass = & $childClassFirstToken $headerChildren[1]
+    if ($backClass  -ne 'cc-dialog-back')  { return $false }
+    if ($titleClass -ne 'cc-dialog-title') { return $false }
+    if ($headerChildren.Count -eq 3) {
+        $actionsClass = & $childClassFirstToken $headerChildren[2]
+        if ($actionsClass -ne 'cc-dialog-header-actions') { return $false }
+    }
 
     return $true
 }
@@ -5002,6 +5096,35 @@ function Invoke-OverlayPostWalkValidation {
 
     # Per-construct structural validation
     foreach ($c in $OverlayConstructs) {
+        # Docks (CC_HTML_Spec Sec. 5.4.5) have their own structure and no
+        # outer overlay, secondary dialog class, or backdrop-close. Validate
+        # them separately and skip the backdrop-overlay checks below.
+        if ($c.OverlayKind -eq 'dock') {
+            $dockOk = Test-DockConstructStructure -Tokens $Tokens -DockTokenIdx $c.OuterTokenIdx
+            if (-not $dockOk) {
+                $attached = $false
+                if (-not [string]::IsNullOrEmpty($c.IdValue)) {
+                    foreach ($r in $script:rows) {
+                        if ($r.FileName -eq $script:CurrentFile -and
+                            $r.ComponentType -eq 'HTML_ID' -and
+                            $r.ComponentName -eq $c.IdValue -and
+                            $r.LineStart -eq $c.AbsLine) {
+                            Add-DriftCode -Row $r -Code 'MALFORMED_DOCK_STRUCTURE' `
+                                -Context "Dock construct '$($c.IdValue)' does not conform to required cc-dialog-dock structure."
+                            $attached = $true
+                            break
+                        }
+                    }
+                }
+                if (-not $attached -and $script:htmlFileRowByFile.ContainsKey($script:CurrentFile)) {
+                    Add-DriftCode -Row $script:htmlFileRowByFile[$script:CurrentFile] `
+                        -Code 'MALFORMED_DOCK_STRUCTURE' `
+                        -Context "Dock element at line $($c.AbsLine) does not conform to required cc-dialog-dock structure."
+                }
+            }
+            continue
+        }
+
         $ok = Test-OverlayConstructStructure -Tokens $Tokens -OuterTokenIdx $c.OuterTokenIdx
         if (-not $ok) {
             $structCode = switch ($c.OverlayKind) {
