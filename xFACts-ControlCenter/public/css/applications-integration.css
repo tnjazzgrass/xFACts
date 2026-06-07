@@ -22,7 +22,7 @@
    CONTENT: TOOL CARDS
    CONTENT: CATALOG DOCK PANEL
    CONTENT: CATALOG MODE SELECTOR
-   CONTENT: CATALOG PANEL BODY
+   CONTENT: CATALOG PANEL STATUS
    CONTENT: CATALOG FORMAT LIST
    CONTENT: CATALOG DETAIL PANEL
    CONTENT: CATALOG ELEMENT TABLE
@@ -137,114 +137,15 @@
 /* ============================================================================
    CONTENT: CATALOG DOCK PANEL
    ----------------------------------------------------------------------------
-   The BDL Catalog management dock: a bottom-anchored slide-up panel (Tier 1,
-   format list) with a drag-handle, header, and body. A backdrop dims the page
-   behind it. This is a page-local dock construct, not one of the shared
-   overlay constructs; it pairs with the side-by-side detail panel below.
+   The page-local content rendered inside the shared chrome catalog panel:
+   the count caption shown in the header-actions cluster.
    Prefix: aai
    ============================================================================ */
-
-/* Full-viewport dimmer shown behind the open catalog dock. */
-.aai-catalog-backdrop {
-    display: none;
-    position: fixed;
-    inset: 0;
-    background: var(--color-bg-overlay-panel);
-    z-index: 1500;
-}
-
-/* State tag marking the catalog backdrop as visible. */
-.aai-visible { }
-
-.aai-catalog-backdrop.aai-visible { /* visible state -- show the dimmer */
-    display: block;
-}
-
-/* The bottom-anchored slide-up panel that holds the format list. */
-.aai-catalog-panel {
-    position: fixed;
-    bottom: 0;
-    left: var(--size-page-padding-y);
-    width: 720px;
-    height: 55vh;
-    transform: translateY(100%);
-    background: var(--color-bg-page);
-    border-top: var(--size-border-thin) solid var(--color-border-strong);
-    border-radius: var(--size-radius-lg) var(--size-radius-lg) 0 0;
-    display: flex;
-    flex-direction: column;
-    box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.5);
-    transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-    z-index: 1501;
-}
-
-.aai-catalog-panel.aai-visible { /* visible state -- slide the panel up into view */
-    transform: translateY(0);
-}
-
-/* The drag-handle strip at the top of the panel (click to close). */
-.aai-catalog-handle {
-    display: flex;
-    justify-content: center;
-    padding: var(--size-spacing-md) 0 var(--size-spacing-xs);
-    cursor: pointer;
-}
-
-.aai-catalog-handle:hover { /* hover state -- brighten the handle affordance */
-    background: rgba(255, 255, 255, 0.02);
-}
-
-/* The small pill bar inside the handle strip. */
-.aai-catalog-handle-bar {
-    width: 40px;
-    height: var(--size-radius-default);
-    border-radius: 2px;
-    background: var(--color-border-strong);
-}
-
-/* The panel header row holding the title, count, and close button. */
-.aai-catalog-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: var(--size-spacing-xs) var(--size-page-padding-y) var(--size-spacing-lg);
-    border-bottom: var(--size-border-thin) solid var(--color-border-divider);
-    flex-shrink: 0;
-}
-
-/* Left-side container in the header holding the title and count. */
-.aai-catalog-header-left {
-    display: flex;
-    align-items: center;
-    gap: var(--size-spacing-lg);
-}
-
-/* The catalog panel title text. */
-.aai-catalog-title {
-    font-size: var(--font-size-heading-lg);
-    font-weight: 600;
-    color: var(--color-accent-platform);
-    margin: 0;
-}
 
 /* The small count caption beside the title. */
 .aai-catalog-count {
     font-size: var(--font-size-body);
     color: var(--color-border-strong);
-}
-
-/* The close (X) button in the panel header. */
-.aai-catalog-close {
-    background: none;
-    border: none;
-    color: var(--color-text-muted);
-    font-size: 20px;
-    cursor: pointer;
-    padding: 0 var(--size-spacing-xs);
-}
-
-.aai-catalog-close:hover { /* hover state -- brighten the close glyph */
-    color: var(--color-text-primary);
 }
 
 /* ============================================================================
@@ -318,19 +219,12 @@
 }
 
 /* ============================================================================
-   CONTENT: CATALOG PANEL BODY
+   CONTENT: CATALOG PANEL STATUS
    ----------------------------------------------------------------------------
-   The scrollable body region of the catalog panel and the inline status line
-   that reports the result of catalog edits.
+   The inline status line that reports the result of catalog edits, shown in
+   the panel's subheader.
    Prefix: aai
    ============================================================================ */
-
-/* The scrollable body region holding the format list. */
-.aai-catalog-body {
-    flex: 1;
-    overflow-y: auto;
-    padding: var(--size-spacing-lg) var(--size-spacing-2xl) var(--size-spacing-2xl);
-}
 
 /* Inline status line reporting the result of a catalog edit. */
 .aai-catalog-status {
@@ -491,78 +385,15 @@
 /* ============================================================================
    CONTENT: CATALOG DETAIL PANEL
    ----------------------------------------------------------------------------
-   The Tier 2 detail panel that expands horizontally beside the format panel
-   when a format is selected, showing that entity's element/field detail.
+   The page-local content rendered inside the shared chrome detail dock: the
+   count caption shown in the header-actions cluster.
    Prefix: aai
    ============================================================================ */
-
-/* The side-by-side detail panel (Tier 2), collapsed to zero width by default. */
-.aai-catalog-detail {
-    position: fixed;
-    bottom: 0;
-    left: 744px;
-    width: 0;
-    height: 55vh;
-    background: var(--color-bg-page);
-    border-radius: 0 var(--size-radius-lg) 0 0;
-    z-index: 1501;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    transition: width var(--duration-default) ease;
-}
-
-.aai-catalog-detail.aai-visible { /* visible state -- expand to the detail width with framing borders */
-    width: 1000px;
-    border-top: var(--size-border-thin) solid var(--color-border-strong);
-    border-left: var(--size-border-thin) solid var(--color-border-divider);
-}
-
-/* The detail panel header row (back button, title, count). */
-.aai-catalog-detail-header {
-    display: flex;
-    align-items: center;
-    padding: var(--size-spacing-lg) var(--size-spacing-xl);
-    border-bottom: var(--size-border-thin) solid var(--color-border-divider);
-    gap: var(--size-spacing-md);
-    flex-shrink: 0;
-}
-
-/* The back button that returns from detail to the format list. */
-.aai-catalog-detail-back {
-    background: none;
-    border: none;
-    color: var(--color-text-muted);
-    font-size: 18px;
-    cursor: pointer;
-    padding: 0 var(--size-spacing-xs);
-    line-height: 1;
-}
-
-.aai-catalog-detail-back:hover { /* hover state -- brighten the back glyph */
-    color: var(--color-text-primary);
-}
-
-/* The detail panel title text. */
-.aai-catalog-detail-title {
-    font-size: var(--font-size-heading-sm);
-    font-weight: 600;
-    color: var(--color-accent-platform);
-    margin: 0;
-    flex: 1;
-}
 
 /* The small count caption in the detail header. */
 .aai-catalog-detail-count {
     font-size: var(--font-size-body);
     color: var(--color-text-muted);
-}
-
-/* The scrollable body region of the detail panel. */
-.aai-catalog-detail-body {
-    flex: 1;
-    overflow: auto;
-    padding: var(--size-spacing-md) var(--size-spacing-lg);
 }
 
 /* Inline status line inside the detail panel reporting an edit result. */
