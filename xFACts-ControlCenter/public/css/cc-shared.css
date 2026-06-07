@@ -150,21 +150,20 @@
     --size-modal-width-medium:  600px;
     --size-modal-width-wide:    800px;
 	
-	/* -- Size tokens: slide-up panel widths -- */
+    /* -- Size tokens: slide-up panel left edge -- */
+    --size-slideup-left:          20px;
+
+    /* -- Size tokens: slide-up and dock panel widths (shared set) -- */
     --size-slideup-width-narrow:  340px;
     --size-slideup-width-default: 580px;
-    --size-slideup-width-wide:    780px;
-    --size-slideup-width-xwide:   880px;
-	
-	/* -- Size tokens: slide-up panel heights -- */
+    --size-slideup-width-wide:    800px;
+    --size-slideup-width-xwide:   1000px;
+
+    /* -- Size tokens: slide-up and dock panel heights -- */
     --size-slideup-height-default: 60vh;
     --size-slideup-height-short:   55vh;
     --size-slideup-height-tall:    65vh;
     --size-slideup-height-max:     90vh;
-
-    /* -- Size tokens: dock panel widths -- */
-    --size-dock-width-default:    650px;
-    --size-dock-width-xwide:      1000px;
 
     /* -- Size tokens: scrollbar -- */
     --size-scrollbar-width:     8px;
@@ -1282,11 +1281,11 @@ a { color: var(--color-text-link); }
     display: block;
 }
 
-/* Slide-up-kind dialog state. Bottom-anchored panel; off-screen below by default, slides up when .cc-open is added. Left and height are page-local. */
+/* Slide-up-kind dialog state. Bottom-anchored panel; off-screen below by default, slides up when .cc-open is added. */
 .cc-dialog-slideup {
     position: fixed;
     bottom: 0;
-    left: var(--size-page-padding-y);
+    left: var(--size-slideup-left);
     width: var(--size-slideup-width-default);
     height: var(--size-slideup-height-default);
     z-index: var(--z-panel);
@@ -1344,27 +1343,72 @@ a { color: var(--color-text-link); }
     width: auto;
 }
 
-/* Dock-kind dialog. Companion panel anchored beside its paired slide-up; collapsed to zero width by default, expands when .cc-open is added. Shares the paired overlay's backdrop; has no overlay element of its own. Left and height are page-local. */
+/* Dock-kind dialog. Companion panel anchored beside its paired slide-up; clipped from the right (hidden) by default, revealed from its seam when .cc-open is added. Shares the paired overlay's backdrop and has no overlay element of its own. Width draws from the shared slide-up width set; height matches the paired panel via the cc-h-* tiers; horizontal seam is set by a cc-dock-at-* class. */
 .cc-dialog-dock {
     position: fixed;
     bottom: 0;
-    width: var(--size-dock-width-default);
+    width: var(--size-slideup-width-default);
+    height: var(--size-slideup-height-default);
     z-index: var(--z-dock);
+    border: none;
     overflow: hidden;
-    transform: translateX(-100%);
-    transition: transform var(--duration-default) ease;
+    clip-path: inset(0 100% 0 0);
+    transition: clip-path var(--duration-default) ease;
 }
 
 .cc-dialog-dock.cc-wide { /* wider dock for tabular detail content */
-    width: var(--size-dock-width-wide);
+    width: var(--size-slideup-width-wide);
 }
 
 .cc-dialog-dock.cc-xwide { /* widest dock for wide multi-column content */
-    width: var(--size-dock-width-xwide);
+    width: var(--size-slideup-width-xwide);
 }
 
-.cc-dialog-dock.cc-open { /* slid into view from behind the paired panel */
-    transform: translateX(0);
+.cc-dialog-dock.cc-h-short { /* shorter dock matching a short paired panel */
+    height: var(--size-slideup-height-short);
+}
+
+.cc-dialog-dock.cc-h-tall { /* taller dock matching a tall paired panel */
+    height: var(--size-slideup-height-tall);
+}
+
+.cc-dialog-dock.cc-h-max { /* content-sized dock matching a content-sized paired panel */
+    height: auto;
+    max-height: var(--size-slideup-height-max);
+}
+
+.cc-dialog-dock.cc-open { /* revealed from the seam (releases the clip) */
+    clip-path: inset(0);
+    border-top: var(--size-border-thin) solid var(--color-border-strong);
+    border-left: var(--size-border-thin) solid var(--color-border-divider);
+}
+
+/* Seam-position modifier tag placing a dock at the right edge of a narrow paired panel. */
+.cc-dock-at-narrow { }
+
+.cc-dialog-dock.cc-dock-at-narrow { /* seam beside a narrow paired panel */
+    left: calc(var(--size-slideup-left) + var(--size-slideup-width-narrow));
+}
+
+/* Seam-position modifier tag placing a dock at the right edge of a default paired panel. */
+.cc-dock-at-default { }
+
+.cc-dialog-dock.cc-dock-at-default { /* seam beside a default paired panel */
+    left: calc(var(--size-slideup-left) + var(--size-slideup-width-default));
+}
+
+/* Seam-position modifier tag placing a dock at the right edge of a wide paired panel. */
+.cc-dock-at-wide { }
+
+.cc-dialog-dock.cc-dock-at-wide { /* seam beside a wide paired panel */
+    left: calc(var(--size-slideup-left) + var(--size-slideup-width-wide));
+}
+
+/* Seam-position modifier tag placing a dock at the right edge of an xwide paired panel. */
+.cc-dock-at-xwide { }
+
+.cc-dialog-dock.cc-dock-at-xwide { /* seam beside an xwide paired panel */
+    left: calc(var(--size-slideup-left) + var(--size-slideup-width-xwide));
 }
 
 /* Dock header back button (returns to the paired slide-up). */
@@ -1425,6 +1469,11 @@ a { color: var(--color-text-link); }
 
 .cc-dialog-close:hover { /* hover state for the close button */
     color: var(--color-text-primary);
+}
+
+/* Pinned region between the dialog header and body; holds page content that stays fixed while the body scrolls. */
+.cc-dialog-subheader {
+    flex-shrink: 0;
 }
 
 /* The scrollable body container for dialog content. */
