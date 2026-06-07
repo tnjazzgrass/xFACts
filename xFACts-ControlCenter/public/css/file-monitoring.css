@@ -640,88 +640,16 @@
 /* ============================================================================
    CONTENT: SLIDE-UP CONSOLE
    ----------------------------------------------------------------------------
-   The page-local slide-up management console: a bottom-anchored panel with a
-   title bar and a 3D flip card whose front shows the monitor list and whose
-   back shows the server list. This is a page-local construct pending a shared
-   slide-up dock; it is not one of the cc- overlay constructs.
+   Page-local styling for the management console, which uses the shared
+   cc-slideup-overlay / cc-dialog-slideup construct. This section supplies only
+   what the construct does not: the full-width override, the backdrop fade, the
+   body 3D perspective, the flip button, and the flip-card mechanism.
    Prefix: flm
    ============================================================================ */
 
-/* The full-viewport backdrop behind the open console. */
-.flm-console-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: var(--color-bg-overlay-panel);
-    z-index: var(--z-panel-overlay);
-    display: none;
-    opacity: 0;
-    transition: opacity var(--duration-default) ease;
-}
-
-/* Reveals the console backdrop when the console is open. */
-.flm-console-overlay-open {
-    display: block;
-    opacity: 1;
-}
-
-/* The bottom-anchored console panel. */
-.flm-console-panel {
-    position: fixed;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    height: 65vh;
-    background: var(--color-bg-card);
-    border-top: 2px solid var(--color-accent-shared);
-    z-index: var(--z-panel);
-    display: flex;
-    flex-direction: column;
-    transform: translateY(100%);
-    transition: transform var(--duration-default) ease;
-    border-radius: var(--size-radius-xl) var(--size-radius-xl) 0 0;
-    box-shadow: var(--shadow-modal);
-}
-
-/* Slides the console panel into view when open. */
-.flm-console-panel-open {
-    transform: translateY(0);
-}
-
-/* The console title bar (face title and flip control left, actions right). */
-.flm-console-title-bar {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 10px var(--size-page-padding-y);
-    background: var(--color-bg-card-hover);
-    border-bottom: var(--size-border-thin) solid var(--color-border-default);
-    border-radius: var(--size-radius-xl) var(--size-radius-xl) 0 0;
-    flex-shrink: 0;
-}
-
-/* Left cluster of the console title bar (title and flip button). */
-.flm-console-title-left {
-    display: flex;
-    align-items: center;
-    gap: var(--size-spacing-lg);
-}
-
-/* Right cluster of the console title bar (add and close buttons). */
-.flm-console-title-right {
-    display: flex;
-    align-items: center;
-    gap: var(--size-spacing-lg);
-}
-
-/* The current-face title text in the console title bar. */
-.flm-console-face-title {
-    margin: 0;
-    font-size: var(--font-size-heading-lg);
-    color: var(--color-accent-platform);
-    font-weight: 600;
+/* 3D perspective for the flip card (composed onto cc-dialog-body). */
+.flm-console-body {
+    perspective: 1200px;
 }
 
 /* The circular flip button that swaps the console between faces. */
@@ -746,29 +674,6 @@
     border-color: var(--color-accent-shared);
     color: var(--color-accent-shared);
     transform: rotate(180deg);
-}
-
-/* The console close (X) button. */
-.flm-console-close {
-    background: transparent;
-    border: none;
-    color: var(--color-text-muted);
-    font-size: 24px;
-    cursor: pointer;
-    padding: 0 var(--size-spacing-xs);
-    line-height: 1;
-}
-
-.flm-console-close:hover { /* hover state for the console close button */
-    color: var(--color-text-primary);
-}
-
-/* The console body that hosts the flip card with 3D perspective. */
-.flm-console-body {
-    flex: 1;
-    overflow: hidden;
-    perspective: 1200px;
-    padding: var(--size-spacing-xl) var(--size-page-padding-y);
 }
 
 /* The 3D flip card container holding the two faces. */
@@ -822,13 +727,17 @@
    Prefix: flm
    ============================================================================ */
 
-/* The column header row above the monitor list. */
+/* The column header row above the monitor list (pinned to the top while rows scroll). */
 .flm-monitor-col-header {
     display: flex;
     align-items: flex-end;
     padding: var(--size-spacing-xs) var(--size-spacing-lg) var(--size-spacing-sm);
     margin-bottom: var(--size-spacing-xs);
     gap: var(--size-spacing-sm);
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--color-bg-card);
 }
 
 /* The fixed-width grid zone of column labels. */
