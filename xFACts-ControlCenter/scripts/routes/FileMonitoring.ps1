@@ -191,29 +191,28 @@ $navHtml
 
     </div>
 
-    <!-- Slide-up management console (page-local construct; not a recognized cc- overlay) -->
-    <div id="flm-console-overlay" class="flm-console-overlay" data-action-click="flm-close-console"></div>
-    <div id="flm-console-panel" class="flm-console-panel">
-        <div class="flm-console-title-bar">
-            <div class="flm-console-title-left">
-                <h2 class="flm-console-face-title" id="flm-console-face-title">Monitors</h2>
-                <button class="flm-console-flip-btn" id="flm-console-flip-btn" data-action-click="flm-flip-console" title="Flip to other side">&#x27F3;</button>
-            </div>
-            <div class="flm-console-title-right">
-                <button class="flm-btn-action" id="flm-console-add-btn" data-action-click="flm-add-monitor">+ Add Monitor</button>
-                <button class="flm-console-close" data-action-click="flm-close-console">&times;</button>
-            </div>
-        </div>
-        <div class="flm-console-body">
-            <div class="flm-console-flip-card" id="flm-console-flip-card">
-                <div class="flm-console-flip-front" id="flm-console-monitors">
-                    <div id="flm-monitor-list" class="flm-console-list">
-                        <div class="flm-loading">Loading...</div>
-                    </div>
+    <!-- Purpose: slide-up management console with a flip card between the monitor and server faces -->
+    <div id="flm-slideup-console" class="cc-slideup-overlay" data-action-click="flm-close-console">
+        <div class="cc-dialog cc-dialog-slideup cc-full cc-h-tall">
+            <div class="cc-dialog-header">
+                <h3 class="cc-dialog-title" id="flm-console-face-title">Monitors</h3>
+                <div class="cc-dialog-header-actions">
+                    <button class="flm-console-flip-btn" id="flm-console-flip-btn" data-action-click="flm-flip-console" title="Flip to other side">&#x27F3;</button>
+                    <button class="flm-btn-action" id="flm-console-add-btn" data-action-click="flm-add-monitor">+ Add Monitor</button>
                 </div>
-                <div class="flm-console-flip-back" id="flm-console-servers">
-                    <div id="flm-server-list" class="flm-console-list">
-                        <div class="flm-loading">Loading...</div>
+                <button class="cc-dialog-close" data-action-click="flm-close-console">&times;</button>
+            </div>
+            <div class="cc-dialog-body flm-console-body">
+                <div class="flm-console-flip-card" id="flm-console-flip-card">
+                    <div class="flm-console-flip-front" id="flm-console-monitors">
+                        <div id="flm-monitor-list" class="flm-console-list">
+                            <div class="flm-loading">Loading...</div>
+                        </div>
+                    </div>
+                    <div class="flm-console-flip-back" id="flm-console-servers">
+                        <div id="flm-server-list" class="flm-console-list">
+                            <div class="flm-loading">Loading...</div>
+                        </div>
                     </div>
                 </div>
             </div>
