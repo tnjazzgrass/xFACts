@@ -33,6 +33,12 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-06-07  Converted the BDL Catalog panel and detail dock to shared chrome
+#             overlay constructs: the catalog panel is now a cc-slideup-overlay
+#             / cc-dialog-slideup, the detail dock is a cc-dialog-dock, and the
+#             pinned mode-selector / status strips moved into cc-dialog-subheader
+#             regions. Dropped the page-local backdrop and drag-handle. Added the
+#             missing overlay purpose comments on the three DM job modals.
 # 2026-06-03  Refactored to the CC File Format standard: adopted the cc- chrome
 #             contract (cc-header-bar, cc-refresh-info, cc-section), data-cc-page
 #             / data-cc-prefix body attributes, the cc-shared.css/js asset
@@ -173,33 +179,40 @@ $navHtml
         </div>
     </div>
 
-    <div id="aai-catalog-backdrop" class="aai-catalog-backdrop" data-action-click="aai-close-catalog"></div>
-    <div id="aai-catalog-panel" class="aai-catalog-panel">
-        <div class="aai-catalog-handle" data-action-click="aai-close-catalog">
-            <div class="aai-catalog-handle-bar"></div>
-        </div>
-        <div class="aai-catalog-header">
-            <div class="aai-catalog-header-left">
-                <h2 id="aai-catalog-title" class="aai-catalog-title">BDL Content Management</h2>
-                <span id="aai-catalog-count" class="aai-catalog-count"></span>
+    <!-- Purpose: BDL Content Management catalog (entity formats and field settings) -->
+    <div id="aai-slideup-catalog" class="cc-slideup-overlay" data-action-click="aai-close-catalog">
+        <div class="cc-dialog cc-dialog-slideup cc-wide cc-h-short">
+            <div class="cc-dialog-header">
+                <h2 class="cc-dialog-title" id="aai-catalog-title">BDL Content Management</h2>
+                <div class="cc-dialog-header-actions">
+                    <span id="aai-catalog-count" class="aai-catalog-count"></span>
+                </div>
+                <button class="cc-dialog-close" data-action-click="aai-close-catalog">&times;</button>
             </div>
-            <button class="aai-catalog-close" data-action-click="aai-close-catalog">&times;</button>
+            <div class="cc-dialog-subheader">
+                <div id="aai-catalog-mode-selector" class="aai-catalog-mode-selector"></div>
+                <div id="aai-catalog-status" class="aai-catalog-status"></div>
+            </div>
+            <div id="aai-catalog-body" class="cc-dialog-body"></div>
         </div>
-        <div id="aai-catalog-mode-selector" class="aai-catalog-mode-selector"></div>
-        <div id="aai-catalog-status" class="aai-catalog-status"></div>
-        <div id="aai-catalog-body" class="aai-catalog-body"></div>
     </div>
 
-    <div id="aai-catalog-detail" class="aai-catalog-detail">
-        <div class="aai-catalog-detail-header">
-            <button class="aai-catalog-detail-back" data-action-click="aai-close-catalog-detail" title="Back to format list">&#9664;</button>
-            <h3 id="aai-catalog-detail-title" class="aai-catalog-detail-title"></h3>
-            <span id="aai-catalog-detail-count" class="aai-catalog-detail-count"></span>
+    <!-- Purpose: BDL Catalog detail dock (selected entity's element/field list) -->
+    <div id="aai-dock-catalog-detail" class="cc-dialog cc-dialog-dock cc-xwide cc-dock-at-wide cc-h-short">
+        <div class="cc-dialog-header">
+            <button class="cc-dialog-back" data-action-click="aai-close-catalog-detail" title="Back to format list">&larr;</button>
+            <h3 class="cc-dialog-title" id="aai-catalog-detail-title"></h3>
+            <div class="cc-dialog-header-actions">
+                <span id="aai-catalog-detail-count" class="aai-catalog-detail-count"></span>
+            </div>
         </div>
-        <div id="aai-catalog-detail-status" class="aai-catalog-detail-status"></div>
-        <div id="aai-catalog-detail-body" class="aai-catalog-detail-body"></div>
+        <div class="cc-dialog-subheader">
+            <div id="aai-catalog-detail-status" class="aai-catalog-detail-status"></div>
+        </div>
+        <div id="aai-catalog-detail-body" class="cc-dialog-body"></div>
     </div>
 
+    <!-- Purpose: Refresh Drools job environment selection and confirmation -->
     <div id="aai-job-drools-modal" class="cc-modal-overlay cc-hidden" data-action-click="aai-job-close-modal" data-aai-modal-id="aai-job-drools-modal">
         <div class="cc-dialog cc-dialog-modal">
             <div class="cc-dialog-header">
@@ -211,6 +224,7 @@ $navHtml
         </div>
     </div>
 
+    <!-- Purpose: Release Notices job environment selection and confirmation -->
     <div id="aai-job-release-modal" class="cc-modal-overlay cc-hidden" data-action-click="aai-job-close-modal" data-aai-modal-id="aai-job-release-modal">
         <div class="cc-dialog cc-dialog-modal">
             <div class="cc-dialog-header">
@@ -222,6 +236,7 @@ $navHtml
         </div>
     </div>
 
+    <!-- Purpose: Balance Sync job environment selection and confirmation -->
     <div id="aai-job-balance-modal" class="cc-modal-overlay cc-hidden" data-action-click="aai-job-close-modal" data-aai-modal-id="aai-job-balance-modal">
         <div class="cc-dialog cc-dialog-modal">
             <div class="cc-dialog-header">
