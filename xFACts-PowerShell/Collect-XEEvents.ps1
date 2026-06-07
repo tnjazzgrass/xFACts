@@ -1932,14 +1932,42 @@ function Send-AGHealthAlert {
         and $aghealthCriticalErrorRouting) which are populated in Step 1 from
         GlobalConfig.
 
-        Uses the row's event_id as the dedup TriggerValue, which guarantees
-        each distinct AG event produces at most one alert ever.
+        DEDUP KEY (TriggerValue)
+        ------------------------
+        The dedup TriggerValue is an event-identity key, NOT the row event_id.
+        It is built from the stable identity of the event plus a coarse
+        date+hour occurrence window:
+
+            <event_type>|<server>|<prev>-><curr>|<error_number>|<yyyy-MM-dd HH>
+
+        Send-TeamsAlert dedups on (TriggerType, TriggerValue) against
+        Teams.RequestLog with no time limit ("once ever"). Keying on event
+        identity collapses repeated captures of the same logical event into a
+        single alert, while the date+hour window lets a genuinely separate
+        later occurrence re-alert.
+
+        Rationale: a failover can cause the same logical event to be collected
+        many times (e.g. an XE file offset that fails to advance re-reads the
+        same position repeatedly). Each captured row gets a unique event_id, so
+        keying on event_id never collapsed those duplicates and produced an
+        alert storm. Keying on event identity collapses them to one alert per
+        distinct transition. event_timestamp is bucketed to the hour (not the
+        second) so a burst that spans a second boundary does not split into
+        multiple alerts; the only suppressed case is the identical transition
+        on the same server recurring within the same clock hour, which is the
+        flapping scenario already under active observation from the first alert.
+
+        NOTE: This dedup key is a defense-in-depth layer against duplicate
+        captures. The underlying offset-advancement behavior that allows the
+        same event to be re-collected is a separate concern flagged for the
+        collector refactor.
 
         Jira routing (-band 2) is reserved for a future Send-JiraTicket
         wrapper. Today it logs a placeholder message but does not dispatch.
 
     .PARAMETER EventId
-        The event_id returned by Insert-AGHealthEvent.
+        The event_id returned by Insert-AGHealthEvent. Used for the alert_sent
+        UPDATE and for log lines; no longer used as the dedup TriggerValue.
 
     .PARAMETER ServerName
         The server the event was captured on (DM-PROD-DB or DM-PROD-REP).
@@ -2006,6 +2034,22 @@ function Send-AGHealthAlert {
     }
 
     # ----------------------------------------------------------
+    # Build the dedup TriggerValue from event identity + date/hour window
+    # ----------------------------------------------------------
+    # Stable identity components. NULL states render as '(none)' so the key is
+    # consistent for manager_state_change events (which have no previous_state).
+    $prevKey = if ($Event.previous_state) { $Event.previous_state } else { '(none)' }
+    $currKey = if ($Event.current_state)  { $Event.current_state }  else { '(none)' }
+    $errKey  = if ($null -ne $Event.error_number) { [string]$Event.error_number } else { '(none)' }
+
+    # Coarse occurrence window: bucket the event time to the hour (yyyy-MM-dd HH).
+    # Bucketing to the hour (not the second) prevents a single event burst that
+    # straddles a second/minute boundary from splitting into multiple alerts.
+    $hourBucket = $Event.event_timestamp.ToString('yyyy-MM-dd HH')
+
+    $triggerValue = "$($Event.event_type)|$ServerName|$prevKey->$currKey|$errKey|$hourBucket"
+
+    # ----------------------------------------------------------
     # Build alert body (used by all destinations)
     # ----------------------------------------------------------
     $bodyLines = @()
@@ -2047,7 +2091,7 @@ function Send-AGHealthAlert {
             -Message $body `
             -Color 'attention' `
             -TriggerType $triggerType `
-            -TriggerValue ([string]$EventId)
+            -TriggerValue $triggerValue
 
         if ($queued) {
             Write-Log "    AGHealth alert queued (event_id=$EventId): $title [Teams]" "SUCCESS"
