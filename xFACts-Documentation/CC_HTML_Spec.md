@@ -276,7 +276,8 @@ Page-local IDs have the form `<prefix>-<purpose>` where `<prefix>` is the page's
 
 ### 5.4 Overlay constructs
 
-Modals, slideouts, and slide-up panels are the three overlay constructs. All three follow a unified structural pattern: an outer overlay element contains a nested inner dialog element as a direct child. The outer overlay element's class distinguishes the construct type for CSS positioning; the inner dialog carries a matching secondary class (`cc-dialog-modal`, `cc-dialog-slide`, or `cc-dialog-slideup`) and shares the common `cc-dialog-*` class family with its child elements across all three constructs.
+- Backdrop overlays — modals, slideouts, and slide-up panels — place an outer overlay element carrying a backdrop dimmer and the close action around a nested inner `.cc-dialog` direct child; the outer class identifies the construct and the inner dialog carries a matching secondary class (`cc-dialog-modal`, `cc-dialog-slide`, or `cc-dialog-slideup`). 
+- The dock (§5.4.5) is a companion panel that shares the backdrop of the overlay it is paired with and has no overlay element of its own. All constructs share the `cc-dialog-*` class family.
 
 #### 5.4.1 Modal template
 
@@ -344,12 +345,36 @@ Modals, slideouts, and slide-up panels are the three overlay constructs. All thr
 - An overlay construct is one outer overlay element containing exactly one direct child `.cc-dialog`. The outer element's class identifies the construct type: `cc-modal-overlay` (modal), `cc-slide-overlay` (slideout), or `cc-slideup-overlay` (slide-up panel).
 - The outer overlay element carries the construct's ID. Modal IDs use `<prefix>-modal-<purpose>`; slideout IDs use `<prefix>-slideout-<purpose>`; slide-up panel IDs use `<prefix>-slideup-<purpose>`. The nested `.cc-dialog` carries no ID.
 - The inner `.cc-dialog` carries a second class identifying its construct: `cc-dialog-modal` inside a `cc-modal-overlay`, `cc-dialog-slide` inside a `cc-slide-overlay`, or `cc-dialog-slideup` inside a `cc-slideup-overlay`.
-- The inner `.cc-dialog` contains a `.cc-dialog-header`, a `.cc-dialog-body`, and optionally a `.cc-dialog-actions` footer, in this order. The header contains exactly one `.cc-dialog-title` element and exactly one `.cc-dialog-close` button.
+- The inner `.cc-dialog` contains a `.cc-dialog-header`, a `.cc-dialog-body`, and optionally a `.cc-dialog-actions` footer, in this order. The header contains exactly one `.cc-dialog-title` element and exactly one `.cc-dialog-close` button last, with an optional single `.cc-dialog-header-actions` element between them.
 - The outer overlay element carries `data-action-click="<prefix>-close-<construct>"` — the same close action as its `.cc-dialog-close` button — so a backdrop click dismisses the construct.
 - All overlay constructs on a page appear in one contiguous block within the page-shell position defined by §1.2.2.
 - Within the overlay block, only formatting whitespace and each construct's preceding purpose comment may appear between constructs. No other HTML elements, no other comments.
 - Each overlay construct is preceded by exactly one HTML purpose comment, placed immediately above the outer overlay element.
 - Internal ordering of constructs within the overlay block is the author's choice.
+
+#### 5.4.5 Dock template
+
+```
+<!-- Purpose: short description of what this dock does -->
+<div id="<prefix>-dock-<purpose>" class="cc-dialog cc-dialog-dock">
+    <div class="cc-dialog-header">
+        <button class="cc-dialog-back" data-action-click="<prefix>-close-dock">&larr;</button>
+        <h3 class="cc-dialog-title">Title text</h3>
+    </div>
+    <div class="cc-dialog-body">
+        Body content
+    </div>
+</div>
+```
+
+#### 5.4.6 Dock rules
+
+- A dock carries `cc-dialog` and `cc-dialog-dock`, has no outer overlay element, and shares the backdrop of the backdrop overlay it is paired with.
+- The dock element carries the ID `<prefix>-dock-<purpose>`.
+- The dock contains a `.cc-dialog-header` then a `.cc-dialog-body`. A dock has no `.cc-dialog-actions` footer.
+- The dock header contains exactly one `.cc-dialog-back` button then exactly one `.cc-dialog-title`, with an optional single `.cc-dialog-header-actions` element last. A dock has no `.cc-dialog-close` button.
+- The dock element does not carry a `data-action-click` attribute.
+- A dock appears within the overlay block (§5.4.4), preceded by exactly one HTML purpose comment.
 
 ---
 
@@ -651,15 +676,18 @@ The chrome classes and platform-owned attributes referenced by this spec are def
 | `cc-modal-overlay` | Modal outermost element (§5.4.1) |
 | `cc-slide-overlay` | Slideout outermost element (§5.4.2) |
 | `cc-slideup-overlay` | Slide-up panel outermost element (§5.4.3) |
-| `cc-dialog` | Inner dialog/panel element (shared across all three overlay constructs) |
+| `cc-dialog` | Inner dialog/panel element (shared across all overlay constructs) |
 | `cc-dialog-modal` | Secondary class on `.cc-dialog` inside a modal (§5.4.1) |
 | `cc-dialog-slide` | Secondary class on `.cc-dialog` inside a slideout (§5.4.2) |
 | `cc-dialog-slideup` | Secondary class on `.cc-dialog` inside a slide-up panel (§5.4.3) |
 | `cc-dialog-header` | Dialog header row (shared) |
+| `cc-dialog-header-actions` | Optional header cluster holding status indicators and/or action controls (§5.4.4) |
 | `cc-dialog-title` | Dialog header title text (shared) |
 | `cc-dialog-close` | Dialog close (X) button (shared) |
 | `cc-dialog-body` | Dialog main content area (shared) |
 | `cc-dialog-actions` | Dialog footer action button row (shared, optional) |
+| `cc-dialog-dock` | Secondary class on `.cc-dialog` for a dock (§5.4.5) |
+| `cc-dialog-back` | Dock header back button (§5.4.5) |
 
 ### 14.3 Body section accent classes
 
@@ -746,6 +774,9 @@ Each rule that the populator enforces produces one drift code. This table is the
 | `MISSING_PANEL_PURPOSE_COMMENT` | Overlay construct not preceded by an HTML purpose comment. | §5.4 |
 | `MISSING_OVERLAY_BACKDROP_CLOSE` | Overlay construct's outer element does not carry a `data-action-click` matching its `.cc-dialog-close` button's close action; a backdrop click will not dismiss the construct. | §5.4 |
 | `OVERLAY_BLOCK_NON_CONTIGUOUS` | Non-overlay element or non-purpose comment appearing within the overlay block. | §5.4 |
+| `MALFORMED_DOCK_STRUCTURE` | Dock element does not carry both `cc-dialog` and `cc-dialog-dock`, is missing its `.cc-dialog-header` or `.cc-dialog-body`, has them out of order, carries a `.cc-dialog-actions` footer, or its header is not exactly one `.cc-dialog-back` button then one `.cc-dialog-title` with an optional `.cc-dialog-header-actions` last. | §5.4.5 |
+| `MALFORMED_DOCK_ID` | Dock element ID does not follow `<prefix>-dock-<purpose>` form. | §5.4.5 |
+| `FORBIDDEN_DOCK_ACTION_ATTRIBUTE` | A dock element (`cc-dialog-dock`) carries a `data-action-click` attribute. | §5.4.5 |
 | `MALFORMED_CLASS_VALUE_WHITESPACE` | Class attribute value has leading, trailing, or excess whitespace. | §6.1 |
 | `MALFORMED_CLASS_NAME` | Class name contains characters other than lowercase letters, digits, and hyphens. | §6.1 |
 | `DUPLICATE_CLASS_IN_VALUE` | Same class name appears more than once in the same `class=""`. | §6.1 |
