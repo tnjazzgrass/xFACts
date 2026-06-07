@@ -481,8 +481,12 @@ function flm_openConsoleFromCard(target) {
 
 /* Opens the slide-up management console to the requested face. */
 function flm_openConsole(face) {
-    document.getElementById('flm-console-overlay').classList.add('flm-console-overlay-open');
-    document.getElementById('flm-console-panel').classList.add('flm-console-panel-open');
+    var overlay = document.getElementById('flm-slideup-console');
+    var dialog = overlay.querySelector('.cc-dialog-slideup');
+    overlay.classList.add('cc-open');
+    requestAnimationFrame(function() {
+        dialog.classList.add('cc-open');
+    });
     flm_currentFace = face || 'monitors';
     flm_applyConsoleFace();
 }
@@ -512,8 +516,13 @@ function flm_closeConsole() {
 
 /* Removes the open-state classes that reveal the console. */
 function flm_hideConsole() {
-    document.getElementById('flm-console-overlay').classList.remove('flm-console-overlay-open');
-    document.getElementById('flm-console-panel').classList.remove('flm-console-panel-open');
+    var overlay = document.getElementById('flm-slideup-console');
+    var dialog = overlay.querySelector('.cc-dialog-slideup');
+    dialog.classList.remove('cc-open');
+    dialog.addEventListener('transitionend', function handler() {
+        dialog.removeEventListener('transitionend', handler);
+        overlay.classList.remove('cc-open');
+    }, { once: true });
 }
 
 /* Flips the console between the monitors and servers faces. */
