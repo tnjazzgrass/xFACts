@@ -253,21 +253,26 @@ function aai_handleKeydownAction(event) {
 /* ============================================================================
    FUNCTIONS: CATALOG DOCK
    ----------------------------------------------------------------------------
-   Open and close handlers for the BDL Catalog dock and its side detail panel.
-   The dock is a page-local slide-up construct toggled via the aai-visible
-   state class.
+   Open and close handlers for the BDL Catalog slide-up panel and its detail
+   dock. The panel follows the slide-up overlay open/close pattern; the dock
+   follows the dock open/close pattern.
    Prefix: aai
    ============================================================================ */
 
-/* Opens the catalog dock in Global Configuration mode and loads formats. */
+/* Opens the catalog panel in Global Configuration mode and loads formats. */
 function aai_openCatalog() {
     aai_mode = 'global';
     aai_resetGlobalState();
     aai_resetDeptState();
     aai_hideDetail();
 
-    document.getElementById('aai-catalog-backdrop').classList.add('aai-visible');
-    document.getElementById('aai-catalog-panel').classList.add('aai-visible');
+    var overlay = document.getElementById('aai-slideup-catalog');
+    var dialog  = overlay.querySelector('.cc-dialog');
+    overlay.classList.add('cc-open');
+    requestAnimationFrame(function () {
+        dialog.classList.add('cc-open');
+    });
+
     document.getElementById('aai-catalog-body').innerHTML = '<div class="aai-catalog-loading">Loading BDL formats...</div>';
     document.getElementById('aai-catalog-count').textContent = '';
     document.getElementById('aai-catalog-title').textContent = 'BDL Content Management';
@@ -276,14 +281,22 @@ function aai_openCatalog() {
     aai_loadFormats();
 }
 
-/* Closes the catalog dock and its detail panel. */
-function aai_closeCatalog() {
+/* Closes the catalog panel and its detail dock. */
+function aai_closeCatalog(target, event) {
+    if (event && target.id === 'aai-slideup-catalog' && event.target !== target) {
+        return;
+    }
     aai_hideDetail();
-    document.getElementById('aai-catalog-backdrop').classList.remove('aai-visible');
-    document.getElementById('aai-catalog-panel').classList.remove('aai-visible');
+    var overlay = document.getElementById('aai-slideup-catalog');
+    var dialog  = overlay.querySelector('.cc-dialog');
+    dialog.addEventListener('transitionend', function handler() {
+        dialog.removeEventListener('transitionend', handler);
+        overlay.classList.remove('cc-open');
+    });
+    dialog.classList.remove('cc-open');
 }
 
-/* Closes only the side detail panel and clears the related selection. */
+/* Closes only the detail dock and clears the related selection. */
 function aai_closeCatalogDetail() {
     aai_hideDetail();
     if (aai_mode === 'global') {
@@ -293,9 +306,9 @@ function aai_closeCatalogDetail() {
     }
 }
 
-/* Hides the detail panel and resets the per-mode detail selection state. */
+/* Hides the detail dock and resets the per-mode detail selection state. */
 function aai_hideDetail() {
-    document.getElementById('aai-catalog-detail').classList.remove('aai-visible');
+    document.getElementById('aai-dock-catalog-detail').classList.remove('cc-open');
     if (aai_mode === 'global') {
         aai_selectedFormatId = null;
         aai_selectedFormatName = null;
@@ -480,7 +493,7 @@ function aai_selectFormatFromAction(target) {
     document.getElementById('aai-catalog-detail-title').textContent = entityType + ' -- Elements';
     document.getElementById('aai-catalog-detail-count').textContent = '';
     document.getElementById('aai-catalog-detail-body').innerHTML = '<div class="aai-catalog-loading">Loading elements...</div>';
-    document.getElementById('aai-catalog-detail').classList.add('aai-visible');
+    document.getElementById('aai-dock-catalog-detail').classList.add('cc-open');
 
     aai_loadElements(formatId);
 }
@@ -742,7 +755,7 @@ function aai_selectDeptFormatFromAction(target) {
     document.getElementById('aai-catalog-detail-title').textContent = entityType + ' -- Field Access (' + aai_selectedDepartmentName + ')';
     document.getElementById('aai-catalog-detail-count').textContent = '';
     document.getElementById('aai-catalog-detail-body').innerHTML = '<div class="aai-catalog-loading">Loading fields...</div>';
-    document.getElementById('aai-catalog-detail').classList.add('aai-visible');
+    document.getElementById('aai-dock-catalog-detail').classList.add('cc-open');
 
     aai_loadDeptFieldAccess(configId);
 }
