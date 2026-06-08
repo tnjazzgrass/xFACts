@@ -1188,9 +1188,13 @@ function srv_ignoreModalClick(id, target, event) {
 function srv_openZombieModal(el) {
     var count = el.getAttribute('data-action-srv-count');
     var server = srv_getCurrentServer();
-    document.getElementById('srv-zombie-kill-count').textContent = count;
-    document.getElementById('srv-zombie-threshold-info').textContent =
-        'JDBC connections idle > ' + srv_thresholds.zombieIdleMinutes + ' minutes on ' + server;
+    document.getElementById('srv-zombie-modal-body').innerHTML =
+        '<div class="srv-zombie-icon">&#129503;&#128299;</div>' +
+        '<div class="srv-zombie-message">Are you sure you want to eradicate <span class="srv-zombie-count" id="srv-zombie-kill-count">' + count + '</span> zombies?</div>' +
+        '<div class="srv-zombie-threshold" id="srv-zombie-threshold-info">JDBC connections idle &gt; ' + srv_thresholds.zombieIdleMinutes + ' minutes on ' + server + '</div>';
+    document.getElementById('srv-zombie-modal-footer').innerHTML =
+        '<button class="cc-dialog-btn-cancel" data-action-click="srv-close-zombie-modal">Never Mind</button>' +
+        '<button class="cc-dialog-btn-danger" data-action-click="srv-execute-zombie-kill">&#128299; Double Tap Them</button>';
     document.getElementById('srv-modal-zombie').classList.remove('cc-hidden');
 }
 
@@ -1204,17 +1208,24 @@ function srv_closeZombieModal(target, event) {
 async function srv_executeZombieKill() {
     var server = srv_getCurrentServer();
     var body = document.getElementById('srv-zombie-modal-body');
+    var footer = document.getElementById('srv-zombie-modal-footer');
+    footer.innerHTML = '<button class="cc-dialog-btn-cancel" disabled>Executing...</button>';
     try {
         var result = await cc_engineFetch('/api/server-health/kill-zombies?server=' + encodeURIComponent(server), { method: 'POST' });
-        if (!result) return;
+        if (!result) {
+            footer.innerHTML = '<button class="cc-dialog-btn-cancel" data-action-click="srv-close-zombie-modal">Close</button>';
+            return;
+        }
         if (result.Error) {
-            body.innerHTML = '<div class="srv-error">Error: ' + result.Error + '</div>';
+            body.innerHTML = '<div class="srv-result-error"><div class="srv-result-icon">&#128128;</div>Error: ' + result.Error + '</div>';
         } else {
-            body.innerHTML = '<div class="srv-zombie-message">Successfully eradicated <span class="srv-zombie-count">' + result.killed_count + '</span> zombies.</div>';
+            body.innerHTML = '<div class="srv-result-success"><div class="srv-result-icon">&#9989;</div>Successfully eradicated <span class="srv-zombie-count">' + result.killed_count + '</span> zombies!</div>';
             setTimeout(function() { srv_refreshConnections(server); }, 1000);
         }
+        footer.innerHTML = '<button class="cc-dialog-btn-cancel" data-action-click="srv-close-zombie-modal">Close</button>';
     } catch (err) {
-        body.innerHTML = '<div class="srv-error">Failed: ' + err.message + '</div>';
+        body.innerHTML = '<div class="srv-result-error">Failed: ' + err.message + '</div>';
+        footer.innerHTML = '<button class="cc-dialog-btn-cancel" data-action-click="srv-close-zombie-modal">Close</button>';
     }
 }
 
