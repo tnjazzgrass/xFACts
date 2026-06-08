@@ -53,16 +53,6 @@
    ============================================================================ #>
 
 Add-PodeRoute -Method Get -Path '/index-maintenance' -Authentication 'ADLogin' -ScriptBlock {
-
-    # Import the cc- emission helpers. During the CC File Format
-    # Standardization Section 11.2.4 migration this overrides the auto-loaded
-    # xFACts-Helpers module for this route's execution, so Get-NavBarHtml
-    # and Get-PageHeaderHtml emit cc- prefixed chrome classes that match
-    # cc-shared.css and cc-shared.js. Once every page has migrated and
-    # Start-ControlCenter.ps1 loads xFACts-CCShared.psm1 at startup
-    # instead of xFACts-Helpers.psm1, this line is removed.
-    Import-Module -Name 'E:\xFACts-ControlCenter\scripts\modules\xFACts-CCShared.psm1' -Force -DisableNameChecking
-
     $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/index-maintenance'
     if (-not $access.HasAccess) {
         Write-PodeHtmlResponse -Value (Get-AccessDeniedHtml -DisplayName $access.DisplayName -PageRoute '/index-maintenance') -StatusCode 403
