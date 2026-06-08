@@ -1050,6 +1050,32 @@
     padding: 30px;
 }
 
+/* Success confirmation box for a completed action. */
+.srv-result-success {
+    background: rgba(78, 201, 176, 0.15);
+    border: var(--size-border-thin) solid var(--color-accent-shared);
+    border-radius: var(--size-radius-default);
+    padding: var(--size-spacing-lg) 15px;
+    color: var(--color-accent-shared);
+    text-align: center;
+}
+
+/* Error confirmation box for a failed action. */
+.srv-result-error {
+    background: rgba(244, 135, 113, 0.15);
+    border: var(--size-border-thin) solid var(--color-status-critical);
+    border-radius: var(--size-radius-default);
+    padding: var(--size-spacing-lg) 15px;
+    color: var(--color-status-critical);
+    text-align: center;
+}
+
+/* The large status glyph atop a result confirmation box. */
+.srv-result-icon {
+    font-size: 32px;
+    margin-bottom: 10px;
+}
+
 /* Centered no-data placeholder text. */
 .srv-no-data {
     color: var(--color-text-muted);
