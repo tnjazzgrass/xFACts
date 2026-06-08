@@ -1457,11 +1457,53 @@ function Parse-SystemHealthEvent {
         Parses a system_health XE event XML into a hashtable of values.
         Handles all event types: security_error, connectivity, wait_info, 
         scheduler_monitor, sp_server_diagnostics, xml_deadlock_report, etc.
+
+    .DESCRIPTION
+        DENY-LIST FILTERING
+        -------------------
+        Several built-in system_health event types are high-volume noise that
+        carry no actionable signal for us, and they dominate the collected row
+        count (together ~91% of all stored rows). They are dropped here by
+        returning $null BEFORE parsing/inserting, so they are never persisted.
+        The built-in system_health XE session itself is NOT modified - we simply
+        choose not to store these event types.
+
+        Denied (noise):
+          - security_error_ring_buffer_recorded
+                Internal permission/security checks; error_code is 0 (no real
+                error). Highest-volume noise. No diagnostic value.
+          - connectivity_ring_buffer_recorded
+                Dominated by routine connection churn (app pool / JDBC
+                reconnects). Real network/AG issues surface via the AG DMVs,
+                sp_server_diagnostics, and error_reported instead.
+          - scheduler_monitor_system_health_ring_buffer_recorded
+                Routine periodic health snapshot. NOTE: the genuinely useful
+                scheduler signal is the SEPARATE event
+                scheduler_monitor_non_yielding_ring_buffer_recorded, which is
+                NOT denied and continues to be collected.
+
+        Kept (valuable): sp_server_diagnostics_component_result,
+        scheduler_monitor_non_yielding_ring_buffer_recorded, xml_deadlock_report,
+        error_reported, memory_broker_ring_buffer_recorded, wait_info,
+        wait_info_external, clr_virtual_alloc_failure, and any unrecognized type.
+
+        To adjust the filter, edit $deniedSystemHealthEvents below. This is a
+        hardcoded deny-list by design (no new config dependency).
     #>
     param([string]$EventXml)
     
     # Early extraction of event name for skip logic
     $eventName = if ($EventXml -match 'event name="([^"]+)"') { $matches[1] } else { "unknown" }
+
+    # Deny-list: high-volume system_health noise we do not persist.
+    $deniedSystemHealthEvents = @(
+        'security_error_ring_buffer_recorded',
+        'connectivity_ring_buffer_recorded',
+        'scheduler_monitor_system_health_ring_buffer_recorded'
+    )
+    if ($deniedSystemHealthEvents -contains $eventName) {
+        return $null
+    }
     
     # Skip QUERY_PROCESSING diagnostic events - XML is too large to parse reliably
     if ($eventName -eq 'sp_server_diagnostics_component_result' -and $EventXml -match 'QUERY_PROCESSING') {
@@ -1502,50 +1544,6 @@ function Parse-SystemHealthEvent {
         
         # Parse based on event type
         switch ($event.name) {
-            "security_error_ring_buffer_recorded" {
-                foreach ($data in $event.data) {
-                    $valueNode = $data.SelectSingleNode("value")
-                    $textValue = if ($valueNode) { $valueNode.InnerText } else { $null }
-                    
-                    switch ($data.name) {
-                        "session_id" { 
-                            if ($textValue) { $parsed.session_id = [int]$textValue }
-                        }
-                        "error_code" { 
-                            if ($textValue) { $parsed.error_code = [int]$textValue }
-                        }
-                        "calling_api_name" { 
-                            $parsed.calling_api_name = $textValue 
-                        }
-                    }
-                }
-            }
-            
-            "connectivity_ring_buffer_recorded" {
-                foreach ($data in $event.data) {
-                    $valueNode = $data.SelectSingleNode("value")
-                    $textValue = if ($valueNode) { $valueNode.InnerText } else { $null }
-                    
-                    switch ($data.name) {
-                        "error_code" { 
-                            if ($textValue) { $parsed.error_code = [int]$textValue }
-                        }
-                        "os_error" { 
-                            if ($textValue) { $parsed.os_error = [int]$textValue }
-                        }
-                        "client_hostname" { 
-                            $parsed.client_hostname = $textValue 
-                        }
-                        "client_app_name" { 
-                            $parsed.client_app_name = $textValue 
-                        }
-                        "total_login_time_ms" { 
-                            if ($textValue) { $parsed.login_time_ms = [int]$textValue }
-                        }
-                    }
-                }
-            }
-            
             { $_ -in "wait_info", "wait_info_external" } {
                 foreach ($data in $event.data) {
                     $valueNode = $data.SelectSingleNode("value")
@@ -1568,10 +1566,6 @@ function Parse-SystemHealthEvent {
                         }
                     }
                 }
-            }
-            
-            "scheduler_monitor_system_health_ring_buffer_recorded" {
-                # Complex nested data - just capture event type, raw XML has details
             }
             
             "sp_server_diagnostics_component_result" {
