@@ -59,8 +59,6 @@
    ============================================================================ #>
 
 Add-PodeRoute -Method Get -Path '/server-health' -Authentication 'ADLogin' -ScriptBlock {
-    Import-Module -Name "E:\xFACts-ControlCenter\scripts\modules\xFACts-CCShared.psm1" -Force -DisableNameChecking
-
     $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/server-health'
     if (-not $access.HasAccess) {
         Write-PodeHtmlResponse -Value (Get-AccessDeniedHtml -DisplayName $access.DisplayName -PageRoute '/server-health') -StatusCode 403
