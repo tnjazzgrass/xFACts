@@ -4224,8 +4224,8 @@ function Test-OverlayConstructStructure {
         $cursor++
     }
 
-    # Must have 2 or 3 children: header, body, (optional actions).
-    if ($dialogSubChildren.Count -lt 2 -or $dialogSubChildren.Count -gt 3) { return $false }
+    # Children: header, optional subheader, body, optional actions (2 to 4).
+    if ($dialogSubChildren.Count -lt 2 -or $dialogSubChildren.Count -gt 4) { return $false }
 
     # Helper to extract first class token of a child element.
     $childClassFirstToken = {
@@ -4240,18 +4240,33 @@ function Test-OverlayConstructStructure {
         return $tokens[0]
     }
 
-    $headerIdx  = $dialogSubChildren[0]
-    $bodyIdx    = $dialogSubChildren[1]
-    $actionsIdx = if ($dialogSubChildren.Count -ge 3) { $dialogSubChildren[2] } else { -1 }
+    # Forward-cursor sequence walk: header, optional subheader, body,
+    # optional actions, in order. One boolean branch per optional slot.
+    $seqPos = 0
+    $headerIdx = $dialogSubChildren[$seqPos]
+    if ((& $childClassFirstToken $headerIdx) -ne 'cc-dialog-header') { return $false }
+    $seqPos++
 
-    $headerClass = & $childClassFirstToken $headerIdx
-    $bodyClass   = & $childClassFirstToken $bodyIdx
-    if ($headerClass -ne 'cc-dialog-header') { return $false }
-    if ($bodyClass   -ne 'cc-dialog-body')   { return $false }
-    if ($actionsIdx -ge 0) {
-        $actionsClass = & $childClassFirstToken $actionsIdx
-        if ($actionsClass -ne 'cc-dialog-actions') { return $false }
+    # Optional subheader.
+    if ($seqPos -lt $dialogSubChildren.Count -and
+        (& $childClassFirstToken $dialogSubChildren[$seqPos]) -eq 'cc-dialog-subheader') {
+        $seqPos++
     }
+
+    # Body (required).
+    if ($seqPos -ge $dialogSubChildren.Count) { return $false }
+    $bodyIdx = $dialogSubChildren[$seqPos]
+    if ((& $childClassFirstToken $bodyIdx) -ne 'cc-dialog-body') { return $false }
+    $seqPos++
+
+    # Optional actions footer.
+    if ($seqPos -lt $dialogSubChildren.Count) {
+        if ((& $childClassFirstToken $dialogSubChildren[$seqPos]) -ne 'cc-dialog-actions') { return $false }
+        $seqPos++
+    }
+
+    # No trailing unexpected children.
+    if ($seqPos -ne $dialogSubChildren.Count) { return $false }
 
     # Header must contain exactly one .cc-dialog-title and one .cc-dialog-close.
     $headerCloseIdx = Find-MatchingClose -Tokens $Tokens -StartTagIdx $headerIdx
@@ -4360,12 +4375,16 @@ function Test-DockConstructStructure {
         return $tokens[0]
     }
 
-    # Exactly two children: header then body. No actions footer.
-    if ($children.Count -ne 2) { return $false }
+    # Children: header, optional subheader, body. No actions footer (2 or 3).
+    if ($children.Count -lt 2 -or $children.Count -gt 3) { return $false }
     $headerClass = & $childClassFirstToken $children[0]
-    $bodyClass   = & $childClassFirstToken $children[1]
+    $bodyClass   = & $childClassFirstToken $children[$children.Count - 1]
     if ($headerClass -ne 'cc-dialog-header') { return $false }
     if ($bodyClass   -ne 'cc-dialog-body')   { return $false }
+    if ($children.Count -eq 3) {
+        $subClass = & $childClassFirstToken $children[1]
+        if ($subClass -ne 'cc-dialog-subheader') { return $false }
+    }
 
     # Header must contain exactly one .cc-dialog-back then one .cc-dialog-title.
     $headerIdx = $children[0]
