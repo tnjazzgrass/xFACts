@@ -74,8 +74,6 @@
    ============================================================================ #>
 
 Add-PodeRoute -Method Get -Path '/jboss-monitoring' -Authentication 'ADLogin' -ScriptBlock {
-    Import-Module -Name 'E:\xFACts-ControlCenter\scripts\modules\xFACts-CCShared.psm1' -Force -DisableNameChecking
-
     $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/jboss-monitoring'
     if (-not $access.HasAccess) {
         Write-PodeHtmlResponse -Value (Get-AccessDeniedHtml -DisplayName $access.DisplayName -PageRoute '/jboss-monitoring') -StatusCode 403
