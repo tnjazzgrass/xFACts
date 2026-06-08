@@ -57,8 +57,6 @@
    ============================================================================ #>
 
 Add-PodeRoute -Method Get -Path '/departmental/business-services' -Authentication 'ADLogin' -ScriptBlock {
-    Import-Module -Name 'E:\xFACts-ControlCenter\scripts\modules\xFACts-CCShared.psm1' -Force -DisableNameChecking
-
     $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/departmental/business-services'
     if (-not $access.HasAccess) {
         Write-PodeHtmlResponse -Value (Get-AccessDeniedHtml -DisplayName $access.DisplayName -PageRoute '/departmental/business-services') -StatusCode 403
