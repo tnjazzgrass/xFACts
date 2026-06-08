@@ -2,9 +2,9 @@
 # xFACts Control Center
 # Version: Tracked in dbo.System_Metadata (component: ControlCenter.Shared)
 # Location: E:\xFACts-ControlCenter\scripts\Start-ControlCenter.ps1
-# 
+#
 # Main entry point for the xFACts Control Center web interface.
-# Loads helper module, configures AD authentication with RBAC audit logging,
+# Loads shared module, configures AD authentication with RBAC audit logging,
 # initializes API caching, and starts the Pode server.
 #
 # Usage:
@@ -20,7 +20,7 @@
 #   +-- scripts\
 #   |   +-- Start-ControlCenter.ps1        # This file - main entry point
 #   |   +-- modules\
-#   |   |   +-- xFACts-Helpers.psm1        # Shared helper module (DB, RBAC, cache, CRS5)
+#   |   |   +-- xFACts-CCShared.psm1       # Shared module (DB, RBAC, cache, CRS5, chrome)
 #   |   +-- routes\
 #   |       +-- Home.ps1                   # / route (navigation hub)
 #   |       +-- {Feature}.ps1              # Page routes (one per feature)
@@ -33,7 +33,7 @@
 #
 # Authentication:
 #   - Windows AD authentication via form login (fac.local)
-#   - RBAC via xFACts-Helpers.psm1 (roles resolved from AD groups)
+#   - RBAC via xFACts-CCShared.psm1 (roles resolved from AD groups)
 #   - User info available in routes via $WebEvent.Auth.User
 #   - Failed login surfaces an error banner and preserves the attempted
 #     username so users only need to re-type the password
@@ -59,13 +59,13 @@ $script:Config = @{
 # START PODE SERVER
 # ============================================================================
 Start-PodeServer {
-    
+
     # ------------------------------------------
     # Server Configuration
     # ------------------------------------------
     Add-PodeEndpoint -Address $script:Config.Address -Port $script:Config.Port -Protocol Http
     Add-PodeEndpoint -Address $script:Config.Address -Port $script:Config.Port -Protocol Ws
-    
+
     # ------------------------------------------
     # Static File Serving
     # ------------------------------------------
@@ -73,31 +73,31 @@ Start-PodeServer {
     Add-PodeStaticRoute -Path '/js' -Source (Join-Path $script:Config.PublicRoot 'js')
     Add-PodeStaticRoute -Path '/images' -Source (Join-Path $script:Config.PublicRoot 'images')
     Add-PodeStaticRoute -Path '/docs' -Source (Join-Path $script:Config.PublicRoot 'docs')
-    
+
     # ------------------------------------------
     # Pode File Logging
     # ------------------------------------------
     New-PodeLoggingMethod -File -Name 'requests' -Path $script:Config.LogPath | Enable-PodeRequestLogging
     New-PodeLoggingMethod -File -Name 'errors' -Path $script:Config.LogPath | Enable-PodeErrorLogging
-    
+
     # ------------------------------------------
     # Session Middleware (required for auth)
     # ------------------------------------------
     Enable-PodeSessionMiddleware -Duration 3600 -Extend  # 1 hour session, extends on activity
 
     # ------------------------------------------
-    # Load Helper Module (available to all runspaces)
+    # Load Shared Module (available to all runspaces)
     # Must load BEFORE auth setup and middleware so
     # Invoke-XFActsQuery and Write-RBACAuditLog are
     # available in scriptblocks.
     # ------------------------------------------
-    $modulePath = Join-Path $script:Config.ScriptRoot "modules\xFACts-Helpers.psm1"
+    $modulePath = Join-Path $script:Config.ScriptRoot "modules\xFACts-CCShared.psm1"
     if (Test-Path $modulePath) {
         Import-Module -Name $modulePath -Force -DisableNameChecking
-        Write-Host "  Loaded module: xFACts-Helpers.psm1" -ForegroundColor DarkGray
+        Write-Host "  Loaded module: xFACts-CCShared.psm1" -ForegroundColor DarkGray
     } else {
-        Write-Host "  FATAL: xFACts-Helpers.psm1 not found at $modulePath" -ForegroundColor Red
-        throw "Required module xFACts-Helpers.psm1 not found. Cannot start."
+        Write-Host "  FATAL: xFACts-CCShared.psm1 not found at $modulePath" -ForegroundColor Red
+        throw "Required module xFACts-CCShared.psm1 not found. Cannot start."
     }
 
     # ------------------------------------------
@@ -113,24 +113,24 @@ Start-PodeServer {
         -FailureUrl '/login' -SuccessUrl '/' `
         -ScriptBlock {
             param($user)
-            
+
             try {
                 $username = $user.Username
                 if ($username -and $username.Contains('\')) {
                     $username = $username.Split('\')[1]
                 }
-                
+
                 $groupsStr = if ($user.Groups) { ($user.Groups -join ', ') } else { $null }
                 if ($groupsStr -and $groupsStr.Length -gt 2000) {
                     $groupsStr = $groupsStr.Substring(0, 1997) + '...'
                 }
-                
+
                 $clientIp = $WebEvent.Request.RemoteEndPoint.Address.ToString()
-                
+
                 Invoke-XFActsQuery -Query @"
-                    INSERT INTO dbo.RBAC_AuditLog 
+                    INSERT INTO dbo.RBAC_AuditLog
                         (event_type, username, ad_groups, result, detail, client_ip)
-                    VALUES 
+                    VALUES
                         (@eventType, @username, @adGroups, @result, @detail, @clientIp)
 "@ -Parameters @{
                     eventType = 'LOGIN_SUCCESS'
@@ -144,11 +144,11 @@ Start-PodeServer {
             catch {
                 # Login logging must never prevent access
             }
-            
+
             # Pass the user through - required for Pode to complete authentication
             return @{ User = $user }
         }
-    
+
     # ------------------------------------------
     # API Request Logging Middleware
     # Captures request start time for duration calculation.
@@ -157,7 +157,7 @@ Start-PodeServer {
         $WebEvent.Metadata['RequestStart'] = Get-Date
         return $true
     }
-    
+
     # ------------------------------------------
     # Request Logging Endware
     # Logs all non-static requests to dbo.API_RequestLog.
@@ -182,23 +182,23 @@ Start-PodeServer {
             $clientIp = $WebEvent.Request.RemoteEndPoint.Address.ToString()
             $userAgent = $WebEvent.Request.Headers['User-Agent']
             $statusCode = $WebEvent.Response.StatusCode
-            
+
             $responseBytes = $null
             if ($WebEvent.Response.ContentLength64 -gt 0) {
                 $responseBytes = $WebEvent.Response.ContentLength64
             }
-            
+
             if ($userAgent -and $userAgent.Length -gt 500) {
                 $userAgent = $userAgent.Substring(0, 500)
             }
-            
-            # Log to API_RequestLog via helper module (AG-safe connection)
+
+            # Log to API_RequestLog via shared module (AG-safe connection)
             Invoke-XFActsQuery -Query @"
-                INSERT INTO dbo.API_RequestLog 
-                    (endpoint, http_method, user_name, client_ip, user_agent, 
+                INSERT INTO dbo.API_RequestLog
+                    (endpoint, http_method, user_name, client_ip, user_agent,
                      request_dttm, duration_ms, status_code, response_bytes, source_application)
-                VALUES 
-                    (@endpoint, @method, @userName, @clientIp, @userAgent, 
+                VALUES
+                    (@endpoint, @method, @userName, @clientIp, @userAgent,
                      @requestDttm, @durationMs, @statusCode, @responseBytes, @sourceApp)
 "@ -Parameters @{
                 endpoint    = $endpoint
@@ -212,22 +212,22 @@ Start-PodeServer {
                 responseBytes = $(if ($null -ne $responseBytes) { $responseBytes } else { [DBNull]::Value })
                 sourceApp   = 'ControlCenter'
             }
-            
+
             # Detect failed login attempts: POST to /auth/login with no authenticated user.
             # Log to RBAC_AuditLog and stash attempted username as a flash message so
             # the login page can prefill it on the next render. Flash messages are
             # one-shot: auto-cleared after being read.
             if ($endpoint -eq '/auth/login' -and $method -eq 'POST' -and -not $WebEvent.Auth.User) {
                 $attemptedUser = $WebEvent.Data.username
-                
+
                 if ($attemptedUser) {
                     Add-PodeFlashMessage -Name 'LoginFailure' -Message $attemptedUser
                 }
-                
+
                 Invoke-XFActsQuery -Query @"
-                    INSERT INTO dbo.RBAC_AuditLog 
+                    INSERT INTO dbo.RBAC_AuditLog
                         (event_type, username, result, detail, client_ip)
-                    VALUES 
+                    VALUES
                         (@eventType, @username, @result, @detail, @clientIp)
 "@ -Parameters @{
                     eventType = 'LOGIN_FAILURE'
@@ -242,7 +242,7 @@ Start-PodeServer {
             # Logging must never break requests
         }
     }
-    
+
     # ------------------------------------------
     # Login Page Route
     # On failed login, Pode redirects here. We check for a LoginFailure flash
@@ -256,20 +256,20 @@ Start-PodeServer {
             Move-PodeResponseUrl -Url '/'
             return
         }
-        
+
         # Read (and auto-clear) login failure flash message.
         # Get-PodeFlashMessage returns an array; we want the first value.
         $flashValues = @(Get-PodeFlashMessage -Name 'LoginFailure')
         $hasError = $flashValues.Count -gt 0
         $prefillUser = if ($hasError) { $flashValues[0] } else { '' }
-        
+
         # HTML-escape the prefill value to prevent injection
         $safeUser = if ($prefillUser) {
             [System.Net.WebUtility]::HtmlEncode($prefillUser)
         } else {
             ''
         }
-        
+
         # Error banner markup - rendered only on failed login
         $errorBanner = if ($hasError) {
             @'
@@ -280,12 +280,12 @@ Start-PodeServer {
         } else {
             ''
         }
-        
+
         # Autofocus: on error with a prefilled username, focus the password field.
         # Otherwise, focus the username field.
         $usernameAutofocus = if ($hasError -and $safeUser) { '' } else { ' autofocus' }
         $passwordAutofocus = if ($hasError -and $safeUser) { ' autofocus' } else { '' }
-        
+
         $html = @"
 <!DOCTYPE html>
 <html>
@@ -293,11 +293,11 @@ Start-PodeServer {
     <title>Login - xFACts Control Center</title>
     <style>
         * { box-sizing: border-box; }
-        body { 
-            font-family: 'Segoe UI', Arial, sans-serif; 
-            margin: 0; 
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            margin: 0;
             padding: 0;
-            background: #1e1e1e; 
+            background: #1e1e1e;
             color: #d4d4d4;
             display: flex;
             justify-content: center;
@@ -408,21 +408,21 @@ $errorBanner
 "@
         Write-PodeHtmlResponse -Value $html
     }
-    
+
     # Login POST handler - uses the auth scheme's FailureUrl/SuccessUrl
     Add-PodeRoute -Method Post -Path '/auth/login' -Authentication 'ADLogin' -Login
-    
+
     # Logout route
     Add-PodeRoute -Method Post -Path '/logout' -Authentication 'ADLogin' -Logout -ScriptBlock {
         Move-PodeResponseUrl -Url '/login'
     }
-    
+
     # Logout via GET (for convenience)
     Add-PodeRoute -Method Get -Path '/logout' -ScriptBlock {
         Remove-PodeSession
         Move-PodeResponseUrl -Url '/login'
     }
-    
+
     Write-Host "xFACts Control Center starting on port $($script:Config.Port)..." -ForegroundColor Cyan
     Write-Host "  Authentication: Windows AD ($($script:Config.ADDomain))" -ForegroundColor DarkGray
 
@@ -435,11 +435,11 @@ $errorBanner
     New-PodeLockable -Name 'ApiCache'
     Set-PodeState -Name 'ApiCache' -Value @{}
     Set-PodeState -Name 'ApiCacheConfig' -Value @{}
-    
+
     # Load initial cache TTL configuration from GlobalConfig
     Initialize-ApiCacheConfig
     Write-Host "  API cache initialized" -ForegroundColor DarkGray
-    
+
     # Refresh cache TTL configuration from GlobalConfig every 5 minutes
     Add-PodeTimer -Name 'RefreshApiCacheConfig' -Interval 300 -ScriptBlock {
         Initialize-ApiCacheConfig
@@ -602,10 +602,10 @@ $errorBanner
 
             $settingName = "refresh_${page}_seconds"
             $result = Invoke-XFActsQuery -Query @"
-                SELECT setting_value 
-                FROM dbo.GlobalConfig 
-                WHERE module_name = 'ControlCenter' 
-                  AND setting_name = @settingName 
+                SELECT setting_value
+                FROM dbo.GlobalConfig
+                WHERE module_name = 'ControlCenter'
+                  AND setting_name = @settingName
                   AND is_active = 1
 "@ -Parameters @{ settingName = $settingName }
 
@@ -633,6 +633,6 @@ $errorBanner
             . $_.FullName
         }
     }
- 
+
     Write-Host "Startup complete." -ForegroundColor Green
 }
