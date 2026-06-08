@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-06-07 13:38:49
+Generated: 2026-06-08 04:21:42
 
 ## Module Registry
 
@@ -97,13 +97,10 @@ Generated: 2026-06-07 13:38:49
 | ControlCenter.Platform | PlatformMonitoring.ps1 | WebAsset | Route | E:\xFACts-ControlCenter\scripts\routes\PlatformMonitoring.ps1 | Platform Monitoring CC page route |
 | ControlCenter.Shared | server.psd1 | PowerShell | Config | E:\xFACts-ControlCenter\scripts\server.psd1 | Pode server configuration. Sets request timeout to 180 seconds for long-running API operations (e.g., DM App Server firewall commit). |
 | ControlCenter.Shared | xFACts-CCShared.psm1 | PowerShell | Module | E:\xFACts-ControlCenter\scripts\modules\xFACts-CCShared.psm1 | Shared helper functions module for all CC pages |
-| ControlCenter.Shared | xFACts-Helpers.psm1 | PowerShell | Module | E:\xFACts-ControlCenter\scripts\modules\xFACts-Helpers.psm1 | Shared helper functions module for all CC pages |
 | ControlCenter.Shared | Start-ControlCenter.ps1 | PowerShell | Script | E:\xFACts-ControlCenter\scripts\Start-ControlCenter.ps1 | Control Center Pode server entry point |
 | ControlCenter.Shared | engine-events-API.ps1 | WebAsset | API | E:\xFACts-ControlCenter\scripts\routes\engine-events-API.ps1 | Shared API Endpoints |
 | ControlCenter.Shared | cc-shared.css | WebAsset | CSS | E:\xFACts-ControlCenter\public\css\cc-shared.css | Shared styles and classes |
-| ControlCenter.Shared | engine-events.css | WebAsset | CSS | E:\xFACts-ControlCenter\public\css\engine-events.css | Shared styles and classes |
 | ControlCenter.Shared | cc-shared.js | WebAsset | JavaScript | E:\xFACts-ControlCenter\public\js\cc-shared.js | Shared JavaScript functions |
-| ControlCenter.Shared | engine-events.js | WebAsset | JavaScript | E:\xFACts-ControlCenter\public\js\engine-events.js | Shared JavaScript functions |
 | DeptOps.ApplicationsIntegration | ApplicationsIntegration-API.ps1 | WebAsset | API | E:\xFACts-ControlCenter\scripts\routes\ApplicationsIntegration-API.ps1 | Applications & Integration CC API endpoints — BDL catalog management |
 | DeptOps.ApplicationsIntegration | applications-integration.css | WebAsset | CSS | E:\xFACts-ControlCenter\public\css\applications-integration.css | Applications & Integration CC styles |
 | DeptOps.ApplicationsIntegration | applications-integration.js | WebAsset | JavaScript | E:\xFACts-ControlCenter\public\js\applications-integration.js | Applications & Integration CC client-side logic — BDL catalog management panels |
@@ -604,7 +601,7 @@ Generated: 2026-06-07 13:38:49
 | ServerOps | Activity_XE | aghealth_alert_state_change_routing | 1 | ALERT_MODE | Alert destination(s) for AG state changes |
 | ServerOps | Activity_XE | aghealth_retain_raw_xml | 1 | BIT | Keep raw XML data for AG health events |
 | ServerOps | Activity_XE | blocked_process_retain_raw_xml | 1 | BIT | Keep raw XML data for blocked process events |
-| ServerOps | Activity_XE | xe_alerting_enabled | 0 | BIT | Master on/off switch for all XE-based alerting |
+| ServerOps | Activity_XE | xe_alerting_enabled | 1 | BIT | Master on/off switch for all XE-based alerting |
 | ServerOps | Backup | alert_threshold_aws_pending_min | 30 | INT | Minutes before a pending AWS upload triggers an alert |
 | ServerOps | Backup | alert_threshold_network_pending_min | 30 | INT | Minutes before a pending network copy triggers an alert |
 | ServerOps | Backup | aws_bucket_name | faitdbredgate | VARCHAR | AWS S3 bucket name for backup uploads |
