@@ -39,8 +39,9 @@
    The shared building blocks every page consumes: custom property tokens
    declared once in :root and referenced everywhere via var(...), CSS reset
    rules that establish the dark-theme baseline, browser scrollbar styling,
-   all @keyframes definitions used anywhere in this file, and the small set
-   of animation utility classes pages can apply directly.
+   all @keyframes definitions consumed anywhere on the platform (page-specific
+   keyframes live here too and are tagged with a Page: notation), and the
+   small set of animation utility classes pages can apply directly.
    Prefix: cc
    ============================================================================ */
 
@@ -149,7 +150,7 @@
     --size-modal-width-default: 460px;
     --size-modal-width-medium:  600px;
     --size-modal-width-wide:    800px;
-	
+
     /* -- Size tokens: slide-up panel left edge -- */
     --size-slideup-left:          20px;
 
@@ -201,7 +202,7 @@
     --z-nav:                    1000;
     --z-panel-overlay:          1000;
     --z-panel:                  1001;
-    --z-dock:                   1002;	
+    --z-dock:                   1002;
     --z-modal-overlay:          1300;
     --z-engine-popup:           9999;
     --z-idle-overlay:           10000;
@@ -282,6 +283,60 @@ a { color: var(--color-text-link); }
 @keyframes fadeIn {
     from { opacity: 0; transform: translateY(8px); }
     to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Pulses the breaker plate glow to warn that drain is engaged while the service still runs. Page: Admin. */
+@keyframes adm-breaker-flash {
+    0%, 100% { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), inset 0 -1px 0 rgba(0, 0, 0, 0.3), 0 6px 18px rgba(0, 0, 0, 0.4); }
+    50% { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), inset 0 -1px 0 rgba(0, 0, 0, 0.3), 0 0 20px rgba(220, 220, 170, 0.35), 0 6px 18px rgba(0, 0, 0, 0.4); }
+}
+
+/* Flings a spark particle outward from the breaker and fades it out. Page: Admin. */
+@keyframes adm-spark-fly {
+    0% { opacity: 1; transform: translate(0, 0) scale(1); }
+    100% { opacity: 0; transform: translate(var(--tx), var(--ty)) scale(0); }
+}
+
+/* Pulses opacity to draw attention to a red (offline) status indicator. Page: Admin. */
+@keyframes adm-pulse-red {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+/* Pulses opacity to draw attention to a yellow (caution) status indicator. Page: Admin. */
+@keyframes adm-pulse-yellow {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+/* Pulses the box-shadow of a pending (yellow) badge. Page: Admin. */
+@keyframes adm-badge-pulse-yellow {
+    0%, 100% { box-shadow: 0 0 4px rgba(220, 220, 170, 0.2); }
+    50% { box-shadow: 0 0 10px rgba(220, 220, 170, 0.4); }
+}
+
+/* Pulses the border of a running (blue) lane badge. Page: Admin. */
+@keyframes adm-badge-pulse-blue {
+    0%, 100% { border-color: rgba(86, 156, 214, 0.25); }
+    50% { border-color: rgba(86, 156, 214, 0.5); box-shadow: 0 0 6px rgba(86, 156, 214, 0.15); }
+}
+
+/* Pulses the border of a failed (red) lane badge. Page: Admin. */
+@keyframes adm-badge-pulse-red {
+    0%, 100% { border-color: rgba(239, 68, 68, 0.25); }
+    50% { border-color: rgba(239, 68, 68, 0.5); box-shadow: 0 0 6px rgba(239, 68, 68, 0.15); }
+}
+
+/* Pulses opacity of a red status pip. Page: Admin. */
+@keyframes adm-pip-pulse-red {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+/* Pulses opacity of a yellow status pip. Page: Admin. */
+@keyframes adm-pip-pulse-yellow {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
 }
 
 /* Animation utility class: continuous spin (used inline by gear icons). */
@@ -1452,7 +1507,7 @@ a { color: var(--color-text-link); }
     display: flex;
     align-items: center;
     gap: var(--size-spacing-lg);
-    margin-right: var(--size-spacing-lg);	
+    margin-right: var(--size-spacing-lg);
 }
 
 /* Dialog close button (the X glyph in the header). */
