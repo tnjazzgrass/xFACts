@@ -203,7 +203,7 @@ Tokens follow the form `--<category>-<role>-<modifier>`, where:
 
 - Tokens are defined once, in the component's shell file FOUNDATION section. Page files do not redeclare or override tokens locally.
 - A value used in two or more places in the codebase is a token. Single-use values may remain literals.
-- Pages reference tokens via `var(--token-name)` only. Hex literals or pixel literals where a token exists are drift.
+- Pages reference tokens via `var(--token-name)` only. A hex or pixel literal is drift only when a token of matching value and matching purpose exists; a value that matches a token of unrelated purpose is not drift.
 - Exactly one `:root` block per file. Multiple `:root` blocks are drift.
 - The `:root` block is preceded by a purpose comment in the form `/* One-sentence purpose. */`.
 - Sub-section markers are permitted inside `:root` as group labels.
@@ -263,8 +263,8 @@ Rules that apply to the file as a whole.
 | `@supports` | — |
 | `@keyframes` outside the shell file FOUNDATION | — |
 | Custom property defined outside the shell file FOUNDATION | — |
-| Hex literal where a token exists | Use `var(--token-name)`. |
-| Pixel literal where a size token exists | Same. |
+| Hex literal where a token of matching value and purpose exists | Use `var(--token-name)`. |
+| Pixel literal where a size token of matching value and purpose exists | Same. |
 | CHANGELOG block in file header | Change history lives in git. |
 | Two or more declarations on the same line | One declaration per line. |
 | Blank line inside a class definition | Permitted only inside `:root` (§10.2). |
@@ -327,8 +327,8 @@ The populator emits a drift code on every spec violation. Each code maps to a si
 | `FORBIDDEN_AT_SUPPORTS` | File contains `@supports`. | §14 |
 | `FORBIDDEN_KEYFRAMES_LOCATION` | `@keyframes` appears outside the shell file FOUNDATION. | §11, §14 |
 | `FORBIDDEN_CUSTOM_PROPERTY_LOCATION` | Custom property definition appears outside the shell file FOUNDATION. | §10.2, §14 |
-| `DRIFT_HEX_LITERAL` | Hex color literal where a token exists. | §10.2, §14 |
-| `DRIFT_PX_LITERAL` | Pixel literal where a size token exists. | §10.2, §14 |
+| `DRIFT_HEX_LITERAL` | Hex color literal where a color token of matching value and purpose exists. | §10.2, §14 |
+| `DRIFT_PX_LITERAL` | Pixel literal where a size token of matching value and purpose exists. | §10.2, §14 |
 | `FORBIDDEN_COMPOUND_DECLARATION` | Two or more declarations on the same line. | §14 |
 | `BLANK_LINE_INSIDE_RULE` | Blank line inside a class definition outside `:root`. | §10.2, §14 |
 | `EXCESS_BLANK_LINES` | More than one blank line between top-level constructs. | §13.1, §14 |
