@@ -51,6 +51,26 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-06-08  Literal inventory and purpose-aware literal drift. Every color
+#             (hex, rgb/rgba, hsl/hsla) and dimensional size (px, rem, em, vh,
+#             vw, %) literal in a non-:root declaration now emits a CSS_LITERAL
+#             row (reference_type LITERAL; component_name = the literal,
+#             variant_type = family color/size/font-size, variant_qualifier_1 =
+#             the property). Tier-1 drift (DRIFT_HEX/PX_LITERAL) attaches only
+#             when a shared token of matching value and purpose exists;
+#             token-less literals are non-drift inventory rows. Color purpose is
+#             matched by sub-family: property-specific tokens (--color-bg-*,
+#             --color-border-*, --color-text-*) match only same-purpose literals,
+#             while role/state tokens (--color-accent/status/tint/glow/banner/
+#             button-*) match a literal of any color property. Literals are
+#             cataloged per occurrence directly from the declaration node during
+#             the walk, replacing the former Pass-3 line-key lookup (which
+#             missed literals in multi-line rules). Shared-variable map enriched
+#             to carry each token's value and family alongside its defining file;
+#             the USAGE resolver reads .SourceFile. Added Get-PropertyTokenFamily,
+#             Get-TokenNameFamily, Test-LiteralTokenFamilyMatch, ConvertTo-ColorKey,
+#             Get-LiteralsInDeclaration, and Add-CssLiteralRow; removed
+#             Get-HexLiterals/Get-PxLiterals and the Pass-3 literal blocks.
 # 2026-05-31  Renamed drift code ANCHOR_SECTION_INVALID_PREFIX to
 #             SHELL_SECTION_INVALID_PREFIX and changed "anchor file" wording to
 #             "shell file" throughout, matching CC_CSS_Spec.md. "Anchor" is now
@@ -246,8 +266,8 @@ $DriftDescriptions = [ordered]@{
     'FORBIDDEN_KEYFRAMES_LOCATION'      = "An @keyframes definition appears in a section other than FOUNDATION (or in a file with no FOUNDATION)."
     'FORBIDDEN_CUSTOM_PROPERTY_LOCATION'= "A custom property definition appears in a section other than FOUNDATION."
     # Drift annotations
-    'DRIFT_HEX_LITERAL'                 = "A hex color literal appears in a class declaration's value where a custom property has been defined for that color."
-    'DRIFT_PX_LITERAL'                  = "A pixel literal appears in a class declaration's value where a size token has been defined for that size."
+    'DRIFT_HEX_LITERAL'                 = "A hex or functional color literal appears in a declaration's value where a color token of matching value and purpose exists. A color value matching a token of unrelated purpose is not drift."
+    'DRIFT_PX_LITERAL'                  = "A dimensional size literal appears in a declaration's value where a size token of matching value and purpose exists. A size value matching a token of unrelated purpose is not drift."
     # Comment / formatting / file-level
     'FORBIDDEN_COMMENT_STYLE'           = "A comment exists that is not one of the allowed kinds (file header, section banner, per-class purpose comment, trailing variant comment, sub-section marker)."
     'FORBIDDEN_COMPOUND_DECLARATION'    = "Two or more declarations appear on the same line. Each declaration must be on its own line."
@@ -392,7 +412,7 @@ $script:CssVisitor = {
             }
 
             # Process the rule's declarations (variables, var() refs, animation
-            # keyframe refs, hex/px literal tracking, blank-line / compound-
+            # keyframe refs, color/size literal capture, blank-line / compound-
             # declaration drift). We handle decls here rather than letting the
             # walker recurse, so we can apply rule-scoped checks like
             # BLANK_LINE_INSIDE_RULE.
@@ -447,31 +467,58 @@ $script:CssVisitor = {
                             }
                         }
 
-                        # Hex literal tracking (Pass 3 attaches DRIFT_HEX_LITERAL)
-                        $hexLiterals = Get-HexLiterals -Value $child.value
-                        if ($hexLiterals.Count -gt 0) {
-                            if (-not $script:fileMeta[$script:CurrentFile].HexLiterals) {
-                                $script:fileMeta[$script:CurrentFile].HexLiterals = New-Object System.Collections.Generic.List[object]
-                            }
-                            foreach ($hex in $hexLiterals) {
-                                $script:fileMeta[$script:CurrentFile].HexLiterals.Add(@{
-                                    Hex = $hex; Line = $dLine; Column = $dCol
-                                    Property = $child.prop; Value = $child.value
-                                })
-                            }
-                        }
+                        # Literal capture (CSS_LITERAL) with inline Tier-1 drift
+                        # decision. Every color/size literal in a non-:root
+                        # declaration is cataloged as one CSS_LITERAL row. A
+                        # literal is Tier-1 drift (DRIFT_HEX/PX_LITERAL) only
+                        # when a shared token of the SAME family carries the
+                        # SAME value; otherwise it is Tier-2 inventory (the row
+                        # carries no drift code). :root declarations are token
+                        # definitions, not page literals, and are skipped (they
+                        # are already cataloged as CSS_VARIABLE DEFINITION rows).
+                        # Handling the literal here, per occurrence, is what
+                        # makes single-line and multi-line rules behave
+                        # identically -- the row is emitted from the declaration
+                        # node directly, not reconstructed in a later pass.
+                        if (-not $selectorIsRoot) {
+                            $literals = Get-LiteralsInDeclaration -Property $child.prop -Value $child.value
+                            if ($literals.Count -gt 0) {
+                                $varMapForTier1 = Get-ZoneSharedVariableMap
+                                foreach ($lit in $literals) {
+                                    # The literal's Family carries a color sub-family
+                                    # (color-bg/border/text/fill) used for matching; the
+                                    # row records the coarse family (color/size/font-size)
+                                    # so the catalog's family dimension stays stable.
+                                    $isColor      = $lit.Family.StartsWith('color')
+                                    $coarseFamily = if ($isColor) { 'color' } else { $lit.Family }
 
-                        # Px literal tracking (Pass 3 attaches DRIFT_PX_LITERAL)
-                        $pxLiterals = Get-PxLiterals -Value $child.value
-                        if ($pxLiterals.Count -gt 0) {
-                            if (-not $script:fileMeta[$script:CurrentFile].PxLiterals) {
-                                $script:fileMeta[$script:CurrentFile].PxLiterals = New-Object System.Collections.Generic.List[object]
-                            }
-                            foreach ($px in $pxLiterals) {
-                                $script:fileMeta[$script:CurrentFile].PxLiterals.Add(@{
-                                    Px = $px; Line = $dLine; Column = $dCol
-                                    Property = $child.prop; Value = $child.value
-                                })
+                                    $litRow = Add-CssLiteralRow `
+                                        -LiteralText    $lit.Text `
+                                        -Family         $coarseFamily `
+                                        -Property       $lit.Property `
+                                        -OwningSelector $Node.selector `
+                                        -LineStart      $dLine -LineEnd $dLine -ColumnStart $dCol `
+                                        -RawText        "$($child.prop): $($child.value)"
+                                    if (-not $litRow) { continue }
+
+                                    # Tier-1 test: does a shared token of a matching
+                                    # family/purpose hold the same value? Color comparison
+                                    # is whitespace/case-normalized; size comparison is on
+                                    # the trimmed token. Color matching honors sub-family
+                                    # (role/state tokens match any color property).
+                                    $litKey   = if ($isColor) { ConvertTo-ColorKey -Literal $lit.Text } else { $lit.Text.Trim().ToLower() }
+                                    $matched  = $false
+                                    foreach ($tokEntry in $varMapForTier1.Values) {
+                                        if (-not (Test-LiteralTokenFamilyMatch -LiteralFamily $lit.Family -TokenFamily $tokEntry.Family)) { continue }
+                                        $tokVal = if ($null -ne $tokEntry.Value) { [string]$tokEntry.Value } else { '' }
+                                        $tokKey = if ($isColor) { ConvertTo-ColorKey -Literal $tokVal } else { $tokVal.Trim().ToLower() }
+                                        if ($tokKey -eq $litKey) { $matched = $true; break }
+                                    }
+                                    if ($matched) {
+                                        $code = if ($isColor) { 'DRIFT_HEX_LITERAL' } else { 'DRIFT_PX_LITERAL' }
+                                        Add-DriftCode -Row $litRow -Code $code
+                                    }
+                                }
                             }
                         }
                     }
@@ -791,21 +838,154 @@ function Get-VarReferences {
     return @($matchSet | ForEach-Object { $_.Groups[1].Value })
 }
 
-# Find every hex color literal in a property value (#abc, #abcdef, #aabbccdd).
-function Get-HexLiterals {
-    param([string]$Value)
-    if ($null -eq $Value) { return @() }
-    $matchSet = [regex]::Matches($Value, '#[0-9a-fA-F]{3,8}\b')
-    return @($matchSet | ForEach-Object { $_.Value })
+# Classify a declaration property into the token family whose tokens it may
+# legitimately consume, or $null when the property is not tokenizable. The
+# family is the purpose dimension of literal drift: a literal is Tier-1 drift
+# only when a token of the SAME family carries the same value. Three families
+# are recognized, matching the token-name categories defined once in the shell
+# FOUNDATION :root (color -> --color-*, font-size -> --font-size-*, size ->
+# --size-*). Properties not in any family return $null and their literals are
+# not cataloged (bare unitless numbers like line-height / font-weight / z-index
+# / flex are excluded here, as are gradient / shadow / font-family values).
+function Get-PropertyTokenFamily {
+    param([string]$Property)
+    if ([string]::IsNullOrWhiteSpace($Property)) { return $null }
+    $p = $Property.Trim().ToLower()
+
+    # Color-family properties, classified into a color sub-family so a literal
+    # is matched only against tokens of the same color purpose (a background
+    # literal against background tokens, a border literal against border tokens,
+    # etc.). Role/state color tokens are exempt from this narrowing on the token
+    # side (see Get-TokenNameFamily). Returned values all begin 'color-'.
+    $bgProps     = @('background', 'background-color')
+    $borderProps = @('border-color', 'border-top-color', 'border-right-color',
+                     'border-bottom-color', 'border-left-color', 'outline-color')
+    $textProps   = @('color', 'caret-color', 'text-decoration-color', 'column-rule-color')
+    $fillProps   = @('fill', 'stroke')
+    if ($bgProps     -contains $p) { return 'color-bg' }
+    if ($borderProps -contains $p) { return 'color-border' }
+    if ($textProps   -contains $p) { return 'color-text' }
+    if ($fillProps   -contains $p) { return 'color-fill' }
+
+    # The font-size property consumes --font-size-* tokens specifically, kept
+    # distinct from the spacing/layout size family so a font size never matches
+    # a spacing token of equal pixel value (and vice versa).
+    if ($p -eq 'font-size') { return 'font-size' }
+
+    # Size/dimension-family properties consume --size-* tokens.
+    $sizeProps = @(
+        'width', 'min-width', 'max-width', 'height', 'min-height', 'max-height',
+        'padding', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left',
+        'margin', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left',
+        'top', 'right', 'bottom', 'left', 'gap', 'row-gap', 'column-gap',
+        'border-radius', 'border-width', 'border-top-width', 'border-right-width',
+        'border-bottom-width', 'border-left-width', 'outline-width', 'outline-offset'
+    )
+    if ($sizeProps -contains $p) { return 'size' }
+
+    return $null
 }
 
-# Find every pixel literal in a property value (12px, 1.5px, etc.). Used by
-# Pass 3 DRIFT_PX_LITERAL detection, mirroring Get-HexLiterals.
-function Get-PxLiterals {
-    param([string]$Value)
+# Classify a token by its name into the same family vocabulary that
+# Get-PropertyTokenFamily produces for declaration properties, or $null when
+# the token belongs to a family with no literal-matching counterpart (font,
+# duration, shadow, gradient, z). Tier-1 matching compares a literal's family
+# (from the property) against a token's family (from this name classification).
+#
+# Color tokens split two ways by purpose, which the populator relies on and the
+# CC_CSS_Spec.md color-token naming rule guarantees:
+#   - Property-specific tokens (--color-bg-*, --color-border-*, --color-text-*)
+#     return a matching color sub-family and match only same-purpose literals.
+#   - Role/state tokens (--color-accent/status/tint/glow/banner/button-*) return
+#     the cross-property marker 'color-role' and match a literal of ANY color
+#     property, because such colors are used across properties by design.
+# The font-size prefix is tested before the bare color/size prefixes because
+# '--font-size-*' would otherwise be misread.
+function Get-TokenNameFamily {
+    param([string]$TokenName)
+    if ([string]::IsNullOrWhiteSpace($TokenName)) { return $null }
+    $n = $TokenName.Trim().ToLower()
+    if ($n -like 'font-size-*')  { return 'font-size' }
+    if ($n -like 'color-bg-*')     { return 'color-bg' }
+    if ($n -like 'color-border-*') { return 'color-border' }
+    if ($n -like 'color-text-*')   { return 'color-text' }
+    if ($n -like 'color-accent-*' -or $n -like 'color-status-*' -or
+        $n -like 'color-tint-*'   -or $n -like 'color-glow-*'   -or
+        $n -like 'color-banner-*' -or $n -like 'color-button-*') { return 'color-role' }
+    if ($n -like 'color-*')      { return 'color-role' }
+    if ($n -like 'size-*')       { return 'size' }
+    return $null
+}
+
+# Decide whether a literal of the given family matches a token of the given
+# family for Tier-1 drift. Non-color families require exact equality. Color
+# families match when the token is a cross-property role/state color
+# ('color-role') or when the literal and token share the same color sub-family.
+function Test-LiteralTokenFamilyMatch {
+    param([string]$LiteralFamily, [string]$TokenFamily)
+    if ([string]::IsNullOrWhiteSpace($LiteralFamily) -or [string]::IsNullOrWhiteSpace($TokenFamily)) { return $false }
+    $litIsColor = $LiteralFamily.StartsWith('color')
+    $tokIsColor = $TokenFamily.StartsWith('color')
+    if ($litIsColor -ne $tokIsColor) { return $false }
+    if (-not $litIsColor) { return ($LiteralFamily -eq $TokenFamily) }
+    if ($TokenFamily -eq 'color-role') { return $true }
+    return ($LiteralFamily -eq $TokenFamily)
+}
+
+# Normalize a color literal to a canonical comparison key so that two writings
+# of the same color compare equal regardless of casing or interior whitespace
+# (e.g. '#FF4444' and '#ff4444'; 'rgba(0, 0, 0, 0.6)' and 'rgba(0,0,0,0.6)').
+# Used only for Tier-1 token-value matching; the row stores the literal as
+# authored (the raw token text), not the normalized form.
+function ConvertTo-ColorKey {
+    param([string]$Literal)
+    if ($null -eq $Literal) { return '' }
+    return (($Literal -replace '\s+', '').ToLower())
+}
+
+# Find every cataloguable literal in a declaration value, classified by family.
+# Returns a list of objects, each: @{ Text = '<as authored>'; Family =
+# '<color sub-family>'|'size'|'font-size'; Property = '<declaration property>' }.
+# Color families are sub-classified ('color-bg', 'color-border', 'color-text',
+# 'color-fill') so a literal is later matched only against tokens of the same
+# color purpose. The caller supplies the property so each literal carries its
+# purpose dimension. Color literals (hex, rgb(), rgba(), hsl(), hsla()) are
+# captured only when the property is a color-family property; dimensional
+# literals (px, rem, em, vh, vw, %) only when the property is a size or
+# font-size family property. A property outside every family
+# (Get-PropertyTokenFamily returns $null) yields no literals, which is how
+# non-tokenizable properties and bare unitless numbers are filtered out.
+function Get-LiteralsInDeclaration {
+    param([string]$Property, [string]$Value)
     if ($null -eq $Value) { return @() }
-    $matchSet = [regex]::Matches($Value, '\b\d+(?:\.\d+)?px\b')
-    return @($matchSet | ForEach-Object { $_.Value })
+
+    $family = Get-PropertyTokenFamily -Property $Property
+    if ($null -eq $family) { return @() }
+
+    $results = New-Object System.Collections.Generic.List[object]
+
+    if ($family.StartsWith('color')) {
+        # Hex colors (#abc, #abcdef, #aabbccdd).
+        foreach ($m in [regex]::Matches($Value, '#[0-9a-fA-F]{3,8}\b')) {
+            $results.Add(@{ Text = $m.Value; Family = $family; Property = $Property })
+        }
+        # Functional colors: rgb(), rgba(), hsl(), hsla(). The whole function
+        # call is the literal (captured verbatim, whitespace preserved as
+        # authored; comparison normalizes separately via ConvertTo-ColorKey).
+        foreach ($m in [regex]::Matches($Value, '(?i)\b(?:rgba|rgb|hsla|hsl)\([^()]*\)')) {
+            $results.Add(@{ Text = $m.Value; Family = $family; Property = $Property })
+        }
+    }
+    else {
+        # Dimensional literals for the size and font-size families: a number
+        # (integer or decimal) immediately followed by a recognized unit. Bare
+        # unitless numbers carry no unit and are intentionally not matched.
+        foreach ($m in [regex]::Matches($Value, '(?i)(?<![\w.#-])\d+(?:\.\d+)?(?:px|rem|em|vh|vw|%)')) {
+            $results.Add(@{ Text = $m.Value; Family = $family; Property = $Property })
+        }
+    }
+
+    return @($results.ToArray())
 }
 
 <# ============================================================================
@@ -1214,7 +1394,7 @@ function Add-CssVariableRow {
     } else {
         $map = Get-ZoneSharedVariableMap
         if ($map.ContainsKey($VarName)) {
-            $scope = 'SHARED'; $sourceFile = $map[$VarName]
+            $scope = 'SHARED'; $sourceFile = $map[$VarName].SourceFile
         } else {
             $scope = 'LOCAL'; $sourceFile = $script:CurrentFile
         }
@@ -1235,6 +1415,56 @@ function Add-CssVariableRow {
         -Signature      $Signature `
         -ParentFunction $ParentAtrule `
         -RawText        $RawText
+    $script:rows.Add($row)
+    return $row
+}
+
+# Emit a CSS_LITERAL inventory row for one literal occurrence in a declaration
+# value. Every cataloguable color or size literal gets exactly one row,
+# regardless of whether it is Tier-1 drift (a token of matching value and
+# purpose exists) or Tier-2 inventory (no such token). The Tier-1 drift code,
+# when applicable, is attached by the caller to the returned row; this emitter
+# only constructs it. Column mapping:
+#   component_name      = the literal as authored (e.g. '#ff4444', '28px')
+#   variant_type        = the value family ('color' | 'size' | 'font-size')
+#   variant_qualifier_1 = the declaration property (the purpose dimension)
+#   parent_function     = the owning rule selector (the class that hardcodes it)
+#   reference_type      = 'LITERAL'
+# Literals are always page-local in character; scope follows the file's scope.
+function Add-CssLiteralRow {
+    param(
+        [Parameter(Mandatory)][string]$LiteralText,
+        [Parameter(Mandatory)][string]$Family,
+        [Parameter(Mandatory)][string]$Property,
+        [string]$OwningSelector,
+        [Parameter(Mandatory)][int]$LineStart,
+        [Parameter(Mandatory)][int]$LineEnd,
+        [Parameter(Mandatory)][int]$ColumnStart,
+        [string]$RawText
+    )
+    if ([string]::IsNullOrWhiteSpace($LiteralText)) { return $null }
+
+    $scope = if ($script:CurrentFileIsShared) { 'SHARED' } else { 'LOCAL' }
+
+    # Dedupe on file/line/column/value so the same literal at the same source
+    # position is not double-emitted, while the same value on different lines
+    # (the per-occurrence grain) each gets its own row.
+    $key = "$($script:CurrentFile)|$LineStart|$ColumnStart|CSS_LITERAL|$LiteralText|LITERAL|"
+    if (-not (Test-AddDedupeKey -Key $key)) { return $null }
+
+    $row = New-CssRow `
+        -ComponentType     'CSS_LITERAL' `
+        -ComponentName     $LiteralText `
+        -VariantType       $Family `
+        -VariantQualifier1 $Property `
+        -ReferenceType     'LITERAL' `
+        -Scope             $scope `
+        -LineStart         $LineStart `
+        -LineEnd           $LineEnd `
+        -ColumnStart       $ColumnStart `
+        -Signature         $OwningSelector `
+        -ParentFunction    $OwningSelector `
+        -RawText           $RawText
     $script:rows.Add($row)
     return $row
 }
@@ -1769,7 +1999,17 @@ foreach ($file in $CssFiles) {
 
         if ($node.type -eq 'decl' -and $node.prop -and $node.prop.StartsWith('--')) {
             $varName = $node.prop.Substring(2)
-            if (-not $varMap.ContainsKey($varName)) { $varMap[$varName] = $name }
+            if (-not $varMap.ContainsKey($varName)) {
+                # Store the defining file (consumed by USAGE resolution) plus
+                # the token's value and family (consumed by Tier-1 literal
+                # matching). Family is $null for non-literal-matching token
+                # categories (font / duration / shadow / gradient / z).
+                $varMap[$varName] = @{
+                    SourceFile = $name
+                    Value      = $node.value
+                    Family     = (Get-TokenNameFamily -TokenName $varName)
+                }
+            }
         }
 
         if ($node.type -eq 'atrule' -and $node.name -eq 'keyframes' -and $node.params) {
@@ -1845,8 +2085,6 @@ foreach ($file in $CssFiles) {
         ChromeLine     = $null
         FileOrgList    = $null
         Sections       = $null
-        HexLiterals    = $null
-        PxLiterals     = $null
     }
 
     # Collect comments in the normalized shape, then build the section list.
@@ -2046,57 +2284,6 @@ foreach ($fname in $fileMeta.Keys) {
             if ($r.ComponentType -eq 'FILE_HEADER') {
                 Add-DriftCode -Row $r -Code 'FILE_ORG_MISMATCH'
                 break
-            }
-        }
-    }
-}
-
-# -- DRIFT_HEX_LITERAL --
-
-foreach ($fname in $fileMeta.Keys) {
-    $meta = $fileMeta[$fname]
-    if ($null -eq $meta.HexLiterals -or $meta.HexLiterals.Count -eq 0) { continue }
-    if ($meta.FoundationLine) { continue }
-
-    if (-not $script:zoneScopeMap.ContainsKey($fname)) { continue }
-    $fileZone   = $script:zoneScopeMap[$fname].Zone
-    $zoneVarMap = Get-ZoneMap -ByZone $script:sharedVariableMapByZone -Zone $fileZone
-    if ($zoneVarMap.Count -eq 0) { continue }
-
-    foreach ($hex in $meta.HexLiterals) {
-        foreach ($ctype in @('CSS_CLASS','CSS_VARIANT')) {
-            $key = "$fname|$($hex.Line)|$ctype"
-            if ($rowsByFileLineType.ContainsKey($key)) {
-                foreach ($r in $rowsByFileLineType[$key]) {
-                    Add-DriftCode -Row $r -Code 'DRIFT_HEX_LITERAL'
-                }
-            }
-        }
-    }
-}
-
-# -- DRIFT_PX_LITERAL --
-
-foreach ($fname in $fileMeta.Keys) {
-    $meta = $fileMeta[$fname]
-    if ($null -eq $meta.PxLiterals -or $meta.PxLiterals.Count -eq 0) { continue }
-    if ($meta.FoundationLine) { continue }
-
-    if (-not $script:zoneScopeMap.ContainsKey($fname)) { continue }
-    $fileZone   = $script:zoneScopeMap[$fname].Zone
-    $zoneVarMap = Get-ZoneMap -ByZone $script:sharedVariableMapByZone -Zone $fileZone
-    if ($zoneVarMap.Count -eq 0) { continue }
-
-    $sizeTokensPresent = @($zoneVarMap.Keys | Where-Object { $_ -like 'size-*' }).Count -gt 0
-    if (-not $sizeTokensPresent) { continue }
-
-    foreach ($px in $meta.PxLiterals) {
-        foreach ($ctype in @('CSS_CLASS','CSS_VARIANT')) {
-            $key = "$fname|$($px.Line)|$ctype"
-            if ($rowsByFileLineType.ContainsKey($key)) {
-                foreach ($r in $rowsByFileLineType[$key]) {
-                    Add-DriftCode -Row $r -Code 'DRIFT_PX_LITERAL'
-                }
             }
         }
     }
