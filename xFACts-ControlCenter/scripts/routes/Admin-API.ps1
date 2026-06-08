@@ -1,14 +1,39 @@
-# ============================================================================
-# xFACts Control Center - Administration API Endpoints
-# Location: E:\xFACts-ControlCenter\scripts\routes\Admin-API.ps1
-# Version: See Admin.ps1 for current version
-# ============================================================================
+<#
+.SYNOPSIS
+    xFACts Control Center - Administration API endpoints.
+.DESCRIPTION
+    Backing REST API for the Administration page. Provides the process
+    timeline and roster, orchestrator drain and Windows-service control, the
+    system-metadata component tree with version history and object catalogs,
+    global-configuration read and update, process-schedule management, the
+    documentation-pipeline launch and status, and alert-failure listing and
+    resend. Every endpoint guards on Test-ActionEndpoint and returns JSON.
+.COMPONENT
+    ControlCenter.Admin
+.NOTES
+    File Name : Admin-API.ps1
+    Location  : E:\xFACts-ControlCenter\scripts\routes\Admin-API.ps1
 
-# ============================================================================
-# API: Process Status with daily aggregates
-# ============================================================================
+    FILE ORGANIZATION
+    -----------------
+    ROUTE: API ENDPOINTS
+#>
+
+<# ============================================================================
+   ROUTE: API ENDPOINTS
+   ----------------------------------------------------------------------------
+   Registers all Administration API endpoints. Each endpoint authenticates with
+   ADLogin, guards on Test-ActionEndpoint as its first statement, and ends with
+   Write-PodeJsonResponse.
+   Prefix: adm
+   ============================================================================ #>
+
+# Process status with daily aggregates.
+
 Add-PodeRoute -Method Get -Path '/api/admin/process-status' -Authentication 'ADLogin' -ScriptBlock {
     try {
+        if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
         $results = Invoke-XFActsQuery -Query @"
             SELECT
                 p.process_id,
@@ -66,15 +91,16 @@ Add-PodeRoute -Method Get -Path '/api/admin/process-status' -Authentication 'ADL
     }
 }
 
-# ============================================================================
-# API: Process History with pagination and status filtering
+# Process History with pagination and status filtering.
 # Parameters:
 #   process_id (required) - ProcessRegistry ID
 #   offset (optional, default 0) - pagination offset
 #   status_filter (optional) - 'failed','running','success', or omit for all
-# ============================================================================
+
 Add-PodeRoute -Method Get -Path '/api/admin/process-history' -Authentication 'ADLogin' -ScriptBlock {
     try {
+        if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
         $processId = $WebEvent.Query['process_id']
         if (-not $processId) {
             Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = "process_id required" }) -StatusCode 400
@@ -121,20 +147,15 @@ Add-PodeRoute -Method Get -Path '/api/admin/process-history' -Authentication 'AD
     }
 }
 
-# ============================================================================
-# xFACts Control Center - Administration Timeline API
-# Location: E:\xFACts-ControlCenter\scripts\routes\Admin-API.ps1
-# Note: Add this endpoint to the EXISTING Admin-API.ps1 file
-# ============================================================================
-
-# ============================================================================
-# API: Timeline Data — Recent task executions for canvas timeline
+# Timeline Data - Recent task executions for canvas timeline.
 # Returns the last N minutes of TaskLog entries with process metadata
 # Parameters:
 #   window_minutes (optional, default 30) - how many minutes of history
-# ============================================================================
+
 Add-PodeRoute -Method Get -Path '/api/admin/timeline-data' -Authentication 'ADLogin' -ScriptBlock {
     try {
+        if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
         $windowRaw = $WebEvent.Query['window_minutes']
         $windowMinutes = if ($windowRaw) { [int]$windowRaw } else { 30 }
 
@@ -170,15 +191,14 @@ Add-PodeRoute -Method Get -Path '/api/admin/timeline-data' -Authentication 'ADLo
     }
 }
 
-# ============================================================================
-# API: Toggle Process Run Mode (enable/disable)
-# ============================================================================
+# Toggle Process Run Mode (enable/disable).
 Add-PodeRoute -Method Post -Path '/api/admin/toggle-process' -Authentication 'ADLogin' -ScriptBlock {
     try {
         if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
 
         $processId = $WebEvent.Data.process_id
-        $action = $WebEvent.Data.action   # enable or disable
+        # enable or disable
+        $action = $WebEvent.Data.action
         $user = "FAC\$($WebEvent.Auth.User.Username)"
 
         if ($action -notin @('enable','disable')) {
@@ -225,13 +245,11 @@ Add-PodeRoute -Method Post -Path '/api/admin/toggle-process' -Authentication 'AD
     }
 }
 
-
-
-# ============================================================================
-# API: Drain Status (includes Windows service state)
-# ============================================================================
+# Drain Status (includes Windows service state).
 Add-PodeRoute -Method Get -Path '/api/admin/drain-status' -Authentication 'ADLogin' -ScriptBlock {
     try {
+        if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
         $result = Invoke-XFActsQuery -Query @"
             SELECT CAST(setting_value AS INT) AS drain_mode
             FROM dbo.GlobalConfig
@@ -250,7 +268,8 @@ Add-PodeRoute -Method Get -Path '/api/admin/drain-status' -Authentication 'ADLog
         $svcStatus = 'Unknown'
         try {
             $svc = Get-Service -Name 'xFACtsOrchestrator' -ErrorAction Stop
-            $svcStatus = $svc.Status.ToString()   # Running, Stopped, StartPending, StopPending
+            # Running, Stopped, StartPending, StopPending
+            $svcStatus = $svc.Status.ToString()
         } catch {
             $svcStatus = 'NotFound'
         }
@@ -267,9 +286,7 @@ Add-PodeRoute -Method Get -Path '/api/admin/drain-status' -Authentication 'ADLog
     }
 }
 
-# ============================================================================
-# API: Toggle Drain
-# ============================================================================
+# Toggle Drain.
 Add-PodeRoute -Method Post -Path '/api/admin/drain-mode' -Authentication 'ADLogin' -ScriptBlock {
     try {
         if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
@@ -321,15 +338,14 @@ Add-PodeRoute -Method Post -Path '/api/admin/drain-mode' -Authentication 'ADLogi
     }
 }
 
-# ============================================================================
-# API: Service Control (Stop / Start / Restart)
-# ============================================================================
+# Service Control (Stop / Start / Restart).
 Add-PodeRoute -Method Post -Path '/api/admin/service-control' -Authentication 'ADLogin' -ScriptBlock {
     try {
         if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
 
         $user = "FAC\$($WebEvent.Auth.User.Username)"
-        $action = $WebEvent.Data.action   # stop, start, restart
+        # stop, start, restart
+        $action = $WebEvent.Data.action
 
         if ($action -notin @('stop','start','restart')) {
             Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = "Invalid action: $action. Must be stop, start, or restart." }) -StatusCode 400
@@ -386,23 +402,20 @@ Add-PodeRoute -Method Post -Path '/api/admin/service-control' -Authentication 'A
     }
 }
 
-# ============================================================================
-# ============================================================================
-# SYSTEM METADATA APIs (Rearchitected — Component-Level Versioning)
-# ============================================================================
-# Data model: Component_Registry → Object_Registry → System_Metadata
-# Tree: module → component (from Component_Registry)
+# SYSTEM METADATA APIs (Rearchitected - Component-Level Versioning)
+# Data model: Component_Registry -> Object_Registry -> System_Metadata
+# Tree: module -> component (from Component_Registry)
 # Versions: append-only changelog (System_Metadata), latest = current
-# ============================================================================
 
-# ----------------------------------------------------------------------------
 # GET /api/admin/metadata/tree
 # Returns component tree with current versions for the admin slideout.
 # Joins Component_Registry with latest System_Metadata per component.
 # Also returns total object count from Object_Registry.
-# ----------------------------------------------------------------------------
+
 Add-PodeRoute -Method Get -Path '/api/admin/metadata/tree' -Authentication 'ADLogin' -ScriptBlock {
     try {
+        if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
         $results = Invoke-XFActsQuery -Query @"
             SELECT
                 cr.component_id,
@@ -451,13 +464,14 @@ Add-PodeRoute -Method Get -Path '/api/admin/metadata/tree' -Authentication 'ADLo
     }
 }
 
-# ----------------------------------------------------------------------------
 # GET /api/admin/metadata/history?component=X
 # Returns full version history for a specific component (newest first).
-# Append-only table — no status column, just the ordered changelog.
-# ----------------------------------------------------------------------------
+# Append-only table - no status column, just the ordered changelog.
+
 Add-PodeRoute -Method Get -Path '/api/admin/metadata/history' -Authentication 'ADLogin' -ScriptBlock {
     try {
+        if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
         $component = $WebEvent.Query['component']
 
         if (-not $component) {
@@ -479,13 +493,14 @@ Add-PodeRoute -Method Get -Path '/api/admin/metadata/history' -Authentication 'A
     }
 }
 
-# ----------------------------------------------------------------------------
 # GET /api/admin/metadata/objects?component=X
 # Returns Object_Registry entries for a specific component.
 # Used by the object catalog expansion in the admin tree.
-# ----------------------------------------------------------------------------
+
 Add-PodeRoute -Method Get -Path '/api/admin/metadata/objects' -Authentication 'ADLogin' -ScriptBlock {
     try {
+        if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
         $component = $WebEvent.Query['component']
 
         if (-not $component) {
@@ -508,12 +523,11 @@ Add-PodeRoute -Method Get -Path '/api/admin/metadata/objects' -Authentication 'A
     }
 }
 
-# ----------------------------------------------------------------------------
 # POST /api/admin/metadata/insert
 # Insert a new version record into System_Metadata.
 # Component must already exist in Component_Registry.
-# No trigger needed — table is append-only.
-# ----------------------------------------------------------------------------
+# No trigger needed - table is append-only.
+
 Add-PodeRoute -Method Post -Path '/api/admin/metadata/insert' -Authentication 'ADLogin' -ScriptBlock {
     try {
         if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
@@ -583,11 +597,10 @@ Add-PodeRoute -Method Post -Path '/api/admin/metadata/insert' -Authentication 'A
     }
 }
 
-# ----------------------------------------------------------------------------
 # POST /api/admin/metadata/add-component
 # Register a new component in Component_Registry and create its baseline
 # version in System_Metadata.
-# ----------------------------------------------------------------------------
+
 Add-PodeRoute -Method Post -Path '/api/admin/metadata/add-component' -Authentication 'ADLogin' -ScriptBlock {
     try {
         if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
@@ -649,16 +662,15 @@ Add-PodeRoute -Method Post -Path '/api/admin/metadata/add-component' -Authentica
     }
 }
 
-# ============================================================================
 # SHARED: Module Registry (used by System Metadata, GlobalConfig, Scheduler)
-# ============================================================================
 
-# ----------------------------------------------------------------------------
 # GET /api/admin/modules
 # Returns Module_Registry descriptions. Cached client-side, shared across panels.
-# ----------------------------------------------------------------------------
+
 Add-PodeRoute -Method Get -Path '/api/admin/modules' -Authentication 'ADLogin' -ScriptBlock {
     try {
+        if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
         $results = Invoke-XFActsQuery -Query @"
             SELECT module_name, description
             FROM dbo.Module_Registry
@@ -672,16 +684,15 @@ Add-PodeRoute -Method Get -Path '/api/admin/modules' -Authentication 'ADLogin' -
     }
 }
 
-# ============================================================================
 # GLOBALCONFIG APIs
-# ============================================================================
 
-# ----------------------------------------------------------------------------
 # GET /api/admin/globalconfig/modules
 # Returns distinct module names that have UI-editable settings
-# ----------------------------------------------------------------------------
+
 Add-PodeRoute -Method Get -Path '/api/admin/globalconfig/modules' -Authentication 'ADLogin' -ScriptBlock {
     try {
+        if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
         $results = Invoke-XFActsQuery -Query @"
             SELECT DISTINCT module_name
             FROM dbo.GlobalConfig
@@ -695,12 +706,13 @@ Add-PodeRoute -Method Get -Path '/api/admin/globalconfig/modules' -Authenticatio
     }
 }
 
-# ----------------------------------------------------------------------------
 # GET /api/admin/globalconfig/settings?module=X
 # Returns UI-editable settings with optional module filter
-# ----------------------------------------------------------------------------
+
 Add-PodeRoute -Method Get -Path '/api/admin/globalconfig/settings' -Authentication 'ADLogin' -ScriptBlock {
     try {
+        if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
         $where = @("is_ui_editable = 1")
         $params = @{}
 
@@ -726,16 +738,16 @@ Add-PodeRoute -Method Get -Path '/api/admin/globalconfig/settings' -Authenticati
     }
 }
 
-# ----------------------------------------------------------------------------
 # POST /api/admin/globalconfig/update
 # Update a single GlobalConfig setting value
-# ----------------------------------------------------------------------------
+
 Add-PodeRoute -Method Post -Path '/api/admin/globalconfig/update' -Authentication 'ADLogin' -ScriptBlock {
     try {
         if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
 
         $configId = $WebEvent.Data.config_id
-        $fieldName = $WebEvent.Data.field_name   # 'setting_value' or 'is_active'
+        # 'setting_value' or 'is_active'
+        $fieldName = $WebEvent.Data.field_name
         $newValue = $WebEvent.Data.new_value
         $user = "FAC\$($WebEvent.Auth.User.Username)"
 
@@ -864,12 +876,13 @@ Add-PodeRoute -Method Post -Path '/api/admin/globalconfig/update' -Authenticatio
     }
 }
 
-# ----------------------------------------------------------------------------
 # GET /api/admin/globalconfig/history?config_id=X
 # Returns change history for a specific GlobalConfig setting
-# ----------------------------------------------------------------------------
+
 Add-PodeRoute -Method Get -Path '/api/admin/globalconfig/history' -Authentication 'ADLogin' -ScriptBlock {
     try {
+        if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
         $configId = $WebEvent.Query['config_id']
         if (-not $configId) {
             Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = "config_id is required" }) -StatusCode 400
@@ -898,10 +911,9 @@ Add-PodeRoute -Method Get -Path '/api/admin/globalconfig/history' -Authenticatio
     }
 }
 
-# ----------------------------------------------------------------------------
 # POST /api/admin/globalconfig/insert
 # Insert a new GlobalConfig setting
-# ----------------------------------------------------------------------------
+
 Add-PodeRoute -Method Post -Path '/api/admin/globalconfig/insert' -Authentication 'ADLogin' -ScriptBlock {
     try {
         if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
@@ -970,16 +982,15 @@ Add-PodeRoute -Method Post -Path '/api/admin/globalconfig/insert' -Authenticatio
         Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = $_.Exception.Message }) -StatusCode 500
     }
 }
-# ============================================================================
 # SCHEDULE EDITOR APIs
-# ============================================================================
 
-# ----------------------------------------------------------------------------
 # GET /api/admin/schedule/processes
 # All ProcessRegistry entries for the Schedule Editor panel
-# ----------------------------------------------------------------------------
+
 Add-PodeRoute -Method Get -Path '/api/admin/schedule/processes' -Authentication 'ADLogin' -ScriptBlock {
     try {
+        if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
         $results = Invoke-XFActsQuery -Query @"
             SELECT
                 p.process_id,
@@ -1004,12 +1015,13 @@ Add-PodeRoute -Method Get -Path '/api/admin/schedule/processes' -Authentication 
     }
 }
 
-# ----------------------------------------------------------------------------
 # GET /api/admin/schedule/browse-scripts
 # List .ps1 files not already registered in ProcessRegistry
-# ----------------------------------------------------------------------------
+
 Add-PodeRoute -Method Get -Path '/api/admin/schedule/browse-scripts' -Authentication 'ADLogin' -ScriptBlock {
     try {
+        if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
         $scriptDir = 'E:\xFACts-PowerShell'
 
         if (-not (Test-Path $scriptDir)) {
@@ -1050,11 +1062,10 @@ Add-PodeRoute -Method Get -Path '/api/admin/schedule/browse-scripts' -Authentica
     }
 }
 
-# ----------------------------------------------------------------------------
 # POST /api/admin/schedule/update
 # Update a single editable field on an existing process (RBAC protected)
 # Expects: { process_id, field_name, old_value, new_value }
-# ----------------------------------------------------------------------------
+
 Add-PodeRoute -Method Post -Path '/api/admin/schedule/update' -Authentication 'ADLogin' -ScriptBlock {
     try {
         if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
@@ -1146,7 +1157,7 @@ Add-PodeRoute -Method Post -Path '/api/admin/schedule/update' -Authentication 'A
             }
         }
 
-        # Dynamic UPDATE — safe because field_name is whitelisted above
+        # Dynamic UPDATE - safe because field_name is whitelisted above
         Invoke-XFActsQuery -Query @"
             UPDATE Orchestrator.ProcessRegistry
             SET $fieldName = @val, modified_dttm = GETDATE(), modified_by = @user
@@ -1185,11 +1196,10 @@ Add-PodeRoute -Method Post -Path '/api/admin/schedule/update' -Authentication 'A
     }
 }
 
-# ----------------------------------------------------------------------------
 # POST /api/admin/schedule/add
 # Register a new process in ProcessRegistry (RBAC protected)
 # New processes are always created DISABLED (run_mode = 0)
-# ----------------------------------------------------------------------------
+
 Add-PodeRoute -Method Post -Path '/api/admin/schedule/add' -Authentication 'ADLogin' -ScriptBlock {
     try {
         if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
@@ -1304,12 +1314,11 @@ Add-PodeRoute -Method Post -Path '/api/admin/schedule/add' -Authentication 'ADLo
     }
 }
 
-# ============================================================================
-# API: Documentation Pipeline — Launch (fire-and-forget)
+# Documentation Pipeline - Launch (fire-and-forget).
 # Launches Invoke-DocPipeline.ps1 which runs selected steps in sequence and
 # writes real-time status to a JSON file. Poll /api/admin/doc-pipeline/status
 # for progress.
-# ============================================================================
+
 Add-PodeRoute -Method Post -Path '/api/admin/doc-pipeline' -Authentication 'ADLogin' -ScriptBlock {
     try {
         if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
@@ -1367,13 +1376,14 @@ Add-PodeRoute -Method Post -Path '/api/admin/doc-pipeline' -Authentication 'ADLo
     }
 }
 
-# ============================================================================
-# API: Documentation Pipeline — Status (polling endpoint)
+# Documentation Pipeline - Status (polling endpoint).
 # Returns the current contents of the pipeline status JSON file.
-# Lightweight read-only — safe to poll every 2 seconds.
-# ============================================================================
+# Lightweight read-only - safe to poll every 2 seconds.
+
 Add-PodeRoute -Method Get -Path '/api/admin/doc-pipeline/status' -Authentication 'ADLogin' -ScriptBlock {
     try {
+        if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
         $statusFile = 'E:\xFACts-PowerShell\Logs\doc-pipeline-status.json'
 
         if (-not (Test-Path $statusFile)) {
@@ -1394,18 +1404,17 @@ Add-PodeRoute -Method Get -Path '/api/admin/doc-pipeline/status' -Authentication
         Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = $_.Exception.Message }) -StatusCode 500
     }
 }
-# ============================================================================
 # ALERT FAILURES APIs
 # Added: 2026-03-05
-# ============================================================================
 
-# ----------------------------------------------------------------------------
 # GET /api/admin/alert-failure-count
 # Returns the count of unresolved failed alerts (for card badge pip).
-# Lightweight — safe to poll on the 5-second refresh cycle.
-# ----------------------------------------------------------------------------
+# Lightweight - safe to poll on the 5-second refresh cycle.
+
 Add-PodeRoute -Method Get -Path '/api/admin/alert-failure-count' -Authentication 'ADLogin' -ScriptBlock {
     try {
+        if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
         # Get lookback days from GlobalConfig (default 3)
         $lookbackResult = Invoke-XFActsQuery -Query @"
             SELECT CAST(setting_value AS INT) AS lookback_days
@@ -1436,12 +1445,13 @@ Add-PodeRoute -Method Get -Path '/api/admin/alert-failure-count' -Authentication
     }
 }
 
-# ----------------------------------------------------------------------------
 # GET /api/admin/alert-failures
 # Returns unresolved failed alerts within the lookback window.
-# ----------------------------------------------------------------------------
+
 Add-PodeRoute -Method Get -Path '/api/admin/alert-failures' -Authentication 'ADLogin' -ScriptBlock {
     try {
+        if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
         # Get lookback days from GlobalConfig (default 3)
         $lookbackResult = Invoke-XFActsQuery -Query @"
             SELECT CAST(setting_value AS INT) AS lookback_days
@@ -1473,11 +1483,10 @@ Add-PodeRoute -Method Get -Path '/api/admin/alert-failures' -Authentication 'ADL
     }
 }
 
-# ----------------------------------------------------------------------------
 # POST /api/admin/alert-resend
 # Creates a new Pending copy of a failed alert for redelivery.
 # RBAC: Operate tier via Test-ActionEndpoint.
-# ----------------------------------------------------------------------------
+
 Add-PodeRoute -Method Post -Path '/api/admin/alert-resend' -Authentication 'ADLogin' -ScriptBlock {
     try {
         if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
@@ -1520,7 +1529,7 @@ Add-PodeRoute -Method Post -Path '/api/admin/alert-resend' -Authentication 'ADLo
             return
         }
 
-        # Insert the resend copy — handle nullable fields
+        # Insert the resend copy - handle nullable fields
         $cardJson = if ($orig.card_json -and $orig.card_json -isnot [DBNull]) { $orig.card_json } else { [DBNull]::Value }
         $trigType = if ($orig.trigger_type -and $orig.trigger_type -isnot [DBNull]) { $orig.trigger_type } else { [DBNull]::Value }
         $trigVal  = if ($orig.trigger_value -and $orig.trigger_value -isnot [DBNull]) { $orig.trigger_value } else { [DBNull]::Value }
