@@ -1,1229 +1,3471 @@
 /* ============================================================================
-   xFACts Control Center - Administration Page Styles
+   xFACts Control Center - Administration Page Styles (admin.css)
    Location: E:\xFACts-ControlCenter\public\css\admin.css
    Version: Tracked in dbo.System_Metadata (component: ControlCenter.Admin)
 
-   CHANGELOG
-   ---------
-   2026-04-29  Phase 3d cleanup: stripped duplicate nav-bar/nav-link/nav-spacer/
-               nav-admin/nav-separator (now in engine-events.css) and global
-               ::-webkit-scrollbar rules (shared). Kept the page-specific
-               .nav-admin.active rule — the helper now applies the 'active'
-               class to the gear when on /admin and this rule keeps the
-               same teal underline behavior the original markup had. Kept
-               .connection-error (different from shared — uses 6px radius
-               and tinted background), @keyframes pulse-live (only used by
-               the page's .live-indicator), and the entire timeline /
-               slideup / metadata / GlobalConfig / docs pipeline / alert
-               failures / detail-panel infrastructure (all page-specific).
+   Page-specific styles for the Administration page. Covers the full-width
+   process timeline visualization (toolbar, module legend, sidebar lanes,
+   canvas, hover tooltip), the platform-management card row, and the content
+   inside the admin slide-up panels and dock: engine controls, system
+   metadata, global configuration, process scheduler, documentation pipeline,
+   and alert failures. Page chrome, slide-up/dock/modal construct framing, and
+   shared tokens are consumed from cc-shared.css.
+
+   FILE ORGANIZATION
+   -----------------
+   LAYOUT: PAGE STRUCTURE
+   CONTENT: PROCESS TIMELINE
+   CONTENT: PLATFORM MANAGEMENT CARDS
+   CONTENT: ENGINE CONTROLS
+   CONTENT: SYSTEM METADATA
+   CONTENT: GLOBAL CONFIGURATION
+   CONTENT: PROCESS SCHEDULER
+   CONTENT: DOCUMENTATION PIPELINE
+   CONTENT: ALERT FAILURES
+   CONTENT: METADATA DETAIL
+   CONTENT: INPUT MODAL
+   CONTENT: LOG MODAL
    ============================================================================ */
 
-* { box-sizing: border-box; margin: 0; padding: 0; }
-html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', Arial, sans-serif; background: #1e1e1e; color: #d4d4d4; }
-body { display: flex; flex-direction: column; padding: 75px 40px 0 40px; }
-h1 { color: #569cd6; margin: 0 0 2px 0; font-size: 24px; }
-a { color: #9cdcfe; }
+/* ============================================================================
+   LAYOUT: PAGE STRUCTURE
+   ----------------------------------------------------------------------------
+   The page-level structural frame: the section dividers and bottom titles
+   that separate the timeline region from the platform-management region, and
+   the horizontal card row that holds the management entry tiles.
+   Prefix: adm
+   ============================================================================ */
 
-/* Page-specific: gear shows active state when on /admin (helper applies the class) */
-.nav-admin.active { opacity: 1; color: #4ec9b0 !important; border-bottom-color: #4ec9b0; }
+/* Section title label above a page region. */
+.adm-section-title {
+    font-size: var(--font-size-body);
+    font-weight: 600;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+    margin-bottom: var(--size-spacing-md);
+    flex-shrink: 0;
+}
 
-/* HEADER */
-.page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; flex-shrink: 0; }
-.header-subtitle { color: #888; font-size: 14px; margin: 0; }
-.refresh-info { font-size: 13px; color: #888; display: flex; align-items: center; gap: 8px; }
-.live-indicator { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #4ec9b0; margin-right: 6px; animation: pulse-live 2s infinite; }
-.last-updated { color: #4ec9b0; }
-@keyframes pulse-live { 0%,100%{opacity:1}50%{opacity:0.4} }
-.connection-error { display:none; background: rgba(244,135,113,0.15); border: 1px solid rgba(244,135,113,0.3); color: #f48771; padding: 8px 20px; font-size: 12px; text-align: center; border-radius: 6px; margin-bottom: 8px; flex-shrink: 0; }
-.connection-error.visible { display: block; }
+/* Section title variant used above the platform-management card row. */
+.adm-bottom-title {
+    margin-bottom: var(--size-spacing-md);
+}
 
-/* SECTION TITLES */
-.section-title { font-size: 11px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: #888; margin-bottom: 8px; flex-shrink: 0; }
-.bottom-title { margin-bottom: 8px; }
+/* Horizontal divider rule between the timeline and management regions. */
+.adm-section-divider {
+    height: var(--size-border-thin);
+    background: var(--color-border-default);
+    margin: var(--size-spacing-md) 0;
+    flex-shrink: 0;
+}
 
-/* FILTER PILLS */
-.filter-bar { display: flex; gap: 4px; }
-.filter-pill { background: #2d2d2d; border: 1px solid #404040; border-radius: 4px; color: #888; cursor: pointer; font-size: 10px; font-weight: 500; padding: 3px 10px; transition: all 0.15s; }
-.filter-pill:hover { border-color: #666; color: #d4d4d4; }
-.filter-pill.active { background: rgba(86,156,214,0.12); border-color: rgba(86,156,214,0.35); color: #569cd6; }
+/* Horizontal row holding the platform-management entry cards. */
+.adm-platform-row {
+    display: flex;
+    gap: 10px;
+    flex-shrink: 0;
+    padding-bottom: var(--size-spacing-lg);
+}
 
-/* ============================================================
-   PROCESS TIMELINE
-   ============================================================ */
-.timeline-section {
-    flex: 1; min-height: 0;
-    background: #252526; border: 1px solid #404040;
-    border-radius: 8px;
-    display: flex; flex-direction: column;
+/* Generic loading placeholder text used across panels and lists. */
+.adm-loading {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-content-lg);
+    padding: 20px;
+}
+
+/* ============================================================================
+   CONTENT: PROCESS TIMELINE
+   ----------------------------------------------------------------------------
+   The full-width process timeline visualization: the fill-height section
+   frame, the toolbar with filter pills and time-window selector, the module
+   color legend, the process-lane sidebar with status badges and countdowns,
+   the canvas wrapper, and the absolutely-positioned hover tooltip.
+   Prefix: adm
+   ============================================================================ */
+
+/* Fill-height frame holding the timeline toolbar and body. */
+.adm-timeline-section {
+    flex: 1;
+    min-height: 0;
+    background: var(--color-bg-card);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-xl);
+    display: flex;
+    flex-direction: column;
     overflow: hidden;
 }
 
-/* Toolbar */
-.timeline-toolbar {
-    display: flex; justify-content: space-between; align-items: center;
-    padding: 8px 14px;
-    border-bottom: 1px solid #333;
+/* Toolbar row across the top of the timeline section. */
+.adm-timeline-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--size-spacing-md) 14px;
+    border-bottom: var(--size-border-thin) solid var(--color-border-divider);
     flex-shrink: 0;
 }
-.timeline-toolbar-left {
-    display: flex; align-items: center; gap: 14px;
-}
-.timeline-toolbar-right {
-    display: flex; align-items: center; gap: 16px;
+
+/* Left cluster of the toolbar (title and filter pills). */
+.adm-timeline-toolbar-left {
+    display: flex;
+    align-items: center;
+    gap: 14px;
 }
 
-/* Module color legend */
-.timeline-legend { display: flex; gap: 10px; align-items: center; }
-.tl-legend-item { display: flex; align-items: center; gap: 4px; font-size: 9px; color: #888; cursor: default; }
-.tl-legend-dot { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
-
-/* Time window buttons */
-.window-selector { display: flex; gap: 3px; }
-.window-btn {
-    background: #2d2d2d; border: 1px solid #404040; border-radius: 4px;
-    color: #888; cursor: pointer; font-size: 10px; font-weight: 600;
-    padding: 3px 10px; transition: all 0.15s;
+/* Right cluster of the toolbar (legend and window selector). */
+.adm-timeline-toolbar-right {
+    display: flex;
+    align-items: center;
+    gap: var(--size-spacing-xl);
 }
-.window-btn:hover { border-color: #666; color: #d4d4d4; }
-.window-btn.active { background: rgba(86,156,214,0.12); border-color: rgba(86,156,214,0.35); color: #569cd6; }
 
-/* Timeline body: sidebar + canvas side by side */
-.timeline-body {
-    flex: 1; min-height: 0;
+/* Filter pill button group. */
+.adm-filter-bar {
+    display: flex;
+    gap: var(--size-spacing-xs);
+}
+
+/* Single filter pill toggle button. */
+.adm-filter-pill {
+    background: var(--color-bg-card-hover);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-default);
+    color: var(--color-text-muted);
+    cursor: pointer;
+    font-size: var(--font-size-default);
+    font-weight: 500;
+    padding: var(--size-spacing-sm) 10px;
+    transition: all var(--duration-instant);
+}
+
+.adm-filter-pill:hover { /* hover state for a filter pill */
+    border-color: var(--color-text-subtle);
+    color: var(--color-text-primary);
+}
+
+/* Active (selected) state for filter pills and window buttons. */
+.adm-active { }
+
+.adm-filter-pill.adm-active { /* active (selected) filter pill */
+    background: rgba(86, 156, 214, 0.12);
+    border-color: rgba(86, 156, 214, 0.35);
+    color: var(--color-accent-platform);
+}
+
+/* Module color legend container. */
+.adm-timeline-legend {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+/* Single legend item (color dot plus label). */
+.adm-legend-item {
+    display: flex;
+    align-items: center;
+    gap: var(--size-spacing-xs);
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+    cursor: default;
+}
+
+/* Color swatch dot inside a legend item. */
+.adm-legend-dot {
+    width: var(--size-spacing-md);
+    height: var(--size-spacing-md);
+    border-radius: var(--size-radius-xs);
+    flex-shrink: 0;
+}
+
+/* Time-window selector button group. */
+.adm-window-selector {
+    display: flex;
+    gap: var(--size-spacing-sm);
+}
+
+/* Single time-window button. */
+.adm-window-btn {
+    background: var(--color-bg-card-hover);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-default);
+    color: var(--color-text-muted);
+    cursor: pointer;
+    font-size: var(--font-size-default);
+    font-weight: 600;
+    padding: var(--size-spacing-sm) 10px;
+    transition: all var(--duration-instant);
+}
+
+.adm-window-btn:hover { /* hover state for a window button */
+    border-color: var(--color-text-subtle);
+    color: var(--color-text-primary);
+}
+
+.adm-window-btn.adm-active { /* active (selected) window button */
+    background: rgba(86, 156, 214, 0.12);
+    border-color: rgba(86, 156, 214, 0.35);
+    color: var(--color-accent-platform);
+}
+
+/* Timeline body: process-lane sidebar beside the canvas. */
+.adm-timeline-body {
+    flex: 1;
+    min-height: 0;
     display: flex;
     overflow: hidden;
 }
 
-/* Process label sidebar */
-.timeline-sidebar {
-    width: 300px; flex-shrink: 0;
-    overflow-y: auto; overflow-x: hidden;
-    border-right: 1px solid #333;
-    background: #252526;
+/* Process-lane label sidebar on the left of the timeline body. */
+.adm-timeline-sidebar {
+    width: 300px;
+    flex-shrink: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    border-right: var(--size-border-thin) solid var(--color-border-divider);
+    background: var(--color-bg-card);
 }
 
-/* Group header row in sidebar */
-.tl-group-header {
-    display: flex; align-items: center;
-    padding: 3px 12px;
+/* Dependency-group header row in the sidebar. */
+.adm-group-header {
+    display: flex;
+    align-items: center;
+    padding: var(--size-spacing-sm) var(--size-spacing-lg);
     height: 22px;
-    font-size: 9px; font-weight: 600;
-    letter-spacing: 1.5px; text-transform: uppercase;
-    color: #666;
-    background: #1e1e1e;
-    border-bottom: 1px solid #2a2a2a;
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--color-text-subtle);
+    background: var(--color-bg-page);
+    border-bottom: var(--size-border-thin) solid var(--color-bg-card-deep);
 }
 
-/* Process lane row in sidebar */
-.tl-process-row {
-    display: flex; align-items: center; gap: 6px;
-    padding: 0 14px 0 12px;
+/* Process-lane row in the sidebar. */
+.adm-process-row {
+    display: flex;
+    align-items: center;
+    gap: var(--size-spacing-sm);
+    padding: 0 14px 0 var(--size-spacing-lg);
     height: 30px;
-    border-bottom: 1px solid rgba(255,255,255,0.02);
+    border-bottom: var(--size-border-thin) solid rgba(255, 255, 255, 0.02);
     transition: background 0.1s;
 }
-.tl-process-row:hover { background: rgba(255,255,255,0.02); }
-.tl-process-row.tl-disabled { opacity: 0.4; }
-.tl-process-row.tl-running { background: rgba(86,156,214,0.04); }
 
-/* Power button in sidebar */
-.tl-pwr {
-    background: none; border: 1px solid transparent;
-    border-radius: 50%; cursor: pointer;
-    font-size: 11px; line-height: 1; padding: 1px;
-    width: 18px; height: 18px;
-    display: flex; align-items: center; justify-content: center;
-    flex-shrink: 0; transition: all 0.15s;
+.adm-process-row:hover { /* hover state for a process-lane row */
+    background: rgba(255, 255, 255, 0.02);
 }
-.tl-pwr.on { color: #4ade80; border-color: rgba(74,222,128,0.2); }
-.tl-pwr.on:hover { border-color: rgba(74,222,128,0.5); background: rgba(74,222,128,0.06); }
-.tl-pwr.off { color: #555; border-color: rgba(100,100,120,0.1); }
-.tl-pwr.off:hover { border-color: rgba(74,222,128,0.3); color: #4ade80; }
 
-/* Process name badge in sidebar */
-.tl-proc-badge {
-    width: 170px; flex-shrink: 0;
-    font-size: 11px; font-weight: 500; color: #d4d4d4;
+/* Disabled state for process rows and badges. */
+.adm-disabled { }
+
+.adm-process-row.adm-disabled { /* disabled process lane (dimmed) */
+    opacity: 0.4;
+}
+
+/* Running state for process rows, badges, and status text. */
+.adm-running { }
+
+.adm-process-row.adm-running { /* lane with a currently-running process */
+    background: rgba(86, 156, 214, 0.04);
+}
+
+/* Power-toggle button in a process-lane row. */
+.adm-pwr {
+    background: none;
+    border: var(--size-border-thin) solid transparent;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: var(--font-size-body);
+    line-height: 1;
+    padding: 1px;
+    width: 18px;
+    height: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: all var(--duration-instant);
+}
+
+/* On state for the power indicator and toggles. */
+.adm-on { }
+
+.adm-pwr.adm-on { /* power toggle in the on state */
+    color: #4ade80;
+    border-color: rgba(74, 222, 128, 0.2);
+}
+
+/* Off state for the power indicator, countdowns, and toggles. */
+.adm-off { }
+
+.adm-pwr.adm-off { /* power toggle in the off state */
+    color: var(--color-border-strong);
+    border-color: rgba(100, 100, 120, 0.1);
+}
+
+/* Process-name badge in a sidebar lane row. */
+.adm-proc-badge {
+    width: 170px;
+    flex-shrink: 0;
+    font-size: var(--font-size-body);
+    font-weight: 500;
+    color: var(--color-text-primary);
     text-align: center;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    padding: 2px 8px; border-radius: 4px;
-    transition: all 0.2s;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: 2px var(--size-spacing-md);
+    border-radius: var(--size-radius-default);
+    transition: all var(--duration-fast);
 }
-.tl-proc-badge.success { color: #e0f5e0; background: rgba(74,222,128,0.20); border: 1px solid rgba(74,222,128,0.4); }
-.tl-proc-badge.running { color: #dce8f5; background: rgba(86,156,214,0.20); border: 1px solid rgba(86,156,214,0.45); animation: badge-pulse-blue 2s ease-in-out infinite; }
-.tl-proc-badge.launched { color: #dce8f5; background: rgba(86,156,214,0.20); border: 1px solid rgba(86,156,214,0.45); animation: badge-pulse-blue 2s ease-in-out infinite; }
-.tl-proc-badge.failed { color: #f5dcdc; background: rgba(239,68,68,0.20); border: 1px solid rgba(239,68,68,0.45); animation: badge-pulse-red 2s ease-in-out infinite; }
-.tl-proc-badge.timeout { color: #f5e0dc; background: rgba(248,113,113,0.20); border: 1px solid rgba(248,113,113,0.45); }
-.tl-proc-badge.polling { color: #f5f0dc; background: rgba(220,220,170,0.20); border: 1px solid rgba(220,220,170,0.45); }
-.tl-proc-badge.disabled { color: #777; background: rgba(100,100,120,0.10); border: 1px solid rgba(100,100,120,0.2); }
-@keyframes badge-pulse-blue { 0%,100%{border-color:rgba(86,156,214,0.25)}50%{border-color:rgba(86,156,214,0.5);box-shadow:0 0 6px rgba(86,156,214,0.15)} }
-@keyframes badge-pulse-red { 0%,100%{border-color:rgba(239,68,68,0.25)}50%{border-color:rgba(239,68,68,0.5);box-shadow:0 0 6px rgba(239,68,68,0.15)} }
 
-/* Daily counts in sidebar */
-.tl-counts { display: flex; gap: 5px; font-size: 9px; flex-shrink: 0; margin-left: auto; padding-left: 6px; }
-.tl-count-ok { color: #4ade80; }
-.tl-count-fail { color: #ef4444; }
-.tl-count-zero { color: #333; }
+/* Success state for process and status badges. */
+.adm-success { }
 
-/* Countdown in sidebar */
-.tl-countdown {
-    font-size: 9px; color: #4ec9b0; flex-shrink: 0;
-    min-width: 36px; text-align: right;
-    font-family: 'Cascadia Code', 'Consolas', monospace;
+.adm-proc-badge.adm-success { /* lane badge: last run succeeded */
+    color: #e0f5e0;
+    background: rgba(74, 222, 128, 0.20);
+    border: var(--size-border-thin) solid rgba(74, 222, 128, 0.4);
 }
-.tl-countdown.overdue { color: #dcdcaa; font-weight: 600; }
-.tl-countdown.queue { color: #569cd6; font-style: italic; font-family: 'Segoe UI', sans-serif; }
-.tl-countdown.off { color: #444; }
 
-/* Canvas wrapper */
-.timeline-canvas-wrap {
-    flex: 1; min-width: 0;
+.adm-proc-badge.adm-running { /* lane badge: process running */
+    color: #dce8f5;
+    background: rgba(86, 156, 214, 0.20);
+    border: var(--size-border-thin) solid rgba(86, 156, 214, 0.45);
+    animation: adm-badge-pulse-blue 2s ease-in-out infinite;
+}
+
+/* Launched (fire-and-forget) state for process badges. */
+.adm-launched { }
+
+.adm-proc-badge.adm-launched { /* lane badge: process launched */
+    color: #dce8f5;
+    background: rgba(86, 156, 214, 0.20);
+    border: var(--size-border-thin) solid rgba(86, 156, 214, 0.45);
+    animation: adm-badge-pulse-blue 2s ease-in-out infinite;
+}
+
+/* Failed state for process and status badges. */
+.adm-failed { }
+
+.adm-proc-badge.adm-failed { /* lane badge: last run failed */
+    color: #f5dcdc;
+    background: rgba(239, 68, 68, 0.20);
+    border: var(--size-border-thin) solid rgba(239, 68, 68, 0.45);
+    animation: adm-badge-pulse-red 2s ease-in-out infinite;
+}
+
+/* Timeout state for process and status badges. */
+.adm-timeout { }
+
+.adm-proc-badge.adm-timeout { /* lane badge: last run timed out */
+    color: #f5e0dc;
+    background: rgba(248, 113, 113, 0.20);
+    border: var(--size-border-thin) solid rgba(248, 113, 113, 0.45);
+}
+
+/* Polling state for process badges. */
+.adm-polling { }
+
+.adm-proc-badge.adm-polling { /* lane badge: process polling */
+    color: #f5f0dc;
+    background: rgba(220, 220, 170, 0.20);
+    border: var(--size-border-thin) solid rgba(220, 220, 170, 0.45);
+}
+
+.adm-proc-badge.adm-disabled { /* lane badge: process disabled */
+    color: var(--color-text-subtle);
+    background: rgba(100, 100, 120, 0.10);
+    border: var(--size-border-thin) solid rgba(100, 100, 120, 0.2);
+}
+
+/* Daily success/fail counts cluster in a sidebar lane. */
+.adm-counts {
+    display: flex;
+    gap: var(--size-spacing-sm);
+    font-size: var(--font-size-sm);
+    flex-shrink: 0;
+    margin-left: auto;
+    padding-left: var(--size-spacing-sm);
+}
+
+/* Daily success count text. */
+.adm-count-ok {
+    color: #4ade80;
+}
+
+/* Daily failure count text. */
+.adm-count-fail {
+    color: #ef4444;
+}
+
+/* Zero-count placeholder text. */
+.adm-count-zero {
+    color: var(--color-border-divider);
+}
+
+/* Next-run countdown text in a sidebar lane. */
+.adm-countdown {
+    font-size: var(--font-size-sm);
+    color: var(--color-accent-shared);
+    flex-shrink: 0;
+    min-width: 36px;
+    text-align: right;
+    font-family: var(--font-family-monospace);
+}
+
+/* Overdue state for countdown timers. */
+.adm-overdue { }
+
+.adm-countdown.adm-overdue { /* countdown for an overdue process */
+    color: var(--color-status-overdue);
+    font-weight: 600;
+}
+
+/* Queued state for countdown timers. */
+.adm-queue { }
+
+.adm-countdown.adm-queue { /* countdown for a queued process */
+    color: var(--color-accent-platform);
+    font-style: italic;
+    font-family: var(--font-family-default);
+}
+
+.adm-countdown.adm-off { /* countdown for a disabled process */
+    color: var(--color-status-disabled);
+}
+
+/* Canvas wrapper filling the remaining timeline body width. */
+.adm-timeline-canvas-wrap {
+    flex: 1;
+    min-width: 0;
     position: relative;
     overflow: hidden;
 }
-.timeline-canvas-wrap canvas {
+
+/* The timeline canvas element itself. */
+.adm-timeline-canvas {
     display: block;
     width: 100%;
     height: 100%;
 }
 
-/* ============================================================
-   TIMELINE TOOLTIP
-   ============================================================ */
-.tl-tooltip {
-    display: none; position: fixed; z-index: 1200;
-    background: #1e1e1e; border: 1px solid #555;
-    border-radius: 6px; padding: 10px 14px;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
-    font-size: 11px; color: #d4d4d4;
-    max-width: 320px; pointer-events: none;
+/* Absolutely-positioned hover tooltip over the timeline canvas. */
+.adm-tooltip {
+    display: none;
+    position: fixed;
+    z-index: 1200;
+    background: var(--color-bg-page);
+    border: var(--size-border-thin) solid var(--color-border-strong);
+    border-radius: var(--size-radius-lg);
+    padding: 10px 14px;
+    box-shadow: var(--shadow-popup);
+    font-size: var(--font-size-body);
+    color: var(--color-text-primary);
+    max-width: 320px;
+    pointer-events: none;
 }
-.tl-tooltip.visible { display: block; }
-.tl-tooltip-name { font-weight: 600; color: #569cd6; font-size: 12px; margin-bottom: 4px; }
-.tl-tooltip-row { display: flex; gap: 8px; margin-bottom: 2px; }
-.tl-tooltip-label { color: #888; min-width: 55px; }
-.tl-tooltip-value { color: #d4d4d4; }
-.tl-tooltip-status { font-weight: 600; }
-.tl-tooltip-status.success { color: #4ade80; }
-.tl-tooltip-status.running { color: #569cd6; }
-.tl-tooltip-status.failed { color: #ef4444; }
-.tl-tooltip-status.timeout { color: #f87171; }
 
-/* ============================================================
-   PLATFORM MANAGEMENT ROW
-   ============================================================ */
-.section-divider { height: 1px; background: #404040; margin: 8px 0; flex-shrink: 0; }
-.platform-row { display: flex; gap: 10px; flex-shrink: 0; padding-bottom: 12px; }
-.admin-card {
-    background: #252526; border: 1px solid #404040; border-radius: 6px;
-    padding: 10px 14px; cursor: pointer; transition: all 0.15s;
-    flex: 1; display: flex; align-items: center; gap: 8px;
+/* Visible state for the hover tooltip. */
+.adm-visible { }
+
+.adm-tooltip.adm-visible { /* tooltip shown on canvas hover */
+    display: block;
+}
+
+/* Process name heading inside the tooltip. */
+.adm-tooltip-name {
+    font-weight: 600;
+    color: var(--color-accent-platform);
+    font-size: var(--font-size-content);
+    margin-bottom: var(--size-spacing-xs);
+}
+
+/* Label/value row inside the tooltip. */
+.adm-tooltip-row {
+    display: flex;
+    gap: var(--size-spacing-md);
+    margin-bottom: 2px;
+}
+
+/* Label cell inside a tooltip row. */
+.adm-tooltip-label {
+    color: var(--color-text-muted);
+    min-width: 55px;
+}
+
+/* Value cell inside a tooltip row. */
+.adm-tooltip-value {
+    color: var(--color-text-primary);
+}
+
+/* Status value text inside the tooltip. */
+.adm-tooltip-status {
+    font-weight: 600;
+}
+
+.adm-tooltip-status.adm-success { /* tooltip status: success */
+    color: #4ade80;
+}
+
+.adm-tooltip-status.adm-running { /* tooltip status: running */
+    color: var(--color-accent-platform);
+}
+
+.adm-tooltip-status.adm-failed { /* tooltip status: failed */
+    color: #ef4444;
+}
+
+.adm-tooltip-status.adm-timeout { /* tooltip status: timeout */
+    color: #f87171;
+}
+
+/* ============================================================================
+   CONTENT: PLATFORM MANAGEMENT CARDS
+   ----------------------------------------------------------------------------
+   The horizontal row of management entry cards (Engine Controls, System
+   Metadata, Global Configuration, Process Scheduler, Platform Monitoring,
+   Documentation, Alert Failures), including the engine/service status pips on
+   the Engine Controls card and the failure-count badge on the Alert Failures
+   card.
+   Prefix: adm
+   ============================================================================ */
+
+/* A single management entry card. */
+.adm-card {
+    background: var(--color-bg-card);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-lg);
+    padding: 10px 14px;
+    cursor: pointer;
+    transition: all var(--duration-instant);
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: var(--size-spacing-md);
     position: relative;
+    font-family: inherit;
+    font-size: inherit;
+    color: inherit;
+    text-align: left;
+    text-decoration: none;
 }
-.admin-card:hover { border-color: #569cd6; background: #2d2d2d; }
-.admin-card.disabled { opacity: 0.35; cursor: default; }
-.admin-card.disabled:hover { border-color: #404040; background: #252526; }
-.admin-card-icon { font-size: 16px; }
-.admin-card-title { font-size: 12px; font-weight: 500; color: #d4d4d4; }
 
-/* Engine + Service pips on the Engine Controls card */
-.engine-pips {
-    position: absolute; top: 8px; right: 8px;
-    display: flex; gap: 5px;
+.adm-card:hover { /* hover state for a management card */
+    border-color: var(--color-accent-platform);
+    background: var(--color-bg-card-hover);
 }
-.engine-status-pip, .service-status-pip {
-    width: 8px; height: 8px; border-radius: 50%;
+
+.adm-card.adm-disabled { /* disabled management card (non-interactive) */
+    opacity: 0.35;
+    cursor: default;
+}
+
+/* Icon glyph inside a management card. */
+.adm-card-icon {
+    font-size: var(--font-size-heading-lg);
+}
+
+/* Title text inside a management card. */
+.adm-card-title {
+    font-size: var(--font-size-content);
+    font-weight: 500;
+    color: var(--color-text-primary);
+}
+
+/* Status-pip cluster on the Engine Controls card. */
+.adm-engine-pips {
+    position: absolute;
+    top: var(--size-spacing-md);
+    right: var(--size-spacing-md);
+    display: flex;
+    gap: var(--size-spacing-sm);
+}
+
+/* Engine drain-state status pip. */
+.adm-engine-status-pip {
+    width: var(--size-spacing-md);
+    height: var(--size-spacing-md);
+    border-radius: 50%;
     background: #4ade80;
-    box-shadow: 0 0 6px rgba(74,222,128,0.3);
-    transition: all 0.3s;
+    box-shadow: 0 0 6px rgba(74, 222, 128, 0.3);
+    transition: all var(--duration-default);
 }
-.engine-status-pip.draining {
+
+/* Draining state for the engine status pip. */
+.adm-draining { }
+
+.adm-engine-status-pip.adm-draining { /* engine pip when drain mode is engaged */
     background: #ef4444;
-    box-shadow: 0 0 6px rgba(239,68,68,0.4);
-    animation: pip-pulse-red 2s ease-in-out infinite;
+    box-shadow: 0 0 6px rgba(239, 68, 68, 0.4);
+    animation: adm-pip-pulse-red 2s ease-in-out infinite;
 }
-.service-status-pip.stopped {
+
+/* Windows-service status pip. */
+.adm-service-status-pip {
+    width: var(--size-spacing-md);
+    height: var(--size-spacing-md);
+    border-radius: 50%;
+    background: #4ade80;
+    box-shadow: 0 0 6px rgba(74, 222, 128, 0.3);
+    transition: all var(--duration-default);
+}
+
+/* Stopped state for the service status pip and badges. */
+.adm-stopped { }
+
+.adm-service-status-pip.adm-stopped { /* service pip when the service is stopped */
     background: #ef4444;
-    box-shadow: 0 0 6px rgba(239,68,68,0.4);
-}
-.service-status-pip.pending {
-    background: #dcdcaa;
-    box-shadow: 0 0 6px rgba(220,220,170,0.4);
-    animation: pip-pulse-yellow 2s ease-in-out infinite;
-}
-@keyframes pip-pulse-red { 0%,100%{opacity:1}50%{opacity:0.5} }
-@keyframes pip-pulse-yellow { 0%,100%{opacity:1}50%{opacity:0.5} }
-
-/* ============================================================
-   ENGINE CONTROLS SLIDEOUT
-   ============================================================ */
-.engine-panel { z-index: 1501; width: 340px; height: 55vh; }
-.engine-slideout-body { padding: 16px 24px 40px; display: flex; justify-content: center; }
-.engine-panel-inner { display: flex; flex-direction: column; align-items: center; }
-
-/* ENGINE — Breaker switch */
-.drain-label { font-size: 10px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: #888; margin-bottom: 16px; }
-.breaker-housing { position: relative; cursor: pointer; user-select: none; }
-.breaker-plate { width: 100px; height: 155px; border-radius: 10px; background: linear-gradient(165deg, #3a3a40 0%, #28282e 40%, #222228 100%); border: 1px solid #3f3f45; position: relative; box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), inset 0 -1px 0 rgba(0,0,0,0.3), 0 6px 18px rgba(0,0,0,0.4); }
-.screw { position: absolute; width: 8px; height: 8px; border-radius: 50%; background: radial-gradient(circle at 40% 35%, #444, #222); border: 1px solid #1a1a1a; }
-.screw::after { content:''; position: absolute; top:50%; left:50%; transform: translate(-50%,-50%) rotate(35deg); width:6px; height:1px; background:#1a1a1a; }
-.screw.tl{top:6px;left:6px}.screw.tr{top:6px;right:6px}.screw.bl{bottom:6px;left:6px}.screw.br{bottom:6px;right:6px}
-.switch-slot { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:32px; height:88px; background:#111114; border-radius:16px; box-shadow: inset 0 2px 6px rgba(0,0,0,0.6); }
-.switch-label { position:absolute; left:50%; transform:translateX(-50%); font-size:8px; font-weight:700; letter-spacing:2px; color:#555; z-index:1; }
-.on-label{top:16px}.off-label{bottom:16px}
-.switch-handle { position:absolute; left:50%; transform:translateX(-50%); width:28px; height:42px; border-radius:14px; z-index:2; transition: all 0.35s cubic-bezier(0.68,-0.15,0.27,1.15); }
-.switch-handle.on { top:4px; background:linear-gradient(180deg,#4ade80,#22c55e 50%,#16a34a); box-shadow:0 4px 10px rgba(74,222,128,0.3),inset 0 1px 0 rgba(255,255,255,0.25); }
-.switch-handle.off { top:42px; background:linear-gradient(180deg,#f87171,#ef4444 50%,#dc2626); box-shadow:0 4px 10px rgba(248,113,113,0.3),inset 0 1px 0 rgba(255,255,255,0.25); }
-.switch-handle::after { content:''; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:12px; height:13px; background:repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,0,0,0.2) 3px,rgba(0,0,0,0.2) 4px); border-radius:2px; }
-.status-light { width:6px; height:6px; border-radius:50%; margin:12px auto 0; }
-.status-light.online { background:#4ade80; box-shadow:0 0 8px #4ade80,0 0 16px rgba(74,222,128,0.3); }
-.status-light.caution { background:#dcdcaa; box-shadow:0 0 8px #dcdcaa,0 0 16px rgba(220,220,170,0.3); animation:pulse-yellow 2s ease-in-out infinite; }
-.status-light.offline { background:#ef4444; box-shadow:0 0 8px #ef4444; animation:pulse-red 2s ease-in-out infinite; }
-@keyframes pulse-red{0%,100%{opacity:1}50%{opacity:0.5}}
-@keyframes pulse-yellow{0%,100%{opacity:1}50%{opacity:0.5}}
-.drain-status { font-size:11px; font-weight:600; letter-spacing:1.5px; margin-top:8px; }
-.drain-status.online{color:#4ade80}
-.drain-status.caution{color:#dcdcaa}
-.drain-status.offline{color:#ef4444}
-
-/* SERVICE SECTION DIVIDER */
-.svc-divider {
-    width: 80%; height: 1px; margin: 40px auto 28px;
-    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1) 30%, rgba(255,255,255,0.1) 70%, transparent);
-}
-.svc-section-label {
-    font-size: 10px; font-weight: 600; letter-spacing: 2px;
-    text-transform: uppercase; color: #888; margin-bottom: 10px;
-}
-.svc-section-icon {
-    color: #888; margin-bottom: 14px;
-    text-shadow: 0 1px 3px rgba(0,0,0,0.4);
+    box-shadow: 0 0 6px rgba(239, 68, 68, 0.4);
 }
 
-.spark-container{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:10}
-.spark{position:absolute;border-radius:50%;opacity:0}
-@keyframes spark-fly{0%{opacity:1;transform:translate(0,0) scale(1)}100%{opacity:0;transform:translate(var(--tx),var(--ty)) scale(0)}}
+/* Pending state for the service status pip and badges. */
+.adm-pending { }
 
-/* SERVICE STATUS BADGE */
-.svc-badge-row { margin-top: 12px; }
-.svc-badge {
-    display: inline-block; font-size: 9px; font-weight: 700;
-    letter-spacing: 0.8px; padding: 3px 10px; border-radius: 3px;
+.adm-service-status-pip.adm-pending { /* service pip while a service action is pending */
+    background: var(--color-status-overdue);
+    box-shadow: 0 0 6px rgba(220, 220, 170, 0.4);
+    animation: adm-pip-pulse-yellow 2s ease-in-out infinite;
+}
+
+/* Failure-count badge on the Alert Failures card. */
+.adm-af-badge {
+    position: absolute;
+    top: var(--size-spacing-sm);
+    right: var(--size-spacing-md);
+    background: #ef4444;
+    color: var(--color-text-on-primary);
+    font-size: var(--font-size-default);
+    font-weight: 700;
+    min-width: 18px;
+    height: 18px;
+    border-radius: 9px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 var(--size-spacing-sm);
+    box-shadow: 0 0 6px rgba(239, 68, 68, 0.4);
+    animation: adm-pip-pulse-red 2s ease-in-out infinite;
+}
+
+/* Clean (no-failures) state for the alert-failures badge. */
+.adm-clean { }
+
+.adm-af-badge.adm-clean { /* badge when there are no active failures */
+    background: #4ade80;
+    box-shadow: 0 0 6px rgba(74, 222, 128, 0.3);
+    animation: none;
+}
+
+/* Count text inside the failure badge. */
+.adm-af-badge-count {
+    display: inline;
+}
+
+/* Hidden state for the alert-failures count. */
+.adm-hidden { }
+
+.adm-af-badge-count.adm-hidden { /* count hidden when the badge is clean */
+    display: none;
+}
+
+/* ============================================================================
+   CONTENT: ENGINE CONTROLS
+   ----------------------------------------------------------------------------
+   Content inside the Engine Controls slide-up: the orchestrator drain breaker
+   switch (housing, plate, switch slot and handle, status light, spark burst)
+   and the Windows-service control section (status badge, stop/start/restart
+   buttons, next-step guidance). The keyframe animation blocks in this
+   section are page-local pending promotion into the shell FOUNDATION; they
+   emit expected FORBIDDEN_KEYFRAMES_LOCATION drift until that promotion lands.
+   Prefix: adm
+   ============================================================================ */
+
+/* Centered inner column inside the engine slide-up body. */
+.adm-engine-body {
+    padding: var(--size-spacing-xl) 24px 40px;
+    display: flex;
+    justify-content: center;
+}
+
+/* Vertical stack of the breaker and service controls. */
+.adm-engine-inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+/* "Engine" caption above the breaker switch. */
+.adm-drain-label {
+    font-size: var(--font-size-default);
+    font-weight: 600;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+    margin-bottom: var(--size-spacing-xl);
+}
+
+/* Clickable breaker switch housing. */
+.adm-breaker-housing {
+    position: relative;
+    cursor: pointer;
+    user-select: none;
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+    color: inherit;
+    text-decoration: none;
+}
+
+/* The breaker faceplate behind the switch. */
+.adm-breaker-plate {
+    width: 100px;
+    height: 155px;
+    border-radius: 10px;
+    background: linear-gradient(165deg, #3a3a40 0%, #28282e 40%, #222228 100%);
+    border: var(--size-border-thin) solid #3f3f45;
+    position: relative;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), inset 0 -1px 0 rgba(0, 0, 0, 0.3), 0 6px 18px rgba(0, 0, 0, 0.4);
+}
+
+/* Drain-warning flash state for the breaker plate. */
+.adm-drain-warning { }
+
+.adm-breaker-plate.adm-drain-warning { /* drained-but-service-running flash state */
+    animation: adm-breaker-flash 2s ease-in-out infinite;
+}
+
+/* A corner screw on the breaker plate. */
+.adm-screw {
+    position: absolute;
+    width: var(--size-spacing-md);
+    height: var(--size-spacing-md);
+    border-radius: 50%;
+    background: radial-gradient(circle at 40% 35%, #444, #222);
+    border: var(--size-border-thin) solid #1a1a1a;
+}
+
+/* The slot groove on a screw head. */
+.adm-screw::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) rotate(35deg);
+    width: var(--size-spacing-sm);
+    height: var(--size-border-thin);
+    background: #1a1a1a;
+}
+
+/* Top-left position for a breaker-plate screw. */
+.adm-tl { }
+
+.adm-screw.adm-tl { /* top-left screw */
+    top: var(--size-spacing-sm);
+    left: var(--size-spacing-sm);
+}
+
+/* Top-right position for a breaker-plate screw. */
+.adm-tr { }
+
+.adm-screw.adm-tr { /* top-right screw */
+    top: var(--size-spacing-sm);
+    right: var(--size-spacing-sm);
+}
+
+/* Bottom-left position for a breaker-plate screw. */
+.adm-bl { }
+
+.adm-screw.adm-bl { /* bottom-left screw */
+    bottom: var(--size-spacing-sm);
+    left: var(--size-spacing-sm);
+}
+
+/* Bottom-right position for a breaker-plate screw. */
+.adm-br { }
+
+.adm-screw.adm-br { /* bottom-right screw */
+    bottom: var(--size-spacing-sm);
+    right: var(--size-spacing-sm);
+}
+
+/* The recessed slot the switch handle travels in. */
+.adm-switch-slot {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 32px;
+    height: 88px;
+    background: #111114;
+    border-radius: var(--size-radius-lg);
+    box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.6);
+}
+
+/* An ON/OFF label inside the switch slot. */
+.adm-switch-label {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: var(--font-size-xs);
+    font-weight: 700;
+    letter-spacing: 2px;
+    color: var(--color-border-strong);
+    z-index: 1;
+}
+
+/* On-label position within the breaker switch slot. */
+.adm-on-label { }
+
+.adm-switch-label.adm-on-label { /* the ON caption at the top of the slot */
+    top: var(--size-spacing-xl);
+}
+
+/* Off-label position within the breaker switch slot. */
+.adm-off-label { }
+
+.adm-switch-label.adm-off-label { /* the OFF caption at the bottom of the slot */
+    bottom: var(--size-spacing-xl);
+}
+
+/* The sliding switch handle. */
+.adm-switch-handle {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 28px;
+    height: 42px;
+    border-radius: 14px;
+    z-index: 2;
+    transition: all 0.35s cubic-bezier(0.68, -0.15, 0.27, 1.15);
+}
+
+.adm-switch-handle.adm-on { /* handle in the ON (up, green) position */
+    top: var(--size-spacing-xs);
+    background: linear-gradient(180deg, #4ade80, #22c55e 50%, #16a34a);
+    box-shadow: 0 4px 10px rgba(74, 222, 128, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+.adm-switch-handle.adm-off { /* handle in the OFF (down, red) position */
+    top: 42px;
+    background: linear-gradient(180deg, #f87171, #ef4444 50%, #dc2626);
+    box-shadow: 0 4px 10px rgba(248, 113, 113, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+/* The grip ridges on the handle face. */
+.adm-switch-handle::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: var(--size-spacing-lg);
+    height: 13px;
+    background: repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(0, 0, 0, 0.2) 3px, rgba(0, 0, 0, 0.2) 4px);
+    border-radius: var(--size-radius-xs);
+}
+
+/* Spark-burst container overlaid on the breaker when the switch is thrown. */
+.adm-spark-container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 10;
+}
+
+/* A single spark particle. */
+.adm-spark {
+    position: absolute;
+    border-radius: 50%;
+    opacity: 0;
+}
+
+/* Engine status indicator light below the breaker. */
+.adm-status-light {
+    width: var(--size-spacing-sm);
+    height: var(--size-spacing-sm);
+    border-radius: 50%;
+    margin: var(--size-spacing-lg) auto 0;
+}
+
+/* Online state for the status light and drain status text. */
+.adm-online { }
+
+.adm-status-light.adm-online { /* status light: engine online */
+    background: #4ade80;
+    box-shadow: 0 0 8px #4ade80, 0 0 16px rgba(74, 222, 128, 0.3);
+}
+
+/* Caution state for the status light and drain status text. */
+.adm-caution { }
+
+.adm-status-light.adm-caution { /* status light: caution (drain engaged) */
+    background: var(--color-status-overdue);
+    box-shadow: 0 0 8px #dcdcaa, 0 0 16px rgba(220, 220, 170, 0.3);
+    animation: adm-pulse-yellow 2s ease-in-out infinite;
+}
+
+/* Offline state for the status light and drain status text. */
+.adm-offline { }
+
+.adm-status-light.adm-offline { /* status light: engine offline */
+    background: #ef4444;
+    box-shadow: 0 0 8px #ef4444;
+    animation: adm-pulse-red 2s ease-in-out infinite;
+}
+
+/* Engine status caption below the status light. */
+.adm-drain-status {
+    font-size: var(--font-size-body);
+    font-weight: 600;
+    letter-spacing: 1.5px;
+    margin-top: var(--size-spacing-md);
+}
+
+.adm-drain-status.adm-online { /* caption: engine online */
+    color: #4ade80;
+}
+
+.adm-drain-status.adm-caution { /* caption: drain engaged */
+    color: var(--color-status-overdue);
+}
+
+.adm-drain-status.adm-offline { /* caption: engine offline */
+    color: #ef4444;
+}
+
+/* Horizontal divider above the service-control section. */
+.adm-svc-divider {
+    width: 80%;
+    height: var(--size-border-thin);
+    margin: 40px auto 28px;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1) 30%, rgba(255, 255, 255, 0.1) 70%, transparent);
+}
+
+/* "Service" caption above the service controls. */
+.adm-svc-section-label {
+    font-size: var(--font-size-default);
+    font-weight: 600;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+    margin-bottom: 10px;
+}
+
+/* Gear icon above the service controls. */
+.adm-svc-section-icon {
+    color: var(--color-text-muted);
+    margin-bottom: 14px;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+/* Row holding the service status badge. */
+.adm-svc-badge-row {
+    margin-top: var(--size-spacing-lg);
+}
+
+/* Windows-service status badge. */
+.adm-svc-badge {
+    display: inline-block;
+    font-size: var(--font-size-sm);
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    padding: var(--size-spacing-sm) 10px;
+    border-radius: var(--size-radius-sm);
     text-transform: uppercase;
 }
-.svc-badge.svc-running { background: rgba(74,222,128,0.12); color: #4ade80; border: 1px solid rgba(74,222,128,0.25); }
-.svc-badge.svc-stopped { background: rgba(239,68,68,0.12); color: #ef4444; border: 1px solid rgba(239,68,68,0.3); }
-.svc-badge.svc-pending { background: rgba(220,220,170,0.12); color: #dcdcaa; border: 1px solid rgba(220,220,170,0.25); animation: badge-pulse-yellow 1.5s ease-in-out infinite; }
-.svc-badge.svc-unknown { background: rgba(100,100,120,0.08); color: #666; border: 1px solid rgba(100,100,120,0.15); }
-@keyframes badge-pulse-yellow { 0%,100%{box-shadow:0 0 4px rgba(220,220,170,0.2)}50%{box-shadow:0 0 10px rgba(220,220,170,0.4)} }
 
-/* SERVICE CONTROL BUTTONS */
-.svc-buttons { display: flex; gap: 6px; margin-top: 10px; }
-.svc-btn {
-    font-size: 10px; font-weight: 600; letter-spacing: 0.5px;
-    padding: 5px 12px; border-radius: 4px; cursor: pointer;
-    transition: all 0.15s; text-transform: uppercase;
-}
-.svc-btn:disabled { opacity: 0.2; cursor: default; pointer-events: none; }
-.svc-btn.svc-stop { background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.25); color: #ef4444; }
-.svc-btn.svc-stop:not(:disabled):hover { background: rgba(239,68,68,0.15); border-color: rgba(239,68,68,0.5); }
-.svc-btn.svc-start { background: rgba(74,222,128,0.08); border: 1px solid rgba(74,222,128,0.2); color: #4ade80; }
-.svc-btn.svc-start:not(:disabled):hover { background: rgba(74,222,128,0.15); border-color: rgba(74,222,128,0.45); }
-.svc-btn.svc-restart { background: rgba(220,220,170,0.08); border: 1px solid rgba(220,220,170,0.2); color: #dcdcaa; }
-.svc-btn.svc-restart:not(:disabled):hover { background: rgba(220,220,170,0.15); border-color: rgba(220,220,170,0.45); }
-
-/* BREAKER WARNING: drained but service still running */
-.breaker-plate.drain-warning {
-    animation: breaker-flash 2s ease-in-out infinite;
-}
-@keyframes breaker-flash {
-    0%, 100% { box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), inset 0 -1px 0 rgba(0,0,0,0.3), 0 6px 18px rgba(0,0,0,0.4); }
-    50% { box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), inset 0 -1px 0 rgba(0,0,0,0.3), 0 0 20px rgba(220,220,170,0.35), 0 6px 18px rgba(0,0,0,0.4); }
+.adm-svc-badge.adm-running { /* service badge: running */
+    background: rgba(74, 222, 128, 0.12);
+    color: #4ade80;
+    border: var(--size-border-thin) solid rgba(74, 222, 128, 0.25);
 }
 
-/* Next-step guidance message */
-.svc-guidance {
+.adm-svc-badge.adm-stopped { /* service badge: stopped */
+    background: rgba(239, 68, 68, 0.12);
+    color: #ef4444;
+    border: var(--size-border-thin) solid rgba(239, 68, 68, 0.3);
+}
+
+.adm-svc-badge.adm-pending { /* service badge: action pending */
+    background: rgba(220, 220, 170, 0.12);
+    color: var(--color-status-overdue);
+    border: var(--size-border-thin) solid rgba(220, 220, 170, 0.25);
+    animation: adm-badge-pulse-yellow 1.5s ease-in-out infinite;
+}
+
+/* Unknown state for the service badge. */
+.adm-unknown { }
+
+.adm-svc-badge.adm-unknown { /* service badge: unknown state */
+    background: rgba(100, 100, 120, 0.08);
+    color: var(--color-text-subtle);
+    border: var(--size-border-thin) solid rgba(100, 100, 120, 0.15);
+}
+
+/* Row of service control buttons. */
+.adm-svc-buttons {
+    display: flex;
+    gap: var(--size-spacing-sm);
+    margin-top: 10px;
+}
+
+/* A service control button. */
+.adm-svc-btn {
+    font-size: var(--font-size-default);
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    padding: var(--size-spacing-sm) var(--size-spacing-lg);
+    border-radius: var(--size-radius-default);
+    cursor: pointer;
+    transition: all var(--duration-instant);
+    text-transform: uppercase;
+}
+
+.adm-svc-btn:disabled { /* disabled service button */
+    opacity: 0.2;
+    cursor: default;
+    pointer-events: none;
+}
+
+/* Stop variant for a service-control button. */
+.adm-stop { }
+
+.adm-svc-btn.adm-stop { /* stop-service button */
+    background: rgba(239, 68, 68, 0.08);
+    border: var(--size-border-thin) solid rgba(239, 68, 68, 0.25);
+    color: #ef4444;
+}
+
+/* Start variant for a service-control button. */
+.adm-start { }
+
+.adm-svc-btn.adm-start { /* start-service button */
+    background: rgba(74, 222, 128, 0.08);
+    border: var(--size-border-thin) solid rgba(74, 222, 128, 0.2);
+    color: #4ade80;
+}
+
+/* Restart variant for a service-control button. */
+.adm-restart { }
+
+.adm-svc-btn.adm-restart { /* restart-service button */
+    background: rgba(220, 220, 170, 0.08);
+    border: var(--size-border-thin) solid rgba(220, 220, 170, 0.2);
+    color: var(--color-status-overdue);
+}
+
+/* Next-step guidance message below the service buttons. */
+.adm-svc-guidance {
     margin-top: 14px;
     padding: 10px 14px;
-    font-size: 11px;
+    font-size: var(--font-size-body);
     line-height: 1.6;
-    color: #888;
+    color: var(--color-text-muted);
     text-align: center;
-    border-top: 1px solid #333;
+    border-top: var(--size-border-thin) solid var(--color-border-divider);
 }
-.svc-guidance .guidance-step {
-    color: #d4d4d4;
+
+/* Highlighted step text inside the guidance message. */
+.adm-guidance-step {
+    color: var(--color-text-primary);
     font-weight: 500;
 }
-.svc-guidance .guidance-muted {
-    color: #666;
+
+/* Muted secondary text inside the guidance message. */
+.adm-guidance-muted {
+    color: var(--color-text-subtle);
     font-style: italic;
 }
 
-/* ============================================================
-   SLIDE-UP PANELS
-   ============================================================ */
-.slideup-backdrop {
-    display: none; position: fixed; inset: 0;
-    background: rgba(0,0,0,0.5); z-index: 1500;
-}
-.slideup-backdrop.visible { display: block; }
+/* ============================================================================
+   CONTENT: SYSTEM METADATA
+   ----------------------------------------------------------------------------
+   Content inside the System Metadata slide-up: the component-versioning tree
+   (root row, module parent rows, component child cards), the version-bump
+   editor, the add-version form, and per-component history rows. Expand state
+   is applied directly to the element whose appearance changes (header, body,
+   description) rather than to an ancestor, per the state-on-element rule.
+   Prefix: adm
+   ============================================================================ */
 
-.slideup-panel {
-    position: fixed; bottom: 0;
-    left: 24px; transform: translateY(100%);
-    background: #1e1e1e; border-top: 1px solid #555;
-    border-radius: 12px 12px 0 0;
-    display: flex; flex-direction: column;
-    box-shadow: 0 -10px 40px rgba(0,0,0,0.5);
-    transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-}
-.slideup-panel.visible { transform: translateY(0); }
-
-.slideup-handle { display: flex; justify-content: center; padding: 8px 0 4px; cursor: pointer; }
-.handle-bar { width: 40px; height: 4px; border-radius: 2px; background: #555; }
-.slideup-handle:hover .handle-bar { background: #888; }
-
-.slideup-header {
-    display: flex; justify-content: space-between; align-items: center;
-    padding: 4px 24px 12px; border-bottom: 1px solid #333; flex-shrink: 0;
-}
-.slideup-title { font-size: 16px; font-weight: 600; color: #569cd6; margin: 0; }
-.slideup-close { background: none; border: none; color: #888; font-size: 20px; cursor: pointer; padding: 0 4px; }
-.slideup-close:hover { color: #d4d4d4; }
-
-.slideup-body { flex: 1; overflow-y: auto; padding: 16px 24px; }
-
-/* ============================================================
-   SYSTEM METADATA PANEL
-   ============================================================ */
-.meta-panel { z-index: 1501; width: 780px; height: 60vh; }
-.meta-panel .meta-header-right { display: flex; align-items: center; gap: 12px; }
-.meta-panel .meta-status { padding: 0 24px; min-height: 0; }
-.meta-results-count { font-size: 11px; color: #555; }
-.meta-status { width: 100%; text-align: center; font-size: 11px; min-height: 16px; margin-top: 8px; }
-.meta-status.success { color: #4ade80; }
-.meta-status.error { color: #ef4444; }
-
-/* Tree container */
-.meta-tree-list { flex: 1; overflow-y: auto; padding: 8px 16px 16px; min-height: 200px; }
-
-/* Root row */
-.meta-root-row { margin-bottom: 10px; }
-.meta-root-header { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: #2d2d2d; border: 1px solid #404040; border-radius: 6px; cursor: pointer; transition: border-color 0.15s; }
-.meta-root-header:hover { border-color: #555; }
-.meta-root-row.expanded .meta-root-header { border-radius: 6px 6px 0 0; border-color: rgba(86,156,214,0.3); }
-.meta-root-chevron { color: #555; font-size: 10px; flex-shrink: 0; }
-.meta-root-icon { font-size: 18px; }
-.meta-root-name { font-size: 14px; font-weight: 600; color: #d4d4d4; flex: 1; }
-.meta-root-ver { color: #4ec9b0; font-family: 'Cascadia Code','Consolas',monospace; font-weight: 600; font-size: 13px; }
-.meta-root-body { display: none; padding: 10px 14px; background: #252526; border: 1px solid rgba(86,156,214,0.3); border-top: none; border-radius: 0 0 6px 6px; }
-.meta-root-row.expanded .meta-root-body { display: block; }
-
-/* Parent row */
-.meta-parent-row { margin-bottom: 2px; }
-.meta-parent-header { display: flex; align-items: center; gap: 10px; padding: 8px 14px; background: #252526; border: 1px solid #333; border-radius: 5px; cursor: pointer; transition: border-color 0.15s; }
-.meta-parent-header:hover { border-color: #555; }
-.meta-parent-row.expanded .meta-parent-header { border-color: rgba(86,156,214,0.3); border-radius: 5px 5px 0 0; margin-bottom: 0; }
-.meta-parent-chevron { color: #555; font-size: 10px; flex-shrink: 0; }
-.meta-parent-name { font-size: 13px; font-weight: 600; color: #569cd6; flex: 0 0 130px; }
-.meta-parent-desc { font-size: 11px; color: #666; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.meta-parent-type { font-size: 10px; color: #666; }
-.meta-parent-ver { color: #4ec9b0; font-family: 'Cascadia Code','Consolas',monospace; font-weight: 600; font-size: 12px; }
-.meta-parent-count { font-size: 10px; color: #555; flex: 0 0 160px; text-align: right; }
-
-/* Add buttons */
-.meta-add-btn {
-    background: rgba(74,222,128,0.08); border: 1px solid rgba(74,222,128,0.25);
-    border-radius: 4px; color: #4ade80; cursor: pointer;
-    font-size: 14px; font-weight: 700; padding: 1px 8px;
-    transition: all 0.15s; white-space: nowrap; line-height: 1.2;
-}
-.meta-add-btn:hover { background: rgba(74,222,128,0.15); border-color: rgba(74,222,128,0.5); }
-
-/* Child card */
-.meta-child-card { margin: 4px 0 4px 24px; background: #252526; border: 1px solid #333; border-radius: 5px; transition: border-color 0.15s; cursor: pointer; }
-.meta-child-card:hover { border-color: #555; }
-.meta-child-card.expanded { border-color: rgba(86,156,214,0.3); cursor: default; }
-.meta-child-header { display: flex; align-items: center; gap: 8px; padding: 8px 12px; cursor: pointer; font-size: 12px; }
-.meta-child-name { color: #d4d4d4; font-weight: 500; white-space: nowrap; }
-.meta-child-dots { flex: 1; border-bottom: 1px dotted #333; margin: 0 4px; min-width: 20px; }
-.meta-child-type { color: #666; font-size: 10px; white-space: nowrap; }
-.meta-child-ver { color: #4ec9b0; font-family: 'Cascadia Code','Consolas',monospace; font-weight: 600; font-size: 12px; min-width: 48px; text-align: right; }
-.meta-child-body { display: none; padding: 0 12px 6px; border-top: 1px solid #333; }
-.meta-child-card.expanded .meta-child-body { display: block; }
-
-/* Version bump */
-.meta-bump-section { padding: 8px 0 0; }
-.meta-bump-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
-.meta-bump-label { font-size: 10px; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
-.ver-bump {
-    background: #2d2d2d; border: 1px solid #404040;
-    border-radius: 4px; color: #4ec9b0; cursor: pointer;
-    font-size: 18px; font-weight: 700; font-family: 'Cascadia Code','Consolas',monospace;
-    width: 42px; height: 34px;
-    display: flex; align-items: center; justify-content: center;
-    transition: all 0.15s;
-}
-.ver-bump:hover { border-color: #4ec9b0; background: rgba(78,201,176,0.08); }
-.ver-bump:active { transform: scale(0.95); }
-.ver-bump.ver-unchanged { color: #ef4444; border-color: rgba(239,68,68,0.3); background: rgba(239,68,68,0.04); }
-.ver-bump.ver-readonly { cursor: default; pointer-events: none; }
-.ver-dot { font-size: 18px; font-weight: 700; color: #555; }
-
-.meta-desc-input {
-    background: #2d2d2d; border: 1px solid #404040;
-    border-radius: 4px; color: #d4d4d4; font-size: 12px;
-    padding: 7px 10px; font-family: 'Segoe UI',sans-serif;
-    flex: 1; min-width: 200px;
-}
-.meta-desc-input:focus { border-color: #569cd6; outline: none; }
-.meta-insert-btn {
-    background: rgba(74,222,128,0.1); border: 1px solid rgba(74,222,128,0.3);
-    border-radius: 5px; color: #4ade80; cursor: pointer;
-    font-size: 11px; font-weight: 600; padding: 7px 18px;
-    transition: all 0.15s; white-space: nowrap;
-}
-.meta-insert-btn:hover { background: rgba(74,222,128,0.2); border-color: rgba(74,222,128,0.5); }
-.meta-insert-btn:disabled { opacity: 0.3; cursor: default; pointer-events: none; }
-.meta-insert-disabled { opacity: 0.3; }
-.meta-cancel-btn {
-    background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.3);
-    border-radius: 5px; color: #ef4444; cursor: pointer;
-    font-size: 11px; font-weight: 600; padding: 7px 14px;
-    transition: all 0.15s; white-space: nowrap;
-}
-.meta-cancel-btn:hover { background: rgba(239,68,68,0.15); border-color: rgba(239,68,68,0.5); }
-.meta-bump-hint { font-size: 9px; color: #555; margin-top: 6px; }
-.meta-bump-status { font-size: 11px; margin-top: 4px; min-height: 0; }
-.meta-bump-status:empty { display: none; }
-.meta-bump-status.success { color: #4ade80; }
-.meta-bump-status.error { color: #ef4444; }
-
-/* History */
-.meta-history-section { margin-top: 4px; }
-.meta-history-toggle { background: none; border: none; color: #569cd6; cursor: pointer; font-size: 11px; padding: 0; text-decoration: underline; }
-.meta-history-toggle:hover { color: #7dc4ff; }
-.meta-history-list { margin-top: 8px; }
-.meta-hist-row { display: flex; gap: 10px; align-items: center; padding: 4px 0; font-size: 11px; border-bottom: 1px solid #2a2a2a; }
-.meta-hist-ver { color: #4ec9b0; font-family: 'Cascadia Code','Consolas',monospace; font-weight: 600; min-width: 50px; }
-.meta-hist-status { font-size: 9px; font-weight: 600; padding: 1px 6px; border-radius: 3px; }
-.meta-hist-status.active { color: #4ade80; background: rgba(74,222,128,0.1); }
-.meta-hist-status.superseded { color: #888; background: rgba(100,100,120,0.1); }
-.meta-hist-status.deprecated { color: #ef4444; background: rgba(239,68,68,0.1); }
-.meta-hist-desc { color: #888; flex: 1; }
-.meta-hist-date { color: #555; font-size: 10px; min-width: 70px; text-align: right; }
-
-/* Add forms */
-.meta-add-form { padding: 12px 14px; border: 1px solid rgba(74,222,128,0.2); border-radius: 6px; background: rgba(74,222,128,0.02); margin: 6px 0 6px 20px; }
-.meta-add-child { margin-left: 20px; }
-.meta-add-title { font-size: 12px; font-weight: 600; color: #4ade80; margin-bottom: 10px; }
-.meta-add-row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 8px; }
-.meta-add-input {
-    background: #2d2d2d; border: 1px solid #404040;
-    border-radius: 4px; color: #d4d4d4; font-size: 12px;
-    padding: 7px 10px; font-family: 'Segoe UI',sans-serif;
-    flex: 1; min-width: 140px;
-}
-.meta-add-input:focus { border-color: #569cd6; outline: none; }
-.meta-type-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; width: 100%; }
-.meta-radio {
-    display: flex; align-items: center; gap: 4px;
-    font-size: 11px; color: #d4d4d4; cursor: pointer;
-    background: #2d2d2d; border: 1px solid #404040;
-    border-radius: 4px; padding: 5px 8px; transition: all 0.15s;
-}
-.meta-radio:hover { border-color: #666; }
-.meta-radio input[type="radio"] { accent-color: #569cd6; margin: 0; }
-.meta-select {
-    background: #2d2d2d; border: 1px solid #404040;
-    border-radius: 5px; color: #d4d4d4; font-size: 12px;
-    padding: 7px 10px; cursor: pointer; font-family: 'Segoe UI', sans-serif;
+/* Status line shown in the metadata subheader. */
+.adm-meta-status {
     width: 100%;
-}
-.meta-select:focus { border-color: #569cd6; outline: none; }
-.meta-select option { background: #2d2d2d; color: #d4d4d4; }
-
-/* ============================================================
-   GLOBALCONFIG PANEL
-   ============================================================ */
-.gc-panel { z-index: 1501; width: 880px; height: 60vh; }
-.gc-panel .gc-header-right { display: flex; align-items: center; gap: 12px; }
-.gc-panel .meta-status { padding: 0 24px; min-height: 0; }
-.gc-tree-list { flex: 1; overflow-y: auto; padding: 8px 16px 16px; min-height: 200px; }
-
-.gc-mod-row { margin-bottom: 2px; }
-.gc-mod-header { display: flex; align-items: center; gap: 10px; padding: 8px 14px; background: #252526; border: 1px solid #333; border-radius: 5px; cursor: pointer; transition: border-color 0.15s; }
-.gc-mod-header:hover { border-color: #555; }
-.gc-mod-row.expanded .gc-mod-header { border-color: rgba(86,156,214,0.3); border-radius: 5px 5px 0 0; }
-.gc-mod-name { font-size: 13px; font-weight: 600; color: #569cd6; flex: 0 0 130px; }
-
-.gc-child-card { margin: 4px 0 4px 24px; background: #252526; border: 1px solid #333; border-radius: 5px; transition: border-color 0.15s; }
-.gc-child-card:hover { border-color: #555; }
-.gc-child-card.expanded { border-color: rgba(86,156,214,0.3); }
-.gc-child-header { display: flex; align-items: center; gap: 8px; padding: 8px 12px; cursor: pointer; font-size: 12px; overflow: hidden; }
-.gc-child-name { color: #666; font-weight: 500; white-space: nowrap; flex: 0 0 auto; max-width: 280px; overflow: hidden; text-overflow: ellipsis; font-family: 'Cascadia Code','Consolas',monospace; font-size: 11px; }
-.gc-child-desc { font-size: 12px; color: #d4d4d4; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.gc-child-value { font-size: 13px; font-family: 'Cascadia Code','Consolas',monospace; white-space: nowrap; flex-shrink: 0; }
-.gc-child-body { display: none; padding: 0 12px 12px; border-top: 1px solid #333; }
-.gc-child-card.expanded .gc-child-body { display: block; }
-.gc-category-label { font-size: 10px; color: #569cd6; text-transform: uppercase; letter-spacing: 0.8px; padding: 10px 12px 3px; margin-left: 24px; opacity: 0.7; }
-
-.gc-add-hint { font-size: 10px; color: #888; margin-bottom: 8px; font-style: italic; }
-.gc-add-type { min-width: 100px; flex: 0 0 100px; }
-.gc-add-close { background: none; border: none; color: #ef4444; cursor: pointer; font-size: 16px; float: right; padding: 0 2px; line-height: 1; opacity: 0.6; transition: opacity 0.15s; }
-.gc-add-close:hover { opacity: 1; }
-
-.gc-val-bit { cursor: pointer; }
-.gc-val-bit .gc-toggle, .gc-active-toggle .gc-toggle { display: inline-flex; align-items: center; gap: 6px; }
-
-/* Alert mode badges (Teams / Jira selectors) */
-.gc-alert-badges { display: inline-flex; gap: 4px; align-items: center; }
-.gc-alert-badge {
-    font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 3px;
-    cursor: pointer; transition: all 0.15s; letter-spacing: 0.3px;
-    user-select: none;
-}
-.gc-alert-badge.teams.on { background: rgba(14,165,233,0.25); color: #38bdf8; border: 1px solid rgba(14,165,233,0.4); }
-.gc-alert-badge.teams.off { background: rgba(14,165,233,0.06); color: #555; border: 1px solid #333; }
-.gc-alert-badge.jira.on { background: rgba(249,115,22,0.25); color: #fb923c; border: 1px solid rgba(249,115,22,0.4); }
-.gc-alert-badge.jira.off { background: rgba(249,115,22,0.06); color: #555; border: 1px solid #333; }
-.gc-alert-badge:hover { opacity: 0.85; }
-.gc-toggle-track { width: 34px; height: 18px; border-radius: 9px; position: relative; transition: background 0.2s; }
-.gc-toggle-track.on { background: rgba(74,222,128,0.3); border: 1px solid rgba(74,222,128,0.4); }
-.gc-toggle-track.off { background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.3); }
-.gc-toggle-knob { width: 14px; height: 14px; border-radius: 50%; position: absolute; top: 1px; transition: left 0.2s, background 0.2s; }
-.gc-toggle-track.on .gc-toggle-knob { left: 17px; background: #4ade80; }
-.gc-toggle-track.off .gc-toggle-knob { left: 2px; background: #ef4444; }
-.gc-toggle-label { font-size: 11px; font-weight: 600; }
-.gc-toggle-track.on + .gc-toggle-label { color: #4ade80; }
-.gc-toggle-track.off + .gc-toggle-label { color: #ef4444; }
-
-.gc-val-text { color: #ce9178; cursor: pointer; padding: 2px 6px; border-radius: 3px; transition: background 0.2s; }
-.gc-val-text:hover { background: #333; }
-
-.gc-edit-wrap { display: inline-flex; align-items: center; gap: 4px; }
-.gc-edit-input { background: #1e1e1e; border: 1px solid #569cd6; color: #ce9178; font-family: 'Cascadia Code','Consolas',monospace; font-size: 13px; padding: 2px 6px; border-radius: 3px; width: 120px; outline: none; }
-.gc-edit-input:focus { border-color: #4ec9b0; }
-.gc-edit-save { background: none; border: none; color: #4ade80; cursor: pointer; font-size: 14px; padding: 2px 4px; }
-.gc-edit-save:hover { color: #22c55e; }
-.gc-edit-cancel { background: none; border: none; color: #ef4444; cursor: pointer; font-size: 14px; padding: 2px 4px; }
-.gc-edit-cancel:hover { color: #dc2626; }
-
-.gc-detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 20px; padding-top: 10px; }
-.gc-detail-item { font-size: 11px; }
-.gc-detail-label { color: #666; }
-.gc-detail-value { color: #888; }
-.gc-detail-desc { grid-column: 1 / -1; color: #888; font-size: 12px; line-height: 1.5; padding-top: 4px; }
-.gc-detail-notes { grid-column: 1 / -1; color: #666; font-size: 11px; font-style: italic; }
-
-.gc-update-status { font-size: 11px; padding: 4px 0 0; }
-.gc-update-status.success { color: #4ade80; }
-.gc-update-status.error { color: #ef4444; }
-
-.gc-history { padding-top: 6px; }
-.gc-history-loading { font-size: 11px; color: #555; padding: 4px 0; }
-.gc-history-empty { font-size: 11px; color: #444; padding: 4px 0; font-style: italic; }
-.gc-history-header { font-size: 11px; color: #569cd6; font-weight: 600; padding: 6px 0 4px; border-top: 1px solid #2a2a2a; margin-top: 6px; }
-.gc-history-list { max-height: 120px; overflow-y: auto; }
-.gc-history-entry { display: flex; gap: 10px; align-items: baseline; padding: 3px 0; font-size: 11px; border-bottom: 1px solid #222; }
-.gc-history-ts { color: #666; white-space: nowrap; min-width: 100px; }
-.gc-history-user { color: #888; min-width: 80px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.gc-history-change { flex: 1; }
-.gc-history-old { color: #ef4444; font-family: 'Cascadia Code','Consolas',monospace; }
-.gc-history-new { color: #4ade80; font-family: 'Cascadia Code','Consolas',monospace; }
-
-/* INACTIVE SETTINGS */
-.gc-child-card.inactive { opacity: 0.45; }
-.gc-child-card.inactive:hover { opacity: 0.65; }
-.gc-child-card.inactive .gc-child-name { color: #666; }
-.gc-val-inactive {
-    color: #555; font-family: 'Cascadia Code','Consolas',monospace;
-    font-size: 13px; font-style: italic;
+    text-align: center;
+    font-size: var(--font-size-body);
+    min-height: 16px;
+    margin-top: var(--size-spacing-md);
 }
 
-/* Active/Inactive toggle at end of row with vertical separator */
-.gc-active-toggle {
-    cursor: pointer; flex-shrink: 0;
-    padding-left: 10px; margin-left: 4px;
-    border-left: 1px solid #3f3f45;
+.adm-meta-status.adm-success { /* status line: success message */
+    color: #4ade80;
 }
 
-/* "Show N inactive settings" expand link */
-.gc-inactive-toggle {
-    font-size: 11px; color: #555; padding: 8px 12px 4px 28px;
-    cursor: pointer; user-select: none; transition: color 0.15s;
+/* Error state for status lines. */
+.adm-error { }
+
+.adm-meta-status.adm-error { /* status line: error message */
+    color: #ef4444;
 }
-.gc-inactive-toggle:hover { color: #888; }
 
-/* Deactivate link in expanded detail */
-.gc-detail-deactivate { grid-column: 1 / -1; padding-top: 8px; margin-top: 4px; border-top: 1px solid #2a2a2a; }
-.gc-deactivate-link {
-    font-size: 11px; color: #ef4444; cursor: pointer;
-    opacity: 0.6; transition: opacity 0.15s;
+/* Results-count text in the metadata header actions. */
+.adm-results-count {
+    font-size: var(--font-size-body);
+    color: var(--color-border-strong);
 }
-.gc-deactivate-link:hover { opacity: 1; }
 
-/* ============================================================
-   INPUT MODAL
-   ============================================================ */
-.input-modal-overlay {
-    display: none; position: fixed; inset: 0;
-    background: rgba(0,0,0,0.6); z-index: 2000;
+/* Scrolling tree container in the metadata body. */
+.adm-meta-tree-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: var(--size-spacing-md) var(--size-spacing-xl) var(--size-spacing-xl);
+    min-height: 200px;
 }
-.input-modal-overlay.visible { display: block; }
-.input-modal {
-    display: none; position: fixed; top: 50%; left: 50%;
-    transform: translate(-50%, -50%);
-    background: #1e1e1e; border: 1px solid #555;
-    border-radius: 8px; padding: 24px; z-index: 2001;
-    min-width: 350px; box-shadow: 0 10px 40px rgba(0,0,0,0.5);
-}
-.input-modal.visible { display: block; }
-.input-modal-title { font-size: 14px; font-weight: 600; color: #d4d4d4; margin-bottom: 12px; }
-.input-modal-field {
-    width: 100%; background: #2d2d2d; border: 1px solid #404040;
-    border-radius: 5px; color: #d4d4d4; font-size: 13px;
-    padding: 8px 12px; font-family: 'Segoe UI',sans-serif;
-    box-sizing: border-box;
-}
-.input-modal-field:focus { border-color: #569cd6; outline: none; }
-.input-modal-hint { font-size: 10px; color: #555; margin-top: 6px; min-height: 14px; }
-.input-modal-buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
-.input-modal-buttons .btn-cancel {
-    background: #2d2d2d; border: 1px solid #404040; border-radius: 5px;
-    color: #888; cursor: pointer; font-size: 12px; padding: 6px 16px;
-}
-.input-modal-buttons .btn-confirm {
-    background: rgba(86,156,214,0.1); border: 1px solid rgba(86,156,214,0.3);
-    border-radius: 5px; color: #569cd6; cursor: pointer;
-    font-size: 12px; font-weight: 600; padding: 6px 16px;
-}
-.input-modal-buttons .btn-confirm:hover { background: rgba(86,156,214,0.2); border-color: rgba(86,156,214,0.5); }
 
-/* ============================================================
-   LOG MODAL
-   ============================================================ */
-.log-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.65); backdrop-filter:blur(3px); z-index:2000; align-items:center; justify-content:center; }
-.log-overlay.visible { display:flex; }
-.log-modal { background:#1e1e1e; border:1px solid #555; border-radius:8px; width:45%; max-width:650px; max-height:75vh; display:flex; flex-direction:column; box-shadow:0 20px 60px rgba(0,0,0,0.6); }
-.log-modal-header { display:flex; justify-content:space-between; align-items:center; padding:12px 18px; border-bottom:1px solid #333; }
-.log-modal-title { font-size:13px; font-weight:600; color:#d4d4d4; }
-.log-modal-close { background:none; border:none; color:#888; cursor:pointer; font-size:18px; padding:0 4px; }
-.log-modal-close:hover { color:#d4d4d4; }
-.log-modal-tabs { display:flex; border-bottom:1px solid #333; }
-.log-tab { background:none; border:none; border-bottom:2px solid transparent; color:#888; font-size:12px; padding:7px 18px; cursor:pointer; transition:all 0.15s; }
-.log-tab:hover { color:#d4d4d4; background:#252526; }
-.log-tab.active { color:#4ec9b0; border-bottom-color:#4ec9b0; }
-.log-tab.has-content { color:#9cdcfe; }
-.log-tab.has-error { color:#f48771; }
-.log-modal-body { flex:1; overflow:auto; padding:14px 18px; }
-.log-content { font-family:'Cascadia Code','Consolas',monospace; font-size:11px; line-height:1.55; color:#d4d4d4; white-space:pre-wrap; word-wrap:break-word; margin:0; }
-.log-content.empty { color:#555; font-style:italic; font-family:'Segoe UI',sans-serif; }
-.log-content.error-text { color:#f48771; }
-
-/* ============================================================
-   CONFIRM DIALOG
-   ============================================================ */
-.confirm-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);z-index:2000;align-items:center;justify-content:center}
-.confirm-overlay.visible{display:flex}
-.confirm-dialog{background:#252526;border:1px solid #555;border-radius:8px;padding:24px 28px;max-width:380px;box-shadow:0 20px 60px rgba(0,0,0,0.6)}
-.confirm-dialog h3{font-size:15px;font-weight:600;color:#d4d4d4;margin-bottom:10px}
-.confirm-dialog p{font-size:13px;color:#888;line-height:1.6;margin-bottom:18px}
-.confirm-buttons{display:flex;gap:10px;justify-content:flex-end}
-.confirm-btn{font-size:12px;font-weight:600;padding:8px 18px;border-radius:5px;cursor:pointer;transition:all 0.2s}
-.confirm-btn.cancel{background:#333;border:1px solid #555;color:#888}
-.confirm-btn.cancel:hover{border-color:#888;color:#d4d4d4}
-.confirm-btn.action.danger{background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);color:#ef4444}
-.confirm-btn.action.safe{background:rgba(74,222,128,0.15);border:1px solid rgba(74,222,128,0.3);color:#4ade80}
-
-/* ============================================================
-   SCHEDULE EDITOR PANEL
-   ============================================================ */
-.sched-panel { z-index: 1501; width: 780px; height: 60vh; }
-.sched-panel .sched-header-right { display: flex; align-items: center; gap: 12px; }
-.sched-panel .meta-status { padding: 0 24px; min-height: 0; }
-.sched-tree-list { flex: 1; overflow-y: auto; padding: 8px 16px 16px; min-height: 200px; }
-
-.sched-mod-row { margin-bottom: 2px; }
-.sched-mod-header { display: flex; align-items: center; gap: 10px; padding: 8px 14px; background: #252526; border: 1px solid #333; border-radius: 5px; cursor: pointer; transition: border-color 0.15s; }
-.sched-mod-header:hover { border-color: #555; }
-.sched-mod-row.expanded .sched-mod-header { border-color: rgba(86,156,214,0.3); border-radius: 5px 5px 0 0; }
-.sched-mod-name { font-size: 13px; font-weight: 600; color: #569cd6; flex: 0 0 130px; }
-
-.sched-child-card { margin: 4px 0 4px 24px; background: #252526; border: 1px solid #333; border-radius: 5px; transition: border-color 0.15s; }
-.sched-child-card:hover { border-color: #555; }
-.sched-child-card.expanded { border-color: rgba(86,156,214,0.3); }
-.sched-child-header { display: flex; align-items: center; gap: 8px; padding: 8px 12px; cursor: pointer; font-size: 12px; }
-.sched-child-name { color: #d4d4d4; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.sched-child-body { display: none; padding: 0 12px 12px; border-top: 1px solid #333; }
-.sched-child-card.expanded .sched-child-body { display: block; }
-.sched-child-group { font-size: 10px; color: #666; font-family: 'Cascadia Code','Consolas',monospace; white-space: nowrap; }
-
-.sched-mode-badge { font-size: 9px; font-weight: 600; padding: 2px 6px; border-radius: 3px; white-space: nowrap; }
-.sched-mode-badge.ff { color: #4ec9b0; background: rgba(78,201,176,0.1); border: 1px solid rgba(78,201,176,0.2); }
-.sched-mode-badge.wait { color: #dcdcaa; background: rgba(220,220,170,0.08); border: 1px solid rgba(220,220,170,0.2); }
-
-.sched-status-badge { font-size: 9px; font-weight: 600; padding: 2px 6px; border-radius: 3px; white-space: nowrap; min-width: 32px; text-align: center; }
-.sched-status-badge.enabled { color: #4ade80; background: rgba(74,222,128,0.1); border: 1px solid rgba(74,222,128,0.2); }
-.sched-status-badge.disabled { color: #888; background: rgba(100,100,120,0.1); border: 1px solid rgba(100,100,120,0.2); }
-
-.sched-detail { padding-top: 10px; }
-
-.sched-info-card {
-    background: #1e1e1e; border: 1px solid #333; border-radius: 5px;
-    padding: 10px 14px; margin-bottom: 8px;
-}
-.sched-desc { font-size: 12px; color: #888; line-height: 1.5; }
-.sched-script { display: flex; align-items: center; gap: 8px; margin-top: 6px; padding-top: 6px; border-top: 1px solid #2a2a2a; }
-.sched-script-label { font-size: 10px; color: #555; text-transform: uppercase; letter-spacing: 0.5px; flex-shrink: 0; }
-.sched-script-path { font-family: 'Cascadia Code','Consolas',monospace; font-size: 11px; color: #ce9178; }
-
-.sched-settings-card {
-    background: #1e1e1e; border: 1px solid #333; border-radius: 5px;
-    padding: 10px 14px;
-}
-.sched-settings-title {
-    font-size: 10px; font-weight: 600; color: #569cd6;
-    text-transform: uppercase; letter-spacing: 0.8px;
+/* Root ("xFACts") tree row wrapper. */
+.adm-meta-root-row {
     margin-bottom: 10px;
 }
-.sched-settings-grid {
-    display: grid; grid-template-columns: 1fr 1fr;
-    gap: 8px 16px;
-}
-.sched-setting-item {
-    display: flex; flex-direction: column; gap: 3px;
-    padding: 6px 8px; background: #252526; border: 1px solid #2a2a2a;
-    border-radius: 4px; transition: border-color 0.15s;
-}
-.sched-setting-item:hover { border-color: #404040; }
-.sched-setting-wide { grid-column: 1 / -1; }
-.sched-setting-label {
-    font-size: 10px; color: #666; text-transform: uppercase;
-    letter-spacing: 0.3px;
-}
-.sched-setting-control { font-size: 12px; }
-.sched-setting-value {
-    color: #4ec9b0; font-family: 'Cascadia Code','Consolas',monospace;
-    font-weight: 600; font-size: 13px; cursor: pointer;
-    padding: 1px 4px; border-radius: 3px; transition: background 0.2s;
-}
-.sched-setting-value:hover { background: #333; }
 
-.sched-toggle-wrap {
-    cursor: pointer; display: inline-flex; align-items: center; gap: 8px;
+/* Clickable header of the root tree row. */
+.adm-meta-root-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    background: var(--color-bg-card-hover);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-lg);
+    cursor: pointer;
+    transition: border-color var(--duration-instant);
 }
-.sched-edit-input { width: 100px; }
 
-.sched-card-status { font-size: 11px; margin-top: 6px; min-height: 16px; }
-.sched-card-status.success { color: #4ade80; }
-.sched-card-status.error { color: #ef4444; }
+.adm-meta-root-header:hover { /* hover state for the root header */
+    border-color: var(--color-border-strong);
+}
 
-.sched-add-label { font-size: 11px; color: #888; min-width: 90px; flex-shrink: 0; }
-.sched-add-hint { font-size: 10px; color: #555; font-style: italic; margin-left: 8px; }
-.sched-add-grid {
-    display: grid; grid-template-columns: 1fr 1fr;
-    gap: 8px; margin: 6px 0;
-}
-.sched-add-cell {
-    display: flex; flex-direction: column; gap: 3px;
-    padding: 6px 8px; background: #252526; border: 1px solid #333;
-    border-radius: 4px;
-}
-.sched-add-cell-label {
-    font-size: 10px; color: #888; text-transform: uppercase;
-    letter-spacing: 0.3px;
-}
-.sched-add-cell-input {
-    background: #2d2d2d; border: 1px solid #404040; border-radius: 4px;
-    color: #d4d4d4; font-size: 12px; padding: 5px 8px;
-    font-family: 'Segoe UI', sans-serif; width: 100%; box-sizing: border-box;
-}
-.sched-add-cell-input:focus { border-color: #569cd6; outline: none; }
+/* Expanded state for tree headers, bodies, cards, and descriptions. */
+.adm-expanded { }
 
-/* ============================================================
-   DOCUMENTATION PIPELINE SLIDEOUT
-   ============================================================ */
-.doc-panel { z-index: 1501; width: 560px; max-height: 90vh; }
-.doc-pipeline-body { padding: 16px 20px; overflow-y: auto; flex: 1; }
+.adm-meta-root-header.adm-expanded { /* root header when its row is expanded */
+    border-radius: var(--size-radius-lg) var(--size-radius-lg) 0 0;
+    border-color: rgba(86, 156, 214, 0.3);
+}
 
-.doc-step-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
-.doc-card {
-    background: #2d2d2d; border: 1px solid #404040;
-    border-radius: 6px; padding: 10px 12px; transition: all 0.15s;
-}
-.doc-card:hover { border-color: #569cd6; }
-.doc-card.off { opacity: 0.5; }
-.doc-card.off:hover { opacity: 0.7; }
-.doc-card-row { display: flex; align-items: center; gap: 10px; }
-.doc-card-body { flex: 1; }
-.doc-card-title { font-size: 13px; font-weight: 500; color: #d4d4d4; }
-.doc-card-desc { font-size: 11px; color: #888; margin-top: 2px; }
-
-.doc-card-status { font-size: 16px; min-width: 20px; text-align: center; flex-shrink: 0; }
-.doc-card-status.pending { color: #dcdcaa; }
-.doc-card-status.success { color: #4ade80; }
-.doc-card-status.warning { color: #dcdcaa; }
-.doc-card-status.failed { color: #ef4444; }
-
-.doc-toggle { position: relative; width: 36px; height: 20px; cursor: pointer; flex-shrink: 0; }
-.doc-toggle input { display: none; }
-.doc-toggle-track {
-    position: absolute; inset: 0; background: #404040;
-    border-radius: 10px; transition: background 0.2s;
-}
-.doc-toggle input:checked + .doc-toggle-track { background: #569cd6; }
-.doc-toggle-knob {
-    position: absolute; top: 2px; left: 2px; width: 16px; height: 16px;
-    background: #ccc; border-radius: 50%; transition: transform 0.2s, background 0.2s;
-}
-.doc-toggle input:checked ~ .doc-toggle-knob { transform: translateX(16px); background: #fff; }
-
-.doc-card-options {
-    display: flex; gap: 8px; flex-wrap: wrap;
-    margin-top: 8px; padding-top: 8px; border-top: 1px solid #383838;
-}
-.doc-pill {
-    display: inline-flex; align-items: center; padding: 4px 12px;
-    border-radius: 12px; font-size: 11px; cursor: pointer;
-    transition: all 0.15s; border: 1px solid transparent; user-select: none;
-}
-.doc-pill.active { background: rgba(86,156,214,0.15); border-color: rgba(86,156,214,0.35); color: #569cd6; }
-.doc-pill:not(.active) { background: #252526; border-color: #404040; color: #666; }
-.doc-pill:hover { border-color: #569cd6; }
-
-.doc-run-row { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
-.doc-run-btn {
-    background: rgba(86,156,214,0.15); border: 1px solid rgba(86,156,214,0.35);
-    color: #569cd6; font-size: 12px; font-weight: 600; padding: 8px 22px;
-    border-radius: 5px; cursor: pointer; transition: all 0.2s;
-}
-.doc-run-btn:hover { background: rgba(86,156,214,0.25); border-color: rgba(86,156,214,0.5); }
-.doc-run-btn:disabled { opacity: 0.5; cursor: default; }
-.doc-run-status { font-size: 12px; color: #888; }
-.doc-run-status.running { color: #dcdcaa; }
-.doc-run-status.success { color: #4ade80; }
-.doc-run-status.warning { color: #dcdcaa; }
-.doc-run-status.error { color: #ef4444; }
-
-.doc-results { display: flex; flex-direction: column; gap: 4px; }
-.doc-results-divider {
-    border-top: 1px solid #333; padding-top: 12px; margin-top: 4px; margin-bottom: 8px;
-    font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: #666;
-}
-.doc-detail { border: 1px solid #333; border-radius: 6px; overflow: hidden; }
-.doc-detail.ok { border-color: rgba(74,222,128,0.2); }
-.doc-detail.warn { border-color: rgba(220,220,170,0.2); }
-.doc-detail.fail { border-color: rgba(239,68,68,0.2); }
-.doc-detail summary {
-    display: flex; align-items: center; gap: 8px; padding: 8px 12px;
-    background: #252526; cursor: pointer; font-size: 12px; color: #d4d4d4; list-style: none;
-}
-.doc-detail summary::-webkit-details-marker { display: none; }
-.doc-detail-arrow { font-size: 9px; color: #666; transition: transform 0.15s; display: inline-block; }
-.doc-detail[open] .doc-detail-arrow { transform: rotate(90deg); }
-.doc-detail-icon { font-size: 14px; }
-.doc-detail.ok .doc-detail-icon { color: #4ade80; }
-.doc-detail.warn .doc-detail-icon { color: #dcdcaa; }
-.doc-detail.fail .doc-detail-icon { color: #ef4444; }
-.doc-detail-label { font-size: 12px; font-weight: 500; color: #d4d4d4; flex: 1; }
-.doc-detail-exit { font-size: 10px; color: #666; font-family: 'Cascadia Code', 'Consolas', monospace; }
-.doc-detail-output, .doc-detail-error {
-    margin: 0; padding: 8px 12px; font-size: 11px; line-height: 1.5;
-    font-family: 'Cascadia Code', 'Consolas', monospace;
-    max-height: 150px; overflow-y: auto; white-space: pre-wrap; word-break: break-word;
-}
-.doc-detail-output { background: #1e1e1e; color: #aaa; }
-.doc-detail-error { background: rgba(239,68,68,0.05); color: #f48771; }
-
-/* MISC */
-.loading{color:#888;font-size:13px;padding:20px}
-
-/* ============================================================
-   ALERT FAILURES CARD BADGE + SLIDEOUT
-   ============================================================ */
-
-.af-badge {
-    position: absolute; top: 6px; right: 8px;
-    background: #ef4444;
-    color: #fff;
-    font-size: 10px; font-weight: 700;
-    min-width: 18px; height: 18px;
-    border-radius: 9px;
-    display: flex; align-items: center; justify-content: center;
-    padding: 0 5px;
-    box-shadow: 0 0 6px rgba(239,68,68,0.4);
-    animation: pip-pulse-red 2s ease-in-out infinite;
-}
-.af-badge.clean {
-    background: #4ade80;
-    box-shadow: 0 0 6px rgba(74,222,128,0.3);
-    animation: none;
-}
-.af-badge.clean .af-badge-count { display: none; }
-
-.af-panel { z-index: 1501; width: 580px; height: 55vh; }
-.af-panel .af-header-right { display: flex; align-items: center; gap: 12px; }
-.af-body { flex: 1; overflow-y: auto; padding: 12px 20px 20px; }
-
-.af-empty {
-    text-align: center; color: #4ade80;
-    padding: 40px 20px; font-size: 13px;
-}
-.af-empty-icon { font-size: 28px; margin-bottom: 8px; }
-
-.af-card {
-    background: #252526; border: 1px solid #404040; border-radius: 6px;
-    padding: 12px 14px; margin-bottom: 8px;
-    transition: border-color 0.15s;
-}
-.af-card:hover { border-color: #555; }
-
-.af-card-header {
-    display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
-}
-.af-card-title {
-    font-size: 13px; font-weight: 500; color: #d4d4d4;
-    flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.af-module-badge {
-    font-size: 9px; font-weight: 600; letter-spacing: 0.5px;
-    padding: 2px 6px; border-radius: 3px;
-    background: rgba(86,156,214,0.15); color: #569cd6; border: 1px solid rgba(86,156,214,0.25);
+/* Expand chevron in the root header. */
+.adm-meta-root-chevron {
+    color: var(--color-border-strong);
+    font-size: var(--font-size-default);
     flex-shrink: 0;
 }
-.af-category-badge {
-    font-size: 9px; font-weight: 600; letter-spacing: 0.5px;
-    padding: 2px 6px; border-radius: 3px;
+
+/* Icon glyph in the root header. */
+.adm-meta-root-icon {
+    font-size: var(--font-size-heading-lg);
+}
+
+/* Name text in the root header. */
+.adm-meta-root-name {
+    font-size: var(--font-size-heading-sm);
+    font-weight: 600;
+    color: var(--color-text-primary);
+    flex: 1;
+}
+
+/* Collapsible detail body under the root row. */
+.adm-meta-root-body {
+    display: none;
+    padding: 10px 14px;
+    background: var(--color-bg-card);
+    border: var(--size-border-thin) solid rgba(86, 156, 214, 0.3);
+    border-top: none;
+    border-radius: 0 0 var(--size-radius-lg) var(--size-radius-lg);
+}
+
+.adm-meta-root-body.adm-expanded { /* root body shown when expanded */
+    display: block;
+}
+
+/* Root detail info block. */
+.adm-meta-root-info {
+    padding: var(--size-spacing-md) var(--size-spacing-lg);
+    font-size: var(--font-size-content);
+    color: var(--color-text-muted);
+}
+
+/* A single stat line in the root detail. */
+.adm-meta-root-stat {
+    margin-bottom: var(--size-spacing-xs);
+}
+
+/* Module parent tree row wrapper. */
+.adm-meta-parent-row {
+    margin-bottom: 2px;
+}
+
+/* Clickable header of a module parent row. */
+.adm-meta-parent-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: var(--size-spacing-md) 14px;
+    background: var(--color-bg-card);
+    border: var(--size-border-thin) solid var(--color-border-divider);
+    border-radius: var(--size-radius-sm);
+    cursor: pointer;
+    transition: border-color var(--duration-instant);
+}
+
+.adm-meta-parent-header:hover { /* hover state for a parent header */
+    border-color: var(--color-border-strong);
+}
+
+.adm-meta-parent-header.adm-expanded { /* parent header when its row is expanded */
+    border-color: rgba(86, 156, 214, 0.3);
+    border-radius: var(--size-radius-sm) var(--size-radius-sm) 0 0;
+    margin-bottom: 0;
+}
+
+/* Expand chevron in a parent or generic tree header. */
+.adm-meta-parent-chevron {
+    color: var(--color-border-strong);
+    font-size: var(--font-size-default);
     flex-shrink: 0;
 }
-.af-category-badge.critical { background: rgba(239,68,68,0.15); color: #ef4444; border: 1px solid rgba(239,68,68,0.25); }
-.af-category-badge.warning  { background: rgba(220,220,170,0.15); color: #dcdcaa; border: 1px solid rgba(220,220,170,0.25); }
-.af-category-badge.info     { background: rgba(78,201,176,0.15); color: #4ec9b0; border: 1px solid rgba(78,201,176,0.25); }
 
-.af-card-error {
-    font-size: 11px; color: #f48771; margin-bottom: 8px;
-    font-family: 'Cascadia Code','Consolas',monospace;
-    word-break: break-word;
-}
-
-.af-card-footer {
-    display: flex; align-items: center; justify-content: space-between;
-}
-.af-card-meta {
-    font-size: 10px; color: #666;
-    display: flex; gap: 12px;
-}
-.af-card-meta span { display: flex; align-items: center; gap: 3px; }
-
-.af-resend-btn {
-    background: rgba(86,156,214,0.12); border: 1px solid rgba(86,156,214,0.3);
-    color: #569cd6; font-size: 11px; font-weight: 500;
-    padding: 4px 12px; border-radius: 4px; cursor: pointer;
-    transition: all 0.15s;
-}
-.af-resend-btn:hover {
-    background: rgba(86,156,214,0.2); border-color: rgba(86,156,214,0.5);
-}
-.af-resend-btn.pending {
-    background: rgba(220,220,170,0.1); border-color: rgba(220,220,170,0.25);
-    color: #dcdcaa; cursor: default; pointer-events: none;
-}
-.af-resend-btn:disabled {
-    opacity: 0.3; cursor: default; pointer-events: none;
+/* Module name text in a parent header. */
+.adm-meta-parent-name {
+    font-size: var(--font-size-content-lg);
+    font-weight: 600;
+    color: var(--color-accent-platform);
+    flex: 0 0 130px;
 }
 
-/* ================================================================
-   SYSTEM METADATA — additional rules
-   ================================================================ */
+/* Module description text in a parent header. */
+.adm-meta-parent-desc {
+    font-size: var(--font-size-body);
+    color: var(--color-text-subtle);
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
 
-.meta-child-desc {
-    font-size: 11px;
-    color: #888;
-    padding: 2px 12px 6px 28px;
+/* Component/object count text in a parent header. */
+.adm-meta-parent-count {
+    font-size: var(--font-size-default);
+    color: var(--color-border-strong);
+    flex: 0 0 160px;
+    text-align: right;
+}
+
+/* Add-button shared across metadata, globalconfig, and scheduler trees. */
+.adm-meta-add-btn {
+    background: rgba(74, 222, 128, 0.08);
+    border: var(--size-border-thin) solid rgba(74, 222, 128, 0.25);
+    border-radius: var(--size-radius-default);
+    color: #4ade80;
+    cursor: pointer;
+    font-size: var(--font-size-heading-sm);
+    font-weight: 700;
+    padding: 1px var(--size-spacing-md);
+    transition: all var(--duration-instant);
+    white-space: nowrap;
+    line-height: 1.2;
+}
+
+.adm-meta-add-btn:hover { /* hover state for an add button */
+    background: rgba(74, 222, 128, 0.15);
+    border-color: rgba(74, 222, 128, 0.5);
+}
+
+/* Component child card in the metadata tree. */
+.adm-meta-child-card {
+    margin: var(--size-spacing-xs) 0 var(--size-spacing-xs) 24px;
+    background: var(--color-bg-card);
+    border: var(--size-border-thin) solid var(--color-border-divider);
+    border-radius: var(--size-radius-sm);
+    transition: border-color var(--duration-instant);
+    cursor: pointer;
+}
+
+.adm-meta-child-card:hover { /* hover state for a child card */
+    border-color: var(--color-border-strong);
+}
+
+.adm-meta-child-card.adm-expanded { /* expanded child card */
+    border-color: rgba(86, 156, 214, 0.3);
+    cursor: default;
+}
+
+/* Clickable header of a component child card. */
+.adm-meta-child-header {
+    display: flex;
+    align-items: center;
+    gap: var(--size-spacing-md);
+    padding: var(--size-spacing-md) var(--size-spacing-lg);
+    cursor: pointer;
+    font-size: var(--font-size-content);
+}
+
+/* Component name text in a child header. */
+.adm-meta-child-name {
+    color: var(--color-text-primary);
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+/* Dotted leader filling the space in a child header. */
+.adm-meta-child-dots {
+    flex: 1;
+    border-bottom: var(--size-border-thin) dotted var(--color-border-divider);
+    margin: 0 var(--size-spacing-xs);
+    min-width: 20px;
+}
+
+/* Object-count text in a child header. */
+.adm-meta-child-objcount {
+    font-size: var(--font-size-default);
+    color: var(--color-text-subtle);
+    margin-right: var(--size-spacing-md);
+    flex-shrink: 0;
+}
+
+/* Version text in a child header. */
+.adm-meta-child-ver {
+    color: var(--color-accent-shared);
+    font-family: var(--font-family-monospace);
+    font-weight: 600;
+    font-size: var(--font-size-content);
+    min-width: 48px;
+    text-align: right;
+}
+
+/* Component description line under a child header. */
+.adm-meta-child-desc {
+    font-size: var(--font-size-body);
+    color: var(--color-text-muted);
+    padding: 2px var(--size-spacing-lg) var(--size-spacing-sm) 28px;
     line-height: 1.4;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
-.meta-child-card.expanded .meta-child-desc {
+
+.adm-meta-child-desc.adm-expanded { /* full description shown when the card is expanded */
     white-space: normal;
 }
 
-.meta-child-objcount {
-    font-size: 10px;
-    color: #666;
-    margin-right: 8px;
-    flex-shrink: 0;
+/* Collapsible body of a child card. */
+.adm-meta-child-body {
+    display: none;
+    padding: 0 var(--size-spacing-lg) var(--size-spacing-sm);
+    border-top: var(--size-border-thin) solid var(--color-border-divider);
 }
 
-.meta-bump-spacer {
-    flex: 1;
+.adm-meta-child-body.adm-expanded { /* child body shown when expanded */
+    display: block;
 }
 
-.ver-bump.ver-next {
+/* Version-bump editor section inside an expanded child card. */
+.adm-meta-bump-section {
+    padding: var(--size-spacing-md) 0 0;
+}
+
+/* Row holding the version-bump controls. */
+.adm-meta-bump-row {
+    display: flex;
+    align-items: center;
+    gap: var(--size-spacing-xl);
+    flex-wrap: wrap;
+}
+
+/* "Version" label in the bump row. */
+.adm-meta-bump-label {
+    font-size: var(--font-size-default);
+    font-weight: 600;
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* A single version-segment box in the bump row. */
+.adm-ver-bump {
+    background: var(--color-bg-card-hover);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-default);
+    color: var(--color-accent-shared);
+    cursor: pointer;
+    font-size: var(--font-size-heading-lg);
+    font-weight: 700;
+    font-family: var(--font-family-monospace);
+    width: 42px;
+    height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all var(--duration-instant);
+}
+
+/* Next-version highlight for version-bump digits. */
+.adm-ver-next { }
+
+.adm-ver-bump.adm-ver-next { /* the computed next-version segment (read-only) */
     background: #2a2a3a;
-    color: #569cd6;
+    color: var(--color-accent-platform);
     border-color: #404060;
     cursor: default;
     font-weight: 600;
 }
 
-.meta-desc-row {
-    padding: 4px 0 0;
+/* The dot separator between version segments. */
+.adm-ver-dot {
+    font-size: var(--font-size-heading-lg);
+    font-weight: 700;
+    color: var(--color-border-strong);
 }
-.meta-desc-area {
+
+/* Flexible spacer pushing the bump action buttons to the right. */
+.adm-meta-bump-spacer {
+    flex: 1;
+}
+
+/* Insert-version button. */
+.adm-meta-insert-btn {
+    background: rgba(74, 222, 128, 0.1);
+    border: var(--size-border-thin) solid rgba(74, 222, 128, 0.3);
+    border-radius: var(--size-radius-lg);
+    color: #4ade80;
+    cursor: pointer;
+    font-size: var(--font-size-body);
+    font-weight: 600;
+    padding: var(--size-spacing-sm) 18px;
+    transition: all var(--duration-instant);
+    white-space: nowrap;
+}
+
+.adm-meta-insert-btn:hover { /* hover state for the insert button */
+    background: rgba(74, 222, 128, 0.2);
+    border-color: rgba(74, 222, 128, 0.5);
+}
+
+.adm-meta-insert-btn:disabled { /* disabled insert button */
+    opacity: 0.3;
+    cursor: default;
+    pointer-events: none;
+}
+
+.adm-meta-insert-btn.adm-disabled { /* insert button forced into the disabled look */
+    opacity: 0.3;
+}
+
+/* Cancel button in the version-bump editor. */
+.adm-meta-cancel-btn {
+    background: rgba(239, 68, 68, 0.08);
+    border: var(--size-border-thin) solid rgba(239, 68, 68, 0.3);
+    border-radius: var(--size-radius-lg);
+    color: #ef4444;
+    cursor: pointer;
+    font-size: var(--font-size-body);
+    font-weight: 600;
+    padding: var(--size-spacing-sm) 14px;
+    transition: all var(--duration-instant);
+    white-space: nowrap;
+}
+
+.adm-meta-cancel-btn:hover { /* hover state for the cancel button */
+    background: rgba(239, 68, 68, 0.15);
+    border-color: rgba(239, 68, 68, 0.5);
+}
+
+/* Helper hint under the version-bump row. */
+.adm-meta-bump-hint {
+    font-size: var(--font-size-sm);
+    color: var(--color-border-strong);
+    margin-top: var(--size-spacing-sm);
+}
+
+/* Status line under the version-bump editor. */
+.adm-meta-bump-status {
+    font-size: var(--font-size-body);
+    margin-top: var(--size-spacing-xs);
+    min-height: 0;
+}
+
+.adm-meta-bump-status.adm-success { /* bump status: success */
+    color: #4ade80;
+}
+
+.adm-meta-bump-status.adm-error { /* bump status: error */
+    color: #ef4444;
+}
+
+/* Row holding the description textarea for a new version. */
+.adm-meta-desc-row {
+    padding: var(--size-spacing-xs) 0 0;
+}
+
+/* Description textarea for a new version entry. */
+.adm-meta-desc-area {
     width: 100%;
     box-sizing: border-box;
-    background: #1e1e1e;
-    border: 1px solid #404040;
-    border-radius: 4px;
-    color: #d4d4d4;
-    font-family: 'Segoe UI', sans-serif;
-    font-size: 12px;
-    padding: 6px 8px;
+    background: var(--color-bg-page);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-default);
+    color: var(--color-text-primary);
+    font-family: var(--font-family-default);
+    font-size: var(--font-size-content);
+    padding: var(--size-spacing-sm) var(--size-spacing-md);
     resize: none;
     line-height: 1.4;
 }
-.meta-desc-area:focus {
+
+/* Placeholder text in the description textarea. */
+.adm-meta-desc-area::placeholder {
+    color: var(--color-border-strong);
+}
+
+.adm-meta-desc-area:focus { /* focused description textarea */
     outline: none;
-    border-color: #569cd6;
-}
-.meta-desc-area::placeholder {
-    color: #555;
+    border-color: var(--color-accent-platform);
 }
 
-.meta-root-info {
-    padding: 8px 12px;
-    font-size: 12px;
-    color: #888;
-}
-.meta-root-stat {
-    margin-bottom: 4px;
-}
-
-
-/* ================================================================
-   DETAIL PANEL — Slide-out extension panel
-   Attaches to the right edge of the meta-panel (left:24px + width:780px)
-   ================================================================ */
-.detail-panel {
-    position: fixed;
-    bottom: 0;
-    left: 804px;
-    width: 0;
-    height: 60vh;
-    background: #1e1e1e;
-    border-radius: 0 12px 0 0;
-    z-index: 1501;
+/* Actions row (history / catalog toggles) inside an expanded card. */
+.adm-meta-actions-row {
     display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    transition: width 0.3s ease;
+    gap: var(--size-spacing-xl);
+    margin-top: var(--size-spacing-xs);
+    padding-top: var(--size-spacing-xs);
+    border-top: var(--size-border-thin) solid var(--color-border-divider);
 }
-.detail-panel.visible {
-    width: 650px;
-    border-top: 1px solid #555;
-    border-left: 1px solid #333;
-}
-.detail-header {
-    display: flex;
-    align-items: center;
-    padding: 12px 16px;
-    border-bottom: 1px solid #333;
-    gap: 8px;
-    flex-shrink: 0;
-}
-.detail-back {
+
+/* History / catalog toggle link button. */
+.adm-meta-history-toggle {
     background: none;
     border: none;
-    color: #888;
-    font-size: 18px;
+    color: var(--color-accent-platform);
     cursor: pointer;
-    padding: 0 4px;
-    line-height: 1;
+    font-size: var(--font-size-body);
+    padding: 0;
+    text-decoration: underline;
 }
-.detail-back:hover { color: #d4d4d4; }
-.detail-title {
-    font-size: 14px;
+
+.adm-meta-history-toggle:hover { /* hover state for a history toggle */
+    color: #7dc4ff;
+}
+
+/* Add-version/setting form container. */
+.adm-meta-add-form {
+    padding: var(--size-spacing-lg) 14px;
+    border: var(--size-border-thin) solid rgba(74, 222, 128, 0.2);
+    border-radius: var(--size-radius-lg);
+    background: rgba(74, 222, 128, 0.02);
+    margin: var(--size-spacing-sm) 0 var(--size-spacing-sm) 20px;
+}
+
+/* Add-form variant nested under a module row. */
+.adm-meta-add-child {
+    margin-left: 20px;
+}
+
+/* Title row of an add form. */
+.adm-meta-add-title {
+    font-size: var(--font-size-content);
     font-weight: 600;
-    color: #569cd6;
-    margin: 0;
+    color: #4ade80;
+    margin-bottom: 10px;
+}
+
+/* A field row inside an add form. */
+.adm-meta-add-row {
+    display: flex;
+    gap: 10px;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    margin-bottom: var(--size-spacing-md);
+}
+
+/* Text input inside an add form. */
+.adm-meta-add-input {
+    background: var(--color-bg-card-hover);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-default);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-content);
+    padding: var(--size-spacing-sm) 10px;
+    font-family: var(--font-family-default);
+    flex: 1;
+    min-width: 140px;
+}
+
+.adm-meta-add-input:focus { /* focused add-form input */
+    border-color: var(--color-accent-platform);
+    outline: none;
+}
+
+/* Description input inside an add form. */
+.adm-meta-desc-input {
+    background: var(--color-bg-card-hover);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-default);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-content);
+    padding: var(--size-spacing-sm) 10px;
+    font-family: var(--font-family-default);
+    flex: 1;
+    min-width: 200px;
+}
+
+.adm-meta-desc-input:focus { /* focused description input */
+    border-color: var(--color-accent-platform);
+    outline: none;
+}
+
+/* Type-select dropdown inside an add form. */
+.adm-meta-select {
+    background: var(--color-bg-card-hover);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-lg);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-content);
+    padding: var(--size-spacing-sm) 10px;
+    cursor: pointer;
+    font-family: var(--font-family-default);
+    width: 100%;
+}
+
+.adm-meta-select:focus { /* focused select */
+    border-color: var(--color-accent-platform);
+    outline: none;
+}
+
+/* History list under an expanded component. */
+.adm-meta-history-list {
+    margin-top: var(--size-spacing-md);
+}
+
+/* A single history row. */
+.adm-meta-hist-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    padding: var(--size-spacing-xs) 0;
+    font-size: var(--font-size-body);
+    border-bottom: var(--size-border-thin) solid var(--color-bg-card-deep);
+}
+
+/* Version cell in a history row. */
+.adm-meta-hist-ver {
+    color: var(--color-accent-shared);
+    font-family: var(--font-family-monospace);
+    font-weight: 600;
+    min-width: 50px;
+}
+
+/* Status badge in a history row. */
+.adm-meta-hist-status {
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    padding: 1px var(--size-spacing-sm);
+    border-radius: var(--size-radius-sm);
+}
+
+.adm-meta-hist-status.adm-active { /* history status: active version */
+    color: #4ade80;
+    background: rgba(74, 222, 128, 0.1);
+}
+
+/* Superseded state for a version-history status. */
+.adm-superseded { }
+
+.adm-meta-hist-status.adm-superseded { /* history status: superseded version */
+    color: var(--color-text-muted);
+    background: rgba(100, 100, 120, 0.1);
+}
+
+/* Deprecated state for a version-history status. */
+.adm-deprecated { }
+
+.adm-meta-hist-status.adm-deprecated { /* history status: deprecated version */
+    color: #ef4444;
+    background: rgba(239, 68, 68, 0.1);
+}
+
+/* Description cell in a history row. */
+.adm-meta-hist-desc {
+    color: var(--color-text-muted);
     flex: 1;
 }
-.detail-count {
-    font-size: 11px;
-    color: #888;
+
+/* Date cell in a history row. */
+.adm-meta-hist-date {
+    color: var(--color-border-strong);
+    font-size: var(--font-size-default);
+    min-width: 70px;
+    text-align: right;
 }
-.detail-body {
+
+/* ============================================================================
+   CONTENT: GLOBAL CONFIGURATION
+   ----------------------------------------------------------------------------
+   Content inside the Global Configuration slide-up: the module/setting tree,
+   the hand-rolled on/off toggle switch, the alert-mode (Teams/Jira) channel
+   badges, the inline value editor, per-setting detail and change history, and
+   the inactive-settings affordances. Toggle and badge state classes sit on the
+   element that changes per the state-on-element rule. The toggle switch is a
+   chrome-promotion candidate (cc-toggle-*) deferred to a later pass.
+   Prefix: adm
+   ============================================================================ */
+
+/* Scrolling tree container in the globalconfig body. */
+.adm-gc-tree-list {
     flex: 1;
     overflow-y: auto;
-    padding: 8px 16px;
+    padding: var(--size-spacing-md) var(--size-spacing-xl) var(--size-spacing-xl);
+    min-height: 200px;
 }
-.detail-group-label {
-    font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    color: #569cd6;
-    padding: 10px 0 4px;
-    border-bottom: 1px solid #2a2a2a;
+
+/* Module row wrapper in the globalconfig tree. */
+.adm-gc-mod-row {
     margin-bottom: 2px;
 }
-.detail-group-label:first-child {
-    padding-top: 2px;
+
+/* Clickable header of a globalconfig module row. */
+.adm-gc-mod-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: var(--size-spacing-md) 14px;
+    background: var(--color-bg-card);
+    border: var(--size-border-thin) solid var(--color-border-divider);
+    border-radius: var(--size-radius-sm);
+    cursor: pointer;
+    transition: border-color var(--duration-instant);
 }
-.detail-row {
+
+.adm-gc-mod-header:hover { /* hover state for a module header */
+    border-color: var(--color-border-strong);
+}
+
+.adm-gc-mod-header.adm-expanded { /* module header when its row is expanded */
+    border-color: rgba(86, 156, 214, 0.3);
+    border-radius: var(--size-radius-sm) var(--size-radius-sm) 0 0;
+}
+
+/* Module name text in a globalconfig module header. */
+.adm-gc-mod-name {
+    font-size: var(--font-size-content-lg);
+    font-weight: 600;
+    color: var(--color-accent-platform);
+    flex: 0 0 130px;
+}
+
+/* Category label dividing settings within a module. */
+.adm-gc-category-label {
+    font-size: var(--font-size-default);
+    color: var(--color-text-subtle);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: var(--size-spacing-md) 0 var(--size-spacing-xs) var(--size-spacing-xl);
+}
+
+/* Setting child card in the globalconfig tree. */
+.adm-gc-child-card {
+    margin: var(--size-spacing-xs) 0 var(--size-spacing-xs) 24px;
+    background: var(--color-bg-card);
+    border: var(--size-border-thin) solid var(--color-border-divider);
+    border-radius: var(--size-radius-sm);
+    transition: border-color var(--duration-instant);
+    cursor: pointer;
+}
+
+.adm-gc-child-card:hover { /* hover state for a setting card */
+    border-color: var(--color-border-strong);
+}
+
+.adm-gc-child-card.adm-expanded { /* expanded setting card */
+    border-color: rgba(86, 156, 214, 0.3);
+    cursor: default;
+}
+
+/* Inactive state for setting cards and names. */
+.adm-inactive { }
+
+.adm-gc-child-card.adm-inactive { /* inactive (deactivated) setting card */
+    opacity: 0.45;
+}
+
+/* Clickable header row of a setting card. */
+.adm-gc-child-header {
+    display: flex;
+    align-items: center;
+    gap: var(--size-spacing-md);
+    padding: var(--size-spacing-md) var(--size-spacing-lg);
+    cursor: pointer;
+    font-size: var(--font-size-content);
+}
+
+/* Description text in a setting header. */
+.adm-gc-child-desc {
+    color: var(--color-text-muted);
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Setting name text in a setting header. */
+.adm-gc-child-name {
+    color: var(--color-text-primary);
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.adm-gc-child-name.adm-inactive { /* setting name when the setting is inactive */
+    color: var(--color-text-subtle);
+}
+
+/* Value cell in a setting header. */
+.adm-gc-child-value {
+    flex-shrink: 0;
+}
+
+/* Collapsible body of a setting card. */
+.adm-gc-child-body {
+    display: none;
+    padding: 0 var(--size-spacing-lg) var(--size-spacing-sm);
+}
+
+.adm-gc-child-body.adm-expanded { /* setting body shown when expanded */
+    display: block;
+}
+
+/* Inactive value text in a setting header. */
+.adm-gc-val-inactive {
+    color: var(--color-border-strong);
+    font-family: var(--font-family-monospace);
+    font-size: var(--font-size-content-lg);
+    font-style: italic;
+}
+
+/* Editable value text in a setting header. */
+.adm-gc-val-text {
+    color: var(--color-text-pre);
+    cursor: pointer;
+    padding: 2px var(--size-spacing-sm);
+    border-radius: var(--size-radius-sm);
+    transition: background var(--duration-fast);
+}
+
+.adm-gc-val-text:hover { /* hover state for editable value text */
+    background: var(--color-border-divider);
+}
+
+/* Wrapper around the inline value editor. */
+.adm-gc-edit-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--size-spacing-xs);
+}
+
+/* Inline value edit input. */
+.adm-gc-edit-input {
+    background: var(--color-bg-page);
+    border: var(--size-border-thin) solid var(--color-accent-platform);
+    color: var(--color-text-pre);
+    font-family: var(--font-family-monospace);
+    font-size: var(--font-size-content-lg);
+    padding: 2px var(--size-spacing-sm);
+    border-radius: var(--size-radius-sm);
+    width: 120px;
+    outline: none;
+}
+
+.adm-gc-edit-input:focus { /* focused inline value input */
+    border-color: var(--color-accent-shared);
+}
+
+/* Save button for the inline value editor. */
+.adm-gc-edit-save {
+    background: none;
+    border: none;
+    color: #4ade80;
+    cursor: pointer;
+    font-size: var(--font-size-heading-sm);
+    padding: 2px var(--size-spacing-xs);
+}
+
+.adm-gc-edit-save:hover { /* hover state for the save button */
+    color: #22c55e;
+}
+
+/* Cancel button for the inline value editor. */
+.adm-gc-edit-cancel {
+    background: none;
+    border: none;
+    color: #ef4444;
+    cursor: pointer;
+    font-size: var(--font-size-heading-sm);
+    padding: 2px var(--size-spacing-xs);
+}
+
+.adm-gc-edit-cancel:hover { /* hover state for the cancel button */
+    color: #dc2626;
+}
+
+/* Alert-mode channel badge cluster. */
+.adm-gc-alert-badges {
+    display: inline-flex;
+    gap: var(--size-spacing-xs);
+}
+
+/* A single alert-mode channel badge. */
+.adm-gc-alert-badge {
+    padding: 2px var(--size-spacing-md);
+    border-radius: var(--size-radius-sm);
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    cursor: pointer;
+    transition: all var(--duration-instant);
+    letter-spacing: 0.3px;
+    user-select: none;
+}
+
+.adm-gc-alert-badge:hover { /* hover state for an alert badge */
+    opacity: 0.85;
+}
+
+/* Teams-enabled state for an alert-mode badge. */
+.adm-teams-on { }
+
+.adm-gc-alert-badge.adm-teams-on { /* Teams channel enabled */
+    background: rgba(14, 165, 233, 0.25);
+    color: #38bdf8;
+    border: var(--size-border-thin) solid rgba(14, 165, 233, 0.4);
+}
+
+/* Teams-disabled state for an alert-mode badge. */
+.adm-teams-off { }
+
+.adm-gc-alert-badge.adm-teams-off { /* Teams channel disabled */
+    background: rgba(14, 165, 233, 0.06);
+    color: var(--color-border-strong);
+    border: var(--size-border-thin) solid var(--color-border-divider);
+}
+
+/* Jira-enabled state for an alert-mode badge. */
+.adm-jira-on { }
+
+.adm-gc-alert-badge.adm-jira-on { /* Jira channel enabled */
+    background: rgba(249, 115, 22, 0.25);
+    color: #fb923c;
+    border: var(--size-border-thin) solid rgba(249, 115, 22, 0.4);
+}
+
+/* Jira-disabled state for an alert-mode badge. */
+.adm-jira-off { }
+
+.adm-gc-alert-badge.adm-jira-off { /* Jira channel disabled */
+    background: rgba(249, 115, 22, 0.06);
+    color: var(--color-border-strong);
+    border: var(--size-border-thin) solid var(--color-border-divider);
+}
+
+/* Wrapper used to make a BIT value cell clickable. */
+.adm-gc-val-bit {
+    cursor: pointer;
+}
+
+/* The hand-rolled toggle switch wrapper. */
+.adm-gc-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--size-spacing-sm);
+}
+
+/* The toggle track (background rail). */
+.adm-gc-toggle-track {
+    width: 34px;
+    height: 18px;
+    border-radius: 9px;
+    position: relative;
+    transition: background var(--duration-fast);
+}
+
+.adm-gc-toggle-track.adm-on { /* toggle track in the on state */
+    background: rgba(74, 222, 128, 0.3);
+    border: var(--size-border-thin) solid rgba(74, 222, 128, 0.4);
+}
+
+.adm-gc-toggle-track.adm-off { /* toggle track in the off state */
+    background: rgba(239, 68, 68, 0.15);
+    border: var(--size-border-thin) solid rgba(239, 68, 68, 0.3);
+}
+
+/* The toggle knob (sliding circle). */
+.adm-gc-toggle-knob {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    position: absolute;
+    top: 1px;
+    transition: left var(--duration-fast), background var(--duration-fast);
+}
+
+.adm-gc-toggle-knob.adm-on { /* knob position/color in the on state */
+    left: 17px;
+    background: #4ade80;
+}
+
+.adm-gc-toggle-knob.adm-off { /* knob position/color in the off state */
+    left: 2px;
+    background: #ef4444;
+}
+
+/* The toggle text label beside the switch. */
+.adm-gc-toggle-label {
+    font-size: var(--font-size-body);
+    font-weight: 600;
+}
+
+.adm-gc-toggle-label.adm-on { /* label color in the on state */
+    color: #4ade80;
+}
+
+.adm-gc-toggle-label.adm-off { /* label color in the off state */
+    color: #ef4444;
+}
+
+/* Active/inactive toggle affordance at the end of a setting row. */
+.adm-gc-active-toggle {
+    cursor: pointer;
+    flex-shrink: 0;
+    padding-left: 10px;
+    margin-left: var(--size-spacing-xs);
+    border-left: var(--size-border-thin) solid #3f3f45;
+}
+
+/* Per-setting detail grid in an expanded card. */
+.adm-gc-detail-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--size-spacing-sm) var(--size-spacing-2xl);
+    padding-top: 10px;
+}
+
+/* A label/value detail item. */
+.adm-gc-detail-item {
+    font-size: var(--font-size-body);
+}
+
+/* Label text in a detail item. */
+.adm-gc-detail-label {
+    color: var(--color-text-subtle);
+}
+
+/* Value text in a detail item. */
+.adm-gc-detail-value {
+    color: var(--color-text-muted);
+}
+
+/* Full-width description in the detail grid. */
+.adm-gc-detail-desc {
+    grid-column: 1 / -1;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-content);
+    line-height: 1.5;
+    padding-top: var(--size-spacing-xs);
+}
+
+/* Full-width notes line in the detail grid. */
+.adm-gc-detail-notes {
+    grid-column: 1 / -1;
+    color: var(--color-text-subtle);
+    font-size: var(--font-size-body);
+    font-style: italic;
+}
+
+/* Full-width deactivate-link row in the detail grid. */
+.adm-gc-detail-deactivate {
+    grid-column: 1 / -1;
+    padding-top: var(--size-spacing-md);
+    margin-top: var(--size-spacing-xs);
+    border-top: var(--size-border-thin) solid var(--color-bg-card-deep);
+}
+
+/* The deactivate link. */
+.adm-gc-deactivate-link {
+    font-size: var(--font-size-body);
+    color: #ef4444;
+    cursor: pointer;
+    opacity: 0.6;
+    transition: opacity var(--duration-instant);
+}
+
+.adm-gc-deactivate-link:hover { /* hover state for the deactivate link */
+    opacity: 1;
+}
+
+/* "Show N inactive settings" expander link. */
+.adm-gc-inactive-toggle {
+    font-size: var(--font-size-body);
+    color: var(--color-border-strong);
+    padding: var(--size-spacing-md) var(--size-spacing-lg) var(--size-spacing-xs) 28px;
+    cursor: pointer;
+    user-select: none;
+    transition: color var(--duration-instant);
+}
+
+.adm-gc-inactive-toggle:hover { /* hover state for the inactive expander */
+    color: var(--color-text-muted);
+}
+
+/* Change-history container under an expanded setting. */
+.adm-gc-history {
+    padding-top: var(--size-spacing-sm);
+}
+
+/* Loading placeholder in the history container. */
+.adm-gc-history-loading {
+    font-size: var(--font-size-body);
+    color: var(--color-border-strong);
+    padding: var(--size-spacing-xs) 0;
+}
+
+/* Empty-state placeholder in the history container. */
+.adm-gc-history-empty {
+    font-size: var(--font-size-body);
+    color: var(--color-status-disabled);
+    padding: var(--size-spacing-xs) 0;
+    font-style: italic;
+}
+
+/* Header row of the change-history list. */
+.adm-gc-history-header {
+    font-size: var(--font-size-body);
+    color: var(--color-accent-platform);
+    font-weight: 600;
+    padding: var(--size-spacing-sm) 0 var(--size-spacing-xs);
+    border-top: var(--size-border-thin) solid var(--color-bg-card-deep);
+    margin-top: var(--size-spacing-sm);
+}
+
+/* Scrolling list of history entries. */
+.adm-gc-history-list {
+    max-height: 120px;
+    overflow-y: auto;
+}
+
+/* A single change-history entry. */
+.adm-gc-history-entry {
+    display: flex;
+    gap: 10px;
+    align-items: baseline;
+    padding: var(--size-spacing-sm) 0;
+    font-size: var(--font-size-body);
+    border-bottom: var(--size-border-thin) solid #222;
+}
+
+/* Timestamp cell in a history entry. */
+.adm-gc-history-ts {
+    color: var(--color-text-subtle);
+    white-space: nowrap;
+    min-width: 100px;
+}
+
+/* User cell in a history entry. */
+.adm-gc-history-user {
+    color: var(--color-text-muted);
+    min-width: 80px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Change cell (old to new) in a history entry. */
+.adm-gc-history-change {
+    flex: 1;
+}
+
+/* Old-value text in a history change. */
+.adm-gc-history-old {
+    color: #ef4444;
+    font-family: var(--font-family-monospace);
+}
+
+/* New-value text in a history change. */
+.adm-gc-history-new {
+    color: #4ade80;
+    font-family: var(--font-family-monospace);
+}
+
+/* Close button inside an add-setting/add-process form title. */
+.adm-gc-add-close {
+    background: none;
+    border: none;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    font-size: var(--font-size-heading-sm);
+    float: right;
+    padding: 0 var(--size-spacing-xs);
+}
+
+.adm-gc-add-close:hover { /* hover state for the add-form close button */
+    color: var(--color-text-primary);
+}
+
+/* Hint line inside an add-setting form. */
+.adm-gc-add-hint {
+    font-size: var(--font-size-sm);
+    color: var(--color-border-strong);
+    margin-bottom: var(--size-spacing-sm);
+}
+
+/* Type-select width within an add-setting form row. */
+.adm-gc-add-type {
+    flex: 0 0 120px;
+}
+
+/* Narrow add-form input (value / category fields). */
+.adm-gc-add-narrow {
+    flex: 0 0 140px;
+}
+
+/* Growing add-form input (description field). */
+.adm-gc-add-grow {
+    flex: 1;
+}
+
+/* ============================================================================
+   CONTENT: PROCESS SCHEDULER
+   ----------------------------------------------------------------------------
+   Content inside the Process Scheduler slide-up: the module/process tree, the
+   execution-mode and run-state badges, the per-process configuration detail
+   card with inline-editable settings, and the add-process form. Expand state
+   sits on the header/body that changes per the state-on-element rule.
+   Prefix: adm
+   ============================================================================ */
+
+/* Scrolling tree container in the scheduler body. */
+.adm-sched-tree-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: var(--size-spacing-md) var(--size-spacing-xl) var(--size-spacing-xl);
+    min-height: 200px;
+}
+
+/* Module row wrapper in the scheduler tree. */
+.adm-sched-mod-row {
+    margin-bottom: 2px;
+}
+
+/* Clickable header of a scheduler module row. */
+.adm-sched-mod-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: var(--size-spacing-md) 14px;
+    background: var(--color-bg-card);
+    border: var(--size-border-thin) solid var(--color-border-divider);
+    border-radius: var(--size-radius-sm);
+    cursor: pointer;
+    transition: border-color var(--duration-instant);
+}
+
+.adm-sched-mod-header:hover { /* hover state for a scheduler module header */
+    border-color: var(--color-border-strong);
+}
+
+.adm-sched-mod-header.adm-expanded { /* scheduler module header when expanded */
+    border-color: rgba(86, 156, 214, 0.3);
+    border-radius: var(--size-radius-sm) var(--size-radius-sm) 0 0;
+}
+
+/* Module name text in a scheduler module header. */
+.adm-sched-mod-name {
+    font-size: var(--font-size-content-lg);
+    font-weight: 600;
+    color: var(--color-accent-platform);
+    flex: 0 0 130px;
+}
+
+/* Process child card in the scheduler tree. */
+.adm-sched-child-card {
+    margin: var(--size-spacing-xs) 0 var(--size-spacing-xs) 24px;
+    background: var(--color-bg-card);
+    border: var(--size-border-thin) solid var(--color-border-divider);
+    border-radius: var(--size-radius-sm);
+    transition: border-color var(--duration-instant);
+}
+
+.adm-sched-child-card:hover { /* hover state for a process card */
+    border-color: var(--color-border-strong);
+}
+
+.adm-sched-child-card.adm-expanded { /* expanded process card */
+    border-color: rgba(86, 156, 214, 0.3);
+}
+
+/* Clickable header of a process card. */
+.adm-sched-child-header {
+    display: flex;
+    align-items: center;
+    gap: var(--size-spacing-md);
+    padding: var(--size-spacing-md) var(--size-spacing-lg);
+    cursor: pointer;
+    font-size: var(--font-size-content);
+}
+
+/* Process name text in a process header. */
+.adm-sched-child-name {
+    color: var(--color-text-primary);
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Dependency-group text in a process header. */
+.adm-sched-child-group {
+    font-size: var(--font-size-default);
+    color: var(--color-text-subtle);
+    font-family: var(--font-family-monospace);
+    white-space: nowrap;
+}
+
+/* Collapsible body of a process card. */
+.adm-sched-child-body {
+    display: none;
+    padding: 0 var(--size-spacing-lg) var(--size-spacing-lg);
+    border-top: var(--size-border-thin) solid var(--color-border-divider);
+}
+
+.adm-sched-child-body.adm-expanded { /* process body shown when expanded */
+    display: block;
+}
+
+/* Execution-mode badge in a process header. */
+.adm-sched-mode-badge {
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    padding: 2px var(--size-spacing-sm);
+    border-radius: var(--size-radius-sm);
+    white-space: nowrap;
+}
+
+/* Fire-and-forget variant for a scheduler mode badge. */
+.adm-ff { }
+
+.adm-sched-mode-badge.adm-ff { /* fire-and-forget mode badge */
+    color: var(--color-accent-shared);
+    background: rgba(78, 201, 176, 0.1);
+    border: var(--size-border-thin) solid rgba(78, 201, 176, 0.2);
+}
+
+/* Wait-for-exit variant for a scheduler mode badge. */
+.adm-wait { }
+
+.adm-sched-mode-badge.adm-wait { /* wait mode badge */
+    color: var(--color-status-overdue);
+    background: rgba(220, 220, 170, 0.08);
+    border: var(--size-border-thin) solid rgba(220, 220, 170, 0.2);
+}
+
+/* Run-state badge in a process header. */
+.adm-sched-status-badge {
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    padding: 2px var(--size-spacing-sm);
+    border-radius: var(--size-radius-sm);
+    white-space: nowrap;
+    min-width: 32px;
+    text-align: center;
+}
+
+/* Enabled state for a scheduler status badge. */
+.adm-enabled { }
+
+.adm-sched-status-badge.adm-enabled { /* run-state badge: enabled */
+    color: #4ade80;
+    background: rgba(74, 222, 128, 0.1);
+    border: var(--size-border-thin) solid rgba(74, 222, 128, 0.2);
+}
+
+.adm-sched-status-badge.adm-disabled { /* run-state badge: disabled */
+    color: var(--color-text-muted);
+    background: rgba(100, 100, 120, 0.1);
+    border: var(--size-border-thin) solid rgba(100, 100, 120, 0.2);
+}
+
+/* Detail region inside an expanded process card. */
+.adm-sched-detail {
+    padding-top: 10px;
+}
+
+/* Info card (description + script path) in the process detail. */
+.adm-sched-info-card {
+    background: var(--color-bg-page);
+    border: var(--size-border-thin) solid var(--color-border-divider);
+    border-radius: var(--size-radius-sm);
+    padding: 10px 14px;
+    margin-bottom: var(--size-spacing-md);
+}
+
+/* Description text in the info card. */
+.adm-sched-desc {
+    font-size: var(--font-size-content);
+    color: var(--color-text-muted);
+    line-height: 1.5;
+}
+
+/* Script-path row in the info card. */
+.adm-sched-script {
+    display: flex;
+    align-items: center;
+    gap: var(--size-spacing-md);
+    margin-top: var(--size-spacing-sm);
+    padding-top: var(--size-spacing-sm);
+    border-top: var(--size-border-thin) solid var(--color-bg-card-deep);
+}
+
+/* "Script" label in the script row. */
+.adm-sched-script-label {
+    font-size: var(--font-size-default);
+    color: var(--color-border-strong);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    flex-shrink: 0;
+}
+
+/* Script-path value text. */
+.adm-sched-script-path {
+    font-family: var(--font-family-monospace);
+    font-size: var(--font-size-body);
+    color: var(--color-text-pre);
+}
+
+/* Settings card in the process detail. */
+.adm-sched-settings-card {
+    background: var(--color-bg-page);
+    border: var(--size-border-thin) solid var(--color-border-divider);
+    border-radius: var(--size-radius-sm);
+    padding: 10px 14px;
+}
+
+/* Title of the settings card. */
+.adm-sched-settings-title {
+    font-size: var(--font-size-default);
+    font-weight: 600;
+    color: var(--color-accent-platform);
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    margin-bottom: 10px;
+}
+
+/* Grid of setting items in the settings card. */
+.adm-sched-settings-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--size-spacing-md) var(--size-spacing-xl);
+}
+
+/* A single setting item in the settings grid. */
+.adm-sched-setting-item {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-spacing-sm);
+    padding: var(--size-spacing-sm) var(--size-spacing-md);
+    background: var(--color-bg-card);
+    border: var(--size-border-thin) solid var(--color-bg-card-deep);
+    border-radius: var(--size-radius-default);
+    transition: border-color var(--duration-instant);
+}
+
+.adm-sched-setting-item:hover { /* hover state for a setting item */
+    border-color: var(--color-border-default);
+}
+
+/* Full-width span for a scheduler setting item. */
+.adm-wide { }
+
+.adm-sched-setting-item.adm-wide { /* setting item spanning the full grid width */
+    grid-column: 1 / -1;
+}
+
+/* Label of a setting item. */
+.adm-sched-setting-label {
+    font-size: var(--font-size-default);
+    color: var(--color-text-subtle);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+/* Control wrapper inside a setting item. */
+.adm-sched-setting-control {
+    font-size: var(--font-size-content);
+}
+
+/* Editable value text inside a setting item. */
+.adm-sched-setting-value {
+    color: var(--color-accent-shared);
+    font-family: var(--font-family-monospace);
+    font-weight: 600;
+    font-size: var(--font-size-content-lg);
+    cursor: pointer;
+    padding: 1px var(--size-spacing-xs);
+    border-radius: var(--size-radius-sm);
+    transition: background var(--duration-fast);
+}
+
+.adm-sched-setting-value:hover { /* hover state for an editable setting value */
+    background: var(--color-border-divider);
+}
+
+/* Toggle-wrap affordance inside a setting item. */
+.adm-sched-toggle-wrap {
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--size-spacing-md);
+}
+
+/* Inline edit input inside a setting item. */
+.adm-sched-edit-input {
+    width: 100px;
+}
+
+/* Per-card status line in the scheduler detail. */
+.adm-sched-card-status {
+    font-size: var(--font-size-body);
+    margin-top: var(--size-spacing-sm);
+    min-height: 16px;
+}
+
+.adm-sched-card-status.adm-success { /* scheduler card status: success */
+    color: #4ade80;
+}
+
+.adm-sched-card-status.adm-error { /* scheduler card status: error */
+    color: #ef4444;
+}
+
+/* Label inside the add-process form. */
+.adm-sched-add-label {
+    font-size: var(--font-size-body);
+    color: var(--color-text-muted);
+    min-width: 90px;
+    flex-shrink: 0;
+}
+
+/* Hint text inside the add-process form. */
+.adm-sched-add-hint {
+    font-size: var(--font-size-default);
+    color: var(--color-border-strong);
+    font-style: italic;
+    margin-left: var(--size-spacing-md);
+}
+
+/* Field grid inside the add-process form. */
+.adm-sched-add-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--size-spacing-md);
+    margin: var(--size-spacing-sm) 0;
+}
+
+/* A cell in the add-process grid. */
+.adm-sched-add-cell {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-spacing-sm);
+    padding: var(--size-spacing-sm) var(--size-spacing-md);
+    background: var(--color-bg-card);
+    border: var(--size-border-thin) solid var(--color-border-divider);
+    border-radius: var(--size-radius-default);
+}
+
+/* Label of an add-process cell. */
+.adm-sched-add-cell-label {
+    font-size: var(--font-size-default);
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+/* Input of an add-process cell. */
+.adm-sched-add-cell-input {
+    background: var(--color-bg-card-hover);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-default);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-content);
+    padding: var(--size-spacing-sm) var(--size-spacing-md);
+    font-family: var(--font-family-default);
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.adm-sched-add-cell-input:focus { /* focused add-process cell input */
+    border-color: var(--color-accent-platform);
+    outline: none;
+}
+
+/* Right-justified action row in the add-process form. */
+.adm-sched-add-actions {
+    justify-content: flex-end;
+}
+
+/* ============================================================================
+   CONTENT: DOCUMENTATION PIPELINE
+   ----------------------------------------------------------------------------
+   Content inside the Documentation slide-up: the pipeline step cards with
+   their native checkbox toggles and sub-option pills, the run button and
+   overall status, and the per-step result disclosures. The native-checkbox
+   toggle selectors and the native <details> disclosure selectors emit
+   expected drift (checkbox :checked sibling/child combinators pending the
+   cc-toggle-* chrome promotion; <details>/<summary> element, [open]
+   attribute, and webkit marker pseudo-element pending a class-based rework).
+   Prefix: adm
+   ============================================================================ */
+
+/* Scrolling body of the documentation pipeline. */
+.adm-doc-pipeline-body {
+    padding: var(--size-spacing-xl) var(--size-spacing-2xl);
+    overflow-y: auto;
+    flex: 1;
+}
+
+/* Vertical list of pipeline step cards. */
+.adm-doc-step-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-spacing-sm);
+    margin-bottom: var(--size-spacing-xl);
+}
+
+/* A single pipeline step card. */
+.adm-doc-card {
+    background: var(--color-bg-card-hover);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-lg);
+    padding: 10px var(--size-spacing-lg);
+    transition: all var(--duration-instant);
+}
+
+.adm-doc-card:hover { /* hover state for a step card */
+    border-color: var(--color-accent-platform);
+}
+
+.adm-doc-card.adm-off { /* step card whose toggle is off (dimmed) */
+    opacity: 0.5;
+}
+
+/* The main row of a step card (body, status, toggle). */
+.adm-doc-card-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+/* Text body of a step card. */
+.adm-doc-card-body {
+    flex: 1;
+}
+
+/* Title text of a step card. */
+.adm-doc-card-title {
+    font-size: var(--font-size-content-lg);
+    font-weight: 500;
+    color: var(--color-text-primary);
+}
+
+/* Description text of a step card. */
+.adm-doc-card-desc {
+    font-size: var(--font-size-body);
+    color: var(--color-text-muted);
+    margin-top: 2px;
+}
+
+/* Status glyph on a step card. */
+.adm-doc-card-status {
+    font-size: var(--font-size-heading-lg);
+    min-width: 20px;
+    text-align: center;
+    flex-shrink: 0;
+}
+
+.adm-doc-card-status.adm-pending { /* step status: pending */
+    color: var(--color-status-overdue);
+}
+
+.adm-doc-card-status.adm-success { /* step status: success */
+    color: #4ade80;
+}
+
+/* Warning state for run and card statuses. */
+.adm-warning { }
+
+.adm-doc-card-status.adm-warning { /* step status: warning */
+    color: var(--color-status-overdue);
+}
+
+.adm-doc-card-status.adm-failed { /* step status: failed */
+    color: #ef4444;
+}
+
+/* The native-checkbox toggle switch on a step card. */
+.adm-doc-toggle {
+    position: relative;
+    width: 36px;
+    height: 20px;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+/* The hidden native checkbox inside the toggle. */
+.adm-doc-toggle input {
+    display: none;
+}
+
+/* The toggle track (background rail). */
+.adm-doc-toggle-track {
+    position: absolute;
+    inset: 0;
+    background: var(--color-border-default);
+    border-radius: 10px;
+    transition: background var(--duration-fast);
+}
+
+.adm-doc-toggle input:checked + .adm-doc-toggle-track { /* track when the checkbox is checked */
+    background: var(--color-accent-platform);
+}
+
+/* The toggle knob (sliding circle). */
+.adm-doc-toggle-knob {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    background: #ccc;
+    border-radius: 50%;
+    transition: transform var(--duration-fast), background var(--duration-fast);
+}
+
+.adm-doc-toggle input:checked ~ .adm-doc-toggle-knob { /* knob position/color when checked */
+    transform: translateX(16px);
+    background: var(--color-text-on-primary);
+}
+
+/* Sub-option pill row revealed under a step card. */
+.adm-doc-card-options {
+    display: flex;
+    gap: var(--size-spacing-md);
+    flex-wrap: wrap;
+    margin-top: var(--size-spacing-md);
+    padding-top: var(--size-spacing-md);
+    border-top: var(--size-border-thin) solid var(--color-border-subtle);
+}
+
+/* A single sub-option pill. */
+.adm-doc-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: var(--size-spacing-xs) var(--size-spacing-lg);
+    border-radius: var(--size-radius-lg);
+    font-size: var(--font-size-body);
+    cursor: pointer;
+    transition: all var(--duration-instant);
+    border: var(--size-border-thin) solid transparent;
+    user-select: none;
+    background: var(--color-bg-card);
+    border-color: var(--color-border-default);
+    color: var(--color-text-subtle);
+    font-family: inherit;
+    text-decoration: none;
+}
+
+.adm-doc-pill:hover { /* hover state for a sub-option pill */
+    border-color: var(--color-accent-platform);
+}
+
+.adm-doc-pill.adm-active { /* selected sub-option pill */
+    background: rgba(86, 156, 214, 0.15);
+    border-color: rgba(86, 156, 214, 0.35);
+    color: var(--color-accent-platform);
+}
+
+/* Run-button row at the bottom of the pipeline. */
+.adm-doc-run-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 14px;
+}
+
+/* The run-selected button. */
+.adm-doc-run-btn {
+    background: rgba(86, 156, 214, 0.15);
+    border: var(--size-border-thin) solid rgba(86, 156, 214, 0.35);
+    color: var(--color-accent-platform);
+    font-size: var(--font-size-content);
+    font-weight: 600;
+    padding: var(--size-spacing-md) 22px;
+    border-radius: var(--size-radius-lg);
+    cursor: pointer;
+    transition: all var(--duration-fast);
+}
+
+.adm-doc-run-btn:hover { /* hover state for the run button */
+    background: rgba(86, 156, 214, 0.25);
+    border-color: rgba(86, 156, 214, 0.5);
+}
+
+.adm-doc-run-btn:disabled { /* disabled run button */
+    opacity: 0.5;
+    cursor: default;
+}
+
+/* Overall run-status text beside the run button. */
+.adm-doc-run-status {
+    font-size: var(--font-size-content);
+    color: var(--color-text-muted);
+}
+
+.adm-doc-run-status.adm-running { /* run status: running */
+    color: var(--color-status-overdue);
+}
+
+.adm-doc-run-status.adm-success { /* run status: success */
+    color: #4ade80;
+}
+
+.adm-doc-run-status.adm-warning { /* run status: warning */
+    color: var(--color-status-overdue);
+}
+
+.adm-doc-run-status.adm-error { /* run status: error */
+    color: #ef4444;
+}
+
+/* Results area shown after a pipeline run. */
+.adm-doc-results {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-spacing-xs);
+}
+
+/* A divider/label between result groups. */
+.adm-doc-results-divider {
+    border-top: var(--size-border-thin) solid var(--color-border-divider);
+    padding-top: var(--size-spacing-lg);
+    margin-top: var(--size-spacing-xs);
+    margin-bottom: var(--size-spacing-md);
+    font-size: var(--font-size-default);
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--color-text-subtle);
+}
+
+/* A per-step result disclosure (native <details>). */
+.adm-doc-detail {
+    border: var(--size-border-thin) solid var(--color-border-divider);
+    border-radius: var(--size-radius-lg);
+    overflow: hidden;
+}
+
+/* Success border state for a result detail block. */
+.adm-ok { }
+
+.adm-doc-detail.adm-ok { /* result disclosure: step succeeded */
+    border-color: rgba(74, 222, 128, 0.2);
+}
+
+/* Warning border state for a result detail block. */
+.adm-warn { }
+
+.adm-doc-detail.adm-warn { /* result disclosure: step warned */
+    border-color: rgba(220, 220, 170, 0.2);
+}
+
+/* Failure border state for a result detail block. */
+.adm-fail { }
+
+.adm-doc-detail.adm-fail { /* result disclosure: step failed */
+    border-color: rgba(239, 68, 68, 0.2);
+}
+
+.adm-doc-detail summary { /* the clickable disclosure summary row */
+    display: flex;
+    align-items: center;
+    gap: var(--size-spacing-md);
+    padding: var(--size-spacing-md) var(--size-spacing-lg);
+    background: var(--color-bg-card);
+    cursor: pointer;
+    font-size: var(--font-size-content);
+    color: var(--color-text-primary);
+    list-style: none;
+}
+
+.adm-doc-detail summary::-webkit-details-marker { /* hide the native disclosure marker */
+    display: none;
+}
+
+/* Rotating arrow indicator in a result disclosure summary. */
+.adm-doc-detail-arrow {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-subtle);
+    transition: transform var(--duration-instant);
+    display: inline-block;
+}
+
+.adm-doc-detail[open] .adm-doc-detail-arrow { /* arrow rotated when the disclosure is open */
+    transform: rotate(90deg);
+}
+
+/* Status icon in a result disclosure summary. */
+.adm-doc-detail-icon {
+    font-size: var(--font-size-heading-sm);
+}
+
+.adm-doc-detail-icon.adm-ok { /* result icon: success */
+    color: #4ade80;
+}
+
+.adm-doc-detail-icon.adm-warn { /* result icon: warning */
+    color: var(--color-status-overdue);
+}
+
+.adm-doc-detail-icon.adm-fail { /* result icon: failure */
+    color: #ef4444;
+}
+
+/* Step label in a result disclosure summary. */
+.adm-doc-detail-label {
+    font-size: var(--font-size-content);
+    font-weight: 500;
+    color: var(--color-text-primary);
+    flex: 1;
+}
+
+/* Exit-code text in a result disclosure summary. */
+.adm-doc-detail-exit {
+    font-size: var(--font-size-default);
+    color: var(--color-text-subtle);
+    font-family: var(--font-family-monospace);
+}
+
+/* Standard-output block inside a result disclosure. */
+.adm-doc-detail-output {
+    margin: 0;
+    padding: var(--size-spacing-md) var(--size-spacing-lg);
+    font-size: var(--font-size-body);
+    line-height: 1.5;
+    font-family: var(--font-family-monospace);
+    max-height: 150px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    background: var(--color-bg-page);
+    color: var(--color-text-secondary);
+}
+
+/* Error-output block inside a result disclosure. */
+.adm-doc-detail-error {
+    margin: 0;
+    padding: var(--size-spacing-md) var(--size-spacing-lg);
+    font-size: var(--font-size-body);
+    line-height: 1.5;
+    font-family: var(--font-family-monospace);
+    max-height: 150px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    background: rgba(239, 68, 68, 0.05);
+    color: var(--color-text-pre);
+}
+
+/* ============================================================================
+   CONTENT: ALERT FAILURES
+   ----------------------------------------------------------------------------
+   Content inside the Alert Failures slide-up: the empty (all-clear) state, the
+   per-failure cards with module and severity badges, error text, metadata
+   footer, and the resend control.
+   Prefix: adm
+   ============================================================================ */
+
+/* All-clear empty state in the alert-failures body. */
+.adm-af-empty {
+    text-align: center;
+    color: #4ade80;
+    padding: 40px var(--size-spacing-2xl);
+    font-size: var(--font-size-content-lg);
+}
+
+/* Large icon in the empty state. */
+.adm-af-empty-icon {
+    font-size: 28px;
+    margin-bottom: var(--size-spacing-md);
+}
+
+/* A single alert-failure card. */
+.adm-af-card {
+    background: var(--color-bg-card);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-lg);
+    padding: var(--size-spacing-lg) 14px;
+    margin-bottom: var(--size-spacing-md);
+    transition: border-color var(--duration-instant);
+}
+
+.adm-af-card:hover { /* hover state for a failure card */
+    border-color: var(--color-border-strong);
+}
+
+/* Header row of a failure card. */
+.adm-af-card-header {
+    display: flex;
+    align-items: center;
+    gap: var(--size-spacing-md);
+    margin-bottom: var(--size-spacing-md);
+}
+
+/* Title text of a failure card. */
+.adm-af-card-title {
+    font-size: var(--font-size-content-lg);
+    font-weight: 500;
+    color: var(--color-text-primary);
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Module badge on a failure card. */
+.adm-af-module-badge {
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    padding: 2px var(--size-spacing-sm);
+    border-radius: var(--size-radius-sm);
+    background: rgba(86, 156, 214, 0.15);
+    color: var(--color-accent-platform);
+    border: var(--size-border-thin) solid rgba(86, 156, 214, 0.25);
+    flex-shrink: 0;
+}
+
+/* Severity-category badge on a failure card. */
+.adm-af-category-badge {
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    padding: 2px var(--size-spacing-sm);
+    border-radius: var(--size-radius-sm);
+    flex-shrink: 0;
+}
+
+/* Critical severity for an alert-failure category badge. */
+.adm-critical { }
+
+.adm-af-category-badge.adm-critical { /* category badge: critical */
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+    border: var(--size-border-thin) solid rgba(239, 68, 68, 0.25);
+}
+
+.adm-af-category-badge.adm-warning { /* category badge: warning */
+    background: rgba(220, 220, 170, 0.15);
+    color: var(--color-status-overdue);
+    border: var(--size-border-thin) solid rgba(220, 220, 170, 0.25);
+}
+
+/* Info severity for an alert-failure category badge. */
+.adm-info { }
+
+.adm-af-category-badge.adm-info { /* category badge: info */
+    background: rgba(78, 201, 176, 0.15);
+    color: var(--color-accent-shared);
+    border: var(--size-border-thin) solid rgba(78, 201, 176, 0.25);
+}
+
+/* Error-message text on a failure card. */
+.adm-af-card-error {
+    font-size: var(--font-size-body);
+    color: var(--color-text-pre);
+    margin-bottom: var(--size-spacing-md);
+    font-family: var(--font-family-monospace);
+    word-break: break-word;
+}
+
+/* Footer row of a failure card (metadata left, resend right). */
+.adm-af-card-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+/* Metadata cluster in a failure-card footer. */
+.adm-af-card-meta {
+    font-size: var(--font-size-default);
+    color: var(--color-text-subtle);
+    display: flex;
+    gap: var(--size-spacing-lg);
+}
+
+/* Resend button on a failure card. */
+.adm-af-resend-btn {
+    background: rgba(86, 156, 214, 0.12);
+    border: var(--size-border-thin) solid rgba(86, 156, 214, 0.3);
+    color: var(--color-accent-platform);
+    font-size: var(--font-size-body);
+    font-weight: 500;
+    padding: var(--size-spacing-xs) var(--size-spacing-lg);
+    border-radius: var(--size-radius-default);
+    cursor: pointer;
+    transition: all var(--duration-instant);
+}
+
+.adm-af-resend-btn:hover { /* hover state for the resend button */
+    background: rgba(86, 156, 214, 0.2);
+    border-color: rgba(86, 156, 214, 0.5);
+}
+
+.adm-af-resend-btn:disabled { /* disabled resend button */
+    opacity: 0.3;
+    cursor: default;
+    pointer-events: none;
+}
+
+.adm-af-resend-btn.adm-pending { /* resend button while a resend is in flight */
+    background: rgba(220, 220, 170, 0.1);
+    border-color: rgba(220, 220, 170, 0.25);
+    color: var(--color-status-overdue);
+    cursor: default;
+    pointer-events: none;
+}
+
+/* Load-error message inside the alert-failures body. */
+.adm-af-load-error {
+    color: #ef4444;
+    padding: 20px;
+    text-align: center;
+}
+
+/* ============================================================================
+   CONTENT: METADATA DETAIL
+   ----------------------------------------------------------------------------
+   Content rendered inside the detail dock (paired with the System Metadata
+   panel): grouped object-catalog and version-history rows with per-object
+   type badges. The dock framing itself is chrome (cc-dialog-dock); these are
+   the page-specific content classes that fill its body.
+   Prefix: adm
+   ============================================================================ */
+
+/* Group label dividing detail rows by category. */
+.adm-detail-group-label {
+    font-size: var(--font-size-default);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--color-accent-platform);
+    padding: 10px 0 var(--size-spacing-xs);
+    border-bottom: var(--size-border-thin) solid var(--color-bg-card-deep);
+    margin-bottom: 2px;
+}
+
+/* A single detail row in the dock body. */
+.adm-detail-row {
     display: flex;
     align-items: baseline;
     gap: 10px;
-    padding: 5px 0;
-    font-size: 11px;
-    border-bottom: 1px solid #1a1a1a;
+    padding: var(--size-spacing-sm) 0;
+    font-size: var(--font-size-body);
+    border-bottom: var(--size-border-thin) solid #1a1a1a;
 }
-.detail-row:last-child { border-bottom: none; }
-.detail-row-type {
+
+/* Object-type badge cell in a detail row. */
+.adm-detail-row-type {
     flex: 0 0 auto;
-    font-size: 10px;
+    font-size: var(--font-size-default);
     font-weight: 500;
-    padding: 1px 6px;
-    border-radius: 3px;
+    padding: 1px var(--size-spacing-sm);
+    border-radius: var(--size-radius-sm);
     white-space: nowrap;
     text-transform: uppercase;
     letter-spacing: 0.3px;
 }
-.detail-row-type.cat-table      { background: rgba(86,156,214,0.15); color: #569cd6; }
-.detail-row-type.cat-proc       { background: rgba(76,175,80,0.15); color: #4caf50; }
-.detail-row-type.cat-trigger    { background: rgba(255,167,38,0.15); color: #ffa726; }
-.detail-row-type.cat-ddltrigger { background: rgba(244,135,113,0.15); color: #f48771; }
-.detail-row-type.cat-view       { background: rgba(86,156,214,0.15); color: #569cd6; }
-.detail-row-type.cat-function   { background: rgba(76,175,80,0.15); color: #4caf50; }
-.detail-row-type.cat-script     { background: rgba(156,39,176,0.15); color: #9c27b0; }
-.detail-row-type.cat-xe         { background: rgba(78,201,176,0.15); color: #4ec9b0; }
-.detail-row-type.cat-route      { background: rgba(156,39,176,0.15); color: #ce93d8; }
-.detail-row-type.cat-api        { background: rgba(156,39,176,0.15); color: #ce93d8; }
-.detail-row-type.cat-js         { background: rgba(255,213,79,0.15); color: #ffd54f; }
-.detail-row-type.cat-css        { background: rgba(86,156,214,0.15); color: #64b5f6; }
-.detail-row-type.cat-html       { background: rgba(244,135,113,0.15); color: #f48771; }
-.detail-row-type.cat-module     { background: rgba(156,39,176,0.15); color: #9c27b0; }
-.detail-row-name {
-    flex: 1;
-    color: #d4d4d4;
-    font-family: 'Consolas', 'Cascadia Code', monospace;
-    font-size: 11px;
-    word-break: break-all;
-}
-.detail-row-path {
-    flex: 0 0 auto;
-    font-size: 10px;
-    color: #555;
-    font-family: 'Consolas', 'Cascadia Code', monospace;
+
+/* Table category color for a catalog row type badge. */
+.adm-cat-table { }
+
+.adm-detail-row-type.adm-cat-table { /* type badge: table */
+    background: rgba(86, 156, 214, 0.15);
+    color: var(--color-accent-platform);
 }
 
-.meta-actions-row {
+/* Procedure category color for a catalog row type badge. */
+.adm-cat-proc { }
+
+.adm-detail-row-type.adm-cat-proc { /* type badge: stored procedure */
+    background: rgba(76, 175, 80, 0.15);
+    color: #4caf50;
+}
+
+/* Trigger category color for a catalog row type badge. */
+.adm-cat-trigger { }
+
+.adm-detail-row-type.adm-cat-trigger { /* type badge: trigger */
+    background: rgba(255, 167, 38, 0.15);
+    color: #ffa726;
+}
+
+/* DDL-trigger category color for a catalog row type badge. */
+.adm-cat-ddltrigger { }
+
+.adm-detail-row-type.adm-cat-ddltrigger { /* type badge: DDL trigger */
+    background: rgba(244, 135, 113, 0.15);
+    color: var(--color-status-critical);
+}
+
+/* View category color for a catalog row type badge. */
+.adm-cat-view { }
+
+.adm-detail-row-type.adm-cat-view { /* type badge: view */
+    background: rgba(86, 156, 214, 0.15);
+    color: var(--color-accent-platform);
+}
+
+/* Function category color for a catalog row type badge. */
+.adm-cat-function { }
+
+.adm-detail-row-type.adm-cat-function { /* type badge: function */
+    background: rgba(76, 175, 80, 0.15);
+    color: #4caf50;
+}
+
+/* Script category color for a catalog row type badge. */
+.adm-cat-script { }
+
+.adm-detail-row-type.adm-cat-script { /* type badge: script */
+    background: rgba(156, 39, 176, 0.15);
+    color: #9c27b0;
+}
+
+/* XE-session category color for a catalog row type badge. */
+.adm-cat-xe { }
+
+.adm-detail-row-type.adm-cat-xe { /* type badge: extended-events session */
+    background: rgba(78, 201, 176, 0.15);
+    color: var(--color-accent-shared);
+}
+
+/* Route category color for a catalog row type badge. */
+.adm-cat-route { }
+
+.adm-detail-row-type.adm-cat-route { /* type badge: page route */
+    background: rgba(156, 39, 176, 0.15);
+    color: #ce93d8;
+}
+
+/* API category color for a catalog row type badge. */
+.adm-cat-api { }
+
+.adm-detail-row-type.adm-cat-api { /* type badge: API route */
+    background: rgba(156, 39, 176, 0.15);
+    color: #ce93d8;
+}
+
+/* JavaScript category color for a catalog row type badge. */
+.adm-cat-js { }
+
+.adm-detail-row-type.adm-cat-js { /* type badge: JavaScript */
+    background: rgba(255, 213, 79, 0.15);
+    color: #ffd54f;
+}
+
+/* CSS category color for a catalog row type badge. */
+.adm-cat-css { }
+
+.adm-detail-row-type.adm-cat-css { /* type badge: CSS */
+    background: rgba(86, 156, 214, 0.15);
+    color: #64b5f6;
+}
+
+/* HTML category color for a catalog row type badge. */
+.adm-cat-html { }
+
+.adm-detail-row-type.adm-cat-html { /* type badge: HTML */
+    background: rgba(244, 135, 113, 0.15);
+    color: var(--color-status-critical);
+}
+
+/* Module category color for a catalog row type badge. */
+.adm-cat-module { }
+
+.adm-detail-row-type.adm-cat-module { /* type badge: module */
+    background: rgba(156, 39, 176, 0.15);
+    color: #9c27b0;
+}
+
+/* Object-name cell in a detail row. */
+.adm-detail-row-name {
+    flex: 1;
+    color: var(--color-text-primary);
+    font-family: var(--font-family-monospace);
+    font-size: var(--font-size-body);
+    word-break: break-all;
+}
+
+/* Object-path cell in a detail row. */
+.adm-detail-row-path {
+    flex: 0 0 auto;
+    font-size: var(--font-size-default);
+    color: var(--color-border-strong);
+    font-family: var(--font-family-monospace);
+}
+
+/* Inline error message inside the detail dock body. */
+.adm-detail-error-msg {
+    color: #ef4444;
+    font-size: var(--font-size-body);
+    padding: var(--size-spacing-lg);
+}
+
+/* Empty-state message inside the detail dock body. */
+.adm-detail-empty {
+    color: var(--color-border-strong);
+    font-size: var(--font-size-body);
+    padding: var(--size-spacing-lg);
+}
+
+/* Name cell variant using the body font (version-history descriptions). */
+.adm-detail-row-name-plain {
+    font-family: var(--font-family-default);
+}
+
+/* ============================================================================
+   CONTENT: INPUT MODAL
+   ----------------------------------------------------------------------------
+   Content inside the themed name-entry modal (replaces the native browser
+   prompt): the title, the text field, the validation hint, and the modal
+   framing is the shared cc-modal-overlay / cc-dialog-modal construct.
+   Prefix: adm
+   ============================================================================ */
+
+/* Title text in the input modal. */
+.adm-input-modal-title {
+    font-size: var(--font-size-heading-sm);
+    font-weight: 600;
+    color: var(--color-text-primary);
+    margin-bottom: var(--size-spacing-lg);
+}
+
+/* Text field in the input modal. */
+.adm-input-modal-field {
+    width: 100%;
+    background: var(--color-bg-card-hover);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-lg);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-content-lg);
+    padding: var(--size-spacing-md) var(--size-spacing-lg);
+    font-family: var(--font-family-default);
+    box-sizing: border-box;
+}
+
+.adm-input-modal-field:focus { /* focused input-modal field */
+    border-color: var(--color-accent-platform);
+    outline: none;
+}
+
+/* Validation hint below the input field. */
+.adm-input-modal-hint {
+    font-size: var(--font-size-default);
+    color: var(--color-border-strong);
+    margin-top: var(--size-spacing-sm);
+    min-height: 14px;
+}
+
+/* ============================================================================
+   CONTENT: LOG MODAL
+   ----------------------------------------------------------------------------
+   Content inside the task-log modal: the output/error tab strip and the
+   scrollable monospace log content area. The modal framing is the shared
+   cc-modal-overlay / cc-dialog-modal construct.
+   Prefix: adm
+   ============================================================================ */
+
+/* Tab strip in the log modal. */
+.adm-log-modal-tabs {
     display: flex;
-    gap: 16px;
-    margin-top: 4px;
-    padding-top: 4px;
-    border-top: 1px solid #333;
+    border-bottom: var(--size-border-thin) solid var(--color-border-divider);
+}
+
+/* A single log tab. */
+.adm-log-tab {
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-content);
+    padding: var(--size-spacing-sm) 18px;
+    cursor: pointer;
+    transition: all var(--duration-instant);
+}
+
+.adm-log-tab:hover { /* hover state for a log tab */
+    color: var(--color-text-primary);
+    background: var(--color-bg-card);
+}
+
+.adm-log-tab.adm-active { /* the active log tab */
+    color: var(--color-accent-shared);
+    border-bottom-color: var(--color-accent-shared);
+}
+
+/* Has-output state for a log tab. */
+.adm-has-content { }
+
+.adm-log-tab.adm-has-content { /* tab whose pane has output content */
+    color: var(--color-text-link);
+}
+
+/* Has-error state for a log tab. */
+.adm-has-error { }
+
+.adm-log-tab.adm-has-error { /* tab whose pane has error content */
+    color: var(--color-status-critical);
+}
+
+/* Scrollable monospace log content area. */
+.adm-log-content {
+    font-family: var(--font-family-monospace);
+    font-size: var(--font-size-body);
+    line-height: 1.55;
+    color: var(--color-text-primary);
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    margin: 0;
+}
+
+/* Empty state for the log content area. */
+.adm-empty { }
+
+.adm-log-content.adm-empty { /* empty-state log content */
+    color: var(--color-border-strong);
+    font-style: italic;
+    font-family: var(--font-family-default);
+}
+
+/* Error-text state for the log content area. */
+.adm-error-text { }
+
+.adm-log-content.adm-error-text { /* error-tinted log content */
+    color: var(--color-status-critical);
 }
