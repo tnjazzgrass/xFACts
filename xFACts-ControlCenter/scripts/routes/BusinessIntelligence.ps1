@@ -67,16 +67,6 @@
    ============================================================================ #>
 
 Add-PodeRoute -Method Get -Path '/departmental/business-intelligence' -Authentication 'ADLogin' -ScriptBlock {
-
-    # Import the cc- emission helpers. During the CC File Format
-    # Standardization Section 11.2.4 migration this overrides the auto-loaded
-    # xFACts-Helpers module for this route's execution, so Get-NavBarHtml
-    # and Get-PageHeaderHtml emit cc- prefixed chrome classes that match
-    # cc-shared.css and cc-shared.js. Once every page has migrated and
-    # Start-ControlCenter.ps1 loads xFACts-CCShared.psm1 at startup
-    # instead of xFACts-Helpers.psm1, this line is removed.
-    Import-Module -Name 'E:\xFACts-ControlCenter\scripts\modules\xFACts-CCShared.psm1' -Force -DisableNameChecking
-
     $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/departmental/business-intelligence'
     if (-not $access.HasAccess) {
         Write-PodeHtmlResponse -Value (Get-AccessDeniedHtml -DisplayName $access.DisplayName -PageRoute '/departmental/business-intelligence') -StatusCode 403
