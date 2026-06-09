@@ -257,6 +257,23 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogi
         $fieldMetaMap = @{}
         foreach ($f in $fieldMeta) { $fieldMetaMap[$f.element_name] = $f }
 
+        # System-supplied fields: required by the import but never shown to the
+        # user (is_import_required = 1 AND is_visible = 0). An invisible field
+        # cannot be user-supplied, so the system must satisfy it. The only
+        # system value available here is the importing user's bare username
+        # (e.g. the AR log created-user). These columns are added to the
+        # staging table and stamped after rows are inserted, in either staging
+        # path. The is_visible = 0 filter is why $fieldMeta above does not
+        # already include them.
+        $systemUserFields = Invoke-XFActsQuery -Query @"
+            SELECT e.element_name, e.max_length
+            FROM Tools.Catalog_BDLElementRegistry e
+            INNER JOIN Tools.Catalog_BDLFormatRegistry f ON e.format_id = f.format_id
+            WHERE f.entity_type = @entityType
+              AND e.is_import_required = 1
+              AND e.is_visible = 0
+"@ -Parameters @{ entityType = $entityType }
+
         $timestamp = (Get-Date).ToString('yyyyMMdd_HHmmss')
         $tableName = "BDL_${entityType}_${username}_${timestamp}"
         $fullTableName = "Staging.[$tableName]"
@@ -571,6 +588,15 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogi
                 }
             }
 
+            # Stamp any system-supplied required/invisible fields with the
+            # importing user's bare username, then satisfy their requirement.
+            foreach ($suf in $systemUserFields) {
+                $safeSufCol = "[" + ([string]$suf.element_name).Replace(']', ']]') + "]"
+                $sufLen = if ($suf.max_length -and $suf.max_length -isnot [System.DBNull] -and [int]$suf.max_length -gt 0) { [int]$suf.max_length } else { 100 }
+                Invoke-XFActsNonQuery -Query "ALTER TABLE $fullTableName ADD $safeSufCol VARCHAR($sufLen) NULL;"
+                Invoke-XFActsNonQuery -Query "UPDATE $fullTableName SET $safeSufCol = @sysUser;" -Parameters @{ sysUser = $username }
+            }
+
             Write-PodeJsonResponse -Value @{
                 staging_table         = $tableName
                 row_count             = $totalInserted
@@ -805,6 +831,15 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogi
         }
 
         $reqExtraNames = @($requiredExtraColumns | ForEach-Object { $_.elementName })
+
+        # Stamp any system-supplied required/invisible fields with the
+        # importing user's bare username, then satisfy their requirement.
+        foreach ($suf in $systemUserFields) {
+            $safeSufCol = "[" + ([string]$suf.element_name).Replace(']', ']]') + "]"
+            $sufLen = if ($suf.max_length -and $suf.max_length -isnot [System.DBNull] -and [int]$suf.max_length -gt 0) { [int]$suf.max_length } else { 100 }
+            Invoke-XFActsNonQuery -Query "ALTER TABLE $fullTableName ADD $safeSufCol VARCHAR($sufLen) NULL;"
+            Invoke-XFActsNonQuery -Query "UPDATE $fullTableName SET $safeSufCol = @sysUser;" -Parameters @{ sysUser = $username }
+        }
 
         Write-PodeJsonResponse -Value @{
             staging_table         = $tableName
@@ -1616,7 +1651,7 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/build-preview' -Authentication
             return
         }
 
-        $xmlResult = Build-BDLXml -StagingTable $stagingTable -EntityType $entityType -ConfigId $configId -WebEvent $WebEvent
+        $xmlResult = ConvertTo-BDLXml -StagingTable $stagingTable -EntityType $entityType -ConfigId $configId -WebEvent $WebEvent
         if ($xmlResult.Error) {
             Write-PodeJsonResponse -Value @{ error = $xmlResult.Error } -StatusCode $xmlResult.StatusCode
             return
@@ -1669,7 +1704,7 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/execute' -Authentication 'ADLo
         if ($username -and $username.Contains('\')) { $username = $username.Split('\')[1] }
 
         # Step 1: Build the XML
-        $xmlResult = Build-BDLXml -StagingTable $stagingTable -EntityType $entityType -ConfigId $configId -WebEvent $WebEvent
+        $xmlResult = ConvertTo-BDLXml -StagingTable $stagingTable -EntityType $entityType -ConfigId $configId -WebEvent $WebEvent
         if ($xmlResult.Error) {
             Write-PodeJsonResponse -Value @{ error = $xmlResult.Error } -StatusCode $xmlResult.StatusCode
             return
@@ -2087,6 +2122,18 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/execute-ar-log' -Authenticatio
             return
         }
 
+        # Guard against a double AR log. This companion appends a CC/CC AR log
+        # note for every other BDL when a Jira ticket is supplied. When the
+        # import itself is a CONSUMER_ACCOUNT_AR_LOG, the main import already
+        # writes the AR log rows, so firing the companion would write a second
+        # set against the same records. Refuse when the AR log entity is present.
+        $arLogEntity = 'CONSUMER_ACCOUNT_AR_LOG'
+        $selectedTypes = @(($entityTypes -split ',') | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne '' })
+        if ($selectedTypes -contains $arLogEntity) {
+            Write-PodeJsonResponse -Value @{ error = "The AR log companion does not run for a $arLogEntity import; the import itself writes the AR log entries." } -StatusCode 400
+            return
+        }
+
         $jiraTicket = $jiraTicket.Trim()
         $user = "FAC\$($WebEvent.Auth.User.Username)"
 
@@ -2094,18 +2141,33 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/execute-ar-log' -Authenticatio
             $arMessage = "${jiraTicket}: ${entityTypes} update via BDL Import"
         }
 
-        # Determine identifier element from first entity type
+        # Determine identifier element from the first entity type's entity_key.
+        # CONSUMER keys on the consumer agency id, ACCOUNT on the account
+        # agency id. Any other (or missing) key is a hard error: silently
+        # falling back to a consumer identifier for an account-level entity
+        # could write AR log rows against the wrong records, so the companion
+        # refuses rather than guess.
         $firstEntity = ($entityTypes -split ',')[0].Trim()
-        $folderInfo = Invoke-XFActsQuery -Query @"
-            SELECT folder FROM Tools.Catalog_BDLFormatRegistry
+        $keyInfo = Invoke-XFActsQuery -Query @"
+            SELECT entity_key FROM Tools.Catalog_BDLFormatRegistry
             WHERE entity_type = @entityType AND is_active = 1
 "@ -Parameters @{ entityType = $firstEntity }
 
-        $isAcctLevel = $false
-        if ($folderInfo -and $folderInfo.Count -gt 0 -and $folderInfo[0].folder) {
-            $isAcctLevel = $folderInfo[0].folder -like '*account*'
+        $entityKey = $null
+        if ($keyInfo -and $keyInfo.Count -gt 0 -and $keyInfo[0].entity_key -isnot [System.DBNull]) {
+            $entityKey = [string]$keyInfo[0].entity_key
         }
-        $identifierElement = if ($isAcctLevel) { 'cnsmr_accnt_idntfr_agncy_id' } else { 'cnsmr_idntfr_agncy_id' }
+
+        $identifierElement = switch ($entityKey) {
+            'CONSUMER' { 'cnsmr_idntfr_agncy_id' }
+            'ACCOUNT'  { 'cnsmr_accnt_idntfr_agncy_id' }
+            default    { $null }
+        }
+
+        if (-not $identifierElement) {
+            Write-PodeJsonResponse -Value @{ error = "Unrecognized entity_key for entity type '$firstEntity'. Please contact the Applications Team to resolve this issue." } -StatusCode 400
+            return
+        }
 
         # Get environment config (file paths)
         $envConfig = Invoke-XFActsQuery -Query @"
@@ -2136,7 +2198,7 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/execute-ar-log' -Authenticatio
         $apiBaseUrl = $apiServer[0].api_base_url
 
         # Build AR log XML
-        $arXmlResult = Build-ARLogXml -StagingTable $stagingTable -EntityType $firstEntity `
+        $arXmlResult = ConvertTo-ARLogXml -StagingTable $stagingTable -EntityType $firstEntity `
             -JiraTicket $jiraTicket -ArMessage $arMessage `
             -IdentifierElement $identifierElement -WebEvent $WebEvent
 
