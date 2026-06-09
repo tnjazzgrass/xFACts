@@ -1,190 +1,125 @@
 # xFACts Backlog Items
-## Updated: May 9, 2026
+## Updated: June 9, 2026
+## Next ID: B-086
 
-Open build, enhancement, and bug fix items across the xFACts platform. Organized by module and component. Components with no open items are omitted.
+A single punch list of open build, enhancement, and bug-fix items across the xFACts platform. **Open items only** -- when an item is finished it is removed from this file. Its history lives in git and the session record; once closed, an ID has no further meaning and is not reused (allocate the next number from the counter above).
 
-**Type labels:** Build = net-new feature or module. Enhance = improvement to existing functionality. Bug = defect fix.
+Sectioned by **priority**. Within each section, **Refactor Initiative** items are grouped first, then remaining items by component. The **Initiative** column tags the zone-refactor / catalog / spec effort so it can be worked as a set ("let's take the Refactor items this session").
 
----
-
-## Engine
-
-### Orchestrator
-
-| Type | Item | Priority | Notes |
-|------|------|----------|-------|
-| Bug | Stale FIRE_AND_FORGET task detection | High | Two-part fix needed: (1) **Startup orphan cleanup** — on engine start, auto-fail any tasks in LAUNCHED/RUNNING status (guaranteed orphans from prior crash/restart). (2) **Heartbeat timeout detection** — each orchestrator cycle, check for LAUNCHED tasks exceeding ProcessRegistry timeout_seconds, auto-fail with alert. timeout_seconds must account for worst-case catch-up scenarios (XE Events observed at 22 minutes after 8-hour backlog). Need per-process timeout values in ProcessRegistry. Occurred again 2026-03-10: both Collect-XEEvents and Collect-ReplicationHealth hung simultaneously at 20:44, blocked for 8 hours until manual cleanup. |
-| Build | Python script execution support | Medium | Teach orchestrator launch function to detect file extension and invoke python.exe for .py files. ProcessRegistry script_path would accept .py filenames alongside .ps1. Enables language-agnostic process scheduling. First use case: BI file cleanup script. |
-| Enhance | Parallel execution within dependency groups | Low | Currently all processes within a dependency group execute sequentially. Enable parallel execution for processes in the same group that have no interdependencies. Not currently causing concerns — sequential execution completes well within cycle time. |
-
-### Shared Infrastructure
-
-| Type | Item | Priority | Notes |
-|------|------|----------|-------|
-| Enhance | Platform-wide data retention policy | Medium | No retention is currently in place for any module. Design and implement a retention strategy covering all historical data tables: Activity DMV/XE snapshots, backup/disk/replication history, API_RequestLog, Teams/Jira RequestLog, Orchestrator TaskLog/CycleLog, index execution history, batch tracking history. Define per-table retention periods based on operational value. Implement via orchestrator-scheduled cleanup process. |
-| Enhance | Config source tracking for GlobalConfig-referencing scripts | Low | Enhance Initialize-Configuration in all scripts to log whether each setting was loaded from GlobalConfig or fell back to script default. PMT collector is the reference implementation. Enables quick diagnosis when alerts fire unexpectedly due to config connection issues. |
-| Enhance | Extended property cleanup | Low | Remove legacy MS_Description extended properties from all objects. Object_Metadata is the sole documentation source. Properties are inert — cleanup is cosmetic but removes confusion about which system is authoritative. |
-| Enhance | Index_ table constraint and index rename | Low | Four ServerOps tables renamed to Index_ prefix but constraints/indexes still carry old names. Rename to match convention. Cosmetic only. |
-
-### RBAC
-| Type | Item | Priority | Notes |
-|------|------|----------|-------|
-| Design | Number of base platform roles | Low | PowerUser, StandardUser, ReadOnly are differentiated but the practical differences are marginal given ~90% of the site is naturally view-only and most write actions are admin-gated. Worth deciding whether 4 base levels is the right count or whether some can be collapsed. Not driven by any active issue. |
-| Design | Per-scope tool access (Pattern C) | Medium | Today's `RBAC_PermissionMapping` can't express "this scope of dept managers gets this page, others don't." For BDL specifically, BI and Apps/Int dept managers should have access but BS and CR should not. Currently mitigated by `show_in_nav=0` (no nav exposure) plus content filtering via `Tools.AccessConfig`, but URL-typing remains a loophole. Proper fix would be adding an `applies_to_scope` column on `RBAC_PermissionMapping` or similar mechanism. See snapshot doc section 9.2 for approaches considered. |
-| Design | RBAC vs content-filtering separation | Low | `Tools.AccessConfig` and `Tools.AccessFieldConfig` exist because RBAC couldn't express the granularity BDL needed. Worth deciding if this pattern should persist (each tool gets its own access tables) or if a more expressive RBAC model could subsume some of it. Field-level granularity may be too domain-specific for generic RBAC. |
-| Enhance | Endpoint protection standardization | Medium | Asset_Registry catalogs 245 route definitions, of which ~54 are mutating (POST/PUT/DELETE). Only 19 currently have RBAC_ActionRegistry rows. The remaining 35 use either manual `Get-UserAccess` calls (Pattern B) or no auth check at all (Pattern C). Codify a default rule: GET endpoints rely on page-level access; mutating endpoints must call `Test-ActionEndpoint` and have a registry row. Build a gap report from Asset_Registry to identify non-compliant endpoints. |
+**Type:** Build = net-new feature or module - Enhance = improvement to existing functionality - Bug = defect fix - Design = decision/architecture item - Investigate = research before action.
 
 ---
 
-### BDLImport
-| Type | Item | Priority | Notes |
-|------|------|----------|-------|
-| Enhance | Endpoint authorization (Phase B) | High | `/api/bdl-import/execute` and related endpoints currently have no RBAC check at all — only AD authentication. A user with `/bdl-import` page access (any dept manager today) can craft direct POSTs that bypass the UI content filter. Add server-side validation that checks the requesting user's `department_scope` against `Tools.AccessConfig` and `Tools.AccessFieldConfig` before executing imports. This is the high-stakes endpoint gap from the 2026-05-15 RBAC audit. |
+## Critical
+
+*Critical items are fixed in the moment, not parked here. This section should normally be empty.*
+
+| ID | Initiative | Component | Type | Item | Notes |
+|----|-----------|-----------|------|------|-------|
+| | | | | | |
 
 ---
 
-## ServerOps
+## High
 
-### ServerHealth
-
-| Type | Item | Priority | Notes |
-|------|------|----------|-------|
-| Build | Performance Analysis Page | Medium | New page for forensic time-range analysis. Correlates waits, LRQs, HADR metrics, blocking, scheduled jobs. Answers "what happened at 8:15 AM?" Time-range selector with overlaid metrics from DMV and XE data. |
-| Build | Incident History Page | Future | Timeline view of correlated incidents from Activity_IncidentLog and XE tables. Plain-English explanations. Builds on sp_Activity_CorrelateIncidents. Phase 2 — needs planning session for correlation rules. |
-| Enhance | sp_DiagnoseServerHealth Evolution | High | Enhance to analyze time windows and output ranked probable causes. Correlate HADR_SYNC waits + secondary PLE drops + scheduled job windows. Automated diagnosis with plain-English conclusions. |
-| Enhance | Server Health revamp | Medium | Lead Blocker → Blocked Sessions consolidation, Top Wait Types (new) → Longest Wait consolidation + slideout, new tempdb pressure card + slideout, and admin-gated in-slideout KILL badges with the showConfirm() + ActionAuditLog audit flow. |
-| Enhance | Incident correlation expansion | Medium | Extend sp_Activity_CorrelateIncidents to detect multi-source patterns (e.g., PLE crash + blocking + AG sync delay within same time window). Currently single-source only. |
-| Enhance | Diagnostic Report Button | Low | Find appropriate home for sp_DiagnoseServerHealth button (removed from Server Health page). |
-| Enhance | Card value font refactor | Low | Split .metric-value class into separate classes for gauges vs. card display numbers to enable independent font sizing. |
-| Enhance | Incident Analyzer Enhancement | Future | Smarter correlation: time-window clustering, cross-source correlation, plain-English narrative generation. Major enhancement to diagnostic capabilities. |
-
-### Index
-
-| Type | Item | Priority | Notes |
-|------|------|----------|-------|
-| Enhance | Exception Schedule Input | Low | Create an input form/method for creating an Exception Schedule entry. Links to sp_AddExceptionSchedule. Can leverage stored procedure or direct insert. |
-| Enhance | sp_AddExceptionSchedule | Low | Create stored procedure for adding exception schedule entries with validation. |
-| Enhance | Smart scheduling | Low | Evaluate scheduling index maintenance runs through Orchestrator ProcessRegistry instead of manual launch. |
-
-### Replication
-
-| Type | Item | Priority | Notes |
-|------|------|----------|-------|
-| Enhance | Replication registry source server column | Low | Add source_server column to Replication_PublicationRegistry. Populate from sys.servers via publisher_id in the collector. Replace agent_name parsing in the CC card rendering with the stored value. Currently using string parsing of agent_name as a workaround. |
-
-### DBCC
-
-| Type | Item | Priority | Notes |
-|------|------|----------|-------|
-| Enhance | Disk space alert suppression during CHECKDB | Medium | CHECKDB internal snapshot temporarily consumes significant space on data drives during FULL runs. ServerHealth disk monitoring generates Jira tickets for IT Ops on low disk space. Need cross-component awareness to suppress or annotate disk alerts when CHECKDB is actively running on that server. Could check DBCC_ExecutionLog for IN_PROGRESS status on the same server before firing disk threshold alerts. |
----
-
-## JobFlow
-
-| Type | Item | Priority | Notes |
-|------|------|----------|-------|
-| Enhance | Process Status Consolidation | Medium | Process Status cards take up significant space showing mostly 0 values. Evaluate combining flow transition cards into a single consolidated display to free space for execution history expansion. |
-| Enhance | Execution State Accuracy for Pending Jobs | Medium | Flows with pending jobs can show as COMPLETE when all detected jobs have finished but pending jobs haven't started. Cross-reference pending queue to maintain EXECUTING state. |
-| Enhance | Validation threshold review | Low | Revisit min_failure_threshold for critical jobs. Proposed: critical jobs bypass threshold, alert on any failure. |
-| Enhance | Review JobFlow.Status.last_error_message for removal | Low | Transient field not useful when TaskLog has full error history. Evaluate if anything reads this field. |
-| Enhance | ConfigSync Management | Low | Evaluate sp_AnalyzeHistory and sp_PopulateConfig for potential ConfigSync management panel. Unconfigured flow indicator, configuration modal with schedule/alert settings. |
-| Enhance | Centralized Scheduler API | Low | Replace Windows Task Scheduler dependency with xFACts-managed scheduling for flow execution. |
-| Enhance | Cancelling Status Alert | Low | stts_cd 5 (CANCELLING) stuck job detection/alerting after a certain time period in status
+| ID | Initiative | Component | Type | Item | Notes |
+|----|-----------|-----------|------|------|-------|
+| B-001 | Refactor | Standalone scripts | Enhance | Refactor the standalone collection/monitoring script zone to spec | Second of the three zones (after CC, which is essentially complete). The populators are already converted; remaining standalone scripts get refactored one at a time against the four specs. Largely mechanical per file. The drift catalog is the burndown driver. |
+| B-002 | | Orchestrator | Bug | Stale FIRE_AND_FORGET task detection | Two-part fix: (1) **Startup orphan cleanup** -- on engine start, auto-fail any tasks in LAUNCHED/RUNNING (guaranteed orphans from prior crash/restart). (2) **Heartbeat timeout detection** -- each cycle, check for LAUNCHED tasks exceeding ProcessRegistry timeout_seconds, auto-fail with alert. timeout_seconds must account for worst-case catch-up (XE Events observed at 22 min after 8-hour backlog). Need per-process timeout values in ProcessRegistry. Recurred 2026-03-10: Collect-XEEvents and Collect-ReplicationHealth both hung at 20:44, blocked 8 hours until manual cleanup. |
+| B-003 | | Tools.BDLImport | Enhance | Endpoint authorization (Phase B) | `/api/bdl-import/execute` and related endpoints have no RBAC check -- only AD auth. A user with `/bdl-import` page access (any dept manager) can craft direct POSTs bypassing the UI content filter. Add server-side validation of the requester's `department_scope` against `Tools.AccessConfig` / `Tools.AccessFieldConfig` before executing imports. High-stakes gap from the 2026-05-15 RBAC audit. |
+| B-004 | | BatchOps | Enhance | DM concurrency cap investigation | Investigate all DM processing thread caps via env_prfl_cnfg_ovrrd and config_item tables. Findings impact stall detection for both PMT and NB collectors. |
+| B-005 | | FileOps | Enhance | Alert architecture alignment | Move detection/escalation decision from MonitorConfig booleans to WebhookSubscription filters; populate alert_category on subscriptions. Dependent on Teams Workflow migration completing first. |
+| B-006 | | FileOps | Enhance | Multiple alert destinations from modal | Add multiple alert destinations directly from the modal. Currently multiple paths only appear via direct SQL updates/additions. |
+| B-007 | | ServerOps.ServerHealth | Enhance | sp_DiagnoseServerHealth evolution | Analyze time windows and output ranked probable causes. Correlate HADR_SYNC waits + secondary PLE drops + scheduled job windows. Automated diagnosis with plain-English conclusions. |
+| B-008 | | ControlCenter.Shared | Build | Asset_Registry generated documentation pages | Auto-generated pages from registry queries: CC Shared Infrastructure (shared components by file/section), Per-page Component Inventory, Naming Conventions (patterns derived from data), API Endpoint Reference. Pattern follows Platform_Registry's auto-generated tables. (Phases 1-4 of the original Asset_Registry buildout are complete; this generated-docs surface is what remains.) |
+| B-009 | | B2B | Build | B2B module build | In investigation phase with some preliminary objects built. `B2B_Roadmap.md` is the authoritative entry point; investigation-first -- no new tables/columns until the relevant investigation area resolves. |
 
 ---
 
-## BatchOps
+## Medium
 
-| Type | Item | Priority | Notes |
-|------|------|----------|-------|
-| Build | Send-OpenBatchSummary BDL/Notice sections | Medium | Implement remaining check functions (Get-OpenBDLImports, Get-ActiveNoticeProcessing). Requires Phase 0 investigation. |
-| Enhance | DM concurrency cap investigation | High | Investigate all DM processing thread caps via env_prfl_cnfg_ovrrd and config_item tables. Findings impact stall detection logic for both PMT and NB collectors. |
-| Enhance | PMT Phase 3b-2: Stall and time-based alerting | Medium | INPROCESS stall detection, stuck ACTIVE, stuck DELETING, ACTIVEWITHSUSPENSE. Requires DM concurrency cap investigation. |
-| Enhance | PMT EOD manual batch alert | Medium | Daily alert for manual payment batches still in ACTIVE status at end of business day. Requires accounting team input on cutoff time. |
-| Enhance | PMT error extraction for IMPORTFAILED | Medium | Confirm whether cnsmr_pymnt_btch_log contains actionable error messages for import failures. Currently using placeholder text in Jira tickets. |
-| Enhance | PMT ACTIVEWITHSUSPENSE batch resolution | Medium | 12 stuck batches from 2023-2026 requiring business resolution. Review with Matt. |
-| Enhance | PMT insert-path IMPORTFAILED terminal detection | Low | One-cycle delay before terminal detection. No operational impact — zero IMPORTFAILED batches exist historically. |
-| Enhance | Investigate 270 historical incomplete NB batches | Low | Batches marked INVESTIGATE during initial deployment. Review and resolve with appropriate completed_status. 2025 batches are highest priority. |
-
----
-
-## DmOps
-
-| Type | Item | Priority | Notes |
-|------|------|----------|-------|
-| Enhance | Slide-panel rules | High | In page rules retained as page-specific because this page's JS uses the .active activation class (engine-events.css uses .open). cleanup: align JS to .open and strip these.
-| Enhance | Harden exception validation failure handling | Medium | Step 3d try/catch in `Execute-DmShellPurge.ps1` is documented as "non-fatal" but actual behavior on failure ranges from script crash (if `$newExclusions` is unset because temp table CREATE/populate failed) to silent partial exclusion filtering (if a check SQL fails partway through the loop). Hoist `$newExclusions` declaration outside the try block. Make validation failures fatal: set `$Script:ValidationFailed`, write Failed batch log entry, fire Teams alert with `TriggerType = 'SHELL_PURGE_VALIDATION_FAILED'`, and `break` from the batch loop. Replace empty inner catch on `#shell_exclusions` INSERT (~line 890) with a WARN log message — non-fatal because consumer is correctly excluded from current batch in memory; only the cross-batch optimization is affected. Identified 2026-05-01 during pre-production review; not blocking initial run since validation block is stable in test and worst-case failure mode is non-destructive script crash. |
-| Enhance | Add Teams alerts for silent startup exits | Medium | Three startup-path exits in `Execute-DmShellPurge.ps1` currently exit with code 0/1 and no Teams notification, leaving operators unaware the script ran and stopped: (1) `Test-ShellPurgeAbort` returning true at top of script (abort flag pre-existing before any work), (2) WFAPURGE workgroup not found in `crs5_oltp.dbo.wrkgrp` (Step 3a — exits with code 1), (3) Schedule returning 0 (BLOCKED) at startup before batch loop starts (Step 1, exits with code 0). Each should fire an INFO or WARNING alert depending on severity so operators know the run was a no-op. Identified 2026-05-01 during pre-production review. |
-| Enhance | Break out failure counts into separate columns | Low | Shell Purge "History" page on DM Operations currently shows failed batch counts as a parenthetical next to the batches count (e.g., `101 (1 failed)`) on day rows and the Today pane. Looks unstructured and slapped on. Restructure to display failures on their own line (showing `0` when there are no failures, for visual consistency). Apply same treatment to the Archive side of the page where the parenthetical pattern is also used. |
-
----
-
-## FileOps
-
-| Type | Item | Priority | Notes |
-|------|------|----------|-------|
-| Enhance | Alert architecture alignment | High | Move detection/escalation decision from MonitorConfig booleans to WebhookSubscription filters? Populate alert_category on subscriptions. Dependent on Teams Workflow migration completing first. |
-| Enhance | Alert architecture on modal | High | Enhance to add multiple alert destinations from the modal directly. Currently multiple paths only appear with SQL server direct updates/additions.
-
----
-
-## ControlCenter
-
-### Admin
-
-| Type | Item | Priority | Notes |
-|------|------|----------|-------|
-| Build | Health & Usage Sub-Page | Medium | Platform diagnostics dashboard. Platform Pulse, CC Performance, Operational Volume, Usage Analytics. Consolidates concepts from Admin Section Plan and Self Monitoring Plan. Data collection infrastructure already deployed. |
-| Build | Alert Subscription Management Page | Medium | Self-service page for department leads to manage channel subscriptions. Apps team retains admin control over webhook creation. Dependent on RBAC. |
-| Enhance | DBNull handling pattern scan | Low | `ConvertFrom-DBNull` helper was added to `xFACts-Helpers.psm1` during the 2026-05-15 session and applied to `Get-UserPageTier` and `Get-UserContext`. The same DBNull-as-truthy pattern likely exists elsewhere in the codebase where DB-sourced values are evaluated in boolean contexts. Scan for `if (-not $row.X)`, `Where-Object { $_.X }`, `-not $_.X`, and similar patterns against any value sourced from `Invoke-XFActsQuery`. No known user-facing bugs from this — defensive cleanup only. |
-
-### Shared
-
-| Type | Item | Priority | Notes |
-|------|------|----------|-------|
-| Build | Asset_Registry production rewrite | High | Test populator scripts (CSS + HTML extraction) have validated the approach against the full CC codebase (~7,400 rows, drift detection working, consumption matrix real). Test scripts are throwaway DELETE+INSERT — production needs MERGE upsert pattern using `occurrence_index` for stable identity, per-file change detection (skip unchanged files), Object_Registry integration (populate `object_registry_id`), GlobalConfig externalization (paths and shared-files list), standard logging via `Write-Log`, file-level error handling, and standard headers/CHANGELOG. CSS test populator does NOT yet have occurrence_index logic — must add it; HTML test populator does. Three populators total: CSS, HTML, JS. Refer to `Asset_Registry_Working_Doc.md` for full scope. Object_Registry/Object_Metadata registration happens during this phase once schema is final. |
-| Build | Asset_Registry JS extraction (Phase 1C) | Medium | Extend HTML extraction to JS template strings. Captures HTML emitted from JS files (e.g., `innerHTML = '<div class="...">'`) and `classList.add('foo')` runtime class manipulation. Closes the consumption gap for pages that build markup dynamically in JS. Distinct from Phase 2 (JS function/constant cataloging). |
-| Build | Asset_Registry JS function/constant extraction (Phase 2) | Medium | Catalog JS functions, constants, and hooks defined in JS files using Node + Acorn. Generates JS_FUNCTION/JS_CONSTANT/JS_HOOK rows. Distinct from Phase 1C (which handles JS-emitted HTML). |
-| Build | Asset_Registry PS function/route extraction (Phase 3) | Medium | Catalog PowerShell function definitions and `Add-PodeRoute` calls using PS built-in parser. Generates PS_FUNCTION/API_ROUTE rows. Same approach as HTML extraction (built-in parser, no Node helper needed). |
-| Build | Asset_Registry Admin UI integration (Phase 4) | Low | Add manual trigger to Admin page to run the orchestrator on demand. Sibling pattern to Documentation Pipeline trigger. Decide on auto-refresh schedule (suggested 3-4x daily) once production scripts are stable. |
-| Build | Asset_Registry generated documentation (Phase 5) | Low | Auto-generated documentation pages from registry queries: "CC Shared Infrastructure" (every shared component grouped by file/section), "Per-page Component Inventory", "Naming Conventions" (patterns derived from data), "API Endpoint Reference". Pattern follows Platform_Registry's auto-generated tables. |
-| Enhance | CC standardization opportunities surfaced by Asset_Registry | Medium | Catalog data identified specific cleanup targets across the platform. Pursue incrementally during chrome standardization passes: (1) **Keyframe duplication** — 26 LOCAL definitions of `pulse`, `spin`, etc. should use the 4 SHARED keyframes in engine-events.css. (2) **Custom modal cleanup** — 81 custom `modal-*` uses across 12 pages should migrate to shared `xf-modal-*`. Easy targets: Backup, BIDATA, JBoss (already partially adopted). (3) **slide-panel naming inconsistency** — BatchMonitoring uses `xwide`, DmOperations uses `extra-wide`, everyone else uses `wide`. (4) **server-health.css line 715/729** — 11 ID-prefixed rules duplicating shared `.slide-panel.wide` styles. (5) **index-maintenance.css line 887/896** — 6 ID-prefixed rules same pattern. (6) Various **`<undefined>` class references** — classes used in HTML without CSS rules (admin-badge, admin-tool, af-* on Admin page, denied-container/denied-icon/home-link in helpers). Each either gets a CSS rule (even minimal/documented) or removed from HTML. |
-| Enhance | Apply parser-friendly conventions to existing files during chrome work | Low | Asset_Registry parser development surfaced patterns that defeat or weaken static parsing. Recommendations captured in `Parser_Friendly_Conventions.md` (working draft for eventual merge into `CC_FileFormat_Spec.md`). Key items: (1) helpers should emit HTML in single coherent strings, not via `$html += "..."` chains that fragment class= attributes; (2) avoid variable interpolation in static class= values where possible; (3) every class used in HTML should have a CSS rule (even a minimal one for JS-targeting classes); (4) section banners must follow the standardized format across CSS/JS/PS. Apply incrementally during chrome work. |
-| Enhance | Invoke-XFActsQuery → Invoke-XFActsNonQuery audit | Low | `Invoke-XFActsNonQuery` was added after many scripts were already written. Older scripts use `Invoke-XFActsQuery` for INSERT/UPDATE/DELETE where no result set is needed. This works but is inefficient — `Query` allocates a SqlDataAdapter, DataSet, and row iteration unnecessarily. **Rule:** Use `Query` only for SELECT or INSERT/UPDATE with `OUTPUT INSERTED`. Use `NonQuery` for all other DML/DDL. Fix opportunistically as scripts are opened for other changes. Grep pattern: `Invoke-XFActsQuery -Query` followed by INSERT/UPDATE/DELETE without an OUTPUT clause. Fixed so far: `DmOperations-API.ps1` abort endpoint (2026-04-13). |
-| Enhance | Nav bar overflow handling | Low | Per-user filtering via dynamic nav reduces visible page count. If overflow becomes a real problem despite filtering, options include: dropdown/mega-menu, two-row layout, collapsible groups. |
-| Enhance | Shared CC CSS consolidation | High | Extract remaining duplicated CSS patterns (h1, header-bar, modal/slideout, status badges, scrollbar) into engine-events.css. See Development Guidelines Section 5.11 for inventory. Asset_Registry catalog now provides queryable evidence of what's duplicated and where — see related backlog item "CC standardization opportunities surfaced by Asset_Registry" for specific targets identified by catalog queries. Migrate incrementally. |
-| Enhance | Shared CC JS extraction | Low | Evaluate common JS patterns (modal open/close, slideout animation, refresh badge updates) for extraction into cc-engine-events.js. Consider rename if necessary. |
-| Enhance | Coverage gap-check refinement for wildcard-granted pages | Medium | /admin and /platform-monitoring show as false positives in NavRegistry vs PermissionMapping gap-check (rely on Admin wildcard `*` permission). Decide between query-side fix or schema-side fix (add requires_explicit_permission BIT to NavRegistry). |
-| Build | Doc-page RBAC integration | Medium | Apply RBAC + dynamic nav to /docs/pages/*. Currently unauthenticated. Requires: (1) auth on /docs static route in Start-ControlCenter.ps1, (2) doc_page_id → CC page route → permission lookup, (3) nav.js update for filtered registry. doc_page_id field in RBAC_NavRegistry is the join key. Dependent on Phase 3d completion. |
-| Investigate | Pode error logging silence | Medium | No Pode error logs have been written for approximately 3 months despite `New-PodeLoggingMethod -File -Name 'errors' ... | Enable-PodeErrorLogging` being configured correctly in `Start-ControlCenter.ps1`. Need to determine cause: log file permissions, directory cleanup job, log rotation, or the prevalent empty `catch { }` blocks throughout the codebase swallowing exceptions before Pode sees them. Restoring error visibility is important before production user expansion. |
-
-## ControlCenter
-
-| Type | Item | Priority | Notes |
-|------|------|----------|-------|
-| Build | Chrome promotion Promote toggle-switch and inline-edit controls to shared `cc-` chrome | Medium | Currently hand-rolled page-local in each consumer (`aai-` on Apps & Integration after refactor; `gc-` on Admin, unrefactored). Design canonical `cc-toggle-*` / `cc-edit-*` API against ALL consumers — verify Admin's variant (states, sizes, behaviors) before canonicalizing. Requires `cc-shared.css` additions, possible shared JS handlers, and CC_CSS_Spec.md chrome-class-reference amendment. Belongs to the post-refactor catalog promotion pass, not a single-page refactor. |
-| Enhance | Spec + populator amendment Model the side-by-side slide-up dock as a fourth overlay construct | Medium | Bottom-anchored slide-up panel paired with a horizontally-expanding detail panel (two-tier). Not any of the three §5.4 constructs (modal/slideout/slideup) — distinct UX, currently page-local. Consumers: Apps & Integration BDL Catalog (`aai-` after refactor) and Admin (name the component during Admin's refactor). Amendment spans HTML §5.4 (new `cc-dock-*` / `cc-dialog-dock` family), CC_CSS_Spec chrome reference, JS §11.5 (open/close handler pattern), and all four populators (recognize + validate). Design against both consumers, not from one example. |
-| Build | 4th overlay construct (side-by-side slide-up dock) | Medium | The catalog dock on Applications & Integration uses page-local backdrop/handle divs carrying data-action-click, which draws ACTION_ON_NON_INTERACTIVE_ELEMENT (page-local divs get no §7.5 carve-out). Model the side-by-side slide-up dock as a proper fourth cc- overlay construct (CC_HTML_Spec §5.4 + §14 new class, CC_CSS_Spec, CC_JS_Spec §11.5, all four populators, cc-shared.css/js) so the backdrop/handle become carve-out-eligible overlay containers. Resolves the 2 tracked dock action-div rows on aai. First concrete consumer is the A&I catalog dock. |
-| Enhance | Conditional server-side markup support for partially-gated pages | Medium | The HTML populator only catalogs IDs that are literal text inside a single here-string, so admin markup that is conditionally emitted server-side (if $ctx.IsAdmin) loses ID resolution (JS_HTML_ID_UNRESOLVED) and a second HTML here-string breaks DOCTYPE detection. Applications & Integration is partially gated (admin section inside an otherwise-shared page) and currently uses the interim hide-not-omit approach: admin markup always emitted, collapsed via page-local aai-hidden for non-admins, API enforces real security. Design proper conditional-markup support (populator + spec) so partially-gated pages can omit admin markup server-side without drift. Replaces the present-but-hidden interim once shipped. |
+| ID | Initiative | Component | Type | Item | Notes |
+|----|-----------|-----------|------|------|-------|
+| B-010 | Refactor | ControlCenter (cross-page) | Build | `cc-toggle-*` shared chrome construct | Build a shared toggle/disclosure construct so native-checkbox/`<details>` toggle markup migrates off page-local combinators. The pattern recurs across pages (`aai-toggle-knob`, `dbc-edit-toggle-knob`, `clp-toggle-switch`), so one construct clears drift on several pages. Multi-file: JS class-management + shell CSS + route markup + populator awareness, then migrate Admin's doc-pipeline toggle. Clears admin.css's last ~9 rows. Design against ALL consumers before building. |
+| B-011 | Refactor | ServerOps.ServerHealth | Enhance | ServerHealth deferred-for-chrome fixes | (a) server-health.css hex/px literals -> tokenize against the **live** cc-shared.css token block, true purpose-match only (don't round to nearest tier). (b) ServerHealth.ps1 `MISSING_HEADER_BAR`. (c) ServerHealth-API.ps1 ~14 `MISSING_PARAMETER_DECLARATION` -- inline `Invoke-Sqlcmd` here-strings with `$(...)` interpolation; investigate-then-act on whether each is server-controlled or needs proper parameterization. |
+| B-012 | Refactor | ControlCenter.Shared | Enhance | Color literal tokenization (Tier 1) | Replace hardcoded color values that already have matching `var()` tokens (chiefly the alpha tints/banners -- reconnecting/disconnected/reloading/session backgrounds and their border companions). Highest volume / lowest risk. A small remainder are one-off colors matching a token of a different role; each needs a per-case call (use token / promote a new purpose-named token / accept as deliberate local value). |
+| B-013 | Refactor | ControlCenter.Shared | Build | Admin asset-registry pipeline UI | Three parts, in order: (1) incremental per-stage status reporting in the orchestrator join loop (write status as each populator exits, not after all); (2) `POST`/`GET` `.../asset-registry-pipeline` endpoints in Admin-API.ps1 (mirroring the doc-pipeline pair); (3) five-stage modal (CSS/HTML/JS/PS/resolver selectable) + tile in Admin.ps1/admin.css/admin.js, styled like the doc-pipeline modal, with on-error Write-Log output to screen. Resolver selectable for isolated runs. Co-equal priority with page refactoring per multiple sessions. |
+| B-014 | Refactor | ControlCenter.Shared | Design | Size-literal sub-classification | Size-side of the color-literal work just completed. Many size literals match a size token of unrelated purpose by value coincidence (`padding: 2px` vs `--size-radius-xs: 2px`; `font-size: 24px` vs `--font-size-h1: 24px`). Decide whether size warrants the two-tier treatment color got (spacing/radius/font-size/layout-dimension sub-families) or whether some are better resolved file-side by adopting the correct `var()`. Investigate-then-act; don't blanket-tokenize or blanket-suppress. Populator change. |
+| B-015 | Refactor | ControlCenter.Shared | Build | `STATE_NOT_COMPOUNDED` enforcement | Add the drift code to CC_CSS_Spec section 18 and build populator detection (state-token vocabulary + non-compound styled-suffix check). Triggers a JBoss conversion pass when enabled. |
+| B-016 | Refactor | ControlCenter.Shared | Design | Dynamic-reference cataloging | Decide whether/how to capture prefix-known dynamic references (`'prefix-' + expr` -> `DYNAMIC_REF` construct, benign verdict; possible third verdict bucket). Stem-capture mechanism is shared with dead-code detection (B-045). |
+| B-017 | Refactor | ControlCenter.Shared | Investigate | `FORBIDDEN_FUNCTION_IN_API_ROUTE` coverage gap | Coverage gap means a naive in-route helper-function grep isn't trustworthy. Investigate the detection's real coverage before relying on it (noted again during the Admin scout). |
+| B-018 | Refactor | DeptOps.ApplicationsIntegration | Build | 4th overlay construct -- finish dock seam + subheader | Dock width tiers and open/close are built; remaining: the dock `left` + `height` seam, and the `cc-dialog-subheader` amendment (spec + CSS + populator: validators' header->body child-check must allow an optional subheader between them) for strips that must stay pinned above the scrolling dialog body. Consumers: A&I catalog dock, File Monitoring console, Admin. Design against all consumers. Clears the 2 `aai-close-catalog` ACTION_ON_NON_INTERACTIVE_ELEMENT rows. |
+| B-019 | Refactor | Platform-wide (all files) | Enhance | Comment-verbosity trim + spec-reference removal | Trim comment verbosity to only what's needed, and remove direct spec references (especially section numbers) from source so spec-section renumbering can't strand stale references. Applies to any file. The four populators are the heaviest (~1,000 removable comment lines in the HTML populator alone) but the rule is general. Apply opportunistically as files are touched. |
+| B-020 | | Engine.RBAC | Design | Per-scope tool access (Pattern C) | `RBAC_PermissionMapping` can't express "this scope of dept managers gets this page, others don't." For BDL, BI and Apps/Int managers should have access but BS and CR should not. Mitigated today by `show_in_nav=0` + content filtering via `Tools.AccessConfig`, but URL-typing remains a loophole. Proper fix: add `applies_to_scope` column on `RBAC_PermissionMapping` or similar. See snapshot doc section 9.2. |
+| B-021 | | Engine.RBAC | Enhance | Endpoint protection standardization | Asset_Registry catalogs 245 routes, ~54 mutating; only 19 have RBAC_ActionRegistry rows. Remaining 35 use manual `Get-UserAccess` (Pattern B) or no check (Pattern C). Codify the default: GET relies on page-level access; mutating endpoints must call `Test-ActionEndpoint` and have a registry row. Build a gap report from Asset_Registry to find non-compliant endpoints. (Per-page rows tracked under B-022.) |
+| B-022 | | Engine.RBAC | Enhance | RBAC_ActionRegistry rows for mutating/launch endpoints | `Test-ActionEndpoint` is wired but fail-open until rows exist -- endpoints are admin-*hidden* via UI but not admin-*enforced* server-side. Add rows for: DM Operations launch/abort; JBoss `switch-server`; DBCC launch/abort; File Monitoring write endpoints (config save / webhook create / monitor save); Job Flow write endpoints (`app-tasks/toggle`, `app-tasks/batch`, `configsync/save`); Server Health kill-zombies. (BDL set tracked under B-003.) Also: DM Operations Archive launch not yet tested (Shell Purge confirmed live). |
+| B-023 | | Engine.RBAC | Enhance | Coverage gap-check for wildcard-granted pages | /admin and /platform-monitoring show as false positives in the NavRegistry-vs-PermissionMapping gap-check (they rely on Admin wildcard `*`). Decide between a query-side fix or a schema-side fix (add requires_explicit_permission BIT to NavRegistry). |
+| B-024 | | Shared Infrastructure | Enhance | Platform-wide data retention policy | No retention exists for any module. Design and implement a strategy covering all historical tables: Activity DMV/XE snapshots, backup/disk/replication history, API_RequestLog, Teams/Jira RequestLog, Orchestrator TaskLog/CycleLog, index execution history, batch tracking history. Per-table retention by operational value; implement via an orchestrator-scheduled cleanup process. |
+| B-025 | | Shared Infrastructure | Investigate | Pode error logging silence | No Pode error logs written for ~3 months despite error logging configured in Start-ControlCenter.ps1. Determine cause: log file permissions, directory cleanup job, rotation, or the prevalent empty `catch { }` blocks swallowing exceptions before Pode sees them. Restore visibility before production user expansion. |
+| B-026 | | Orchestrator | Build | Python script execution support | Teach the orchestrator launch function to detect file extension and invoke python.exe for .py files. ProcessRegistry script_path would accept .py alongside .ps1. Enables language-agnostic scheduling. First use case: BI file cleanup script. |
+| B-027 | | ServerOps.ServerHealth | Build | Performance Analysis page | Forensic time-range analysis. Correlates waits, LRQs, HADR metrics, blocking, scheduled jobs. Answers "what happened at 8:15 AM?" Time-range selector with overlaid DMV/XE metrics. |
+| B-028 | | ServerOps.ServerHealth | Enhance | Server Health revamp | Lead Blocker -> Blocked Sessions consolidation; Top Wait Types (new) -> Longest Wait consolidation + slideout; new tempdb pressure card + slideout; admin-gated in-slideout KILL badges with showConfirm() + ActionAuditLog audit flow. |
+| B-029 | | ServerOps.ServerHealth | Enhance | Incident correlation expansion | Extend sp_Activity_CorrelateIncidents to detect multi-source patterns (PLE crash + blocking + AG sync delay in same window). Currently single-source. |
+| B-030 | | ServerOps.DBCC | Enhance | Disk space alert suppression during CHECKDB | CHECKDB internal snapshot temporarily consumes significant space on data drives during FULL runs; ServerHealth disk monitoring then files Jira tickets to IT Ops. Need cross-component awareness to suppress/annotate disk alerts when CHECKDB is active on that server -- e.g. check DBCC_ExecutionLog for IN_PROGRESS on the same server before firing disk threshold alerts. |
+| B-031 | | JobFlow | Enhance | Process Status consolidation | Process Status cards consume space showing mostly 0 values. Evaluate combining flow transition cards into a single consolidated display to free space for execution history. |
+| B-032 | | JobFlow | Enhance | Execution state accuracy for pending jobs | Flows with pending jobs can show COMPLETE when all detected jobs finish but pending jobs haven't started. Cross-reference the pending queue to keep EXECUTING state. |
+| B-033 | | BatchOps | Build | Send-OpenBatchSummary BDL/Notice sections | Implement remaining check functions (Get-OpenBDLImports, Get-ActiveNoticeProcessing). Requires Phase 0 investigation. |
+| B-034 | | BatchOps | Enhance | PMT Phase 3b-2: stall + time-based alerting | INPROCESS stall detection, stuck ACTIVE, stuck DELETING, ACTIVEWITHSUSPENSE. Requires DM concurrency cap investigation (B-004). |
+| B-035 | | BatchOps | Enhance | PMT EOD manual batch alert | Daily alert for manual payment batches still ACTIVE at end of business day. Requires accounting team input on cutoff time. |
+| B-036 | | BatchOps | Enhance | PMT error extraction for IMPORTFAILED | Confirm whether cnsmr_pymnt_btch_log holds actionable error messages for import failures. Currently placeholder text in Jira tickets. |
+| B-037 | | BatchOps | Enhance | PMT ACTIVEWITHSUSPENSE batch resolution | 12 stuck batches from 2023-2026 requiring business resolution. Review with Matt. |
+| B-038 | | DmOps | Enhance | Harden exception validation failure handling | Step 3d try/catch in `Execute-DmShellPurge.ps1` documented "non-fatal" but actual failure ranges from script crash (if `$newExclusions` unset because temp table CREATE/populate failed) to silent partial exclusion filtering (check SQL failing mid-loop). Hoist `$newExclusions` outside the try. Make validation failures fatal: set `$Script:ValidationFailed`, write Failed batch log, fire Teams alert `TriggerType='SHELL_PURGE_VALIDATION_FAILED'`, break the loop. Replace empty inner catch on `#shell_exclusions` INSERT (~line 890) with a WARN. Identified 2026-05-01 pre-prod review; not blocking initial run (worst case is non-destructive crash). |
+| B-039 | | DmOps | Enhance | Teams alerts for silent startup exits | Three startup-path exits in `Execute-DmShellPurge.ps1` exit 0/1 with no Teams notice: (1) `Test-ShellPurgeAbort` true at top, (2) WFAPURGE workgroup not found in `crs5_oltp.dbo.wrkgrp` (Step 3a, exit 1), (3) Schedule returning 0/BLOCKED at startup (Step 1, exit 0). Each should fire INFO/WARNING so operators know the run was a no-op. Identified 2026-05-01 pre-prod review. |
+| B-040 | | ControlCenter.Admin | Build | Health & Usage sub-page | Platform diagnostics dashboard: Platform Pulse, CC Performance, Operational Volume, Usage Analytics. Consolidates Admin Section Plan + Self Monitoring Plan concepts. Data collection infra already deployed. |
+| B-041 | | ControlCenter.Admin | Build | Alert Subscription Management page | Self-service page for dept leads to manage channel subscriptions. Apps team retains admin control over webhook creation. Dependent on RBAC. |
+| B-042 | | Documentation.Pipeline | Enhance | Remaining module enrichment | DeptOps needs full enrichment. |
+| B-043 | | Documentation.Site | Build | Doc-page RBAC integration | Apply RBAC + dynamic nav to /docs/pages/*. Currently unauthenticated. Requires: (1) auth on the /docs static route in Start-ControlCenter.ps1, (2) doc_page_id -> CC page route -> permission lookup, (3) nav.js update for filtered registry. doc_page_id in RBAC_NavRegistry is the join key. |
+| B-082 | | PowerShell / Platform | Investigate | Document credential model + script error-handling patterns | Two-tier credential model is in production (master passphrase from GlobalConfig decrypts a per-service passphrase, which decrypts service values; `Get-ServiceCredentials` exists in both `xFACts-OrchestratorFunctions.ps1` for standalone scripts and `xFACts-CCShared.psm1` for CC routes). Error-handling patterns across scripts are not yet cataloged. Investigate both, then fill Development Guidelines section 3.7 and the section 7.1-7.3 integration stubs, which currently carry PENDING DOCUMENTATION placeholders. |
+| B-083 | | Documentation.Pipeline | Build | Generated shared-function inventory doc | Export the always-current list of SHARED PowerShell functions from `dbo.Asset_Registry` (file_type=PS, scope=SHARED, reference_type=DEFINITION, component_type=PS_FUNCTION) into a markdown reference (Platform_Registry.md sibling or a new file), grouped by file and sorted file then line_start; handle NULL `purpose_description` rows gracefully (see B-085). Pipeline already emits .md from queries, so small lift. Once built, repoint Development Guidelines section 3.6 (shared-resources function lists), the section 4.3 connection-helper table, and the section 3.6 forward-note at it. Distinct from B-008: that item generates CC docs-site *pages* (CC-scoped); this is a cross-zone markdown reference (includes standalone-zone shared functions) consumed by the Development Guidelines. Related to B-008 -- shared data source, different deliverable and audience. |
+| B-084 | | ControlCenter (CC chrome / engine cards) | Investigate | Engine card display refresh oddity | Engine cards do not always refresh their display correctly across pages, including Admin; functionally everything works, but the display sometimes looks off. Admin is a special case (drives its timeline off the `onEngineEventRaw` hook). Investigate when live CC files can be pulled. |
 
 ---
 
-## Documentation
+## Low
 
-### Pipeline
-
-| Type | Item | Priority | Notes |
-|------|------|----------|-------|
-| Enhance | Remaining module enrichment | Medium | DeptOps needs full enrichment. |
-
----
-
-## New Modules
-
-Modules not yet started. No schema, no tables, no CC pages.
-
-### B2B
-
-| Type | Item | Priority | Notes |
-|------|------|----------|-------|
-| Build | B2B module build | High | Currently in investigation phase with some preliminary objects built. Refer to the B2B Planning document for details.|
+| ID | Initiative | Component | Type | Item | Notes |
+|----|-----------|-----------|------|------|-------|
+| B-044 | Refactor | Docs zone | Enhance | Refactor the documentation-site pages zone to spec | Third and lowest-priority zone. The docs-zone HTML/CSS/JS pages (~90 files under /docs) brought to spec conformance. Sequenced after the CC and standalone zones. |
+| B-045 | Refactor | ControlCenter.Shared | Build | Dead-code / orphan detection | Cross-file orphan/unreferenced detection for CSS classes, JS functions, endpoints. Resolver enhancement + advisory drift code + likely capture-time DDL. See DeadCode_Detection_Findings.md. After the migration completes. |
+| B-046 | Refactor | ControlCenter.Shared | Build | Catalog-completeness coverage check | HTML populator discovers emitted HTML via three sniff patterns only; HTML built by `+` concatenation or otherwise not tripping the sniff is silently skipped. A clean catalog doesn't prove completeness. Proposed: flag helper functions whose bodies contain HTML markers (`<div`, `class=`, `id=`) but produced zero catalog rows. |
+| B-047 | Refactor | ControlCenter.Shared | Design | Script-tag pattern, platform-wide | Decide whether all pages inline the literal `<script src="/js/cc-shared.js">` (spec-correct, zero drift) and retire `Get-PageScriptTagHtml`. Confirm before the next page so the set stays consistent. Feeds helper-consolidation cleanup. |
+| B-048 | Refactor | ControlCenter.Shared | Enhance | Keyframe name-consistency pass | Shell mixes unprefixed legacy (`pulse`/`spin`/`fadeIn`/`page-refresh-spin`), `cc`-prefixed (`ccModalFadeIn`), and page-tagged (`adm-*`). Normalize all FOUNDATION keyframe names to `cc-` and update every `animation:` reference. Naming-convention pass, not a drift fix. |
+| B-049 | Refactor | ControlCenter.Shared | Enhance | Keyframe dedup | `adm-pulse-red`/`-yellow` and `adm-pip-pulse-red`/`-yellow` are identical opacity pulses, and identical to the shell's `pulse`. Four of the nine could collapse to `pulse` (updating admin.css refs). |
+| B-050 | Refactor | ControlCenter.Shared | Enhance | `cc-last` duplicate definition | `cc-last` defined twice in cc-shared.css (~L815 + ~L1304). Pre-existing, harmless, optional dedup. |
+| B-051 | Refactor | ControlCenter.Shared | Build | Shared section-table chrome (chrome-consolidation phase) | Establish shared section-table chrome, then map outlier page-local section tables (Job Flow's Live Activity / Execution History, Batch's `bat-*-table`, etc.) to it. Later phase. |
+| B-052 | Refactor | ControlCenter.Shared | Enhance | Conditional server-side markup for partially-gated pages | HTML populator only catalogs IDs literal inside a single here-string, so conditionally-emitted admin markup (`if $ctx.IsAdmin`) loses ID resolution and a second here-string breaks DOCTYPE detection. A&I uses the interim hide-not-omit approach (admin markup always emitted, collapsed via `aai-hidden`; API enforces real security). Design proper conditional-markup support (populator + spec) so partially-gated pages can omit admin markup server-side without drift. |
+| B-053 | Refactor | ControlCenter.Platform | Enhance | Per-server collection-staleness indicator | Show a dimmed "stale" tile when a server's collection is stale, instead of the tile silently vanishing. |
+| B-054 | Refactor | ControlCenter.Platform | Enhance | Token-less literal resurface | Platform carries token-less page-local literals that read clean only because of the prior multi-line line-key gap; revisit once the CSS literal work (B-012/B-014) is fully landed and they resurface. |
+| B-055 | | Engine.RBAC | Design | Number of base platform roles | PowerUser/StandardUser/ReadOnly differ marginally given ~90% of the site is view-only and most writes are admin-gated. Decide whether 4 base levels is right or some collapse. Not driven by an active issue. |
+| B-056 | | Engine.RBAC | Design | RBAC vs content-filtering separation | `Tools.AccessConfig`/`AccessFieldConfig` exist because RBAC couldn't express BDL's granularity. Decide if this pattern persists (per-tool access tables) or a more expressive RBAC model subsumes some of it. Field-level granularity may be too domain-specific for generic RBAC. |
+| B-057 | | Shared Infrastructure | Enhance | Config source tracking for GlobalConfig scripts | Enhance Initialize-Configuration in all scripts to log whether each setting loaded from GlobalConfig or fell back to script default. PMT collector is the reference. Speeds diagnosis when alerts fire due to config connection issues. |
+| B-058 | | Shared Infrastructure | Enhance | Extended property cleanup | Remove legacy MS_Description extended properties from all objects. Object_Metadata is the sole documentation source. Inert -- cosmetic, but removes confusion about which system is authoritative. |
+| B-059 | | Shared Infrastructure | Enhance | Index_ table constraint/index rename | Four ServerOps tables renamed to Index_ prefix but constraints/indexes still carry old names. Rename to match convention. Cosmetic only. |
+| B-060 | | Shared Infrastructure | Enhance | Invoke-XFActsQuery -> Invoke-XFActsNonQuery audit | `Invoke-XFActsNonQuery` was added after many scripts were written. Older scripts use `Invoke-XFActsQuery` for INSERT/UPDATE/DELETE where no result set is needed -- works but is inefficient (allocates a SqlDataAdapter/DataSet/row iteration unnecessarily). Rule: use `Query` only for SELECT or INSERT/UPDATE with `OUTPUT INSERTED`; use `NonQuery` for all other DML/DDL. Fix opportunistically as scripts are opened. Grep: `Invoke-XFActsQuery -Query` followed by INSERT/UPDATE/DELETE with no OUTPUT clause. Fixed so far: DmOperations-API.ps1 abort endpoint (2026-04-13). |
+| B-061 | | Orchestrator | Enhance | Parallel execution within dependency groups | Processes in a dependency group run sequentially. Enable parallel execution for same-group processes with no interdependencies. Not currently a concern -- sequential completes within cycle time. |
+| B-062 | | ServerOps.ServerHealth | Enhance | Diagnostic Report button | Find an appropriate home for the sp_DiagnoseServerHealth button (removed from the Server Health page). |
+| B-063 | | ServerOps.ServerHealth | Enhance | Card value font refactor | Split `.metric-value` into separate classes for gauges vs. card display numbers to allow independent font sizing. |
+| B-064 | | ServerOps.ServerHealth | Build | Incident History page | Timeline of correlated incidents from Activity_IncidentLog and XE tables, plain-English explanations. Builds on sp_Activity_CorrelateIncidents. Needs a planning session for correlation rules. |
+| B-065 | | ServerOps.ServerHealth | Enhance | Incident Analyzer enhancement | Smarter correlation: time-window clustering, cross-source correlation, plain-English narrative generation. Major diagnostic enhancement. |
+| B-066 | | ServerOps.ServerHealth | Enhance | Collector batched/paginated read | Collect-XEEvents reads an entire session backlog into memory before insert (single `Get-SqlData` materializes the full set). Fine for incremental runs; on large catch-ups it means a long silent phase, high memory pressure, and risk of memory/timeout failure. Batch/paginate (read N, insert, advance cursor, repeat) so catch-ups stream, commit progress, and are resumable. Collector-refactor phase. |
+| B-067 | | ServerOps.Index | Enhance | Exception Schedule input + sp_AddExceptionSchedule | Input form/method for creating an Exception Schedule entry, plus the stored procedure to add entries with validation. Links the UI to the proc (or a direct insert). |
+| B-068 | | ServerOps.Index | Enhance | Smart scheduling | Evaluate scheduling index maintenance runs through Orchestrator ProcessRegistry instead of manual launch. |
+| B-069 | | ServerOps.Replication | Enhance | Replication registry source server column | Add source_server to Replication_PublicationRegistry; populate from sys.servers via publisher_id in the collector. Replace agent_name string parsing in CC card rendering with the stored value. |
+| B-070 | | JobFlow | Enhance | Validation threshold review | Revisit min_failure_threshold for critical jobs. Proposed: critical jobs bypass threshold, alert on any failure. |
+| B-071 | | JobFlow | Enhance | Review JobFlow.Status.last_error_message for removal | Transient field, not useful when TaskLog has full error history. Evaluate whether anything reads it. |
+| B-072 | | JobFlow | Enhance | ConfigSync management | Evaluate sp_AnalyzeHistory and sp_PopulateConfig for a ConfigSync management panel: unconfigured-flow indicator, config modal with schedule/alert settings. |
+| B-073 | | JobFlow | Enhance | Centralized Scheduler API | Replace Windows Task Scheduler dependency with xFACts-managed scheduling for flow execution. |
+| B-074 | | JobFlow | Enhance | Cancelling status alert | stts_cd 5 (CANCELLING) stuck-job detection/alerting after a period in status. |
+| B-075 | | JobFlow | Enhance | Section-load-failure presentation | Section loaders surface API failures via `cc_showAlert` (modal). Consider reverting to a non-blocking inline state for background loads, reserving `cc_showAlert` for user-initiated action failures (save/apply). Minor, behavior-only. |
+| B-076 | | BatchOps | Enhance | PMT insert-path IMPORTFAILED terminal detection | One-cycle delay before terminal detection. No operational impact -- zero IMPORTFAILED batches historically. |
+| B-077 | | BatchOps | Enhance | Investigate 270 historical incomplete NB batches | Batches marked INVESTIGATE during initial deployment. Review and resolve with appropriate completed_status. 2025 batches highest priority. |
+| B-078 | | DmOps | Enhance | Break out failure counts into separate columns | Shell Purge "History" shows failed counts as a parenthetical (`101 (1 failed)`) on day rows and the Today pane -- looks slapped on. Restructure to a separate line (showing `0` when none). Apply same to the Archive side. |
+| B-079 | | ControlCenter.Admin | Enhance | DBNull handling pattern scan | `ConvertFrom-DBNull` was added to xFACts-Helpers (2026-05-15) and applied to Get-UserPageTier / Get-UserContext. The DBNull-as-truthy pattern likely exists elsewhere where DB values are evaluated in boolean contexts. Scan for `if (-not $row.X)`, `Where-Object { $_.X }`, `-not $_.X` against any `Invoke-XFActsQuery` value. No known bugs -- defensive cleanup. |
+| B-080 | | Tools.BDLImport | Enhance | Tab-resume history refresh (verify live) | `cc_connectEngineEvents` early-returns when `bdl_ENGINE_PROCESSES` is absent (BDL has no engine cards), before registering the visibilitychange listener that fires `bdl_onPageResumed`. Verify whether the history panel auto-refreshes on tab-return for a no-engine page. Page otherwise fully functional. |
+| B-081 | | Tools.BDLImport | Enhance | CSS dead-class cleanup | Behavior-affecting cleanup pass; candidate trail via orphan_candidates.sql. Not part of conformance. |
+| B-085 | | Tools.Utilities (Asset_Registry populators) | Enhance | Capture single-line purpose comment for SCOPED-tier/standalone functions | The PS populator captures the docblock `.SYNOPSIS` into `purpose_description` for PLATFORM-tier functions, but SCOPED-tier and standalone functions use a single-line `#` purpose comment instead of a docblock (CC_PS_Spec section 8.4), which the populator does not capture -- so those rows land with `purpose_description` NULL. Capture the mandated single-line comment into the same field so the generated function inventory (B-083) is complete across all shared files, not just platform-tier ones. |
