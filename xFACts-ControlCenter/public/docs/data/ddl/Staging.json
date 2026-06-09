@@ -1,7 +1,7 @@
 {
     "tables":  [
                    {
-                       "name":  "BDL_CONSUMER_ACCOUNT_AR_LOG_bgilbert_20260605_162101",
+                       "name":  "BDL_CONSUMER_ACCOUNT_AR_LOG_dcota_20260608_161648",
                        "columns":  [
                                        {
                                            "ordinal":  1,
@@ -36,477 +36,9 @@
                                        },
                                        {
                                            "ordinal":  5,
-                                           "name":  "voapps_result_unmapped",
-                                           "dataType":  "varchar",
-                                           "length":  "MAX",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  6,
-                                           "name":  "actn_cd_shrt_val_txt",
-                                           "dataType":  "varchar",
-                                           "length":  "8",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  7,
-                                           "name":  "rslt_cd_shrt_val_txt",
-                                           "dataType":  "varchar",
-                                           "length":  "8",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  8,
-                                           "name":  "Helper_unmapped",
-                                           "dataType":  "varchar",
-                                           "length":  "MAX",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  9,
                                            "name":  "cnsmr_accnt_ar_mssg_txt",
                                            "dataType":  "varchar",
                                            "length":  "8000",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  10,
-                                           "name":  "voapps_code_unmapped",
-                                           "dataType":  "varchar",
-                                           "length":  "MAX",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  11,
-                                           "name":  "ca_ar_upsrt_dttm",
-                                           "dataType":  "varchar",
-                                           "length":  "50",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       }
-                                   ]
-                   },
-                   {
-                       "name":  "BDL_CONSUMER_ACCOUNT_AR_LOG_bgilbert_20260605_162927",
-                       "columns":  [
-                                       {
-                                           "ordinal":  1,
-                                           "name":  "_row_number",
-                                           "dataType":  "int",
-                                           "nullable":  false,
-                                           "identity":  true
-                                       },
-                                       {
-                                           "ordinal":  2,
-                                           "name":  "_skip",
-                                           "dataType":  "bit",
-                                           "nullable":  false,
-                                           "identity":  false,
-                                           "default":  "((0))"
-                                       },
-                                       {
-                                           "ordinal":  3,
-                                           "name":  "cnsmr_idntfr_agncy_id",
-                                           "dataType":  "varchar",
-                                           "length":  "20",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  4,
-                                           "name":  "phone_number_unmapped",
-                                           "dataType":  "varchar",
-                                           "length":  "MAX",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  5,
-                                           "name":  "voapps_result_unmapped",
-                                           "dataType":  "varchar",
-                                           "length":  "MAX",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  6,
-                                           "name":  "actn_cd_shrt_val_txt",
-                                           "dataType":  "varchar",
-                                           "length":  "8",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  7,
-                                           "name":  "rslt_cd_shrt_val_txt",
-                                           "dataType":  "varchar",
-                                           "length":  "8",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  8,
-                                           "name":  "Helper_unmapped",
-                                           "dataType":  "varchar",
-                                           "length":  "MAX",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  9,
-                                           "name":  "cnsmr_accnt_ar_mssg_txt",
-                                           "dataType":  "varchar",
-                                           "length":  "8000",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  10,
-                                           "name":  "voapps_code_unmapped",
-                                           "dataType":  "varchar",
-                                           "length":  "MAX",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  11,
-                                           "name":  "voapps_timestamp_unmapped",
-                                           "dataType":  "varchar",
-                                           "length":  "MAX",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       }
-                                   ]
-                   },
-                   {
-                       "name":  "BDL_CONSUMER_ACCOUNT_AR_LOG_bgilbert_20260605_164642",
-                       "columns":  [
-                                       {
-                                           "ordinal":  1,
-                                           "name":  "_row_number",
-                                           "dataType":  "int",
-                                           "nullable":  false,
-                                           "identity":  true
-                                       },
-                                       {
-                                           "ordinal":  2,
-                                           "name":  "_skip",
-                                           "dataType":  "bit",
-                                           "nullable":  false,
-                                           "identity":  false,
-                                           "default":  "((0))"
-                                       },
-                                       {
-                                           "ordinal":  3,
-                                           "name":  "cnsmr_idntfr_agncy_id",
-                                           "dataType":  "varchar",
-                                           "length":  "20",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  4,
-                                           "name":  "phone_number_unmapped",
-                                           "dataType":  "varchar",
-                                           "length":  "MAX",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  5,
-                                           "name":  "voapps_result_unmapped",
-                                           "dataType":  "varchar",
-                                           "length":  "MAX",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  6,
-                                           "name":  "actn_cd_shrt_val_txt",
-                                           "dataType":  "varchar",
-                                           "length":  "8",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  7,
-                                           "name":  "rslt_cd_shrt_val_txt",
-                                           "dataType":  "varchar",
-                                           "length":  "8",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  8,
-                                           "name":  "Helper_unmapped",
-                                           "dataType":  "varchar",
-                                           "length":  "MAX",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  9,
-                                           "name":  "cnsmr_accnt_ar_mssg_txt",
-                                           "dataType":  "varchar",
-                                           "length":  "8000",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  10,
-                                           "name":  "voapps_code_unmapped",
-                                           "dataType":  "varchar",
-                                           "length":  "MAX",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  11,
-                                           "name":  "voapps_timestamp_unmapped",
-                                           "dataType":  "varchar",
-                                           "length":  "MAX",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       }
-                                   ]
-                   },
-                   {
-                       "name":  "BDL_CONSUMER_ACCOUNT_AR_LOG_bgilbert_20260605_173021",
-                       "columns":  [
-                                       {
-                                           "ordinal":  1,
-                                           "name":  "_row_number",
-                                           "dataType":  "int",
-                                           "nullable":  false,
-                                           "identity":  true
-                                       },
-                                       {
-                                           "ordinal":  2,
-                                           "name":  "_skip",
-                                           "dataType":  "bit",
-                                           "nullable":  false,
-                                           "identity":  false,
-                                           "default":  "((0))"
-                                       },
-                                       {
-                                           "ordinal":  3,
-                                           "name":  "cnsmr_idntfr_agncy_id",
-                                           "dataType":  "varchar",
-                                           "length":  "20",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  4,
-                                           "name":  "phone_number_unmapped",
-                                           "dataType":  "varchar",
-                                           "length":  "MAX",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  5,
-                                           "name":  "voapps_result_unmapped",
-                                           "dataType":  "varchar",
-                                           "length":  "MAX",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  6,
-                                           "name":  "actn_cd_shrt_val_txt",
-                                           "dataType":  "varchar",
-                                           "length":  "8",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  7,
-                                           "name":  "rslt_cd_shrt_val_txt",
-                                           "dataType":  "varchar",
-                                           "length":  "8",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  8,
-                                           "name":  "Helper_unmapped",
-                                           "dataType":  "varchar",
-                                           "length":  "MAX",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  9,
-                                           "name":  "cnsmr_accnt_ar_mssg_txt",
-                                           "dataType":  "varchar",
-                                           "length":  "8000",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  10,
-                                           "name":  "cnsmr_accnt_ar_log_crt_usr_nm",
-                                           "dataType":  "varchar",
-                                           "length":  "128",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  11,
-                                           "name":  "voapps_code_unmapped",
-                                           "dataType":  "varchar",
-                                           "length":  "MAX",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  12,
-                                           "name":  "voapps_timestamp_unmapped",
-                                           "dataType":  "varchar",
-                                           "length":  "MAX",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       }
-                                   ]
-                   },
-                   {
-                       "name":  "BDL_CONSUMER_ACCOUNT_AR_LOG_dcota_20260605_172146",
-                       "columns":  [
-                                       {
-                                           "ordinal":  1,
-                                           "name":  "_row_number",
-                                           "dataType":  "int",
-                                           "nullable":  false,
-                                           "identity":  true
-                                       },
-                                       {
-                                           "ordinal":  2,
-                                           "name":  "_skip",
-                                           "dataType":  "bit",
-                                           "nullable":  false,
-                                           "identity":  false,
-                                           "default":  "((0))"
-                                       },
-                                       {
-                                           "ordinal":  3,
-                                           "name":  "cnsmr_accnt_idntfr_agncy_id",
-                                           "dataType":  "varchar",
-                                           "length":  "20",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  4,
-                                           "name":  "phone_number_unmapped",
-                                           "dataType":  "varchar",
-                                           "length":  "MAX",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  5,
-                                           "name":  "voapps_result_unmapped",
-                                           "dataType":  "varchar",
-                                           "length":  "MAX",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  6,
-                                           "name":  "actn_cd_shrt_val_txt",
-                                           "dataType":  "varchar",
-                                           "length":  "8",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  7,
-                                           "name":  "rslt_cd_shrt_val_txt",
-                                           "dataType":  "varchar",
-                                           "length":  "8",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  8,
-                                           "name":  "Helper_unmapped",
-                                           "dataType":  "varchar",
-                                           "length":  "MAX",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  9,
-                                           "name":  "cnsmr_accnt_ar_mssg_txt",
-                                           "dataType":  "varchar",
-                                           "length":  "8000",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  10,
-                                           "name":  "voapps_code_unmapped",
-                                           "dataType":  "varchar",
-                                           "length":  "MAX",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  11,
-                                           "name":  "voapps_timestamp_unmapped",
-                                           "dataType":  "varchar",
-                                           "length":  "MAX",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       }
-                                   ]
-                   },
-                   {
-                       "name":  "BDL_CONSUMER_ACCOUNT_AR_LOG_dcota_20260605_172419",
-                       "columns":  [
-                                       {
-                                           "ordinal":  1,
-                                           "name":  "_row_number",
-                                           "dataType":  "int",
-                                           "nullable":  false,
-                                           "identity":  true
-                                       },
-                                       {
-                                           "ordinal":  2,
-                                           "name":  "_skip",
-                                           "dataType":  "bit",
-                                           "nullable":  false,
-                                           "identity":  false,
-                                           "default":  "((0))"
-                                       },
-                                       {
-                                           "ordinal":  3,
-                                           "name":  "cnsmr_accnt_idntfr_agncy_id",
-                                           "dataType":  "varchar",
-                                           "length":  "20",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  4,
-                                           "name":  "phone_number_unmapped",
-                                           "dataType":  "varchar",
-                                           "length":  "MAX",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  5,
-                                           "name":  "voapps_result_unmapped",
-                                           "dataType":  "varchar",
-                                           "length":  "MAX",
                                            "nullable":  true,
                                            "identity":  false
                                        },
@@ -520,9 +52,9 @@
                                        },
                                        {
                                            "ordinal":  7,
-                                           "name":  "rslt_cd_shrt_val_txt",
+                                           "name":  "Result_Code_unmapped",
                                            "dataType":  "varchar",
-                                           "length":  "8",
+                                           "length":  "MAX",
                                            "nullable":  true,
                                            "identity":  false
                                        },
@@ -536,9 +68,9 @@
                                        },
                                        {
                                            "ordinal":  9,
-                                           "name":  "cnsmr_accnt_ar_mssg_txt",
+                                           "name":  "AR_Event_unmapped",
                                            "dataType":  "varchar",
-                                           "length":  "8000",
+                                           "length":  "MAX",
                                            "nullable":  true,
                                            "identity":  false
                                        },
@@ -557,138 +89,28 @@
                                            "length":  "MAX",
                                            "nullable":  true,
                                            "identity":  false
-                                       }
-                                   ]
-                   },
-                   {
-                       "name":  "BDL_CONSUMER_TAG_bgilbert_20260605_162321",
-                       "columns":  [
-                                       {
-                                           "ordinal":  1,
-                                           "name":  "_row_number",
-                                           "dataType":  "int",
-                                           "nullable":  false,
-                                           "identity":  true
                                        },
                                        {
-                                           "ordinal":  2,
-                                           "name":  "_skip",
-                                           "dataType":  "bit",
-                                           "nullable":  false,
-                                           "identity":  false,
-                                           "default":  "((0))"
-                                       },
-                                       {
-                                           "ordinal":  3,
-                                           "name":  "_trigger_value",
-                                           "dataType":  "varchar",
-                                           "length":  "200",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  4,
-                                           "name":  "_assignment_index",
-                                           "dataType":  "int",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  5,
-                                           "name":  "cnsmr_idntfr_agncy_id",
-                                           "dataType":  "varchar",
-                                           "length":  "20",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  6,
-                                           "name":  "tag_shrt_nm",
+                                           "ordinal":  12,
+                                           "name":  "actn_cd_shrt_val_txt",
                                            "dataType":  "varchar",
                                            "length":  "8",
                                            "nullable":  true,
                                            "identity":  false
                                        },
                                        {
-                                           "ordinal":  7,
-                                           "name":  "cnsmr_tag_assgn_dt",
-                                           "dataType":  "varchar",
-                                           "length":  "50",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  8,
-                                           "name":  "cnsmr_tag_sft_delete_flg",
-                                           "dataType":  "varchar",
-                                           "length":  "10",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       }
-                                   ]
-                   },
-                   {
-                       "name":  "BDL_CONSUMER_TAG_bgilbert_20260605_174330",
-                       "columns":  [
-                                       {
-                                           "ordinal":  1,
-                                           "name":  "_row_number",
-                                           "dataType":  "int",
-                                           "nullable":  false,
-                                           "identity":  true
-                                       },
-                                       {
-                                           "ordinal":  2,
-                                           "name":  "_skip",
-                                           "dataType":  "bit",
-                                           "nullable":  false,
-                                           "identity":  false,
-                                           "default":  "((0))"
-                                       },
-                                       {
-                                           "ordinal":  3,
-                                           "name":  "_trigger_value",
-                                           "dataType":  "varchar",
-                                           "length":  "200",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  4,
-                                           "name":  "_assignment_index",
-                                           "dataType":  "int",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  5,
-                                           "name":  "cnsmr_idntfr_agncy_id",
-                                           "dataType":  "varchar",
-                                           "length":  "20",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  6,
-                                           "name":  "tag_shrt_nm",
+                                           "ordinal":  13,
+                                           "name":  "rslt_cd_shrt_val_txt",
                                            "dataType":  "varchar",
                                            "length":  "8",
                                            "nullable":  true,
                                            "identity":  false
                                        },
                                        {
-                                           "ordinal":  7,
-                                           "name":  "cnsmr_tag_assgn_dt",
+                                           "ordinal":  14,
+                                           "name":  "cnsmr_accnt_ar_log_crt_usr_nm",
                                            "dataType":  "varchar",
-                                           "length":  "50",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  8,
-                                           "name":  "cnsmr_tag_sft_delete_flg",
-                                           "dataType":  "varchar",
-                                           "length":  "10",
+                                           "length":  "128",
                                            "nullable":  true,
                                            "identity":  false
                                        }
