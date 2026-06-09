@@ -1807,6 +1807,15 @@
                                            "nullable":  true,
                                            "identity":  false,
                                            "description":  "Short abbreviation used in the BDL XML batch_id_txt header element. The batch_id_txt value is constructed as XF_{abbreviation}_{yyyyMMddHHmmss} and must not exceed 32 characters, which is the column limit on the DM file_rgstry_dtl.btch_idntfr_txt column. Maximum 14 characters. Editable through the admin catalog modal. Falls back to a truncated entity_type if NULL."
+                                       },
+                                       {
+                                           "ordinal":  14,
+                                           "name":  "operational_transaction_type",
+                                           "dataType":  "varchar",
+                                           "length":  "50",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "The operational_transaction_type value emitted in the operational_transaction_type element of the BDL XML header for this entity type. The XML builder reads this value directly from the catalog."
                                        }
                                    ],
                        "indexes":  [
