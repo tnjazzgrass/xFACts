@@ -2400,7 +2400,7 @@ function ConvertTo-BDLXml {
 
     # Get entity format info
     $formatInfo = Invoke-XFActsQuery -Query @"
-        SELECT f.format_id, f.entity_type, f.type_name, f.folder, f.batch_abbreviation, f.has_nullify_fields
+        SELECT f.format_id, f.entity_type, f.type_name, f.batch_abbreviation, f.has_nullify_fields, f.operational_transaction_type
         FROM Tools.Catalog_BDLFormatRegistry f
         WHERE f.entity_type = @entityType
           AND f.is_active = 1
@@ -2410,7 +2410,6 @@ function ConvertTo-BDLXml {
         return @{ Error = "Entity type not found: $EntityType"; StatusCode = 404 }
     }
     $typeName = $formatInfo[0].type_name
-    $folder = $formatInfo[0].folder
     $batchAbbrev = if ($formatInfo[0].batch_abbreviation -and $formatInfo[0].batch_abbreviation -isnot [System.DBNull]) { $formatInfo[0].batch_abbreviation } else { $EntityType.Substring(0, [Math]::Min($EntityType.Length, 14)) }
     $hasNullifyFields = $formatInfo[0].has_nullify_fields -eq 1
 
@@ -2452,15 +2451,19 @@ function ConvertTo-BDLXml {
         $entityElement = $wrapperInfo[0].entity_element
     }
 
-    # Determine the operational_transaction_type for the header
-    $operationalTransactionType = 'CONSUMER'
-    if ($folder) {
-        switch -Wildcard ($folder) {
-            '*account*'    { $operationalTransactionType = 'CONSUMERACCOUNT' }
-            '*consumer*'   { $operationalTransactionType = 'CONSUMER' }
-            default        { $operationalTransactionType = $EntityType }
-        }
+    # Determine the operational_transaction_type for the header. Read the
+    # explicit value from the catalog rather than inferring it from folder
+    # text. A missing value is a hard error: emitting a guessed transaction
+    # type can register an import that then fails (or, worse, succeeds against
+    # the wrong data), so the build refuses to proceed until the entity is
+    # configured in Tools.Catalog_BDLFormatRegistry.
+    $operationalTransactionType = $formatInfo[0].operational_transaction_type
+    if ($operationalTransactionType -is [System.DBNull] -or
+        $null -eq $operationalTransactionType -or
+        ([string]$operationalTransactionType).Trim() -eq '') {
+        return @{ Error = "operational_transaction_type is not configured for entity type '$EntityType'. Set it in Tools.Catalog_BDLFormatRegistry before importing."; StatusCode = 500 }
     }
+    $operationalTransactionType = [string]$operationalTransactionType
 
     # Read staging data (non-skipped rows)
     $safeTable = "Staging.[" + $StagingTable.Replace(']', ']]') + "]"
