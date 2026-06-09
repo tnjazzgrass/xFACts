@@ -2236,7 +2236,8 @@
                                            "dataType":  "varchar",
                                            "length":  "20",
                                            "nullable":  true,
-                                           "identity":  false
+                                           "identity":  false,
+                                           "description":  "Identifies whether a shared scope chrome object is a platform wide resource or if it is scoped to a module. This determines the file\u0027s spec requirements."
                                        },
                                        {
                                            "ordinal":  12,
