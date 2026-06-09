@@ -208,6 +208,9 @@ Tokens follow the form `--<category>-<role>-<modifier>`, where:
 - The `:root` block is preceded by a purpose comment in the form `/* One-sentence purpose. */`.
 - Sub-section markers are permitted inside `:root` as group labels.
 - Within `:root`, blank lines may separate token groups. This is the only location where blank lines inside a rule body are permitted.
+- Color tokens are named by purpose. A property-specific color value must not be named as though it were role/state, or vice versa.
+	`--color-bg-*`, `--color-border-*`, and `--color-text-*` are property-specific and apply only to their respective properties.
+	`--color-accent-*`, `--color-status-*`, `--color-tint-*`, `--color-glow-*`, `--color-banner-*`, and `--color-button-*` are role/state colors usable across properties. 
 
 ---
 
