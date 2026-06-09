@@ -1317,6 +1317,31 @@ function bdl_hasDisplayName(f) {
     return f.display_name && f.display_name !== '';
 }
 
+/* Resolves the required identifier element name from an entity's entity_key.
+   CONSUMER keys on the consumer agency id, ACCOUNT on the account agency id.
+   Any other value returns null: there is no safe default, because mapping an
+   account-level entity onto the consumer identifier could target the wrong
+   records. */
+function bdl_identifierElementForKey(entityKey) {
+    if (entityKey === 'CONSUMER') {
+        return 'cnsmr_idntfr_agncy_id';
+    }
+    if (entityKey === 'ACCOUNT') {
+        return 'cnsmr_accnt_idntfr_agncy_id';
+    }
+    return null;
+}
+
+/* Handles an entity whose entity_key is not recognized: shows a blocking
+   modal directing the user to the Applications Team and returns them to the
+   entity-selection step. Nothing is rendered or made submittable, so a
+   misconfigured entity cannot import against the wrong identifier. */
+function bdl_handleUnrecognizedEntityKey() {
+    cc_showAlert('Unrecognized entity_key, please contact the Applications Team to resolve this issue.',
+        { title: 'Entity Not Configured' });
+    bdl_showStep(3);
+}
+
 /* ============================================================================
    FUNCTIONS: STEP 4 MAPPING
    ----------------------------------------------------------------------------
@@ -1358,8 +1383,12 @@ function bdl_renderMapValidateMapping(area, state) {
     var visibleFields = entityFields.filter(function(f) {
         return f.is_visible !== 0 && f.is_visible !== false;
     });
-    var isAcct = state.entity.folder && state.entity.folder.indexOf('account') !== -1;
-    var idElemName = isAcct ? 'cnsmr_accnt_idntfr_agncy_id' : 'cnsmr_idntfr_agncy_id';
+    var idElemName = bdl_identifierElementForKey(state.entity.entity_key);
+    if (!idElemName) {
+        bdl_handleUnrecognizedEntityKey();
+        return;
+    }
+    var isAcct = state.entity.entity_key === 'ACCOUNT';
     var idField = visibleFields.find(function(f) {
         return f.element_name === idElemName;
     });
@@ -1902,8 +1931,12 @@ function bdl_renderFixedValueMapping(area, state) {
     var visibleFields = entityFields.filter(function(f) {
         return f.is_visible !== 0 && f.is_visible !== false;
     });
-    var isAcct = state.entity.folder && state.entity.folder.indexOf('account') !== -1;
-    var idElemName = isAcct ? 'cnsmr_accnt_idntfr_agncy_id' : 'cnsmr_idntfr_agncy_id';
+    var idElemName = bdl_identifierElementForKey(state.entity.entity_key);
+    if (!idElemName) {
+        bdl_handleUnrecognizedEntityKey();
+        return;
+    }
+    var isAcct = state.entity.entity_key === 'ACCOUNT';
     var idField = visibleFields.find(function(f) {
         return f.element_name === idElemName;
     });
@@ -4731,6 +4764,13 @@ function bdl_submitConsolidatedArLog(jiraTicket, callback) {
         return r.success;
     });
     if (successResults.length === 0) {
+        callback();
+        return;
+    }
+    var arLogPresent = successResults.some(function(r) {
+        return r.entity_type === 'CONSUMER_ACCOUNT_AR_LOG';
+    });
+    if (arLogPresent) {
         callback();
         return;
     }
