@@ -196,6 +196,28 @@ $ActionPermittedOverlayClasses = @(
     'cc-slideup-overlay'
 )
 
+# Landing-page chrome carve-out (CC_HTML_Spec.md Section 1.5 / Section 15.1).
+# The landing page -- the page emitted by the route whose Add-PodeRoute -Path
+# value is '/' -- wears no shared chrome and is exempt from exactly these
+# page-shell drift codes. Every other HTML rule still applies. This set is the
+# 1:1 contract with the spec's Section 15.1 table; changing it requires a spec
+# amendment.
+$LandingPageChromeCarveout = @(
+    'MALFORMED_DOCTYPE',
+    'FORBIDDEN_HARDCODED_TITLE',
+    'MISSING_BROWSER_TITLE_VAR',
+    'MISSING_BODY_SECTION_CLASS',
+    'MISSING_DATA_CC_PAGE',
+    'MISSING_DATA_CC_PREFIX',
+    'MISSING_NAV_SUBSTITUTION',
+    'MISSING_NAV_HTML_VAR',
+    'MISSING_HEADER_BAR',
+    'MISSING_HEADER_HTML_VAR',
+    'MISSING_BANNER_SUBSTITUTION',
+    'MISSING_BANNER_HTML_VAR',
+    'MISSING_SHARED_SCRIPT_TAG'
+)
+
 <# ============================================================================
    CONSTANTS: DRIFT DESCRIPTIONS
    ----------------------------------------------------------------------------
@@ -2900,15 +2922,17 @@ function Get-PageShellDrift {
 
 # Confirm a route file declares the page-shell substitution variables
 # ($browserTitle, $navHtml, $headerHtml, $bannerHtml), each assigned from its
-# matching Get-* helper; a missing one fires the corresponding MISSING_*_VAR
+# matching Get-* helper; a missing one yields the corresponding MISSING_*_VAR
 # code. The RHS must invoke the helper, so a literal-string assignment still
-# counts as missing.
+# counts as missing. Returns an array of drift-code strings for the caller to
+# attach to the file's HTML_FILE row (parallel to Get-PageShellDrift).
 function Test-RouteVariableAssignments {
     param(
-        [Parameter(Mandatory)]$Ast,
-        [Parameter(Mandatory)]$FileRow
+        [Parameter(Mandatory)]$Ast
     )
-    if ($null -eq $Ast) { return }
+
+    $codes = New-Object System.Collections.Generic.List[string]
+    if ($null -eq $Ast) { return $codes.ToArray() }
 
     # Required mapping: variable name -> required helper command name.
     $required = [ordered]@{
@@ -2947,9 +2971,11 @@ function Test-RouteVariableAssignments {
 
     foreach ($varName in $required.Keys) {
         if (-not $seen.Contains($varName)) {
-            Add-DriftCode -Row $FileRow -Code $required[$varName].Code
+            [void]$codes.Add($required[$varName].Code)
         }
     }
+
+    return $codes.ToArray()
 }
 
 # Route files emit HTML inline only; helpers live in modules. Fires
@@ -5929,6 +5955,11 @@ foreach ($fileRec in $psFiles) {
     $routes = @(Get-PodeRoutes -Ast $parsed.Ast)
     $routePaths = @($routes | ForEach-Object { $_.Path })
 
+    # Landing-page trigger (CC_HTML_Spec.md Section 1.5): the file hosting the
+    # route whose -Path is '/'. Its page-shell chrome codes are filtered against
+    # $LandingPageChromeCarveout at the Route-validator call site below.
+    $isLandingPage = ($routePaths -contains '/')
+
     # Emit the file-level anchor row.
     $row = Add-HtmlFileRow `
         -ComponentName $name `
@@ -6005,9 +6036,12 @@ foreach ($fileRec in $psFiles) {
     # against the concatenated emission text.
     if ($registeredType -eq 'Route') {
         if ($tokensAll.Count -gt 0) {
-            # Page shell drift attaches to HTML_FILE row.
+            # Page shell drift attaches to HTML_FILE row. On the landing page
+            # (route '/'), codes in the Section 1.5 chrome carve-out are
+            # suppressed; every other code still attaches.
             $shellDrift = Get-PageShellDrift -Tokens $tokensAll
             foreach ($code in $shellDrift) {
+                if ($isLandingPage -and ($LandingPageChromeCarveout -contains $code)) { continue }
                 Add-DriftCode -Row $row -Code $code
             }
 
@@ -6029,8 +6063,13 @@ foreach ($fileRec in $psFiles) {
         }
 
         # AST-based Route-only validators run on the raw AST, not the
-        # token stream.
-        Test-RouteVariableAssignments -Ast $parsed.Ast -FileRow $row
+        # token stream. Page-shell variable-assignment codes are filtered
+        # against the same landing-page carve-out as the token-based codes.
+        $varDrift = Test-RouteVariableAssignments -Ast $parsed.Ast
+        foreach ($code in $varDrift) {
+            if ($isLandingPage -and ($LandingPageChromeCarveout -contains $code)) { continue }
+            Add-DriftCode -Row $row -Code $code
+        }
         Test-RouteLocalHelperFunctions -Ast $parsed.Ast -FileRow $row
     }
     elseif ($allOverlayConstructs.Count -gt 0) {
