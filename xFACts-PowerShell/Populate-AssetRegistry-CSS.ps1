@@ -51,6 +51,21 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-06-09  Size-literal purpose sub-classification (B-014). The single 'size'
+#             token family is split four ways by property so a size literal
+#             matches only same-purpose --size-* tokens, mirroring the existing
+#             color sub-family narrowing: padding/margin/gap/inset -> size-spacing
+#             (--size-spacing-*); border-radius -> size-radius (--size-radius-*);
+#             border/outline width -> size-border (--size-border-*); width/height
+#             measures -> size-dimension (all remaining layout --size-* tokens:
+#             nav/page-padding, panel/modal/slideup widths and heights, scrollbar
+#             -- collapsed to one family because the width/height properties
+#             cannot distinguish them). Clears the small-value spacing-vs-radius
+#             and spacing-vs-border collision artifacts (1/2/3px etc.); genuine
+#             same-purpose matches (e.g. padding:12px vs --size-spacing-lg) and
+#             all font-size literals remain Tier-1 drift as honest tokenization
+#             candidates. CSS_LITERAL rows still record the coarse 'size' family
+#             in variant_type; the sub-family is used only for token matching.
 # 2026-06-08  Literal inventory and purpose-aware literal drift. Every color
 #             (hex, rgb/rgba, hsl/hsla) and dimensional size (px, rem, em, vh,
 #             vw, %) literal in a non-:root declaration now emits a CSS_LITERAL
@@ -485,12 +500,15 @@ $script:CssVisitor = {
                             if ($literals.Count -gt 0) {
                                 $varMapForTier1 = Get-ZoneSharedVariableMap
                                 foreach ($lit in $literals) {
-                                    # The literal's Family carries a color sub-family
-                                    # (color-bg/border/text/fill) used for matching; the
-                                    # row records the coarse family (color/size/font-size)
-                                    # so the catalog's family dimension stays stable.
+                                    # The literal's Family carries a sub-family
+                                    # (color-bg/border/text/fill or
+                                    # size-spacing/radius/border/dimension) used
+                                    # for matching; the row records the coarse
+                                    # family (color/size/font-size) so the
+                                    # catalog's family dimension stays stable.
                                     $isColor      = $lit.Family.StartsWith('color')
-                                    $coarseFamily = if ($isColor) { 'color' } else { $lit.Family }
+                                    $isSize       = $lit.Family.StartsWith('size')
+                                    $coarseFamily = if ($isColor) { 'color' } elseif ($isSize) { 'size' } else { $lit.Family }
 
                                     $litRow = Add-CssLiteralRow `
                                         -LiteralText    $lit.Text `
@@ -841,12 +859,15 @@ function Get-VarReferences {
 # Classify a declaration property into the token family whose tokens it may
 # legitimately consume, or $null when the property is not tokenizable. The
 # family is the purpose dimension of literal drift: a literal is Tier-1 drift
-# only when a token of the SAME family carries the same value. Three families
-# are recognized, matching the token-name categories defined once in the shell
-# FOUNDATION :root (color -> --color-*, font-size -> --font-size-*, size ->
-# --size-*). Properties not in any family return $null and their literals are
-# not cataloged (bare unitless numbers like line-height / font-weight / z-index
-# / flex are excluded here, as are gradient / shadow / font-family values).
+# only when a token of the SAME family carries the same value. Families are
+# purpose sub-classified so a literal matches only same-purpose tokens: color
+# splits into color-bg/border/text/fill (plus the cross-property color-role on
+# the token side); size splits into size-spacing/radius/border/dimension;
+# font-size is its own family. All map to the token-name categories defined
+# once in the shell FOUNDATION :root (--color-*, --size-*, --font-size-*).
+# Properties not in any family return $null and their literals are not cataloged
+# (bare unitless numbers like line-height / font-weight / z-index / flex are
+# excluded here, as are gradient / shadow / font-family values).
 function Get-PropertyTokenFamily {
     param([string]$Property)
     if ([string]::IsNullOrWhiteSpace($Property)) { return $null }
@@ -868,20 +889,35 @@ function Get-PropertyTokenFamily {
     if ($fillProps   -contains $p) { return 'color-fill' }
 
     # The font-size property consumes --font-size-* tokens specifically, kept
-    # distinct from the spacing/layout size family so a font size never matches
-    # a spacing token of equal pixel value (and vice versa).
+    # distinct from the size sub-families so a font size never matches a size
+    # token of equal pixel value (and vice versa).
     if ($p -eq 'font-size') { return 'font-size' }
 
-    # Size/dimension-family properties consume --size-* tokens.
-    $sizeProps = @(
-        'width', 'min-width', 'max-width', 'height', 'min-height', 'max-height',
+    # Size/dimension properties consume --size-* tokens, sub-classified by
+    # purpose so a literal matches only same-purpose size tokens (mirroring the
+    # color sub-family narrowing above). The four sub-families are driven by
+    # what the CSS property can actually distinguish:
+    #   size-spacing   <- padding/margin/gap/inset (--size-spacing-*)
+    #   size-radius    <- border-radius           (--size-radius-*)
+    #   size-border    <- border/outline width    (--size-border-*)
+    #   size-dimension <- width/height measures   (all remaining --size-* layout
+    #                     tokens: nav/page-padding, panel/modal/slideup widths
+    #                     and heights, scrollbar). These share the width/height
+    #                     properties and cannot be told apart by property, so
+    #                     they intentionally collapse to one dimension family.
+    $spacingProps = @(
         'padding', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left',
         'margin', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left',
-        'top', 'right', 'bottom', 'left', 'gap', 'row-gap', 'column-gap',
-        'border-radius', 'border-width', 'border-top-width', 'border-right-width',
-        'border-bottom-width', 'border-left-width', 'outline-width', 'outline-offset'
+        'top', 'right', 'bottom', 'left', 'gap', 'row-gap', 'column-gap'
     )
-    if ($sizeProps -contains $p) { return 'size' }
+    $radiusProps    = @('border-radius')
+    $borderProps    = @('border-width', 'border-top-width', 'border-right-width',
+                        'border-bottom-width', 'border-left-width', 'outline-width', 'outline-offset')
+    $dimensionProps = @('width', 'min-width', 'max-width', 'height', 'min-height', 'max-height')
+    if ($spacingProps   -contains $p) { return 'size-spacing' }
+    if ($radiusProps    -contains $p) { return 'size-radius' }
+    if ($borderProps    -contains $p) { return 'size-border' }
+    if ($dimensionProps -contains $p) { return 'size-dimension' }
 
     return $null
 }
@@ -913,7 +949,14 @@ function Get-TokenNameFamily {
         $n -like 'color-tint-*'   -or $n -like 'color-glow-*'   -or
         $n -like 'color-banner-*' -or $n -like 'color-button-*') { return 'color-role' }
     if ($n -like 'color-*')      { return 'color-role' }
-    if ($n -like 'size-*')       { return 'size' }
+    # Size sub-families. Specific purpose prefixes are tested before the bare
+    # 'size-*' catch-all, which maps every remaining --size-* layout-measurement
+    # token (nav, page-padding, panel/modal/slideup widths and heights,
+    # scrollbar) to the cross-property 'size-dimension' family.
+    if ($n -like 'size-spacing-*') { return 'size-spacing' }
+    if ($n -like 'size-radius-*')  { return 'size-radius' }
+    if ($n -like 'size-border-*')  { return 'size-border' }
+    if ($n -like 'size-*')         { return 'size-dimension' }
     return $null
 }
 
@@ -947,8 +990,10 @@ function ConvertTo-ColorKey {
 # Returns a list of objects, each: @{ Text = '<as authored>'; Family =
 # '<color sub-family>'|'size'|'font-size'; Property = '<declaration property>' }.
 # Color families are sub-classified ('color-bg', 'color-border', 'color-text',
-# 'color-fill') so a literal is later matched only against tokens of the same
-# color purpose. The caller supplies the property so each literal carries its
+# 'color-fill') and size families are sub-classified ('size-spacing',
+# 'size-radius', 'size-border', 'size-dimension') so a literal is later matched
+# only against tokens of the same purpose. The caller supplies the property so
+# each literal carries its
 # purpose dimension. Color literals (hex, rgb(), rgba(), hsl(), hsla()) are
 # captured only when the property is a color-family property; dimensional
 # literals (px, rem, em, vh, vw, %) only when the property is a size or
