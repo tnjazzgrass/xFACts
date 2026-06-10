@@ -1,0 +1,224 @@
+/* ============================================================================
+   xFACts Control Center - Home Landing Page Styles (home.css)
+   Location: E:\xFACts-ControlCenter\public\css\home.css
+   Version: Tracked in dbo.System_Metadata (component: ControlCenter.Home)
+
+   Page-local styles for the landing page served at route '/'. The landing
+   page wears no shared chrome (HTML spec 1.5 carve-out): it supplies its own
+   top user bar, navigation tile grid, and bottom status bar. Shared tokens
+   from cc-shared.css :root are consumed via var(...) where a token of matching
+   value and purpose exists; Home's bespoke tile palette is kept as literals
+   where no token shares its purpose.
+
+   FILE ORGANIZATION
+   -----------------
+   LAYOUT: PAGE FRAME
+   CONTENT: USER BAR
+   CONTENT: NAVIGATION GRID
+   CONTENT: STATUS BAR
+   ============================================================================ */
+
+/* ============================================================================
+   LAYOUT: PAGE FRAME
+   ----------------------------------------------------------------------------
+   The main content column that holds the page title, subtitle, and the
+   navigation grid, offset below the fixed user bar.
+   Prefix: hom
+   ============================================================================ */
+
+/* The main content wrapper, pushed below the fixed top user bar. */
+.hom-main-content {
+    margin-top: 30px;
+}
+
+/* The page title link wrapping the H1 text (opens docs in a new tab). */
+.hom-page-title-link {
+    color: var(--color-accent-platform);
+    text-decoration: none;
+    transition: color var(--duration-fast) ease;
+}
+
+.hom-page-title-link:hover { /* hover state lightens the page title link */
+    color: var(--color-text-link);
+}
+
+/* The page subtitle line beneath the H1. */
+.hom-subtitle {
+    color: var(--color-text-muted);
+    margin-bottom: var(--size-page-padding-x);
+}
+
+/* ============================================================================
+   CONTENT: USER BAR
+   ----------------------------------------------------------------------------
+   Fixed identity bar at the top of the landing page: signed-in user on the
+   left, optional admin gear and sign-out on the right.
+   Prefix: hom
+   ============================================================================ */
+
+/* The fixed top bar showing signed-in identity and sign-out. */
+.hom-user-bar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    background: var(--color-bg-card);
+    border-bottom: var(--size-border-thin) solid var(--color-border-default);
+    padding: 10px var(--size-spacing-2xl);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: var(--font-size-content-lg);
+}
+
+/* The "Signed in as" label container on the left of the user bar. */
+.hom-user-info {
+    color: var(--color-text-muted);
+}
+
+/* The signed-in user's display name. */
+.hom-user-name {
+    color: var(--color-accent-shared);
+    font-weight: 500;
+}
+
+/* The right-side cluster holding the admin gear and sign-out link. */
+.hom-user-bar-right {
+    display: flex;
+    align-items: center;
+    gap: var(--size-spacing-xl);
+}
+
+/* The admin gear icon link, shown only to admin users. */
+.hom-admin-gear {
+    color: var(--color-accent-platform);
+    text-decoration: none;
+    font-size: 20px;
+    opacity: 0.45;
+    transition: opacity var(--duration-fast);
+    line-height: 1;
+}
+
+.hom-admin-gear:hover { /* hover state brightens the admin gear */
+    opacity: 1;
+}
+
+/* The sign-out link on the right of the user bar. */
+.hom-logout-link {
+    color: var(--color-text-muted);
+    text-decoration: none;
+}
+
+.hom-logout-link:hover { /* hover state lightens the sign-out link */
+    color: var(--color-text-primary);
+}
+
+/* ============================================================================
+   CONTENT: NAVIGATION GRID
+   ----------------------------------------------------------------------------
+   The permission-filtered tile grid. Sections stack vertically, each with a
+   header and a responsive grid of navigation cards. Card accent colors pair
+   with the nav bar's section accents.
+   Prefix: hom
+   ============================================================================ */
+
+/* Modifier adding top spacing above a section header below the first. */
+.hom-section-spaced {
+}
+
+/* A section heading above a tile grid. */
+.hom-section-header {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-content-lg);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 15px;
+    padding-bottom: var(--size-spacing-md);
+    border-bottom: var(--size-border-thin) solid var(--color-border-divider);
+}
+
+.hom-section-header.hom-section-spaced { /* vertical gap separating a section from the one above */
+    margin-top: 35px;
+}
+
+/* The responsive grid of navigation cards within a section. */
+.hom-nav-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, 280px);
+    gap: var(--size-spacing-2xl);
+}
+
+/* A single navigation tile linking to a Control Center page. */
+.hom-nav-card {
+    background: #2d2d2d;
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-xl);
+    padding: var(--size-spacing-2xl);
+    text-decoration: none;
+    color: inherit;
+    transition: all var(--duration-fast);
+    height: 140px;
+}
+
+.hom-nav-card:hover { /* hover state lifts the card border and background */
+    border-color: var(--color-accent-platform);
+    background: #333;
+}
+
+/* The card title (page display name). */
+.hom-nav-card-title {
+    color: var(--color-accent-shared);
+    margin: 0 0 10px 0;
+}
+
+/* The card description line beneath the title. */
+.hom-nav-card-desc {
+    color: var(--color-text-muted);
+    margin: 0;
+    font-size: 14px;
+}
+
+/* Departmental-section accent token applied to a card and its title. */
+.hom-nav-section-departmental {
+}
+
+.hom-nav-card.hom-nav-section-departmental:hover { /* departmental accent on card hover */
+    border-color: var(--color-accent-departmental);
+}
+
+.hom-nav-card-title.hom-nav-section-departmental { /* departmental accent on the card title */
+    color: var(--color-accent-departmental);
+}
+
+/* Tools-section accent token applied to a card and its title. */
+.hom-nav-section-tools {
+}
+
+.hom-nav-card.hom-nav-section-tools:hover { /* tools accent on card hover */
+    border-color: var(--color-accent-tools);
+}
+
+.hom-nav-card-title.hom-nav-section-tools { /* tools accent on the card title */
+    color: var(--color-accent-tools);
+}
+
+/* ============================================================================
+   CONTENT: STATUS BAR
+   ----------------------------------------------------------------------------
+   Fixed footer strip showing the platform name, listening port, and the
+   connected availability-group listener.
+   Prefix: hom
+   ============================================================================ */
+
+/* The fixed bottom status strip. */
+.hom-status-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: var(--color-bg-card);
+    border-top: var(--size-border-thin) solid var(--color-border-default);
+    padding: var(--size-spacing-md) var(--size-spacing-2xl);
+    font-size: var(--font-size-content);
+    color: var(--color-text-muted);
+}
