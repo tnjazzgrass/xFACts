@@ -89,6 +89,10 @@ A helper module function emits a partial HTML fragment for substitution into a p
 
 The 403 access-denied response is a complete page and is subject to every spec rule in this document, with one exception: the page may include a single inline `<style>` block in its `<head>`. This carve-out exists because authentication or authorization failure may coincide with conditions that prevent the user's browser from loading `/css/cc-shared.css`, and the page must remain styled in that case. The carve-out applies only to the response emitted by the `Get-AccessDeniedHtml` helper function in `xFACts-CCShared.psm1`. The inline `style="..."` attribute prohibition is not affected.
 
+### 1.5 Landing page
+
+The landing page — the page emitted by the route whose `Add-PodeRoute -Path` value is `/` — is exempt from the page-shell chrome cluster (§15.1) and subject to every other rule in this document.
+
 ---
 
 ## 2. Page chrome
@@ -817,3 +821,23 @@ Each rule that the populator enforces produces one drift code. This table is the
 | `HTML_CSS_FILE_UNRESOLVED` | A `CSS_FILE` USAGE row could not be matched to any `CSS_FILE` DEFINITION row. | §13.1 |
 | `HTML_JS_FILE_UNRESOLVED` | A `JS_FILE` USAGE row could not be matched to any `JS_FILE` DEFINITION row. | §13.1 |
 | `UNRESOLVED_REFERENCE` | A cross-spec USAGE row remains in the `<pending>` state after the resolve phase completes. Indicates a gap in the resolve phase rather than a spec violation. | §13 |
+
+### 15.1 Landing-page chrome cluster
+
+The §1.5 carve-out waives exactly these codes:
+
+| Code | Rule |
+|------|------|
+| `MALFORMED_DOCTYPE` | §1.1 |
+| `FORBIDDEN_HARDCODED_TITLE` | §1.1 |
+| `MISSING_BROWSER_TITLE_VAR` | §1.1 |
+| `MISSING_BODY_SECTION_CLASS` | §1.1 |
+| `MISSING_DATA_CC_PAGE` | §1.1 |
+| `MISSING_DATA_CC_PREFIX` | §1.1 |
+| `MISSING_NAV_SUBSTITUTION` | §1.1 |
+| `MISSING_NAV_HTML_VAR` | §1.1 |
+| `MISSING_HEADER_BAR` | §2.1 |
+| `MISSING_HEADER_HTML_VAR` | §2.1 |
+| `MISSING_BANNER_SUBSTITUTION` | §2.4 |
+| `MISSING_BANNER_HTML_VAR` | §2.4 |
+| `MISSING_SHARED_SCRIPT_TAG` | §3.2 |
