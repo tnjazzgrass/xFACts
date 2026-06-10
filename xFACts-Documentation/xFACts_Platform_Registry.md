@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-06-09 09:32:05
+Generated: 2026-06-10 03:27:21
 
 ## Module Registry
 
@@ -29,7 +29,7 @@ Generated: 2026-06-09 09:32:05
 | BatchOps | BatchOps | Real-time Debt Manager batch processing activity, complete pipeline tracking, and execution history | bat | batchops | Batch Monitoring | BatchOps |  |  | 80 | 1 |
 | BIDATA | BIDATA | Real-time BIDATA nightly build monitoring with process status, duration trending and build history | bid | bidata | BIDATA Monitoring | BIDATA |  |  | 90 | 1 |
 | ControlCenter | ControlCenter.Admin | Administration page: process timeline, engine controls, platform management tools | adm | controlcenter | Administration |  |  | admin |  |  |
-| ControlCenter | ControlCenter.Home | Home page and documentation hub |  |  |  |  |  |  |  |  |
+| ControlCenter | ControlCenter.Home | Home page and documentation hub | hom |  |  |  |  |  |  |  |
 | ControlCenter | ControlCenter.Platform | Platform Monitoring page: XE event viewer, API request logs | plt | controlcenter | Platform Monitoring |  |  | platform |  |  |
 | ControlCenter | ControlCenter.Shared | Shared Control Center infrastructure: startup, helpers module, engine events |  | controlcenter | Control Center |  |  |  | 130 | 1 |
 | ControlCenter | Documentation.Pipeline | Documentation pipeline: DDL reference generation, Confluence publishing, file consolidation |  | controlcenter |  | ControlCenter |  |  |  | 2 |
@@ -90,6 +90,7 @@ Generated: 2026-06-09 09:32:05
 | ControlCenter.Admin | admin.js | WebAsset | JavaScript | E:\xFACts-ControlCenter\public\js\admin.js | Administration CC client-side logic |
 | ControlCenter.Admin | Admin.ps1 | WebAsset | Route | E:\xFACts-ControlCenter\scripts\routes\Admin.ps1 | Administration CC page route |
 | ControlCenter.Home | index.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\index.html | Documentation hub page |
+| ControlCenter.Home | home.css | WebAsset | CSS | E:\xFACts-ControlCenter\public\css\home.css | Home page CC styles |
 | ControlCenter.Home | Home.ps1 | WebAsset | Route | E:\xFACts-ControlCenter\scripts\routes\Home.ps1 | Home page route |
 | ControlCenter.Platform | PlatformMonitoring-API.ps1 | WebAsset | API | E:\xFACts-ControlCenter\scripts\routes\PlatformMonitoring-API.ps1 | Platform Monitoring CC API endpoints |
 | ControlCenter.Platform | platform-monitoring.css | WebAsset | CSS | E:\xFACts-ControlCenter\public\css\platform-monitoring.css | Platform Monitoring CC styles |
