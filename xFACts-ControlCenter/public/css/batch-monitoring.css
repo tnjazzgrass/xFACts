@@ -69,7 +69,7 @@
 .bat-loading {
     color: var(--color-text-muted);
     font-style: italic;
-    padding: 20px;
+    padding: var(--size-spacing-2xl);
     text-align: center;
 }
 
@@ -132,7 +132,7 @@
 
 /* Large centered count value on the card. */
 .bat-card-value {
-    font-size: 24px;
+    font-size: var(--font-size-h1);
     font-weight: 600;
     color: var(--color-text-primary);
     line-height: 1;
