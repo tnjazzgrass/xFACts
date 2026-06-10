@@ -2236,7 +2236,7 @@
 
 /* The icon inside the validation summary. */
 .bdl-validation-icon {
-    font-size: 24px;
+    font-size: var(--font-size-h1);
     flex-shrink: 0;
 }
 
@@ -3198,14 +3198,14 @@
 /* Result-icon color variant for the success block. */
 .bdl-result-icon-success {
     color: var(--color-accent-shared);
-    font-size: 24px;
+    font-size: var(--font-size-h1);
     flex-shrink: 0;
 }
 
 /* Result-icon color variant for the failure block. */
 .bdl-result-icon-fail {
     color: var(--color-status-critical);
-    font-size: 24px;
+    font-size: var(--font-size-h1);
     flex-shrink: 0;
 }
 
@@ -3264,7 +3264,7 @@
 /* Result-icon color variant for the warning block. */
 .bdl-result-icon-warn {
     color: var(--color-accent-departmental);
-    font-size: 24px;
+    font-size: var(--font-size-h1);
     flex-shrink: 0;
 }
 
@@ -4985,13 +4985,13 @@
 /* Caution-tagged "(cond)" marker shown beside a conditional field mapping. */
 .bdl-field-mode-tag-cond {
     color: var(--color-accent-departmental);
-    font-size: 10px;
+    font-size: var(--font-size-default);
 }
 
 /* Accent-tagged "(fixed)" marker shown beside a fixed field mapping. */
 .bdl-field-mode-tag-fixed {
     color: var(--color-accent-shared);
-    font-size: 10px;
+    font-size: var(--font-size-default);
 }
 
 /* Error-tinted inline message used in failure and parse-error states. */
@@ -5002,7 +5002,7 @@
 /* Muted "(N skipped)" suffix shown beside a row count in the execute summary. */
 .bdl-summary-skipped {
     color: var(--color-text-muted);
-    font-size: 11px;
+    font-size: var(--font-size-body);
 }
 
 /* Caution-tinted in-progress spinner glyph on an execute tab. */
@@ -5048,13 +5048,13 @@
 .bdl-promote-prod-warning {
     color: var(--color-status-critical);
     font-weight: 600;
-    margin-top: 12px;
+    margin-top: var(--size-spacing-lg);
 }
 
 /* Intro paragraph at the top of the alignment dialog body. */
 .bdl-alignment-intro {
     color: #999;
-    font-size: 13px;
+    font-size: var(--font-size-content-lg);
     margin: 0 0 14px;
 }
 
@@ -5099,7 +5099,7 @@
 
 /* Gear-icon glyph preceding the trigger-column label. */
 .bdl-trigger-label-icon {
-    font-size: 11px;
+    font-size: var(--font-size-body);
 }
 
 /* Inline element-name code in a trigger note. */
@@ -5132,7 +5132,7 @@
 /* Inline element-name code beside a mapping target in the save-template preview. */
 .bdl-slideout-pair-element {
     font-family: 'Consolas', 'Courier New', monospace;
-    font-size: 10px;
+    font-size: var(--font-size-default);
     color: var(--color-text-muted);
 }
 
