@@ -1,188 +1,148 @@
-# ============================================================================
-# xFACts Control Center - Home/Dashboard Routes
-# Location: E:\xFACts-ControlCenter\scripts\routes\Home.ps1
-# 
-# Defines the home page (dashboard) and navigation.
-# Loaded by Start-ControlCenter.ps1 at startup.
-# Version: Tracked in dbo.System_Metadata (component: ControlCenter.Home)
-#
-# CHANGELOG
-# ---------
+<#
+.SYNOPSIS
+    Control Center landing page route.
+
+.DESCRIPTION
+    Registers the post-login landing page at route '/'. Renders the dynamic
+    navigation tile grid from the user's permitted RBAC_NavRegistry sections,
+    a top user bar with sign-out, an optional admin gear, and a status bar.
+    Dept-only users with no landing-page access are redirected to their
+    department page.
+
+.COMPONENT
+    ControlCenter.Home
+
+.NOTES
+    File Name : Home.ps1
+    Location  : E:\xFACts-ControlCenter\scripts\routes\Home.ps1
+
+    FILE ORGANIZATION
+    -----------------
+    CHANGELOG: CHANGE HISTORY
+    ROUTE: PAGE PATH
+#>
+
+<# ============================================================================
+   CHANGELOG: CHANGE HISTORY
+   ----------------------------------------------------------------------------
+   Date-stamped change history, most-recent first.
+   Prefix: (none)
+   ============================================================================ #>
+
+# 2026-06-09  Converted to CC file-format spec. Moved page styling out of the
+#             inline <style> block into home.css; re-prefixed all page-local
+#             classes to the hom- page prefix; switched the tile accent class
+#             to the array-join pattern; reordered the scriptblock so
+#             Get-UserAccess is the first statement. Landing-page chrome
+#             carve-out (HTML spec 1.5) applies: no nav/header/banner chrome,
+#             no shared CSS/JS references.
 # 2026-04-29  Phase 3 of dynamic nav: replaced hardcoded section/tile HTML
-#             with a loop over Get-HomePageSections. Section headers and
-#             tile accents now driven by RBAC_NavSection / RBAC_NavRegistry.
+#             with a loop over Get-HomePageSections. Section headers and tile
+#             accents now driven by RBAC_NavSection / RBAC_NavRegistry.
 #             Dept-only redirect logic preserved.
-# ============================================================================
+
+<# ============================================================================
+   ROUTE: PAGE PATH
+   ----------------------------------------------------------------------------
+   The landing page route at '/'. Resolves access first, redirects dept-only
+   users with no landing access to their department page, then renders the
+   permitted navigation tile grid.
+   Prefix: (none)
+   ============================================================================ #>
 
 Add-PodeRoute -Method Get -Path '/' -Authentication 'ADLogin' -ScriptBlock {
-    $username = $WebEvent.Auth.User.Username
-    $displayName = if ($WebEvent.Auth.User.Name) { $WebEvent.Auth.User.Name } else { $username }
-    
-    # --- RBAC: Check if dept-only user (redirect to their department page) ---
     $access = Get-UserAccess -WebEvent $WebEvent -PageRoute '/'
-    
-    # --- Admin gear icon (visible only to admin role holders) ---
-    $ctx = Get-UserContext -WebEvent $WebEvent
-    $adminGear = if ($ctx.IsAdmin) {
-        '<a href="/admin" class="admin-gear" title="Administration">&#9881;</a>'
-    } else { '' }
-    
+
     if (-not $access.HasAccess -and $access.IsDeptOnly -and $access.DepartmentScopes.Count -gt 0) {
-        # Dept-only user with no Home access -- redirect to their department page
         $deptKey = $access.DepartmentScopes[0]
-        $deptPages = Invoke-XFActsQuery -Query "SELECT page_route FROM dbo.RBAC_DepartmentRegistry WHERE department_key = @key AND is_active = 1" -Parameters @{ key = $deptKey }
+        $deptPages = Invoke-XFActsQuery -Query @"
+    SELECT page_route
+    FROM dbo.RBAC_DepartmentRegistry
+    WHERE department_key = @key
+      AND is_active = 1
+"@ -Parameters @{ key = $deptKey }
         if ($deptPages -and $deptPages.Count -gt 0) {
             Move-PodeResponseUrl -Url $deptPages[0].page_route
             return
         }
     }
-    
-    # --- Build dynamic tile sections from RBAC_NavRegistry ---
+
+    $ctx = Get-UserContext -WebEvent $WebEvent
+    $displayName = if ($ctx.DisplayName) { $ctx.DisplayName } else { $ctx.Username }
+
+    $adminGear = if ($ctx.IsAdmin) {
+        '<a href="/admin" class="hom-admin-gear" title="Administration">&#9881;</a>'
+    } else { '' }
+
     $sections = Get-HomePageSections -UserContext $ctx
-    
+
     $sectionsHtml = ''
     $isFirstSection = $true
     foreach ($section in $sections) {
-        # Spacer between sections (not before the first)
-        $spacerClass = if ($isFirstSection) { '' } else { 'section-spacer' }
+        $headerClasses = @('hom-section-header')
+        if (-not $isFirstSection) { $headerClasses += 'hom-section-spaced' }
+        $headerClass = ($headerClasses -join ' ')
         $isFirstSection = $false
-        
+
+        $sectionLabel = [System.Net.WebUtility]::HtmlEncode($section.SectionLabel)
         $sectionsHtml += @"
 
-        <div class="$spacerClass"></div>
-        <div class="section-header">$([System.Net.WebUtility]::HtmlEncode($section.SectionLabel))</div>
-        <div class="nav-grid">
+        <div class="$headerClass">$sectionLabel</div>
+        <div class="hom-nav-grid">
 
 "@
-        
+
         foreach ($page in $section.Pages) {
             $title = [System.Net.WebUtility]::HtmlEncode($page.DisplayTitle)
             $description = if ($page.Description) { [System.Net.WebUtility]::HtmlEncode($page.Description) } else { '' }
-            $accentClass = if ($section.AccentClass) { " $($section.AccentClass)" } else { '' }
-            
+
+            $cardClasses = @('hom-nav-card')
+            if ($section.AccentClass) { $cardClasses += "hom-$($section.AccentClass)" }
+            $cardClass = ($cardClasses -join ' ')
+
+            $titleClasses = @('hom-nav-card-title')
+            if ($section.AccentClass) { $titleClasses += "hom-$($section.AccentClass)" }
+            $titleClass = ($titleClasses -join ' ')
+
             $sectionsHtml += @"
-            <a href="$($page.Route)" class="nav-card$accentClass">
-                <h3>$title</h3>
-                <p>$description</p>
+            <a href="$($page.Route)" class="$cardClass">
+                <h3 class="$titleClass">$title</h3>
+                <p class="hom-nav-card-desc">$description</p>
             </a>
 
 "@
         }
-        
+
         $sectionsHtml += @"
         </div>
 
 "@
     }
-    
+
     $html = @"
 <!DOCTYPE html>
 <html>
 <head>
     <title>xFACts Control Center</title>
-    <style>
-        body { 
-            font-family: 'Segoe UI', Arial, sans-serif; 
-            margin: 0; 
-            padding: 40px; 
-            background: #1e1e1e; 
-            color: #d4d4d4; 
-        }
-        h1 { color: #569cd6; margin-bottom: 10px; }
-        h1 a { color: inherit; text-decoration: none; transition: color 0.2s ease; }
-        h1 a:hover { color: #9cdcfe; }
-        .subtitle { color: #888; margin-bottom: 40px; }
-        .section-header {
-            color: #888;
-            font-size: 13px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            margin-bottom: 15px;
-            padding-bottom: 8px;
-            border-bottom: 1px solid #333;
-        }
-        .section-spacer { margin-top: 35px; }
-        .nav-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, 280px);
-            gap: 20px;
-        }
-        .nav-card {
-            background: #2d2d2d;
-            border: 1px solid #404040;
-            border-radius: 8px;
-            padding: 20px;
-            text-decoration: none;
-            color: inherit;
-            transition: all 0.2s;
-            min-height: 100px;
-        }
-        .nav-card:hover {
-            border-color: #569cd6;
-            background: #333;
-        }
-        .nav-card h3 { color: #4ec9b0; margin: 0 0 10px 0; }
-        .nav-card p { margin: 0; color: #888; font-size: 14px; }
-        
-        /* Section-specific tile accents - match RBAC_NavSection.accent_class values */
-        .nav-card.nav-section-departmental:hover { border-color: #dcdcaa; }
-        .nav-card.nav-section-departmental h3 { color: #dcdcaa; }
-        .nav-card.nav-section-tools:hover { border-color: #9cdcfe; }
-        .nav-card.nav-section-tools h3 { color: #9cdcfe; }
-        
-        .user-bar {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            background: #252526;
-            border-bottom: 1px solid #404040;
-            padding: 10px 20px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            font-size: 13px;
-        }
-        .user-info { color: #888; }
-        .user-name { color: #4ec9b0; font-weight: 500; }
-        .logout-link { color: #888; text-decoration: none; }
-        .logout-link:hover { color: #d4d4d4; }
-        .user-bar-right { display: flex; align-items: center; gap: 16px; }
-        .admin-gear { 
-            color: #569cd6; text-decoration: none; font-size: 20px; 
-            opacity: 0.45; transition: opacity 0.2s; line-height: 1;
-        }
-        .admin-gear:hover { opacity: 1; }
-        .main-content { margin-top: 50px; }
-        .status-bar {
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            background: #252526;
-            border-top: 1px solid #404040;
-            padding: 8px 20px;
-            font-size: 12px;
-            color: #888;
-        }
-    </style>
+    <link rel="stylesheet" href="/css/home.css">
+    <link rel="stylesheet" href="/css/cc-shared.css">
 </head>
 <body>
-    <div class="user-bar">
-        <div class="user-info">Signed in as <span class="user-name">$displayName</span></div>
-        <div class="user-bar-right">
+    <div class="hom-user-bar">
+        <div class="hom-user-info">Signed in as <span class="hom-user-name">$displayName</span></div>
+        <div class="hom-user-bar-right">
             $adminGear
-            <a href="/logout" class="logout-link">Sign Out</a>
+            <a href="/logout" class="hom-logout-link">Sign Out</a>
         </div>
     </div>
-    
-    <div class="main-content">
-        <h1><a href="/docs/pages/index.html" target="_blank">xFACts Control Center</a></h1>
-        <p class="subtitle">Enterprise IT Operations Platform</p>
+
+    <div class="hom-main-content">
+        <h1><a href="/docs/pages/index.html" target="_blank" class="hom-page-title-link">xFACts Control Center</a></h1>
+        <p class="hom-subtitle">Enterprise IT Operations Platform</p>
         $sectionsHtml
     </div>
-    
-    <div class="status-bar">
+
+    <div class="hom-status-bar">
         xFACts Control Center | Port 8085 | Connected to AVG-PROD-LSNR
     </div>
 </body>
