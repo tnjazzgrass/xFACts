@@ -15,6 +15,7 @@
    -----------------
    CONSTANTS: ACTION DISPATCH TABLES
    CONSTANTS: WIZARD CONFIGURATION
+   CONSTANTS: COMPOSED MESSAGE BUILDER
    STATE: WIZARD FLOW
    STATE: FILE AND ENTITIES
    STATE: EXECUTION AND TEMPLATES
@@ -30,6 +31,7 @@
    FUNCTIONS: STEP 4 MAPPING
    FUNCTIONS: STEP 4 ASSIGNMENT CARDS
    FUNCTIONS: STEP 4 FIELD ASSIGNMENTS
+   FUNCTIONS: STEP 4 COMPOSED MESSAGE BUILDER
    FUNCTIONS: STEP 4 VALIDATION
    FUNCTIONS: STEP 5 EXECUTE
    FUNCTIONS: ALIGNMENT
@@ -80,6 +82,11 @@ const bdl_clickActions = {
     'bdl-select-field-value':       bdl_selectFieldAssignmentValue,
     'bdl-select-field-cond-value':  bdl_selectFieldCondValue,
     'bdl-show-all-field-triggers':  bdl_showAllFieldTriggerValues,
+    'bdl-cm-add-segment':           bdl_cmAddSegment,
+    'bdl-cm-remove-segment':        bdl_cmRemoveSegment,
+    'bdl-cm-segment-type':          bdl_cmSetSegmentType,
+    'bdl-cond-skip':                bdl_condSkipToggle,
+    'bdl-fa-cond-skip':             bdl_fieldCondSkipToggle,
     'bdl-apply-replacement':        bdl_applyReplacement,
     'bdl-fill-empty':               bdl_fillEmpty,
     'bdl-skip-rows':                bdl_skipRows,
@@ -126,7 +133,9 @@ const bdl_changeActions = {
     'bdl-conditional-value-changed':  bdl_conditionalValueChanged,
     'bdl-field-assignment-changed':   bdl_fieldAssignmentValueChanged,
     'bdl-field-cond-value-changed':   bdl_fieldCondValueChanged,
-    'bdl-ticket-changed':             bdl_ticketChanged
+    'bdl-ticket-changed':             bdl_ticketChanged,
+    'bdl-cm-segment-field-changed':   bdl_cmSegmentFieldChanged,
+    'bdl-cm-fallback-changed':        bdl_cmFallbackChanged
 };
 
 /* Maps data-action-input values to their input handler functions. */
@@ -134,7 +143,10 @@ const bdl_inputActions = {
     'bdl-assignment-field-search':  bdl_assignmentFieldSearch,
     'bdl-conditional-value-search': bdl_conditionalValueSearch,
     'bdl-field-assignment-search':  bdl_fieldAssignmentSearch,
-    'bdl-field-cond-value-search':  bdl_fieldCondValueSearch
+    'bdl-field-cond-value-search':  bdl_fieldCondValueSearch,
+    'bdl-cm-segment-text-input':    bdl_cmSegmentTextInput,
+    'bdl-cm-fallback-input':        bdl_cmFallbackInput,
+    'bdl-cm-segment-sep-input':     bdl_cmSegmentSepInput
 };
 
 /* ============================================================================
@@ -155,6 +167,28 @@ const bdl_MAX_PREVIEW_ROWS = 10;
    history filter; used for temporary blocks during DM upgrades or
    maintenance windows. Remove an entry to re-enable that environment. */
 const bdl_disabledEnvironments = ['STAGE'];
+
+/* ============================================================================
+   CONSTANTS: COMPOSED MESSAGE BUILDER
+   ----------------------------------------------------------------------------
+   Configuration for the AR Log message builder, a per-row message composer
+   that replaces the normal mapping input for one field on one entity. The
+   builder appears only when the selected entity and the target element both
+   match the constants below; everywhere else the page is unchanged. Widening
+   the builder to additional fields later is a matter of turning the element
+   constant into a set and testing membership.
+   Prefix: bdl
+   ============================================================================ */
+
+/* The entity type whose message field uses the composed-message builder. */
+const bdl_COMPOSED_MESSAGE_ENTITY = 'CONSUMER_ACCOUNT_AR_LOG';
+
+/* The element name the composed-message builder owns and fills per row. */
+const bdl_COMPOSED_MESSAGE_ELEMENT = 'cnsmr_accnt_ar_mssg_txt';
+
+/* The fallback text pre-filled in the builder, written to a row whose composed
+   result is empty. Change this string to change the default fallback. */
+const bdl_COMPOSED_MESSAGE_DEFAULT_FALLBACK = 'No message content provided.';
 
 /* ============================================================================
    STATE: WIZARD FLOW
@@ -1257,7 +1291,8 @@ function bdl_initEntityStates() {
             validationResult: null,
             validated: false,
             xmlPreviewLoaded: false,
-            nullifyFields: []
+            nullifyFields: [],
+            composedMessage: null
         };
     });
 }
@@ -1393,7 +1428,13 @@ function bdl_renderMapValidateMapping(area, state) {
         return f.element_name === idElemName;
     });
     var mappableFields = visibleFields.filter(function(f) {
-        return f.element_name !== idElemName;
+        if (f.element_name === idElemName) {
+            return false;
+        }
+        if (bdl_isComposedMessageActive(state) && f.element_name === bdl_COMPOSED_MESSAGE_ELEMENT) {
+            return false;
+        }
+        return true;
     });
     var prevIdIdx = '';
     var k;
@@ -1441,6 +1482,7 @@ function bdl_renderMapValidateMapping(area, state) {
     html += '<div class="bdl-mapped-section"><div class="bdl-panel-header bdl-panel-header-mapped">Mapped</div>' +
         '<div class="bdl-mapped-list" id="bdl-mapped-list"></div></div>';
     html += '<div id="bdl-field-assignments-area"></div>';
+    html += '<div id="bdl-composed-message-area"></div>';
     html += '<div id="bdl-mapping-warnings" class="bdl-mapping-warnings"></div></div>';
     html += '<div class="bdl-map-validate-actions"><button class="bdl-execute-btn" id="bdl-btn-validate-entity" ' +
         'data-action-click="bdl-validate-entity" disabled>Validate ' +
@@ -1588,6 +1630,7 @@ function bdl_refreshMappingPanels() {
     }
     mapList.innerHTML = mapH;
     bdl_renderFieldAssignmentsSection(state);
+    bdl_renderComposedMessageSection(state);
     bdl_checkMappingComplete();
 }
 
@@ -1821,35 +1864,75 @@ function bdl_checkMappingComplete() {
     var fieldAssignmentsReady = true;
     if (state.fieldAssignments) {
         Object.keys(state.fieldAssignments).forEach(function(elemName) {
-            var fa = state.fieldAssignments[elemName];
-            if (fa.mode === 'blanket') {
-                var field = state.fields ? state.fields.find(function(f) {
-                    return f.element_name === elemName;
-                }) : null;
-                if (field && field.is_import_required && !fa.value) {
-                    fieldAssignmentsReady = false;
-                }
-            } else if (fa.mode === 'conditional') {
-                if (!fa.triggerColumn || !fa.triggerUniqueValues) {
-                    fieldAssignmentsReady = false;
-                    return;
-                }
-                var hasMappedValue = Object.keys(fa.valueMap).some(function(k) {
-                    return fa.valueMap[k] && fa.valueMap[k].trim() !== '';
-                });
-                if (!hasMappedValue) {
-                    fieldAssignmentsReady = false;
-                }
+            if (!bdl_fieldAssignmentComplete(state, elemName, state.fieldAssignments[elemName])) {
+                fieldAssignmentsReady = false;
             }
         });
     }
     var valBtn = document.getElementById('bdl-btn-validate-entity');
+    var composedActive = bdl_isComposedMessageActive(state);
+    var composedReady = bdl_composedMessageReady(state);
     var hasContent = mc > 0 ||
         (state.nullifyFields && state.nullifyFields.length > 0) ||
-        (state.fieldAssignments && Object.keys(state.fieldAssignments).length > 0);
+        (state.fieldAssignments && Object.keys(state.fieldAssignments).length > 0) ||
+        (composedActive && composedReady);
     if (valBtn) {
-        valBtn.disabled = !hasContent || !fieldAssignmentsReady;
+        valBtn.disabled = !hasContent || !fieldAssignmentsReady || !composedReady;
         bdl_setEnabledClass(valBtn, !valBtn.disabled);
+    }
+    bdl_refreshCompleteStates(state);
+}
+
+/* Updates the live complete-state styling without a full re-render: the green
+   header on each field-assignment card and the message builder, and the
+   value-set accent on filled blanket inputs. Called on every mapping change so
+   the cues track edits without disrupting input focus. */
+function bdl_refreshCompleteStates(state) {
+    if (!state) {
+        return;
+    }
+    if (state.fieldAssignments) {
+        Object.keys(state.fieldAssignments).forEach(function(elemName) {
+            var fa = state.fieldAssignments[elemName];
+            var fieldId = 'bdl-fa-blanket-' + elemName.replace(/[^a-zA-Z0-9]/g, '');
+            var input = document.getElementById(fieldId);
+            if (input && input.classList.contains('bdl-fixed-value-text')) {
+                var faField = state.fields ? state.fields.find(function(f) {
+                    return f.element_name === elemName;
+                }) : null;
+                var isSet;
+                if (faField && faField.lookup_table) {
+                    isSet = !!fa.valueResolved;
+                } else {
+                    isSet = !!(input.value && input.value.trim() !== '');
+                }
+                if (isSet) {
+                    input.classList.add('bdl-value-set');
+                } else {
+                    input.classList.remove('bdl-value-set');
+                }
+            }
+        });
+    }
+    if (state.fieldAssignments) {
+        Object.keys(state.fieldAssignments).forEach(function(elemName) {
+            var header = document.querySelector('.bdl-field-assignment-header[data-bdl-fa-element="' + elemName + '"]');
+            if (header) {
+                if (bdl_fieldAssignmentComplete(state, elemName, state.fieldAssignments[elemName])) {
+                    header.classList.add('bdl-assignment-complete');
+                } else {
+                    header.classList.remove('bdl-assignment-complete');
+                }
+            }
+        });
+    }
+    var cmHeader = document.querySelector('.bdl-composed-header');
+    if (cmHeader && bdl_isComposedMessageActive(state)) {
+        if (bdl_composedMessageReady(state)) {
+            cmHeader.classList.add('bdl-assignment-complete');
+        } else {
+            cmHeader.classList.remove('bdl-assignment-complete');
+        }
     }
 }
 
@@ -2100,6 +2183,29 @@ function bdl_renderBlanketFields(assignment, aIdx, valueFields) {
     return html;
 }
 
+/* Builds the right-hand cell of a conditional trigger row: the row count when
+   addressed, a skipped indicator when explicitly skipped, or a prompt when not
+   yet addressed, plus the Skip toggle. The toggle uses the supplied click
+   action and carries the trigger value plus any extra owner attributes (aidx or
+   element). */
+function bdl_renderTriggerRowEnd(uv, isAddressed, isSkipped, skipAction, ownerAttrs) {
+    var html = '<span class="bdl-trigger-row-action">';
+    var triggerAttr = 'data-action-bdl-trigger="' + cc_escapeHtml(uv.value) + '"';
+    if (isSkipped) {
+        html += '<span class="bdl-trigger-row-skipped-label">skipped</span>';
+    } else if (isAddressed) {
+        html += '<span class="bdl-trigger-row-count">' + uv.count.toLocaleString() + '</span>';
+    } else {
+        html += '<span class="bdl-trigger-row-unset">needs action</span>';
+    }
+    var btnLabel = isSkipped ? 'Unskip' : 'Skip';
+    var btnActiveCls = isSkipped ? ' bdl-trigger-skip-btn-active' : '';
+    html += '<button type="button" class="bdl-trigger-skip-btn' + btnActiveCls + '" ' +
+        'data-action-click="' + skipAction + '" ' + ownerAttrs + ' ' + triggerAttr + '>' + btnLabel + '</button>';
+    html += '</span>';
+    return html;
+}
+
 /* Builds the conditional-mode trigger grid and shared fields for an assignment. */
 function bdl_renderConditionalFields(assignment, aIdx, state, valueFields, conditionalFields) {
     var html = '';
@@ -2135,31 +2241,33 @@ function bdl_renderConditionalFields(assignment, aIdx, state, valueFields, condi
         displayVals.forEach(function(uv) {
             var fieldId = 'bdl-cond-' + aIdx + '-' + uv.value.replace(/[^a-zA-Z0-9]/g, '_');
             var existingVal = assignment.valueMap[uv.value] || '';
-            html += '<div class="bdl-trigger-grid-row"><span class="bdl-trigger-val">' +
+            var isSkipped = !!(assignment.skipMap && assignment.skipMap[uv.value]);
+            var addressed = bdl_condRowAddressed(assignment, condField, uv.value);
+            var setCls = addressed ? ' bdl-trigger-grid-input-set' : '';
+            var rowCls = isSkipped ? 'bdl-trigger-grid-row bdl-trigger-row-skipped' : 'bdl-trigger-grid-row';
+            html += '<div class="' + rowCls + '"><span class="bdl-trigger-val">' +
                 '<code class="bdl-trigger-val-code">' + cc_escapeHtml(uv.value) + '</code></span>' +
                 '<span class="bdl-trigger-input-cell">';
             var actionAttrs = 'data-action-change="bdl-conditional-value-changed" data-action-bdl-aidx="' + aIdx +
                 '" data-action-bdl-trigger="' + cc_escapeHtml(uv.value) + '"';
+            var disabledAttr = isSkipped ? ' disabled' : '';
             if (condField && bdl_isBooleanField(condField)) {
-                html += bdl_buildBooleanSelect(fieldId, existingVal, actionAttrs);
+                html += bdl_buildBooleanSelect(fieldId, existingVal, actionAttrs + disabledAttr);
             } else if (condField && condField.lookup_table) {
-                html += '<input type="text" id="' + fieldId + '" class="bdl-trigger-grid-input" ' +
-                    'placeholder="Type to search..." value="' + cc_escapeHtml(existingVal) + '" ' +
+                html += '<input type="text" id="' + fieldId + '" class="bdl-trigger-grid-input' + setCls + '" ' +
+                    'placeholder="Type to search..." value="' + cc_escapeHtml(existingVal) + '"' + disabledAttr + ' ' +
                     'data-action-input="bdl-conditional-value-search" data-action-bdl-aidx="' + aIdx + '" ' +
                     'data-action-bdl-trigger="' + cc_escapeHtml(uv.value) + '" autocomplete="off">' +
                     '<div class="bdl-fixed-value-suggestions" id="bdl-sug-' + fieldId + '"></div>';
             } else {
-                html += '<input type="text" id="' + fieldId + '" class="bdl-trigger-grid-input" ' +
-                    'placeholder="(skip)" value="' + cc_escapeHtml(existingVal) + '" ' +
+                html += '<input type="text" id="' + fieldId + '" class="bdl-trigger-grid-input' + setCls + '" ' +
+                    'placeholder="Enter value or skip" value="' + cc_escapeHtml(existingVal) + '"' + disabledAttr + ' ' +
                     'data-action-input="bdl-conditional-value-changed" data-action-bdl-aidx="' + aIdx + '" ' +
                     'data-action-bdl-trigger="' + cc_escapeHtml(uv.value) + '">';
             }
             html += '</span>';
-            if (existingVal) {
-                html += '<span class="bdl-trigger-row-count">' + uv.count.toLocaleString() + '</span>';
-            } else {
-                html += '<span class="bdl-trigger-row-skip">skip</span>';
-            }
+            html += bdl_renderTriggerRowEnd(uv, addressed, isSkipped,
+                'bdl-cond-skip', 'data-action-bdl-aidx="' + aIdx + '"');
             html += '</div>';
         });
         if (hasMore) {
@@ -2537,11 +2645,16 @@ function bdl_selectAssignmentValue(target) {
             cinput.value = value;
         }
         state.assignments[aIdx].valueMap[key] = value;
+        if (!state.assignments[aIdx].resolvedMap) {
+            state.assignments[aIdx].resolvedMap = {};
+        }
+        state.assignments[aIdx].resolvedMap[key] = true;
         var csug = document.getElementById('bdl-sug-' + cfieldId);
         if (csug) {
             csug.innerHTML = '';
         }
-        bdl_updateTriggerRowDisplay(aIdx, key, value);
+        bdl_setCondInputSetClass(cinput, true);
+        bdl_updateTriggerRowDisplay(aIdx, key, true);
     } else {
         var bfieldId = 'bdl-afv-' + aIdx + '-' + key.replace(/[^a-zA-Z0-9]/g, '');
         var binput = document.getElementById(bfieldId);
@@ -2582,14 +2695,45 @@ function bdl_conditionalValueChanged(target) {
     if (!state || !state.assignments[aIdx]) {
         return;
     }
+    var assignment = state.assignments[aIdx];
     var val = target.value.trim();
     if (val) {
-        state.assignments[aIdx].valueMap[triggerVal] = val;
+        assignment.valueMap[triggerVal] = val;
     } else {
-        delete state.assignments[aIdx].valueMap[triggerVal];
+        delete assignment.valueMap[triggerVal];
     }
-    bdl_updateTriggerRowDisplay(aIdx, triggerVal, val);
+    if (assignment.resolvedMap) {
+        delete assignment.resolvedMap[triggerVal];
+    }
+    var condField = bdl_assignmentConditionalField(assignment, state);
+    bdl_updateTriggerRowDisplay(aIdx, triggerVal, bdl_condRowAddressed(assignment, condField, triggerVal));
     bdl_checkAssignmentsComplete(state);
+}
+
+/* Toggles the explicit skip state for one trigger value in an assignment-card
+   conditional grid. Skipping clears any mapped value (mutual exclusivity) and
+   locks the row; unskipping restores an enterable empty input. */
+function bdl_condSkipToggle(target) {
+    var aIdx = parseInt(target.getAttribute('data-action-bdl-aidx'), 10);
+    var triggerVal = target.getAttribute('data-action-bdl-trigger');
+    var state = bdl_curState();
+    if (!state || !state.assignments[aIdx]) {
+        return;
+    }
+    var assignment = state.assignments[aIdx];
+    if (!assignment.skipMap) {
+        assignment.skipMap = {};
+    }
+    if (assignment.skipMap[triggerVal]) {
+        delete assignment.skipMap[triggerVal];
+    } else {
+        assignment.skipMap[triggerVal] = true;
+        delete assignment.valueMap[triggerVal];
+        if (assignment.resolvedMap) {
+            delete assignment.resolvedMap[triggerVal];
+        }
+    }
+    bdl_renderFixedValueMapping(document.getElementById('bdl-map-validate-area'), state);
 }
 
 /* Records a per-trigger-value edit and runs a debounced lookup search. */
@@ -2600,12 +2744,18 @@ function bdl_conditionalValueSearch(target) {
     if (!state || !state.assignments[aIdx]) {
         return;
     }
+    var assignment = state.assignments[aIdx];
     var val = target.value.trim();
     if (val) {
-        state.assignments[aIdx].valueMap[triggerVal] = val;
+        assignment.valueMap[triggerVal] = val;
     } else {
-        delete state.assignments[aIdx].valueMap[triggerVal];
+        delete assignment.valueMap[triggerVal];
     }
+    if (assignment.resolvedMap) {
+        delete assignment.resolvedMap[triggerVal];
+    }
+    var searchCondField = bdl_assignmentConditionalField(assignment, state);
+    bdl_updateTriggerRowDisplay(aIdx, triggerVal, bdl_condRowAddressed(assignment, searchCondField, triggerVal));
     var condField = state.assignments[aIdx].conditionalField;
     var fieldId = 'bdl-cond-' + aIdx + '-' + triggerVal.replace(/[^a-zA-Z0-9]/g, '_');
     var sugEl = document.getElementById('bdl-sug-' + fieldId);
@@ -2661,7 +2811,7 @@ function bdl_conditionalValueSearch(target) {
 }
 
 /* Updates a trigger row's count/skip display after a value change. */
-function bdl_updateTriggerRowDisplay(aIdx, triggerVal, value) {
+function bdl_updateTriggerRowDisplay(aIdx, triggerVal, isAddressed) {
     var state = bdl_curState();
     if (!state || !state.assignments[aIdx]) {
         return;
@@ -2671,11 +2821,12 @@ function bdl_updateTriggerRowDisplay(aIdx, triggerVal, value) {
     if (!inputEl) {
         return;
     }
+    bdl_setCondInputSetClass(inputEl, isAddressed);
     var row = inputEl.closest('.bdl-trigger-grid-row');
     if (!row) {
         return;
     }
-    var countSpan = row.querySelector('.bdl-trigger-row-count, .bdl-trigger-row-skip');
+    var countSpan = row.querySelector('.bdl-trigger-row-count, .bdl-trigger-row-unset');
     if (!countSpan) {
         return;
     }
@@ -2683,12 +2834,12 @@ function bdl_updateTriggerRowDisplay(aIdx, triggerVal, value) {
         state.assignments[aIdx].triggerUniqueValues.find(function(u) {
             return u.value === triggerVal;
         }) : null;
-    if (value) {
+    if (isAddressed) {
         countSpan.className = 'bdl-trigger-row-count';
         countSpan.textContent = uv ? uv.count.toLocaleString() : '';
     } else {
-        countSpan.className = 'bdl-trigger-row-skip';
-        countSpan.textContent = 'skip';
+        countSpan.className = 'bdl-trigger-row-unset';
+        countSpan.textContent = 'needs action';
     }
 }
 
@@ -2801,10 +2952,13 @@ function bdl_checkAssignmentsComplete(state) {
                 allComplete = false;
                 return;
             }
-            var hasMappedValue = Object.keys(a.valueMap).some(function(key) {
-                return a.valueMap[key] && a.valueMap[key].trim() !== '';
+            var condFields = area ? area._conditionalFields || [] : [];
+            var aCondField = condFields.length > 0 ? condFields[0] : null;
+            var skipMap = a.skipMap || {};
+            var allAddressed = a.triggerUniqueValues.every(function(uv) {
+                return bdl_condRowAddressed(a, aCondField, uv.value) || skipMap[uv.value];
             });
-            if (!hasMappedValue) {
+            if (!allAddressed) {
                 allComplete = false;
             }
         }
@@ -2874,6 +3028,82 @@ function bdl_renderFieldAssignmentsSection(state) {
     container.innerHTML = html;
 }
 
+/* Resolves the conditional field object for an assignment-card from the stored
+   conditionalField element name, or the area's conditional field list. */
+function bdl_assignmentConditionalField(assignment, state) {
+    var area = document.getElementById('bdl-map-validate-area');
+    if (assignment.conditionalField && state.fields) {
+        var byName = state.fields.find(function(f) {
+            return f.element_name === assignment.conditionalField;
+        });
+        if (byName) {
+            return byName;
+        }
+    }
+    if (area && area._conditionalFields && area._conditionalFields.length > 0) {
+        return area._conditionalFields[0];
+    }
+    return null;
+}
+
+/* Returns true when a conditional trigger-value row is addressed: for a
+   lookup-backed field this requires a confirmed match selection; for a plain
+   field any non-empty value counts. Skip is handled separately. */
+function bdl_condRowAddressed(fa, field, triggerVal) {
+    if (field && field.lookup_table) {
+        return !!(fa.resolvedMap && fa.resolvedMap[triggerVal]);
+    }
+    var v = fa.valueMap ? fa.valueMap[triggerVal] : null;
+    return !!(v && v.trim() !== '');
+}
+
+/* Toggles the value-set accent class on a conditional grid input. */
+function bdl_setCondInputSetClass(inputEl, isSet) {
+    if (!inputEl) {
+        return;
+    }
+    if (isSet) {
+        inputEl.classList.add('bdl-trigger-grid-input-set');
+    } else {
+        inputEl.classList.remove('bdl-trigger-grid-input-set');
+    }
+}
+
+/* Returns true when a field assignment has everything it needs: a blanket
+   assignment has a value for a required field, and a conditional assignment has
+   a trigger column, scanned values, and at least one mapped value. Used both to
+   gate Validate and to drive the card's complete-state header. */
+function bdl_fieldAssignmentComplete(state, elementName, fa) {
+    if (!fa) {
+        return false;
+    }
+    if (fa.mode === 'blanket') {
+        var field = state.fields ? state.fields.find(function(f) {
+            return f.element_name === elementName;
+        }) : null;
+        if (field && field.lookup_table) {
+            return !!fa.valueResolved;
+        }
+        if (field && field.is_import_required && !fa.value) {
+            return false;
+        }
+        return true;
+    }
+    if (fa.mode === 'conditional') {
+        if (!fa.triggerColumn || !fa.triggerUniqueValues) {
+            return false;
+        }
+        var condField = state.fields ? state.fields.find(function(f) {
+            return f.element_name === elementName;
+        }) : null;
+        var skipMap = fa.skipMap || {};
+        return fa.triggerUniqueValues.every(function(uv) {
+            return bdl_condRowAddressed(fa, condField, uv.value) || skipMap[uv.value];
+        });
+    }
+    return true;
+}
+
 /* Builds one field-assignment card with its mode toggle and body. */
 function bdl_renderFieldAssignmentCard(elementName, fa, state) {
     var field = state.fields ? state.fields.find(function(f) {
@@ -2882,8 +3112,10 @@ function bdl_renderFieldAssignmentCard(elementName, fa, state) {
     var displayName = field ? bdl_getFieldDisplayName(field) : elementName;
     var modeBadgeClass = fa.mode === 'conditional' ? 'bdl-assignment-badge-conditional' : 'bdl-assignment-badge-blanket';
     var modeBadgeLabel = fa.mode === 'conditional' ? 'Conditional' : 'Blanket';
+    var completeCls = bdl_fieldAssignmentComplete(state, elementName, fa) ? ' bdl-assignment-complete' : '';
     var html = '<div class="bdl-assignment-card bdl-field-assignment-card">';
-    html += '<div class="bdl-assignment-header bdl-field-assignment-header"><div class="bdl-assignment-title">';
+    html += '<div class="bdl-assignment-header bdl-field-assignment-header' + completeCls +
+        '" data-bdl-fa-element="' + elementName + '"><div class="bdl-assignment-title">';
     html += '<span class="bdl-field-assignment-name">' + cc_escapeHtml(displayName) + '</span>';
     if (bdl_hasDisplayName(field)) {
         html += ' <code class="bdl-field-assignment-elem">' + elementName + '</code>';
@@ -2914,6 +3146,12 @@ function bdl_renderFieldAssignmentCard(elementName, fa, state) {
     return html;
 }
 
+/* Returns the value-set class suffix when a blanket value is non-empty, so a
+   filled value reads in the accent color like a conditional mapped value. */
+function bdl_valueSetClass(val) {
+    return (val && String(val).trim() !== '') ? ' bdl-value-set' : '';
+}
+
 /* Builds the blanket-value input for a field assignment. */
 function bdl_renderFieldBlanketInput(elementName, fa, field) {
     var fieldId = 'bdl-fa-blanket-' + elementName.replace(/[^a-zA-Z0-9]/g, '');
@@ -2931,12 +3169,13 @@ function bdl_renderFieldBlanketInput(elementName, fa, field) {
         }
         html += bdl_buildBooleanSelect(fieldId, existingVal, actionAttrs);
     } else if (field && field.lookup_table) {
-        html += '<input type="text" id="' + fieldId + '" class="bdl-fixed-value-text" ' +
+        var lookupSetCls = fa.valueResolved ? ' bdl-value-set' : '';
+        html += '<input type="text" id="' + fieldId + '" class="bdl-fixed-value-text' + lookupSetCls + '" ' +
             'placeholder="Type to search..." value="' + cc_escapeHtml(existingVal) + '" ' +
             'data-action-input="bdl-field-assignment-search" data-action-bdl-element="' + elementName + '" ' +
             'autocomplete="off"><div class="bdl-fixed-value-suggestions" id="bdl-sug-' + fieldId + '"></div>';
     } else {
-        html += '<input type="text" id="' + fieldId + '" class="bdl-fixed-value-text" ' +
+        html += '<input type="text" id="' + fieldId + '" class="bdl-fixed-value-text' + bdl_valueSetClass(existingVal) + '" ' +
             'placeholder="Enter value" value="' + cc_escapeHtml(existingVal) + '" ' +
             'data-action-input="bdl-field-assignment-changed" data-action-bdl-element="' + elementName + '">';
     }
@@ -2985,31 +3224,33 @@ function bdl_renderFieldConditionalInput(elementName, fa, field, state) {
             var fieldId = 'bdl-fa-cond-' + elementName.replace(/[^a-zA-Z0-9]/g, '') + '-' +
                 uv.value.replace(/[^a-zA-Z0-9]/g, '_');
             var existingVal = fa.valueMap[uv.value] || '';
-            html += '<div class="bdl-trigger-grid-row"><span class="bdl-trigger-val">' +
+            var isSkipped = !!(fa.skipMap && fa.skipMap[uv.value]);
+            var addressed = bdl_condRowAddressed(fa, field, uv.value);
+            var setCls = addressed ? ' bdl-trigger-grid-input-set' : '';
+            var rowCls = isSkipped ? 'bdl-trigger-grid-row bdl-trigger-row-skipped' : 'bdl-trigger-grid-row';
+            html += '<div class="' + rowCls + '"><span class="bdl-trigger-val">' +
                 '<code class="bdl-trigger-val-code">' + cc_escapeHtml(uv.value) + '</code></span>' +
                 '<span class="bdl-trigger-input-cell">';
             var actionAttrs = 'data-action-change="bdl-field-cond-value-changed" data-action-bdl-element="' +
                 elementName + '" data-action-bdl-trigger="' + cc_escapeHtml(uv.value) + '"';
+            var disabledAttr = isSkipped ? ' disabled' : '';
             if (field && bdl_isBooleanField(field)) {
-                html += bdl_buildBooleanSelect(fieldId, existingVal, actionAttrs);
+                html += bdl_buildBooleanSelect(fieldId, existingVal, actionAttrs + disabledAttr);
             } else if (field && field.lookup_table) {
-                html += '<input type="text" id="' + fieldId + '" class="bdl-trigger-grid-input" ' +
-                    'placeholder="Type to search..." value="' + cc_escapeHtml(existingVal) + '" ' +
+                html += '<input type="text" id="' + fieldId + '" class="bdl-trigger-grid-input' + setCls + '" ' +
+                    'placeholder="Type to search..." value="' + cc_escapeHtml(existingVal) + '"' + disabledAttr + ' ' +
                     'data-action-input="bdl-field-cond-value-search" data-action-bdl-element="' + elementName + '" ' +
                     'data-action-bdl-trigger="' + cc_escapeHtml(uv.value) + '" autocomplete="off">' +
                     '<div class="bdl-fixed-value-suggestions" id="bdl-sug-' + fieldId + '"></div>';
             } else {
-                html += '<input type="text" id="' + fieldId + '" class="bdl-trigger-grid-input" ' +
-                    'placeholder="(skip)" value="' + cc_escapeHtml(existingVal) + '" ' +
+                html += '<input type="text" id="' + fieldId + '" class="bdl-trigger-grid-input' + setCls + '" ' +
+                    'placeholder="Enter value or skip" value="' + cc_escapeHtml(existingVal) + '"' + disabledAttr + ' ' +
                     'data-action-input="bdl-field-cond-value-changed" data-action-bdl-element="' + elementName + '" ' +
                     'data-action-bdl-trigger="' + cc_escapeHtml(uv.value) + '">';
             }
             html += '</span>';
-            if (existingVal) {
-                html += '<span class="bdl-trigger-row-count">' + uv.count.toLocaleString() + '</span>';
-            } else {
-                html += '<span class="bdl-trigger-row-skip">skip</span>';
-            }
+            html += bdl_renderTriggerRowEnd(uv, addressed, isSkipped,
+                'bdl-fa-cond-skip', 'data-action-bdl-element="' + elementName + '"');
             html += '</div>';
         });
         if (hasMore) {
@@ -3037,6 +3278,7 @@ function bdl_switchFieldMode(target) {
     }
     state.fieldAssignments[elementName].mode = mode;
     state.fieldAssignments[elementName].value = '';
+    state.fieldAssignments[elementName].valueResolved = false;
     state.fieldAssignments[elementName].triggerColumn = null;
     state.fieldAssignments[elementName].valueMap = {};
     state.fieldAssignments[elementName].triggerUniqueValues = null;
@@ -3063,6 +3305,7 @@ function bdl_fieldAssignmentSearch(target) {
         return;
     }
     state.fieldAssignments[elementName].value = target.value.trim();
+    state.fieldAssignments[elementName].valueResolved = false;
     var val = target.value.trim();
     var fieldId = 'bdl-fa-blanket-' + elementName.replace(/[^a-zA-Z0-9]/g, '');
     var sugEl = document.getElementById('bdl-sug-' + fieldId);
@@ -3131,6 +3374,7 @@ function bdl_selectFieldAssignmentValue(target) {
         input.value = value;
     }
     state.fieldAssignments[elementName].value = value;
+    state.fieldAssignments[elementName].valueResolved = true;
     var sugEl = document.getElementById('bdl-sug-' + fieldId);
     if (sugEl) {
         sugEl.innerHTML = '';
@@ -3187,35 +3431,69 @@ function bdl_fieldCondValueChanged(target) {
     if (!state || !state.fieldAssignments || !state.fieldAssignments[elementName]) {
         return;
     }
+    var fa = state.fieldAssignments[elementName];
     var val = target.value.trim();
     if (val) {
-        state.fieldAssignments[elementName].valueMap[triggerVal] = val;
+        fa.valueMap[triggerVal] = val;
     } else {
-        delete state.fieldAssignments[elementName].valueMap[triggerVal];
+        delete fa.valueMap[triggerVal];
     }
+    if (fa.resolvedMap) {
+        delete fa.resolvedMap[triggerVal];
+    }
+    var field = state.fields ? state.fields.find(function(f) {
+        return f.element_name === elementName;
+    }) : null;
+    var addressed = bdl_condRowAddressed(fa, field, triggerVal);
     var fieldId = 'bdl-fa-cond-' + elementName.replace(/[^a-zA-Z0-9]/g, '') + '-' +
         triggerVal.replace(/[^a-zA-Z0-9]/g, '_');
     var inputEl = document.getElementById(fieldId);
     if (inputEl) {
+        bdl_setCondInputSetClass(inputEl, addressed);
         var row = inputEl.closest('.bdl-trigger-grid-row');
         if (row) {
-            var countSpan = row.querySelector('.bdl-trigger-row-count, .bdl-trigger-row-skip');
+            var countSpan = row.querySelector('.bdl-trigger-row-count, .bdl-trigger-row-unset');
             if (countSpan) {
-                var fa = state.fieldAssignments[elementName];
                 var uv = fa.triggerUniqueValues ? fa.triggerUniqueValues.find(function(u) {
                     return u.value === triggerVal;
                 }) : null;
-                if (val) {
+                if (addressed) {
                     countSpan.className = 'bdl-trigger-row-count';
                     countSpan.textContent = uv ? uv.count.toLocaleString() : '';
                 } else {
-                    countSpan.className = 'bdl-trigger-row-skip';
-                    countSpan.textContent = 'skip';
+                    countSpan.className = 'bdl-trigger-row-unset';
+                    countSpan.textContent = 'needs action';
                 }
             }
         }
     }
     bdl_checkMappingComplete();
+}
+
+/* Toggles the explicit skip state for one trigger value in a field-assignment
+   conditional grid. Skipping clears any mapped value (mutual exclusivity) and
+   locks the row; unskipping restores an enterable empty input. */
+function bdl_fieldCondSkipToggle(target) {
+    var elementName = target.getAttribute('data-action-bdl-element');
+    var triggerVal = target.getAttribute('data-action-bdl-trigger');
+    var state = bdl_curState();
+    if (!state || !state.fieldAssignments || !state.fieldAssignments[elementName]) {
+        return;
+    }
+    var fa = state.fieldAssignments[elementName];
+    if (!fa.skipMap) {
+        fa.skipMap = {};
+    }
+    if (fa.skipMap[triggerVal]) {
+        delete fa.skipMap[triggerVal];
+    } else {
+        fa.skipMap[triggerVal] = true;
+        delete fa.valueMap[triggerVal];
+        if (fa.resolvedMap) {
+            delete fa.resolvedMap[triggerVal];
+        }
+    }
+    bdl_refreshMappingPanels();
 }
 
 /* Records a per-trigger field-assignment edit and runs a debounced lookup. */
@@ -3226,14 +3504,42 @@ function bdl_fieldCondValueSearch(target) {
     if (!state || !state.fieldAssignments || !state.fieldAssignments[elementName]) {
         return;
     }
+    var fa = state.fieldAssignments[elementName];
     var val = target.value.trim();
     if (val) {
-        state.fieldAssignments[elementName].valueMap[triggerVal] = val;
+        fa.valueMap[triggerVal] = val;
     } else {
-        delete state.fieldAssignments[elementName].valueMap[triggerVal];
+        delete fa.valueMap[triggerVal];
     }
+    if (fa.resolvedMap) {
+        delete fa.resolvedMap[triggerVal];
+    }
+    var searchField = state.fields ? state.fields.find(function(f) {
+        return f.element_name === elementName;
+    }) : null;
     var fieldId = 'bdl-fa-cond-' + elementName.replace(/[^a-zA-Z0-9]/g, '') + '-' +
         triggerVal.replace(/[^a-zA-Z0-9]/g, '_');
+    var rowInput = document.getElementById(fieldId);
+    if (rowInput) {
+        var addressedNow = bdl_condRowAddressed(fa, searchField, triggerVal);
+        bdl_setCondInputSetClass(rowInput, addressedNow);
+        var rowEl = rowInput.closest('.bdl-trigger-grid-row');
+        if (rowEl) {
+            var statusSpan = rowEl.querySelector('.bdl-trigger-row-count, .bdl-trigger-row-unset');
+            if (statusSpan) {
+                var rowUv = fa.triggerUniqueValues ? fa.triggerUniqueValues.find(function(u) {
+                    return u.value === triggerVal;
+                }) : null;
+                if (addressedNow) {
+                    statusSpan.className = 'bdl-trigger-row-count';
+                    statusSpan.textContent = rowUv ? rowUv.count.toLocaleString() : '';
+                } else {
+                    statusSpan.className = 'bdl-trigger-row-unset';
+                    statusSpan.textContent = 'needs action';
+                }
+            }
+        }
+    }
     var sugEl = document.getElementById('bdl-sug-' + fieldId);
     if (!sugEl) {
         return;
@@ -3302,15 +3608,20 @@ function bdl_selectFieldCondValue(target) {
         input.value = value;
     }
     state.fieldAssignments[elementName].valueMap[triggerVal] = value;
+    if (!state.fieldAssignments[elementName].resolvedMap) {
+        state.fieldAssignments[elementName].resolvedMap = {};
+    }
+    state.fieldAssignments[elementName].resolvedMap[triggerVal] = true;
     var sugEl = document.getElementById('bdl-sug-' + fieldId);
     if (sugEl) {
         sugEl.innerHTML = '';
     }
     var inputEl = document.getElementById(fieldId);
     if (inputEl) {
+        bdl_setCondInputSetClass(inputEl, true);
         var row = inputEl.closest('.bdl-trigger-grid-row');
         if (row) {
-            var countSpan = row.querySelector('.bdl-trigger-row-count, .bdl-trigger-row-skip');
+            var countSpan = row.querySelector('.bdl-trigger-row-count, .bdl-trigger-row-unset');
             if (countSpan) {
                 var fa = state.fieldAssignments[elementName];
                 var uv = fa.triggerUniqueValues ? fa.triggerUniqueValues.find(function(u) {
@@ -3361,6 +3672,313 @@ function bdl_renderFieldSuggestions(sugEl, values, elementName, triggerVal) {
         html += '</div>';
     });
     sugEl.innerHTML = html;
+}
+
+/* ============================================================================
+   FUNCTIONS: STEP 4 COMPOSED MESSAGE BUILDER
+   ----------------------------------------------------------------------------
+   The AR Log message builder: a per-row message composer that owns one field
+   on one entity (gated by bdl_COMPOSED_MESSAGE_ENTITY and
+   bdl_COMPOSED_MESSAGE_ELEMENT). The message is built from an ordered list of
+   segments, each either literal text or a file-column reference, woven
+   together left to right. A fallback value covers rows whose composed result
+   is empty. The composed template travels to the server as composed_message
+   and is written into the message column during staging.
+   Prefix: bdl
+   ============================================================================ */
+
+/* Returns true when the builder owns the current entity's message field. */
+function bdl_isComposedMessageActive(state) {
+    if (!state || !state.entity) {
+        return false;
+    }
+    if (state.entity.entity_type !== bdl_COMPOSED_MESSAGE_ENTITY) {
+        return false;
+    }
+    if (!state.fields) {
+        return false;
+    }
+    return state.fields.some(function(f) {
+        return f.element_name === bdl_COMPOSED_MESSAGE_ELEMENT &&
+            f.is_visible !== 0 && f.is_visible !== false;
+    });
+}
+
+/* Ensures the current entity has a composed-message template, seeding one
+   empty text segment and the default fallback on first use. */
+function bdl_ensureComposedMessage(state) {
+    if (!state.composedMessage) {
+        state.composedMessage = {
+            segments: [{ type: 'text', value: '', header: null, sep: '' }],
+            fallback: bdl_COMPOSED_MESSAGE_DEFAULT_FALLBACK
+        };
+    }
+    return state.composedMessage;
+}
+
+/* Returns true when a segment contributes content (text with characters, or a
+   field with a chosen column). */
+function bdl_composedSegmentUsable(seg) {
+    if (!seg) {
+        return false;
+    }
+    if (seg.type === 'text') {
+        return !!(seg.value && seg.value.length > 0);
+    }
+    if (seg.type === 'field') {
+        return !!seg.header;
+    }
+    return false;
+}
+
+/* Returns true when the template has at least one usable segment. */
+function bdl_composedMessageReady(state) {
+    if (!bdl_isComposedMessageActive(state)) {
+        return true;
+    }
+    if (!state.composedMessage || !state.composedMessage.segments) {
+        return false;
+    }
+    return state.composedMessage.segments.some(bdl_composedSegmentUsable);
+}
+
+/* Serializes the composed message for the stage request, keeping only usable
+   segments and the fallback. Field segments carry their header; text segments
+   carry their literal value; each carries its trailing separator. */
+function bdl_serializeComposedMessage(cm) {
+    var segments = cm.segments.filter(bdl_composedSegmentUsable).map(function(seg) {
+        if (seg.type === 'field') {
+            return { type: 'field', header: seg.header, sep: seg.sep || '' };
+        }
+        return { type: 'text', value: seg.value, sep: seg.sep || '' };
+    });
+    return { segments: segments, fallback: cm.fallback || '' };
+}
+
+/* Composes the preview string for a segment list using the first file row as
+   sample data, appending each usable segment's trailing separator (except the
+   last) and substituting the fallback when the result is empty. Mirrors the
+   server-side composition so the preview matches what each row will receive. */
+function bdl_composedMessagePreview(cm) {
+    var sampleRow = (bdl_parsedFileData && bdl_parsedFileData.rows && bdl_parsedFileData.rows[0]) ?
+        bdl_parsedFileData.rows[0] : null;
+    var usable = cm.segments.filter(bdl_composedSegmentUsable);
+    var composed = '';
+    usable.forEach(function(seg, i) {
+        var piece;
+        if (seg.type === 'text') {
+            piece = seg.value || '';
+        } else {
+            var idx = bdl_parsedFileData ? bdl_parsedFileData.headers.indexOf(seg.header) : -1;
+            piece = (idx !== -1 && sampleRow && idx < sampleRow.length && sampleRow[idx]) ? sampleRow[idx] : '';
+        }
+        composed += piece;
+        if (i < usable.length - 1) {
+            composed += (seg.sep || '');
+        }
+    });
+    if (composed.trim() === '') {
+        return cm.fallback || '';
+    }
+    return composed;
+}
+
+/* Renders the composed-message builder section into its container, or clears
+   the container when the builder is not active for this entity. */
+function bdl_renderComposedMessageSection(state) {
+    var container = document.getElementById('bdl-composed-message-area');
+    if (!container) {
+        return;
+    }
+    if (!bdl_isComposedMessageActive(state)) {
+        container.innerHTML = '';
+        return;
+    }
+    var cm = bdl_ensureComposedMessage(state);
+    var msgField = state.fields.find(function(f) {
+        return f.element_name === bdl_COMPOSED_MESSAGE_ELEMENT;
+    });
+    var displayName = msgField ? bdl_getFieldDisplayName(msgField) : bdl_COMPOSED_MESSAGE_ELEMENT;
+    var headerCompleteCls = bdl_composedMessageReady(state) ? ' bdl-assignment-complete' : '';
+    var html = '<div class="bdl-composed-message-section">';
+    html += '<div class="bdl-panel-header bdl-composed-header' + headerCompleteCls + '">' + cc_escapeHtml(displayName) +
+        ' <span class="bdl-composed-required">required</span></div>';
+    html += '<div class="bdl-composed-intro">Build the message written to each row. Add text and ' +
+        'file-column segments in any order; they join left to right.</div>';
+    html += '<div class="bdl-composed-segments" id="bdl-composed-segments">';
+    cm.segments.forEach(function(seg, sIdx) {
+        html += bdl_renderComposedSegment(seg, sIdx, cm.segments.length);
+    });
+    html += '</div>';
+    html += '<button class="bdl-composed-add-btn" data-action-click="bdl-cm-add-segment">+ Add Segment</button>';
+    html += '<div class="bdl-composed-fallback-row"><div class="bdl-composed-fallback-label">' +
+        'If a row\'s message is empty, use this text instead</div>';
+    html += '<input type="text" class="bdl-composed-fallback-input" id="bdl-composed-fallback" ' +
+        'value="' + cc_escapeHtml(cm.fallback || '') + '" ' +
+        'data-action-input="bdl-cm-fallback-input" data-action-change="bdl-cm-fallback-changed" ' +
+        'placeholder="(leave empty to allow blank messages)"></div>';
+    html += '<div class="bdl-composed-preview-row"><span class="bdl-composed-preview-label">Preview (first row):</span>' +
+        '<code class="bdl-composed-preview-value" id="bdl-composed-preview">' +
+        cc_escapeHtml(bdl_composedMessagePreview(cm)) + '</code></div>';
+    html += '</div>';
+    container.innerHTML = html;
+}
+
+/* Builds the markup for one composed-message segment with its type toggle and
+   the input appropriate to its type. */
+function bdl_renderComposedSegment(seg, sIdx, segCount) {
+    var textActive = seg.type === 'text' ? ' bdl-cm-type-active' : '';
+    var fieldActive = seg.type === 'field' ? ' bdl-cm-type-active' : '';
+    var html = '<div class="bdl-composed-segment" id="bdl-cm-seg-' + sIdx + '">';
+    html += '<div class="bdl-composed-segment-num">' + (sIdx + 1) + '</div>';
+    html += '<div class="bdl-composed-type-toggle">';
+    html += '<div class="bdl-composed-type-btn bdl-toggle-first' + textActive + '" ' +
+        'data-action-click="bdl-cm-segment-type" data-action-bdl-sidx="' + sIdx + '" ' +
+        'data-action-bdl-cmtype="text">Text</div>';
+    html += '<div class="bdl-composed-type-btn bdl-toggle-last' + fieldActive + '" ' +
+        'data-action-click="bdl-cm-segment-type" data-action-bdl-sidx="' + sIdx + '" ' +
+        'data-action-bdl-cmtype="field">Field</div>';
+    html += '</div>';
+    html += '<div class="bdl-composed-segment-input">';
+    if (seg.type === 'text') {
+        html += '<input type="text" class="bdl-composed-text-input" id="bdl-cm-text-' + sIdx + '" ' +
+            'value="' + cc_escapeHtml(seg.value || '') + '" placeholder="Enter text" ' +
+            'data-action-input="bdl-cm-segment-text-input" data-action-bdl-sidx="' + sIdx + '">';
+    } else {
+        html += '<select class="bdl-identifier-dropdown bdl-composed-field-select" id="bdl-cm-field-' + sIdx + '" ' +
+            'data-action-change="bdl-cm-segment-field-changed" data-action-bdl-sidx="' + sIdx + '">' +
+            '<option value="">&mdash; Select file column &mdash;</option>';
+        if (bdl_parsedFileData && bdl_parsedFileData.headers) {
+            bdl_parsedFileData.headers.forEach(function(header, idx) {
+                var sample = (bdl_parsedFileData.rows[0] && bdl_parsedFileData.rows[0][idx]) ?
+                    bdl_parsedFileData.rows[0][idx] : '';
+                var sel = (seg.header === header) ? ' selected' : '';
+                html += '<option value="' + cc_escapeHtml(header) + '"' + sel + '>' +
+                    cc_escapeHtml(header + (sample ? '  (' + sample.substring(0, 20) + ')' : '')) + '</option>';
+            });
+        }
+        html += '</select>';
+    }
+    html += '</div>';
+    html += '<div class="bdl-composed-segment-sep">';
+    html += '<input type="text" class="bdl-composed-sep-input" id="bdl-cm-sep-' + sIdx + '" ' +
+        'value="' + cc_escapeHtml(seg.sep || '') + '" placeholder="sep" title="Separator after this segment" ' +
+        'data-action-input="bdl-cm-segment-sep-input" data-action-bdl-sidx="' + sIdx + '">';
+    html += '</div>';
+    if (segCount > 1) {
+        html += '<span class="bdl-composed-segment-remove" data-action-click="bdl-cm-remove-segment" ' +
+            'data-action-bdl-sidx="' + sIdx + '" title="Remove segment">&#10005;</span>';
+    }
+    html += '</div>';
+    return html;
+}
+
+/* Refreshes the live preview line without re-rendering the whole builder. */
+function bdl_cmUpdatePreview(state) {
+    var previewEl = document.getElementById('bdl-composed-preview');
+    if (!previewEl || !state.composedMessage) {
+        return;
+    }
+    previewEl.textContent = bdl_composedMessagePreview(state.composedMessage);
+}
+
+/* Adds a new empty text segment to the composed message. */
+function bdl_cmAddSegment() {
+    var state = bdl_curState();
+    if (!state) {
+        return;
+    }
+    var cm = bdl_ensureComposedMessage(state);
+    cm.segments.push({ type: 'text', value: '', header: null, sep: '' });
+    bdl_renderComposedMessageSection(state);
+    bdl_checkMappingComplete();
+}
+
+/* Removes a segment from the composed message, keeping at least one. */
+function bdl_cmRemoveSegment(target) {
+    var sIdx = parseInt(target.getAttribute('data-action-bdl-sidx'), 10);
+    var state = bdl_curState();
+    if (!state || !state.composedMessage || state.composedMessage.segments.length <= 1) {
+        return;
+    }
+    state.composedMessage.segments.splice(sIdx, 1);
+    bdl_renderComposedMessageSection(state);
+    bdl_checkMappingComplete();
+}
+
+/* Switches a segment between text and field type, clearing its prior value. */
+function bdl_cmSetSegmentType(target) {
+    var sIdx = parseInt(target.getAttribute('data-action-bdl-sidx'), 10);
+    var newType = target.getAttribute('data-action-bdl-cmtype');
+    var state = bdl_curState();
+    if (!state || !state.composedMessage || !state.composedMessage.segments[sIdx]) {
+        return;
+    }
+    var seg = state.composedMessage.segments[sIdx];
+    if (seg.type === newType) {
+        return;
+    }
+    seg.type = newType;
+    seg.value = '';
+    seg.header = null;
+    bdl_renderComposedMessageSection(state);
+    bdl_checkMappingComplete();
+}
+
+/* Records a text segment's value as the user types and updates the preview. */
+function bdl_cmSegmentTextInput(target) {
+    var sIdx = parseInt(target.getAttribute('data-action-bdl-sidx'), 10);
+    var state = bdl_curState();
+    if (!state || !state.composedMessage || !state.composedMessage.segments[sIdx]) {
+        return;
+    }
+    state.composedMessage.segments[sIdx].value = target.value;
+    bdl_cmUpdatePreview(state);
+    bdl_checkMappingComplete();
+}
+
+/* Records a field segment's chosen column and refreshes the builder. */
+function bdl_cmSegmentFieldChanged(target) {
+    var sIdx = parseInt(target.getAttribute('data-action-bdl-sidx'), 10);
+    var state = bdl_curState();
+    if (!state || !state.composedMessage || !state.composedMessage.segments[sIdx]) {
+        return;
+    }
+    state.composedMessage.segments[sIdx].header = target.value || null;
+    bdl_renderComposedMessageSection(state);
+    bdl_checkMappingComplete();
+}
+
+/* Records the fallback text as the user types and updates the preview. */
+function bdl_cmFallbackInput(target) {
+    var state = bdl_curState();
+    if (!state || !state.composedMessage) {
+        return;
+    }
+    state.composedMessage.fallback = target.value;
+    bdl_cmUpdatePreview(state);
+}
+
+/* Commits the fallback text on change (covers paste and blur). */
+function bdl_cmFallbackChanged(target) {
+    var state = bdl_curState();
+    if (!state || !state.composedMessage) {
+        return;
+    }
+    state.composedMessage.fallback = target.value;
+    bdl_cmUpdatePreview(state);
+}
+
+/* Records a segment's trailing separator as the user types and updates the
+   preview. */
+function bdl_cmSegmentSepInput(target) {
+    var sIdx = parseInt(target.getAttribute('data-action-bdl-sidx'), 10);
+    var state = bdl_curState();
+    if (!state || !state.composedMessage || !state.composedMessage.segments[sIdx]) {
+        return;
+    }
+    state.composedMessage.segments[sIdx].sep = target.value;
+    bdl_cmUpdatePreview(state);
 }
 
 /* ============================================================================
@@ -3492,7 +4110,8 @@ function bdl_renderEntityProgressBanner(phase) {
 function bdl_validateCurrentEntity() {
     var state = bdl_curState();
     if (!state || (Object.keys(state.columnMapping).length === 0 &&
-        (!state.fieldAssignments || Object.keys(state.fieldAssignments).length === 0))) {
+        (!state.fieldAssignments || Object.keys(state.fieldAssignments).length === 0) &&
+        !bdl_composedMessageReady(state))) {
         return;
     }
     var mappingUnchanged = state.stagingContext && state.stagedMapping &&
@@ -3509,6 +4128,10 @@ function bdl_validateCurrentEntity() {
         var currentFAJson = JSON.stringify(state.fieldAssignments);
         mappingUnchanged = state.stagedFieldAssignments === currentFAJson;
     }
+    if (mappingUnchanged && bdl_isComposedMessageActive(state) && state.composedMessage) {
+        var currentCMJson = JSON.stringify(bdl_serializeComposedMessage(state.composedMessage));
+        mappingUnchanged = state.stagedComposedMessage === currentCMJson;
+    }
     if (mappingUnchanged) {
         bdl_runEntityValidation(state);
     } else if (state.stagingContext) {
@@ -3517,6 +4140,7 @@ function bdl_validateCurrentEntity() {
         state.stagedMapping = null;
         state.stagedAssignments = null;
         state.stagedFieldAssignments = null;
+        state.stagedComposedMessage = null;
         bdl_stageEntityData(state, function() {
             bdl_runEntityValidation(state);
         }, oldTable);
@@ -3584,6 +4208,9 @@ function bdl_stageEntityData(state, onComplete, dropExistingTable) {
             });
             stageBody.field_assignments = faPayload;
         }
+        if (bdl_isComposedMessageActive(state) && state.composedMessage) {
+            stageBody.composed_message = bdl_serializeComposedMessage(state.composedMessage);
+        }
         if (dropExistingTable) {
             stageBody.drop_existing = dropExistingTable;
         }
@@ -3611,6 +4238,9 @@ function bdl_stageEntityData(state, onComplete, dropExistingTable) {
             }
             if (state.fieldAssignments && Object.keys(state.fieldAssignments).length > 0) {
                 state.stagedFieldAssignments = JSON.stringify(state.fieldAssignments);
+            }
+            if (bdl_isComposedMessageActive(state) && state.composedMessage) {
+                state.stagedComposedMessage = JSON.stringify(bdl_serializeComposedMessage(state.composedMessage));
             }
             if (onComplete) {
                 onComplete();
