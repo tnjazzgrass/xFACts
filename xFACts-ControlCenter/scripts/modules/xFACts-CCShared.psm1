@@ -99,13 +99,17 @@ $script:RBACCache = @{
 # In-memory DmOps remaining-counts cache. Populated by Get-RemainingCounts on
 # first read or after TTL expiry.
 $script:DmOpsRemainingCache = @{
-    ArchiveConsumersRemaining = $null
-    ArchiveAccountsRemaining  = $null
-    ShellRemaining            = $null
-    BaselineDttm              = $null
-    ArchiveTargetInstance     = $null
-    ShellPurgeTargetInstance  = $null
-    CacheMaxAgeMinutes        = 60
+    ArchiveConsumersRemaining   = $null   # ALL: WFAARCH1 + WFAARCH3
+    ArchiveAccountsRemaining    = $null   # ALL: WFAARCH1 + WFAARCH3
+    ArchiveConsumersRemaining1P = $null   # WFAARCH1
+    ArchiveAccountsRemaining1P  = $null   # WFAARCH1
+    ArchiveConsumersRemaining3P = $null   # WFAARCH3
+    ArchiveAccountsRemaining3P  = $null   # WFAARCH3
+    ShellRemaining              = $null
+    BaselineDttm                = $null
+    ArchiveTargetInstance       = $null
+    ShellPurgeTargetInstance    = $null
+    CacheMaxAgeMinutes          = 60
 }
 
 <# ============================================================================
@@ -1979,25 +1983,54 @@ function Get-RemainingCounts {
     }
 
     try {
-        # Archive remaining: TC_ARCH-tagged consumers and the accounts on those consumers.
-        # Single query returns both counts to keep this a single OLTP round-trip per refresh.
-        # Routes against Archive's configured target_instance.
+        # Archive remaining: TC_ARCH-tagged consumers in the two archive
+        # workgroups, split by line of business (WFAARCH1 = 1P, WFAARCH3 = 3P),
+        # plus the accounts on those consumers. Under the workgroup model a
+        # TC_ARCH consumer is only archivable once moved into one of these
+        # workgroups, so the per-workgroup counts are the real remaining work;
+        # ALL is their sum. Single query keeps this one OLTP round-trip.
         $archiveResult = Invoke-CRS5ReadQuery -TargetInstance $archiveTargetInstance -Query @"
             SELECT
                 (SELECT COUNT(*)
                  FROM crs5_oltp.dbo.cnsmr_Tag ct
                  INNER JOIN crs5_oltp.dbo.tag t ON t.tag_id = ct.tag_id
+                 INNER JOIN crs5_oltp.dbo.cnsmr c ON c.cnsmr_id = ct.cnsmr_id
+                 INNER JOIN crs5_oltp.dbo.wrkgrp w ON w.wrkgrp_id = c.wrkgrp_id
                  WHERE ct.cnsmr_tag_sft_delete_flg = 'N'
-                   AND t.tag_shrt_nm = 'TC_ARCH') AS consumers_remaining,
+                   AND t.tag_shrt_nm = 'TC_ARCH'
+                   AND w.wrkgrp_shrt_nm = 'WFAARCH1') AS consumers_1p,
+                (SELECT COUNT(*)
+                 FROM crs5_oltp.dbo.cnsmr_Tag ct
+                 INNER JOIN crs5_oltp.dbo.tag t ON t.tag_id = ct.tag_id
+                 INNER JOIN crs5_oltp.dbo.cnsmr c ON c.cnsmr_id = ct.cnsmr_id
+                 INNER JOIN crs5_oltp.dbo.wrkgrp w ON w.wrkgrp_id = c.wrkgrp_id
+                 WHERE ct.cnsmr_tag_sft_delete_flg = 'N'
+                   AND t.tag_shrt_nm = 'TC_ARCH'
+                   AND w.wrkgrp_shrt_nm = 'WFAARCH3') AS consumers_3p,
                 (SELECT COUNT(*)
                  FROM crs5_oltp.dbo.cnsmr_accnt ca
                  WHERE ca.cnsmr_id IN (
                      SELECT ct.cnsmr_id
                      FROM crs5_oltp.dbo.cnsmr_Tag ct
                      INNER JOIN crs5_oltp.dbo.tag t ON t.tag_id = ct.tag_id
+                     INNER JOIN crs5_oltp.dbo.cnsmr c ON c.cnsmr_id = ct.cnsmr_id
+                     INNER JOIN crs5_oltp.dbo.wrkgrp w ON w.wrkgrp_id = c.wrkgrp_id
                      WHERE ct.cnsmr_tag_sft_delete_flg = 'N'
                        AND t.tag_shrt_nm = 'TC_ARCH'
-                 )) AS accounts_remaining
+                       AND w.wrkgrp_shrt_nm = 'WFAARCH1'
+                 )) AS accounts_1p,
+                (SELECT COUNT(*)
+                 FROM crs5_oltp.dbo.cnsmr_accnt ca
+                 WHERE ca.cnsmr_id IN (
+                     SELECT ct.cnsmr_id
+                     FROM crs5_oltp.dbo.cnsmr_Tag ct
+                     INNER JOIN crs5_oltp.dbo.tag t ON t.tag_id = ct.tag_id
+                     INNER JOIN crs5_oltp.dbo.cnsmr c ON c.cnsmr_id = ct.cnsmr_id
+                     INNER JOIN crs5_oltp.dbo.wrkgrp w ON w.wrkgrp_id = c.wrkgrp_id
+                     WHERE ct.cnsmr_tag_sft_delete_flg = 'N'
+                       AND t.tag_shrt_nm = 'TC_ARCH'
+                       AND w.wrkgrp_shrt_nm = 'WFAARCH3'
+                 )) AS accounts_3p
 "@ -TimeoutSeconds 60
 
         # Shell remaining: WFAPURGE workgroup consumers (naturally-occurring shells).
@@ -2009,9 +2042,28 @@ function Get-RemainingCounts {
                 AND w.wrkgrp_shrt_nm = 'WFAPURGE'
 "@ -TimeoutSeconds 30
 
-        # Update cache
-        $cache.ArchiveConsumersRemaining = if ($archiveResult -and $archiveResult.Count -gt 0) { [long]$archiveResult[0].consumers_remaining } else { $null }
-        $cache.ArchiveAccountsRemaining  = if ($archiveResult -and $archiveResult.Count -gt 0) { [long]$archiveResult[0].accounts_remaining }  else { $null }
+        # Update cache: per-workgroup figures and the ALL combined sums.
+        if ($archiveResult -and $archiveResult.Count -gt 0) {
+            $c1p = [long]$archiveResult[0].consumers_1p
+            $c3p = [long]$archiveResult[0].consumers_3p
+            $a1p = [long]$archiveResult[0].accounts_1p
+            $a3p = [long]$archiveResult[0].accounts_3p
+
+            $cache.ArchiveConsumersRemaining1P = $c1p
+            $cache.ArchiveConsumersRemaining3P = $c3p
+            $cache.ArchiveAccountsRemaining1P  = $a1p
+            $cache.ArchiveAccountsRemaining3P  = $a3p
+            $cache.ArchiveConsumersRemaining   = $c1p + $c3p
+            $cache.ArchiveAccountsRemaining    = $a1p + $a3p
+        }
+        else {
+            $cache.ArchiveConsumersRemaining1P = $null
+            $cache.ArchiveConsumersRemaining3P = $null
+            $cache.ArchiveAccountsRemaining1P  = $null
+            $cache.ArchiveAccountsRemaining3P  = $null
+            $cache.ArchiveConsumersRemaining   = $null
+            $cache.ArchiveAccountsRemaining    = $null
+        }
         $cache.ShellRemaining = if ($shellResult -and $shellResult.Count -gt 0) { [long]$shellResult[0].remaining_count } else { $null }
         $cache.BaselineDttm = $now
         $cache.ArchiveTargetInstance    = $archiveTargetInstance
