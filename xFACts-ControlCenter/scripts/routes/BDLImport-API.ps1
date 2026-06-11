@@ -830,6 +830,117 @@ Add-PodeRoute -Method Post -Path '/api/bdl-import/stage' -Authentication 'ADLogi
             }
         }
 
+        # Apply the composed AR message (CONSUMER_ACCOUNT_AR_LOG message builder).
+        # The message field is pulled out of the normal mapping UI for this entity
+        # and built from an ordered list of segments: literal text and file-column
+        # references woven together per row. Each Field segment resolves to its
+        # staging column (the mapped element name when the header is mapped, the
+        # <safe>_unmapped column otherwise) exactly as the conditional field
+        # assignment trigger resolution does. The per-row value is composed with a
+        # single set-based UPDATE; when the trimmed result is empty the fallback
+        # text is substituted.
+        $composedMessage = $body.composed_message
+        if ($entityType -eq 'CONSUMER_ACCOUNT_AR_LOG' -and $composedMessage -and $composedMessage.segments) {
+            $msgElement = 'cnsmr_accnt_ar_mssg_txt'
+
+            # Ensure the message column exists on the staging table.
+            $msgColExists = Invoke-XFActsQuery -Query @"
+                SELECT 1 FROM sys.columns c
+                INNER JOIN sys.tables t ON t.object_id = c.object_id
+                INNER JOIN sys.schemas s ON s.schema_id = t.schema_id
+                WHERE s.name = 'Staging' AND t.name = @tableName AND c.name = @colName
+"@ -Parameters @{ tableName = $tableName; colName = $msgElement }
+
+            if (-not $msgColExists -or $msgColExists.Count -eq 0) {
+                $msgMeta = $fieldMetaMap[$msgElement]
+                $msgSqlType = 'VARCHAR(8000)'
+                if ($msgMeta -and $msgMeta.max_length -and $msgMeta.max_length -isnot [System.DBNull]) {
+                    $msgSqlType = "VARCHAR($($msgMeta.max_length))"
+                }
+                Invoke-XFActsNonQuery -Query "ALTER TABLE $fullTableName ADD [$msgElement] $msgSqlType NULL"
+            }
+
+            # Build the CONCAT piece list and parameter set. Each usable segment
+            # contributes a value piece (a text parameter, or an
+            # ISNULL([stagingCol], '') reference validated against the staging
+            # table) followed by its own trailing separator parameter. The final
+            # segment's trailing separator is omitted so the message never ends
+            # with a dangling separator.
+            $segmentPieces = @()
+            $msgParams = @{}
+            $segIndex = 0
+            foreach ($seg in $composedMessage.segments) {
+                $segType = $seg.type
+                $valuePiece = $null
+                if ($segType -eq 'text') {
+                    $pName = "seg$segIndex"
+                    $msgParams[$pName] = [string]$seg.value
+                    $valuePiece = "@$pName"
+                }
+                elseif ($segType -eq 'field') {
+                    $segHeader = $seg.header
+                    if ($mappingHash.ContainsKey($segHeader)) {
+                        $segStagingCol = $mappingHash[$segHeader]
+                    } else {
+                        $safeSegName = ($segHeader -replace '[^\w]', '_')
+                        if ($safeSegName.Length -gt 100) { $safeSegName = $safeSegName.Substring(0, 100) }
+                        $segStagingCol = "${safeSegName}_unmapped"
+                    }
+
+                    $segColCheck = Invoke-XFActsQuery -Query @"
+                        SELECT 1 FROM sys.columns c
+                        INNER JOIN sys.tables t ON t.object_id = c.object_id
+                        INNER JOIN sys.schemas s ON s.schema_id = t.schema_id
+                        WHERE s.name = 'Staging' AND t.name = @tableName AND c.name = @colName
+"@ -Parameters @{ tableName = $tableName; colName = $segStagingCol }
+
+                    if (-not $segColCheck -or $segColCheck.Count -eq 0) {
+                        Write-PodeJsonResponse -Value @{ error = "Composed message references file column '$segHeader' that is not present in staging" } -StatusCode 400
+                        return
+                    }
+
+                    $safeSegCol = "[" + $segStagingCol.Replace(']', ']]') + "]"
+                    $valuePiece = "ISNULL($safeSegCol, '')"
+                }
+
+                if ($null -ne $valuePiece) {
+                    $sepName = "sep$segIndex"
+                    $msgParams[$sepName] = if ($null -ne $seg.sep) { [string]$seg.sep } else { '' }
+                    $segmentPieces += @{ Value = $valuePiece; SepParam = "@$sepName" }
+                }
+                $segIndex++
+            }
+
+            if ($segmentPieces.Count -gt 0) {
+                $fallbackText = if ($null -ne $composedMessage.fallback) { [string]$composedMessage.fallback } else { '' }
+                $msgParams['msgFallback'] = $fallbackText
+
+                # Assemble value + trailing separator per segment, omitting the
+                # last segment's separator.
+                $concatParts = @()
+                for ($p = 0; $p -lt $segmentPieces.Count; $p++) {
+                    $concatParts += $segmentPieces[$p].Value
+                    if ($p -lt ($segmentPieces.Count - 1)) {
+                        $concatParts += $segmentPieces[$p].SepParam
+                    }
+                }
+
+                $safeMsgCol = "[$msgElement]"
+                # CONCAT requires at least two arguments; a single piece is used
+                # as a bare scalar expression instead.
+                if ($concatParts.Count -eq 1) {
+                    $concatExpr = $concatParts[0]
+                } else {
+                    $concatExpr = "CONCAT(" + ($concatParts -join ', ') + ")"
+                }
+                Invoke-XFActsNonQuery -Query @"
+                    UPDATE $fullTableName
+                    SET $safeMsgCol = CASE WHEN LTRIM(RTRIM($concatExpr)) = '' THEN @msgFallback ELSE $concatExpr END
+                    WHERE _skip = 0
+"@ -Parameters $msgParams
+            }
+        }
+
         $reqExtraNames = @($requiredExtraColumns | ForEach-Object { $_.elementName })
 
         # Stamp any system-supplied required/invisible fields with the
