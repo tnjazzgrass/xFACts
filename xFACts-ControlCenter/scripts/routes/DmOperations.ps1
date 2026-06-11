@@ -109,14 +109,39 @@ $navHtml
 
     $bannerHtml
 
-    <div class="cc-section">
-        <div class="cc-section-header">
-            <h2 class="cc-section-title">Lifetime Totals</h2>
-            <span class="cc-refresh-badge-event" title="Refreshes when engine process completes">&#9889;</span>
+    <div class="dmo-two-column-layout">
+
+        <div class="dmo-column">
+            <div class="cc-section">
+                <div class="cc-section-header">
+                    <h2 class="cc-section-title">Consumer Archive &mdash; Totals</h2>
+                    <div class="cc-section-header-right">
+                        <div class="dmo-filter-group" id="dmo-archive-filter">
+                            <button class="dmo-filter-btn dmo-filter-active" data-action-click="dmo-set-archive-filter" data-dmo-filter="ALL">ALL</button>
+                            <button class="dmo-filter-btn" data-action-click="dmo-set-archive-filter" data-dmo-filter="WFAARCH1">1P</button>
+                            <button class="dmo-filter-btn" data-action-click="dmo-set-archive-filter" data-dmo-filter="WFAARCH3">3P</button>
+                        </div>
+                        <span class="cc-refresh-badge-event" title="Refreshes when engine process completes">&#9889;</span>
+                    </div>
+                </div>
+                <div id="dmo-archive-totals" class="dmo-archive-totals-grid">
+                    <div class="cc-slide-empty">Loading...</div>
+                </div>
+            </div>
         </div>
-        <div id="dmo-lifetime-totals" class="dmo-summary-cards">
-            <div class="cc-slide-empty">Loading...</div>
+
+        <div class="dmo-column">
+            <div class="cc-section">
+                <div class="cc-section-header">
+                    <h2 class="cc-section-title">Shell Purge &mdash; Totals</h2>
+                    <span class="cc-refresh-badge-event" title="Refreshes when engine process completes">&#9889;</span>
+                </div>
+                <div id="dmo-shell-totals" class="dmo-shell-totals-grid">
+                    <div class="cc-slide-empty">Loading...</div>
+                </div>
+            </div>
         </div>
+
     </div>
 
     <div class="dmo-two-column-layout">
@@ -140,7 +165,14 @@ $navHtml
             <div class="cc-section cc-fill">
                 <div class="cc-section-header">
                     <h2 class="cc-section-title">Consumer Archive &mdash; History</h2>
-                    <span class="cc-refresh-badge-event" title="Refreshes when engine process completes">&#9889;</span>
+                    <div class="cc-section-header-right">
+                        <div class="dmo-filter-group" id="dmo-history-filter">
+                            <button class="dmo-filter-btn dmo-filter-active" data-action-click="dmo-set-history-filter" data-dmo-filter="ALL">ALL</button>
+                            <button class="dmo-filter-btn" data-action-click="dmo-set-history-filter" data-dmo-filter="WFAARCH1">1P</button>
+                            <button class="dmo-filter-btn" data-action-click="dmo-set-history-filter" data-dmo-filter="WFAARCH3">3P</button>
+                        </div>
+                        <span class="cc-refresh-badge-event" title="Refreshes when engine process completes">&#9889;</span>
+                    </div>
                 </div>
                 <div id="dmo-archive-history">
                     <div class="cc-slide-empty">Loading...</div>
