@@ -27,7 +27,7 @@
    FUNCTIONS: DATA LOADING
    FUNCTIONS: TARGET SERVER BADGES
    FUNCTIONS: ADMIN CONTROLS
-   FUNCTIONS: LIFETIME TOTALS RENDERING
+   FUNCTIONS: TOTALS RENDERING
    FUNCTIONS: TODAY RENDERING
    FUNCTIONS: EXECUTION HISTORY RENDERING
    FUNCTIONS: BATCH DRILL-DOWN
@@ -78,7 +78,9 @@ const dmo_clickActions = {
     'dmo-toggle-day-batches':    dmo_toggleDayBatches,
     'dmo-open-batch-detail':     dmo_openBatchDetail,
     'dmo-close-batch-detail':    dmo_closeBatchDetail,
-    'dmo-sort-batch-detail':     dmo_sortBatchDetail
+    'dmo-sort-batch-detail':     dmo_sortBatchDetail,
+    'dmo-set-archive-filter':    dmo_setArchiveFilter,
+    'dmo-set-history-filter':    dmo_setHistoryFilter
 };
 
 /* ============================================================================
@@ -132,6 +134,17 @@ var dmo_abortState = { archive: false, shellpurge: false };
 /* Whether the current user may launch processes, reported per process by the
    lifetime-totals API (same value on both; admin is per-user). */
 var dmo_canLaunch = false;
+
+/* Current Archive totals line-of-business filter (ALL, WFAARCH1, WFAARCH3). */
+var dmo_currentArchiveFilter = 'ALL';
+
+/* Current Archive history line-of-business filter (ALL, WFAARCH1, WFAARCH3).
+   Independent of the totals filter; scopes the history section via refetch. */
+var dmo_currentHistoryFilter = 'ALL';
+
+/* Last lifetime-totals payload, retained so the Archive filter re-renders
+   without refetch. */
+var dmo_lastLifetimeData = null;
 
 /* ============================================================================
    STATE: HISTORY EXPANSION
@@ -377,6 +390,17 @@ function dmo_modeBadge(mode) {
     return '<span class="' + cls + '">' + cc_escapeHtml(mode) + '</span>';
 }
 
+/* Builds a line-of-business badge (1P / 3P) from the batch's source workgroup. */
+function dmo_workgroupBadge(workgroup) {
+    if (workgroup === 'WFAARCH1') {
+        return '<span class="dmo-wg-badge dmo-wg-1p">1P</span>';
+    }
+    if (workgroup === 'WFAARCH3') {
+        return '<span class="dmo-wg-badge dmo-wg-3p">3P</span>';
+    }
+    return '<span class="dmo-wg-badge dmo-unknown">-</span>';
+}
+
 /* Builds the colored delete-order prefix chip (A/AU/AB/C/CU) plus the
    remaining order text. */
 function dmo_deleteOrderHtml(deleteOrder) {
@@ -415,7 +439,9 @@ async function dmo_loadLifetimeTotals() {
         dmo_abortState.shellpurge = data.ShellPurge.Aborted;
         dmo_canLaunch = data.Archive.CanLaunch;
 
-        dmo_renderLifetimeTotals(data);
+        dmo_lastLifetimeData = data;
+        dmo_renderArchiveTotals(data);
+        dmo_renderShellTotals(data);
         dmo_renderAdminControls('archive');
         dmo_renderAdminControls('shellpurge');
         dmo_consecutiveErrors = 0;
@@ -423,8 +449,10 @@ async function dmo_loadLifetimeTotals() {
         dmo_consecutiveErrors++;
         console.error('Failed to load lifetime totals:', error);
         if (dmo_consecutiveErrors >= 3) {
-            document.getElementById('dmo-lifetime-totals').innerHTML =
-                '<div class="cc-slide-empty">Unable to connect to server</div>';
+            var archEl = document.getElementById('dmo-archive-totals');
+            var shellEl = document.getElementById('dmo-shell-totals');
+            if (archEl)  { archEl.innerHTML  = '<div class="cc-slide-empty">Unable to connect to server</div>'; }
+            if (shellEl) { shellEl.innerHTML = '<div class="cc-slide-empty">Unable to connect to server</div>'; }
         }
     }
 }
@@ -443,10 +471,12 @@ async function dmo_loadToday() {
     }
 }
 
-/* Loads the per-process daily execution history. */
+/* Loads the per-process daily execution history. The Archive history honors
+   the line-of-business filter (server-side); ShellPurge is always unfiltered. */
 async function dmo_loadExecutionHistory() {
     try {
-        var data = await cc_engineFetch('/api/dmops/execution-history');
+        var url = '/api/dmops/execution-history?workgroup=' + encodeURIComponent(dmo_currentHistoryFilter);
+        var data = await cc_engineFetch(url);
         if (!data) {
             return;
         }
@@ -550,42 +580,49 @@ function dmo_renderAdminControls(process) {
 }
 
 /* ============================================================================
-   FUNCTIONS: LIFETIME TOTALS RENDERING
+   FUNCTIONS: TOTALS RENDERING
    ----------------------------------------------------------------------------
-   Renders the six lifetime summary cards from the self-contained per-process
-   response objects. Remaining counts use subtractive math: the OLTP baseline
-   minus the rows processed since the baseline was sampled.
+   Renders the Archive totals (2x2, scoped to the active 1P/3P/ALL filter) and
+   the Shell totals (1x2) from the self-contained per-process response objects.
+   Remaining counts use subtractive math: the OLTP baseline minus the rows
+   processed since the baseline was sampled. The Archive filter re-renders from
+   retained data (dmo_lastLifetimeData) with no refetch.
    Prefix: dmo
    ============================================================================ */
 
-/* Renders the lifetime summary cards from the per-process totals response. */
-function dmo_renderLifetimeTotals(data) {
-    var container = document.getElementById('dmo-lifetime-totals');
+/* Renders the Archive 2x2 totals cards for the active line-of-business filter. */
+function dmo_renderArchiveTotals(data) {
+    var container = document.getElementById('dmo-archive-totals');
+    if (!container) { return; }
+
     var a = data.Archive;
-    var p = data.ShellPurge;
+    var bw = a.ByWorkgroup || {};
+
+    // Select the slice for the active filter; fall back to All.
+    var slice = bw[dmo_currentArchiveFilter] || bw.All || {
+        Consumers: a.Consumers, Accounts: a.Accounts, RowsDeleted: a.RowsDeleted,
+        Exceptions: a.Exceptions, Batches: a.Batches, Remaining: a.Remaining
+    };
+    var r = slice.Remaining || {};
+
+    var consumersRemaining = (r.ConsumersBaseline !== null && r.ConsumersBaseline !== undefined)
+        ? (r.ConsumersBaseline - (r.ConsumersSinceBaseline || 0))
+        : null;
+    var accountsRemaining = (r.AccountsBaseline !== null && r.AccountsBaseline !== undefined)
+        ? (r.AccountsBaseline - (r.AccountsSinceBaseline || 0))
+        : null;
+
+    // BaselineDttm lives on the top-level Archive.Remaining (shared sample time).
     var ar = a.Remaining || {};
-    var pr = p.Remaining || {};
-
-    var consumersRemaining = (ar.ConsumersBaseline !== null && ar.ConsumersBaseline !== undefined)
-        ? (ar.ConsumersBaseline - (ar.ConsumersSinceBaseline || 0))
-        : null;
-    var accountsRemaining = (ar.AccountsBaseline !== null && ar.AccountsBaseline !== undefined)
-        ? (ar.AccountsBaseline - (ar.AccountsSinceBaseline || 0))
-        : null;
-    var shellRemaining = (pr.Baseline !== null && pr.Baseline !== undefined)
-        ? (pr.Baseline - (pr.SinceBaseline || 0))
-        : null;
-
     var archiveBaselineSub = ar.BaselineDttm ? ('as of ' + ar.BaselineDttm.split(' ')[1]) : '';
-    var shellBaselineSub = pr.BaselineDttm ? ('as of ' + pr.BaselineDttm.split(' ')[1]) : '';
 
     var html = '';
 
     html += '<div class="dmo-summary-card">' +
         '<div class="dmo-summary-card-label">Consumers Archived</div>' +
-        '<div class="dmo-summary-card-value dmo-archive">' + dmo_formatNumber(a.Consumers) + '</div>' +
-        '<div class="dmo-summary-card-sub">' + dmo_formatNumber(a.Batches) + ' batches' +
-            (a.Exceptions > 0 ? ' \u00B7 ' + dmo_formatNumber(a.Exceptions) + ' exceptions' : '') +
+        '<div class="dmo-summary-card-value dmo-archive">' + dmo_formatNumber(slice.Consumers) + '</div>' +
+        '<div class="dmo-summary-card-sub">' + dmo_formatNumber(slice.Batches) + ' batches' +
+            (slice.Exceptions > 0 ? ' \u00B7 ' + dmo_formatNumber(slice.Exceptions) + ' exceptions' : '') +
         '</div>' +
     '</div>';
 
@@ -597,15 +634,33 @@ function dmo_renderLifetimeTotals(data) {
 
     html += '<div class="dmo-summary-card">' +
         '<div class="dmo-summary-card-label">Accounts Archived</div>' +
-        '<div class="dmo-summary-card-value dmo-archive">' + dmo_formatNumber(a.Accounts) + '</div>' +
-        '<div class="dmo-summary-card-sub">' + dmo_formatNumber(a.RowsDeleted) + ' rows deleted</div>' +
+        '<div class="dmo-summary-card-value dmo-archive">' + dmo_formatNumber(slice.Accounts) + '</div>' +
+        '<div class="dmo-summary-card-sub">' + dmo_formatNumber(slice.RowsDeleted) + ' rows deleted</div>' +
     '</div>';
 
     html += '<div class="dmo-summary-card">' +
         '<div class="dmo-summary-card-label">Accounts Remaining</div>' +
         '<div class="dmo-summary-card-value dmo-remaining">' + (accountsRemaining !== null ? dmo_formatNumber(accountsRemaining) : '\u2014') + '</div>' +
-        '<div class="dmo-summary-card-sub">on TC_ARCH consumers</div>' +
+        '<div class="dmo-summary-card-sub">in archive workgroups</div>' +
     '</div>';
+
+    container.innerHTML = html;
+}
+
+/* Renders the Shell Purge 1x2 totals cards. */
+function dmo_renderShellTotals(data) {
+    var container = document.getElementById('dmo-shell-totals');
+    if (!container) { return; }
+
+    var p = data.ShellPurge;
+    var pr = p.Remaining || {};
+
+    var shellRemaining = (pr.Baseline !== null && pr.Baseline !== undefined)
+        ? (pr.Baseline - (pr.SinceBaseline || 0))
+        : null;
+    var shellBaselineSub = pr.BaselineDttm ? ('as of ' + pr.BaselineDttm.split(' ')[1]) : '';
+
+    var html = '';
 
     html += '<div class="dmo-summary-card">' +
         '<div class="dmo-summary-card-label">Shells Purged</div>' +
@@ -620,6 +675,36 @@ function dmo_renderLifetimeTotals(data) {
     '</div>';
 
     container.innerHTML = html;
+}
+
+/* Sets the Archive line-of-business filter and re-renders from retained data. */
+function dmo_setArchiveFilter(target) {
+    dmo_currentArchiveFilter = target.getAttribute('data-dmo-filter');
+
+    var buttons = document.querySelectorAll('#dmo-archive-filter .dmo-filter-btn');
+    buttons.forEach(function(btn) {
+        btn.classList.toggle('dmo-filter-active', btn.getAttribute('data-dmo-filter') === dmo_currentArchiveFilter);
+    });
+
+    if (dmo_lastLifetimeData) {
+        dmo_renderArchiveTotals(dmo_lastLifetimeData);
+    }
+}
+
+/* Sets the Archive history line-of-business filter and refetches the history
+   section scoped to the selection. Clears expansion state and the day-batch
+   cache so the rebuilt tree and any drilldowns reflect the new scope. */
+function dmo_setHistoryFilter(target) {
+    dmo_currentHistoryFilter = target.getAttribute('data-dmo-filter');
+
+    var buttons = document.querySelectorAll('#dmo-history-filter .dmo-filter-btn');
+    buttons.forEach(function(btn) {
+        btn.classList.toggle('dmo-filter-active', btn.getAttribute('data-dmo-filter') === dmo_currentHistoryFilter);
+    });
+
+    dmo_expandedSections = {};
+    dmo_dayBatchCache = {};
+    dmo_loadExecutionHistory();
 }
 
 /* ============================================================================
@@ -964,6 +1049,9 @@ async function dmo_loadBatchesByDay(process, date) {
 
     try {
         var url = '/api/dmops/' + process + '/batches-by-day?date=' + encodeURIComponent(date);
+        if (process === 'archive') {
+            url += '&workgroup=' + encodeURIComponent(dmo_currentHistoryFilter);
+        }
         var batches = await cc_engineFetch(url);
         if (!batches) {
             return;
@@ -1002,6 +1090,7 @@ function dmo_renderBatches(process, date, batches) {
     html += '<th class="dmo-batch-table-th" rowspan="2">Status</th>';
     if (isArchive) {
         html += '<th class="dmo-batch-table-th" rowspan="2">BIDATA</th>';
+        html += '<th class="dmo-batch-table-th" rowspan="2">LOB</th>';
     }
     html += '<th class="dmo-batch-table-th dmo-batch-counts-header" colspan="' + (isArchive ? 4 : 2) + '">Counts</th>';
     html += '</tr>';
@@ -1032,6 +1121,7 @@ function dmo_renderBatches(process, date, batches) {
         html += '<td class="dmo-batch-table-td">' + dmo_statusBadge(b.status) + '</td>';
         if (isArchive) {
             html += '<td class="dmo-batch-table-td">' + dmo_bidataBadge(b.bidata_status) + '</td>';
+            html += '<td class="dmo-batch-table-td">' + dmo_workgroupBadge(b.source_workgroup) + '</td>';
         }
         html += '<td class="dmo-batch-table-td dmo-right">' + dmo_formatNumber(b.consumer_count) + '</td>';
         if (isArchive) {
