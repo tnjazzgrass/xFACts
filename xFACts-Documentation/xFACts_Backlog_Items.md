@@ -1,6 +1,6 @@
 # xFACts Backlog Items
-## Updated: June 9, 2026
-## Next ID: B-088
+## Updated: June 11, 2026
+## Next ID: B-089
 
 A single punch list of open build, enhancement, and bug-fix items across the xFACts platform. **Open items only** -- when an item is finished it is removed from this file. Its history lives in git and the session record; once closed, an ID has no further meaning and is not reused (allocate the next number from the counter above).
 
@@ -33,7 +33,7 @@ Sectioned by **priority**. Within each section, **Refactor Initiative** items ar
 | B-007 | | ServerOps.ServerHealth | Enhance | sp_DiagnoseServerHealth evolution | Analyze time windows and output ranked probable causes. Correlate HADR_SYNC waits + secondary PLE drops + scheduled job windows. Automated diagnosis with plain-English conclusions. |
 | B-008 | | ControlCenter.Shared | Build | Asset_Registry generated documentation pages | Auto-generated pages from registry queries: CC Shared Infrastructure (shared components by file/section), Per-page Component Inventory, Naming Conventions (patterns derived from data), API Endpoint Reference. Pattern follows Platform_Registry's auto-generated tables. (Phases 1-4 of the original Asset_Registry buildout are complete; this generated-docs surface is what remains.) |
 | B-009 | | B2B | Build | B2B module build | In investigation phase with some preliminary objects built. `B2B_Roadmap.md` is the authoritative entry point; investigation-first -- no new tables/columns until the relevant investigation area resolves. |
-
+| B-088 | | DmOps | Enhance | DmOps page load performance + remaining-count refresh redesign | Initial DM Operations page load takes ~30s before values appear. Primary suspect is the Get-RemainingCounts OLTP query in CCShared, now four correlated counts (1P/3P consumers + accounts) against cnsmr_Tag/cnsmr/wrkgrp/cnsmr_accnt; the account-remaining subqueries are the expensive part and doubled with the workgroup split. Investigate query optimization (collapse the four subqueries into a single grouped pass; reassess whether account-remaining must be live) and the page's load/refresh sequencing (whether the slow remaining-count fetch blocks first paint vs. loading progressively). Separately, retire the subtractive "countdown" remaining-count model (cached OLTP baseline minus rows-processed-since): it goes negative/inaccurate when the workgroup population shifts under a stale baseline, and was always an approximation. Replace with a script-stamped remaining snapshot — the archive script already has ground truth at batch selection time (it just queried the workgroup), so it can write a "remaining-after-batch" value to Archive_BatchLog on completion, and the page reads the latest snapshot instead of deriving it. Turns "remaining" into a recorded fact rather than a computed estimate. |
 ---
 
 ## Medium
