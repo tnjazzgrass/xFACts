@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-06-10 05:30:22
+Generated: 2026-06-11 03:51:38
 
 ## Module Registry
 
@@ -540,13 +540,14 @@ Generated: 2026-06-10 05:30:22
 | DmOps | Archive | batch_size | 5000 | INT | Number of consumers per batch during full-mode schedule windows |
 | DmOps | Archive | batch_size_reduced | 500 | INT | Number of consumers per batch during reduced-mode schedule windows |
 | DmOps | Archive | bidata_build_job_name | BIDATA Daily Build | VARCHAR | SQL Agent job name for the BIDATA Daily Build |
-| DmOps | Archive | bidata_instance | DM-PROD-REP | VARCHAR | SQL Server instance hosting the BIDATA database for BIDATA operations |
+| DmOps | Archive | bidata_instance | DM-TEST-APP | VARCHAR | SQL Server instance hosting the BIDATA database for BIDATA operations |
 | DmOps | Archive | chunk_size | 5000 | INT | Maximum rows per DELETE operation (deleted in chunks of this size) |
 | DmOps | Archive | tag_removal_actn_cd | CC | VARCHAR | Action code short value used for archiving exceptions |
 | DmOps | Archive | tag_removal_msg_txt | Consumer archive tag removed - ineligible account(s) detected | VARCHAR | AR event message text for archiving exceptions |
 | DmOps | Archive | tag_removal_rslt_cd | CC | VARCHAR | Result code short value used for archiving exceptions |
 | DmOps | Archive | tag_removal_user | sqlmon | VARCHAR | DM username for archiving exceptions |
-| DmOps | Archive | target_instance | AVG-PROD-LSNR | VARCHAR | SQL Server instance hosting crs5_oltp for archive processing |
+| DmOps | Archive | target_instance | DM-TEST-APP | VARCHAR | SQL Server instance hosting crs5_oltp for archive processing |
+| DmOps | Archive | target_workgroups | BOTH | VARCHAR | Which archive workgroup(s) to process: WFAARCH1 (1P), WFAARCH3 (3P), or BOTH. |
 | DmOps | ShellPurge | alerting_enabled | 1 | BIT | Master switch for shell purge alerting |
 | DmOps | ShellPurge | batch_size | 100000 | INT | Number of shell consumers per batch during full-mode schedule windows |
 | DmOps | ShellPurge | batch_size_reduced | 1000 | INT | Number of shell consumers per batch during reduced-mode schedule windows |
