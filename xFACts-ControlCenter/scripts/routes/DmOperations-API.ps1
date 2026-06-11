@@ -48,7 +48,13 @@ Add-PodeRoute -Method Get -Path '/api/dmops/lifetime-totals' -Authentication 'AD
         $ctx = Get-UserContext -WebEvent $WebEvent
         $canLaunch = [bool]$ctx.IsAdmin
 
-        # Archive lifetime totals (consumer-driven; account counts retained as secondary metric)
+        # Coalesces a row value (DBNull, null, or empty) to a long.
+        $asLong = { param($v) if ($null -eq $v -or $v -is [DBNull] -or "$v" -eq '') { [long]0 } else { [long]$v } }
+
+        # Archive lifetime totals (consumer-driven; account counts retained as
+        # secondary metric). Split by source_workgroup so the dashboard's
+        # 1P/3P/ALL filter can re-render from a single response: combined totals
+        # plus per-line-of-business (WFAARCH1 = 1P, WFAARCH3 = 3P) breakdowns.
         $archRows = Invoke-XFActsQuery -Query @"
             SELECT
                 ISNULL(SUM(CASE WHEN status = 'Success' THEN consumer_count ELSE 0 END), 0) AS archive_consumers,
@@ -58,7 +64,21 @@ Add-PodeRoute -Method Get -Path '/api/dmops/lifetime-totals' -Authentication 'AD
                 COUNT(*) AS archive_batches,
                 SUM(CASE WHEN status = 'Failed' THEN 1 ELSE 0 END) AS archive_failed_batches,
                 MIN(batch_start_dttm) AS archive_first_batch,
-                MAX(batch_start_dttm) AS archive_last_batch
+                MAX(batch_start_dttm) AS archive_last_batch,
+
+                ISNULL(SUM(CASE WHEN status = 'Success' AND source_workgroup = 'WFAARCH1' THEN consumer_count ELSE 0 END), 0) AS archive_consumers_1p,
+                ISNULL(SUM(CASE WHEN status = 'Success' AND source_workgroup = 'WFAARCH1' THEN account_count  ELSE 0 END), 0) AS archive_accounts_1p,
+                ISNULL(SUM(CASE WHEN status = 'Success' AND source_workgroup = 'WFAARCH1' THEN total_rows_deleted ELSE 0 END), 0) AS archive_rows_1p,
+                ISNULL(SUM(CASE WHEN source_workgroup = 'WFAARCH1' THEN exception_count ELSE 0 END), 0) AS archive_exceptions_1p,
+                ISNULL(SUM(CASE WHEN source_workgroup = 'WFAARCH1' THEN 1 ELSE 0 END), 0) AS archive_batches_1p,
+                ISNULL(SUM(CASE WHEN status = 'Failed' AND source_workgroup = 'WFAARCH1' THEN 1 ELSE 0 END), 0) AS archive_failed_batches_1p,
+
+                ISNULL(SUM(CASE WHEN status = 'Success' AND source_workgroup = 'WFAARCH3' THEN consumer_count ELSE 0 END), 0) AS archive_consumers_3p,
+                ISNULL(SUM(CASE WHEN status = 'Success' AND source_workgroup = 'WFAARCH3' THEN account_count  ELSE 0 END), 0) AS archive_accounts_3p,
+                ISNULL(SUM(CASE WHEN status = 'Success' AND source_workgroup = 'WFAARCH3' THEN total_rows_deleted ELSE 0 END), 0) AS archive_rows_3p,
+                ISNULL(SUM(CASE WHEN source_workgroup = 'WFAARCH3' THEN exception_count ELSE 0 END), 0) AS archive_exceptions_3p,
+                ISNULL(SUM(CASE WHEN source_workgroup = 'WFAARCH3' THEN 1 ELSE 0 END), 0) AS archive_batches_3p,
+                ISNULL(SUM(CASE WHEN status = 'Failed' AND source_workgroup = 'WFAARCH3' THEN 1 ELSE 0 END), 0) AS archive_failed_batches_3p
             FROM DmOps.Archive_BatchLog
             WHERE status IN ('Success', 'Failed')
 "@
@@ -103,10 +123,18 @@ Add-PodeRoute -Method Get -Path '/api/dmops/lifetime-totals' -Authentication 'AD
         # own Remaining object so each object is self-describing.
         $archiveConsumersBaseline = $null
         $archiveAccountsBaseline  = $null
+        $archiveConsumersBaseline1P = $null
+        $archiveAccountsBaseline1P  = $null
+        $archiveConsumersBaseline3P = $null
+        $archiveAccountsBaseline3P  = $null
         $shellBaseline            = $null
         $baselineDttm             = $null
         $archiveConsumersSince    = 0
         $archiveAccountsSince     = 0
+        $archiveConsumersSince1P  = 0
+        $archiveAccountsSince1P   = 0
+        $archiveConsumersSince3P  = 0
+        $archiveAccountsSince3P   = 0
         $shellSince               = 0
         $remainingError           = $null
 
@@ -114,21 +142,35 @@ Add-PodeRoute -Method Get -Path '/api/dmops/lifetime-totals' -Authentication 'AD
             $cache = Get-RemainingCounts
             $archiveConsumersBaseline = $cache.ArchiveConsumersRemaining
             $archiveAccountsBaseline  = $cache.ArchiveAccountsRemaining
+            $archiveConsumersBaseline1P = $cache.ArchiveConsumersRemaining1P
+            $archiveAccountsBaseline1P  = $cache.ArchiveAccountsRemaining1P
+            $archiveConsumersBaseline3P = $cache.ArchiveConsumersRemaining3P
+            $archiveAccountsBaseline3P  = $cache.ArchiveAccountsRemaining3P
             $shellBaseline            = $cache.ShellRemaining
             $baselineDttm             = if ($cache.BaselineDttm) { $cache.BaselineDttm.ToString("yyyy-MM-dd HH:mm:ss") } else { $null }
 
-            # Subtractive counts: consumers/accounts processed since baseline
+            # Subtractive counts: consumers/accounts processed since baseline,
+            # split by source_workgroup so each line of business subtracts its
+            # own processed work from its own baseline.
             if ($cache.BaselineDttm) {
                 $sinceRows = Invoke-XFActsQuery -Query @"
                     SELECT
                         ISNULL(SUM(consumer_count), 0) AS archive_consumers_since,
-                        ISNULL(SUM(account_count),  0) AS archive_accounts_since
+                        ISNULL(SUM(account_count),  0) AS archive_accounts_since,
+                        ISNULL(SUM(CASE WHEN source_workgroup = 'WFAARCH1' THEN consumer_count ELSE 0 END), 0) AS archive_consumers_since_1p,
+                        ISNULL(SUM(CASE WHEN source_workgroup = 'WFAARCH1' THEN account_count  ELSE 0 END), 0) AS archive_accounts_since_1p,
+                        ISNULL(SUM(CASE WHEN source_workgroup = 'WFAARCH3' THEN consumer_count ELSE 0 END), 0) AS archive_consumers_since_3p,
+                        ISNULL(SUM(CASE WHEN source_workgroup = 'WFAARCH3' THEN account_count  ELSE 0 END), 0) AS archive_accounts_since_3p
                     FROM DmOps.Archive_BatchLog
                     WHERE status = 'Success'
                       AND batch_start_dttm > @BaselineDttm
 "@ -Parameters @{ BaselineDttm = $cache.BaselineDttm }
-                $archiveConsumersSince = [long]$sinceRows[0]['archive_consumers_since']
-                $archiveAccountsSince  = [long]$sinceRows[0]['archive_accounts_since']
+                $archiveConsumersSince   = [long]$sinceRows[0]['archive_consumers_since']
+                $archiveAccountsSince    = [long]$sinceRows[0]['archive_accounts_since']
+                $archiveConsumersSince1P = [long]$sinceRows[0]['archive_consumers_since_1p']
+                $archiveAccountsSince1P  = [long]$sinceRows[0]['archive_accounts_since_1p']
+                $archiveConsumersSince3P = [long]$sinceRows[0]['archive_consumers_since_3p']
+                $archiveAccountsSince3P  = [long]$sinceRows[0]['archive_accounts_since_3p']
 
                 $shellSinceRows = Invoke-XFActsQuery -Query @"
                     SELECT
@@ -142,6 +184,56 @@ Add-PodeRoute -Method Get -Path '/api/dmops/lifetime-totals' -Authentication 'AD
         }
         catch {
             $remainingError = $_.Exception.Message
+        }
+
+        # Per-line-of-business slices for the 1P/3P/ALL filter. Each slice is
+        # self-contained (totals + remaining) so the dashboard re-renders the
+        # cards client-side on filter change with no refetch. The top-level
+        # fields below remain the ALL values for any other consumer of this
+        # object.
+        $archByWorkgroup = [PSCustomObject]@{
+            All = [PSCustomObject]@{
+                Consumers     = & $asLong $archRow['archive_consumers']
+                Accounts      = & $asLong $archRow['archive_accounts']
+                RowsDeleted   = & $asLong $archRow['archive_rows']
+                Exceptions    = & $asLong $archRow['archive_exceptions']
+                Batches       = & $asLong $archRow['archive_batches']
+                FailedBatches = & $asLong $archRow['archive_failed_batches']
+                Remaining     = [PSCustomObject]@{
+                    ConsumersBaseline      = $archiveConsumersBaseline
+                    AccountsBaseline       = $archiveAccountsBaseline
+                    ConsumersSinceBaseline = $archiveConsumersSince
+                    AccountsSinceBaseline  = $archiveAccountsSince
+                }
+            }
+            WFAARCH1 = [PSCustomObject]@{
+                Consumers     = & $asLong $archRow['archive_consumers_1p']
+                Accounts      = & $asLong $archRow['archive_accounts_1p']
+                RowsDeleted   = & $asLong $archRow['archive_rows_1p']
+                Exceptions    = & $asLong $archRow['archive_exceptions_1p']
+                Batches       = & $asLong $archRow['archive_batches_1p']
+                FailedBatches = & $asLong $archRow['archive_failed_batches_1p']
+                Remaining     = [PSCustomObject]@{
+                    ConsumersBaseline      = $archiveConsumersBaseline1P
+                    AccountsBaseline       = $archiveAccountsBaseline1P
+                    ConsumersSinceBaseline = $archiveConsumersSince1P
+                    AccountsSinceBaseline  = $archiveAccountsSince1P
+                }
+            }
+            WFAARCH3 = [PSCustomObject]@{
+                Consumers     = & $asLong $archRow['archive_consumers_3p']
+                Accounts      = & $asLong $archRow['archive_accounts_3p']
+                RowsDeleted   = & $asLong $archRow['archive_rows_3p']
+                Exceptions    = & $asLong $archRow['archive_exceptions_3p']
+                Batches       = & $asLong $archRow['archive_batches_3p']
+                FailedBatches = & $asLong $archRow['archive_failed_batches_3p']
+                Remaining     = [PSCustomObject]@{
+                    ConsumersBaseline      = $archiveConsumersBaseline3P
+                    AccountsBaseline       = $archiveAccountsBaseline3P
+                    ConsumersSinceBaseline = $archiveConsumersSince3P
+                    AccountsSinceBaseline  = $archiveAccountsSince3P
+                }
+            }
         }
 
         $archive = [PSCustomObject]@{
@@ -163,6 +255,7 @@ Add-PodeRoute -Method Get -Path '/api/dmops/lifetime-totals' -Authentication 'AD
                 AccountsSinceBaseline  = $archiveAccountsSince
                 Error                  = $remainingError
             }
+            ByWorkgroup   = $archByWorkgroup
         }
 
         $shellPurge = [PSCustomObject]@{
@@ -269,6 +362,17 @@ Add-PodeRoute -Method Get -Path '/api/dmops/today' -Authentication 'ADLogin' -Sc
 Add-PodeRoute -Method Get -Path '/api/dmops/execution-history' -Authentication 'ADLogin' -ScriptBlock {
     if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
+        # Optional line-of-business filter for the Archive history only:
+        # WFAARCH1 / WFAARCH3 narrow to one workgroup; anything else (ALL or
+        # absent) returns all archive batches. ShellPurge is never filtered.
+        $wgParam = $WebEvent.Query['workgroup']
+        $archiveWgFilter = ''
+        $archiveParams = @{}
+        if ($wgParam -eq 'WFAARCH1' -or $wgParam -eq 'WFAARCH3') {
+            $archiveWgFilter = "AND source_workgroup = @workgroup"
+            $archiveParams['workgroup'] = $wgParam
+        }
+
         # Archive daily summary
         $archRows = Invoke-XFActsQuery -Query @"
             SELECT
@@ -288,10 +392,11 @@ Add-PodeRoute -Method Get -Path '/api/dmops/execution-history' -Authentication '
                 SUM(CASE WHEN schedule_mode = 'Reduced' THEN 1 ELSE 0 END) AS reduced_batches
             FROM DmOps.Archive_BatchLog
             WHERE status IN ('Success', 'Failed')
+            $archiveWgFilter
             GROUP BY YEAR(batch_start_dttm), MONTH(batch_start_dttm),
                      CAST(batch_start_dttm AS DATE), DATENAME(dw, batch_start_dttm)
             ORDER BY run_date DESC
-"@
+"@ -Parameters $archiveParams
 
         # ShellPurge daily summary
         $purgeRows = Invoke-XFActsQuery -Query @"
@@ -374,6 +479,16 @@ Add-PodeRoute -Method Get -Path '/api/dmops/archive/batches-by-day' -Authenticat
             return
         }
 
+        # Optional line-of-business filter so the drilldown matches the
+        # filtered history aggregates (WFAARCH1 / WFAARCH3; else all).
+        $wgParam = $WebEvent.Query['workgroup']
+        $wgFilter = ''
+        $batchParams = @{ date = $date }
+        if ($wgParam -eq 'WFAARCH1' -or $wgParam -eq 'WFAARCH3') {
+            $wgFilter = "AND source_workgroup = @workgroup"
+            $batchParams['workgroup'] = $wgParam
+        }
+
         $rows = Invoke-XFActsQuery -Query @"
             SELECT
                 batch_id, batch_start_dttm, batch_end_dttm,
@@ -381,11 +496,12 @@ Add-PodeRoute -Method Get -Path '/api/dmops/archive/batches-by-day' -Authenticat
                 consumer_count, account_count, total_rows_deleted,
                 exception_count, tables_processed, tables_skipped, tables_failed,
                 duration_ms, status, error_message,
-                batch_retry, retry_batch_id, bidata_status, executed_by
+                batch_retry, retry_batch_id, bidata_status, source_workgroup, executed_by
             FROM DmOps.Archive_BatchLog
             WHERE CAST(batch_start_dttm AS DATE) = CAST(@date AS DATE)
+            $wgFilter
             ORDER BY batch_id DESC
-"@ -Parameters @{ date = $date }
+"@ -Parameters $batchParams
 
         $batches = @()
         foreach ($r in $rows) {
@@ -408,6 +524,7 @@ Add-PodeRoute -Method Get -Path '/api/dmops/archive/batches-by-day' -Authenticat
                 batch_retry        = if ($r['batch_retry']        -is [DBNull]) { 0 } else { [int]$r['batch_retry'] }
                 retry_batch_id     = if ($r['retry_batch_id']     -is [DBNull]) { $null } else { [long]$r['retry_batch_id'] }
                 bidata_status      = if ($r['bidata_status']      -is [DBNull]) { $null } else { [string]$r['bidata_status'] }
+                source_workgroup   = if ($r['source_workgroup']   -is [DBNull]) { $null } else { [string]$r['source_workgroup'] }
                 executed_by        = if ($r['executed_by']        -is [DBNull]) { $null } else { [string]$r['executed_by'] }
             }
         }
