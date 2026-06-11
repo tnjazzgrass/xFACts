@@ -31,6 +31,7 @@
    CONTENT: TEMPLATE PREVIEW SLIDEOUT CONTENT
    CONTENT: SAVE TEMPLATE MODAL CONTENT
    CONTENT: INLINE-STYLE REPLACEMENTS
+   CONTENT: STEP 4 COMPOSED MESSAGE BUILDER
    ============================================================================ */
 
 /* ============================================================================
@@ -1823,10 +1824,15 @@
 /* A data row in the trigger value grid. */
 .bdl-trigger-grid-row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) 60px;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) 140px;
     padding: 7px 10px;
     border-bottom: var(--size-border-thin) solid var(--color-border-divider);
     align-items: center;
+}
+
+/* Skipped state on a trigger grid row (locked and dimmed). */
+.bdl-trigger-row-skipped {
+    opacity: 0.55;
 }
 
 /* Position tag marking the last trigger grid row (no bottom border). */
@@ -1860,7 +1866,7 @@
     background: var(--color-bg-card);
     border: var(--size-border-thin) solid var(--color-border-default);
     border-radius: var(--size-radius-sm);
-    color: var(--color-accent-shared);
+    color: var(--color-text-primary);
     font-size: var(--font-size-content);
     font-family: var(--font-family-monospace);
     outline: none;
@@ -1871,6 +1877,14 @@
     border-color: var(--color-accent-platform);
 }
 
+/* Value-set token applied to a trigger input that holds a confirmed value. */
+.bdl-trigger-grid-input-set {
+}
+
+.bdl-trigger-grid-input.bdl-trigger-grid-input-set { /* confirmed trigger value shown in the shared accent */
+    color: var(--color-accent-shared);
+}
+
 /* The row-count text in a trigger grid row. */
 .bdl-trigger-row-count {
     font-size: var(--font-size-body);
@@ -1878,12 +1892,55 @@
     text-align: right;
 }
 
-/* The skipped-row text in a trigger grid row. */
-.bdl-trigger-row-skip {
+/* The action cell (status plus skip toggle) in a trigger grid row. */
+.bdl-trigger-row-action {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--size-spacing-sm);
+}
+
+/* The status text for a trigger value awaiting a decision. */
+.bdl-trigger-row-unset {
+    font-size: var(--font-size-body);
+    color: var(--color-accent-departmental);
+    font-style: italic;
+    text-align: right;
+}
+
+/* The status text for an explicitly skipped trigger value. */
+.bdl-trigger-row-skipped-label {
     font-size: var(--font-size-body);
     color: var(--color-text-subtle);
     font-style: italic;
     text-align: right;
+}
+
+/* The skip toggle button in a trigger grid row. */
+.bdl-trigger-skip-btn {
+    padding: var(--size-radius-xs) var(--size-spacing-sm);
+    font-size: var(--font-size-body);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    background: var(--color-bg-card);
+    color: var(--color-text-muted);
+    border-radius: var(--size-radius-sm);
+    cursor: pointer;
+    transition: all var(--duration-instant);
+}
+
+.bdl-trigger-skip-btn:hover { /* hover state for the skip toggle */
+    color: var(--color-text-primary);
+    border-color: var(--color-border-strong);
+}
+
+/* Active-state token for an engaged skip toggle. */
+.bdl-trigger-skip-btn-active {
+}
+
+.bdl-trigger-skip-btn.bdl-trigger-skip-btn-active { /* skip toggle when the row is skipped */
+    background: rgba(86, 156, 214, 0.15);
+    color: var(--color-accent-platform);
+    border-color: rgba(86, 156, 214, 0.4);
 }
 
 /* The show-all control beneath a trigger grid. */
@@ -1940,6 +1997,14 @@
 
 .bdl-fixed-value-text:focus { /* focus state for the fixed-value input */
     border-color: var(--color-accent-platform);
+}
+
+/* Value-set token applied to a blanket input that holds a value. */
+.bdl-value-set {
+}
+
+.bdl-fixed-value-text.bdl-value-set { /* filled blanket value shown in the shared accent */
+    color: var(--color-accent-shared);
 }
 
 /* The fixed-value input wrapper (hosts the suggestions dropdown). */
@@ -2129,6 +2194,15 @@
 /* The header background variant inside a field assignment card. */
 .bdl-field-assignment-header {
     background: #2a2820;
+}
+
+/* Complete-state token applied to an assignment or builder header. */
+.bdl-assignment-complete {
+}
+
+.bdl-field-assignment-header.bdl-assignment-complete { /* field assignment header tinted green when complete */
+    background: rgba(78, 201, 176, 0.1);
+    border-bottom-color: rgba(78, 201, 176, 0.3);
 }
 
 /* The name text inside a field assignment card. */
@@ -5236,4 +5310,266 @@
 .bdl-history-import-env.bdl-env-prod {
     background: rgba(244, 135, 113, 0.15);
     color: var(--color-status-critical);
+}
+
+/* ============================================================================
+   CONTENT: STEP 4 COMPOSED MESSAGE BUILDER
+   ----------------------------------------------------------------------------
+   The AR Log message builder shown for the CONSUMER_ACCOUNT_AR_LOG entity:
+   the builder panel, its ordered segment rows with the text/field type
+   toggle, the add-segment control, the fallback input, and the live preview
+   line. Reuses the assignment-card token vocabulary so it sits visually with
+   the field-assignment cards above it.
+   Prefix: bdl
+   ============================================================================ */
+
+/* The composed-message builder panel. */
+.bdl-composed-message-section {
+    margin-top: var(--size-spacing-lg);
+    background: var(--color-bg-page);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-lg);
+    overflow: hidden;
+}
+
+/* The header bar of the composed-message builder. */
+.bdl-composed-header {
+    display: flex;
+    align-items: center;
+    gap: var(--size-spacing-sm);
+}
+
+.bdl-composed-header.bdl-assignment-complete { /* builder header tinted green when a usable segment exists */
+    background: rgba(78, 201, 176, 0.1);
+    border-bottom-color: rgba(78, 201, 176, 0.3);
+}
+
+/* The required tag inside the composed-message header. */
+.bdl-composed-required {
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    padding: var(--size-radius-xs) var(--size-spacing-sm);
+    border-radius: var(--size-radius-sm);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    background: rgba(220, 220, 170, 0.15);
+    color: var(--color-accent-departmental);
+}
+
+/* The explanatory line under the composed-message header. */
+.bdl-composed-intro {
+    padding: var(--size-spacing-md) 14px 0;
+    font-size: var(--font-size-content);
+    color: var(--color-text-muted);
+}
+
+/* The list of composed-message segment rows. */
+.bdl-composed-segments {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-spacing-md);
+    padding: var(--size-spacing-lg) 14px var(--size-spacing-md);
+}
+
+/* A single composed-message segment row. */
+.bdl-composed-segment {
+    display: flex;
+    align-items: center;
+    gap: var(--size-spacing-md);
+}
+
+/* The ordinal badge at the start of a segment row. */
+.bdl-composed-segment-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--size-spacing-2xl);
+    height: var(--size-spacing-2xl);
+    border-radius: 50%;
+    background: var(--color-accent-platform);
+    color: var(--color-text-on-primary);
+    font-size: var(--font-size-default);
+    font-weight: 600;
+    flex-shrink: 0;
+}
+
+/* The text/field type toggle within a segment row. */
+.bdl-composed-type-toggle {
+    display: flex;
+    gap: 0;
+    flex-shrink: 0;
+}
+
+/* A type toggle button (text or field) within a segment row. */
+.bdl-composed-type-btn {
+    padding: 5px 14px;
+    font-size: var(--font-size-body);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    background: var(--color-bg-card);
+    color: var(--color-text-muted);
+    cursor: pointer;
+    transition: all var(--duration-instant);
+}
+
+.bdl-composed-type-btn:hover { /* hover state for an inactive type toggle button */
+    color: var(--color-text-primary);
+}
+
+/* Active-state token for the selected type toggle button. */
+.bdl-cm-type-active {
+}
+
+.bdl-composed-type-btn.bdl-cm-type-active { /* selected type toggle button */
+    background: rgba(86, 156, 214, 0.15);
+    color: var(--color-accent-platform);
+    border-color: rgba(86, 156, 214, 0.4);
+}
+
+/* The input area (text box or column dropdown) within a segment row. */
+.bdl-composed-segment-input {
+    flex: 1;
+    min-width: 0;
+}
+
+/* The free-text input for a text segment. */
+.bdl-composed-text-input {
+    width: 100%;
+    padding: var(--size-spacing-sm) var(--size-spacing-md);
+    background: var(--color-bg-card);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-default);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-content-lg);
+    font-family: var(--font-family-default);
+}
+
+.bdl-composed-text-input:focus { /* focus state for the text-segment input */
+    outline: none;
+    border-color: var(--color-accent-platform);
+}
+
+/* The file-column dropdown for a field segment. */
+.bdl-composed-field-select {
+    width: 100%;
+}
+
+/* The remove control on a segment row. */
+.bdl-composed-segment-remove {
+    background: none;
+    border: none;
+    color: var(--color-text-subtle);
+    cursor: pointer;
+    font-size: var(--font-size-heading-sm);
+    padding: var(--size-radius-xs) var(--size-spacing-sm);
+    border-radius: var(--size-radius-sm);
+    transition: all var(--duration-instant);
+    flex-shrink: 0;
+}
+
+.bdl-composed-segment-remove:hover { /* hover state for the segment remove control */
+    color: var(--color-status-critical);
+    background: var(--color-bg-card-hover);
+}
+
+/* The add-segment button. */
+.bdl-composed-add-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--size-spacing-sm);
+    width: calc(100% - 28px);
+    margin: 0 14px var(--size-spacing-md);
+    padding: var(--size-spacing-md) var(--size-spacing-xl);
+    background: none;
+    border: var(--size-border-thin) dashed var(--color-border-default);
+    border-radius: 5px;
+    color: var(--color-accent-platform);
+    font-size: var(--font-size-content-lg);
+    cursor: pointer;
+    transition: all var(--duration-instant);
+    font-family: var(--font-family-default);
+}
+
+.bdl-composed-add-btn:hover { /* hover state for the add-segment button */
+    background: var(--color-bg-page);
+    border-color: var(--color-accent-platform);
+}
+
+/* The trailing-separator cell within a composed-message segment row. */
+.bdl-composed-segment-sep {
+    flex: 0 0 70px;
+}
+
+/* The trailing-separator input within a segment row. */
+.bdl-composed-sep-input {
+    width: 100%;
+    padding: var(--size-spacing-sm) var(--size-spacing-sm);
+    background: var(--color-bg-card);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-default);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-content);
+    font-family: var(--font-family-default);
+    text-align: center;
+}
+
+.bdl-composed-sep-input:focus { /* focus state for the segment separator input */
+    outline: none;
+    border-color: var(--color-accent-platform);
+}
+
+/* The fallback-text row of the builder. */
+.bdl-composed-fallback-row {
+    padding: 0 14px var(--size-spacing-md);
+}
+
+/* The label above the fallback-text input. */
+.bdl-composed-fallback-label {
+    font-size: var(--font-size-content);
+    color: var(--color-text-muted);
+    margin-bottom: var(--size-spacing-xs);
+}
+
+/* The fallback-text input. */
+.bdl-composed-fallback-input {
+    width: 100%;
+    padding: var(--size-spacing-sm) var(--size-spacing-md);
+    background: var(--color-bg-card);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-default);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-content-lg);
+    font-family: var(--font-family-default);
+}
+
+.bdl-composed-fallback-input:focus { /* focus state for the fallback input */
+    outline: none;
+    border-color: var(--color-accent-platform);
+}
+
+/* The live-preview row at the bottom of the builder. */
+.bdl-composed-preview-row {
+    display: flex;
+    align-items: baseline;
+    gap: var(--size-spacing-sm);
+    padding: var(--size-spacing-md) 14px;
+    background: rgba(78, 201, 176, 0.08);
+    border-top: var(--size-border-thin) solid var(--color-border-default);
+    border-left: var(--size-radius-xs) solid var(--color-accent-shared);
+}
+
+/* The label of the live-preview row. */
+.bdl-composed-preview-label {
+    font-size: var(--font-size-content);
+    color: var(--color-accent-shared);
+    font-weight: 600;
+    flex-shrink: 0;
+}
+
+/* The composed sample value in the live-preview row. */
+.bdl-composed-preview-value {
+    font-size: var(--font-size-heading-sm);
+    color: var(--color-text-primary);
+    font-weight: 600;
+    word-break: break-word;
 }
