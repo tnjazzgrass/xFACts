@@ -101,7 +101,7 @@
                                    ]
                    },
                    {
-                       "name":  "BDL_CONSUMER_ACCOUNT_AR_LOG_dcota_20260608_161648",
+                       "name":  "BDL_CONSUMER_ACCOUNT_AR_LOG_dcota_20260611_073814",
                        "columns":  [
                                        {
                                            "ordinal":  1,
@@ -136,46 +136,14 @@
                                        },
                                        {
                                            "ordinal":  5,
-                                           "name":  "cnsmr_accnt_ar_mssg_txt",
+                                           "name":  "voapps_result_unmapped",
                                            "dataType":  "varchar",
-                                           "length":  "8000",
+                                           "length":  "MAX",
                                            "nullable":  true,
                                            "identity":  false
                                        },
                                        {
                                            "ordinal":  6,
-                                           "name":  "Action_Code_unmapped",
-                                           "dataType":  "varchar",
-                                           "length":  "MAX",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  7,
-                                           "name":  "Result_Code_unmapped",
-                                           "dataType":  "varchar",
-                                           "length":  "MAX",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  8,
-                                           "name":  "Helper_unmapped",
-                                           "dataType":  "varchar",
-                                           "length":  "MAX",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  9,
-                                           "name":  "AR_Event_unmapped",
-                                           "dataType":  "varchar",
-                                           "length":  "MAX",
-                                           "nullable":  true,
-                                           "identity":  false
-                                       },
-                                       {
-                                           "ordinal":  10,
                                            "name":  "voapps_code_unmapped",
                                            "dataType":  "varchar",
                                            "length":  "MAX",
@@ -183,7 +151,7 @@
                                            "identity":  false
                                        },
                                        {
-                                           "ordinal":  11,
+                                           "ordinal":  7,
                                            "name":  "voapps_timestamp_unmapped",
                                            "dataType":  "varchar",
                                            "length":  "MAX",
@@ -191,7 +159,7 @@
                                            "identity":  false
                                        },
                                        {
-                                           "ordinal":  12,
+                                           "ordinal":  8,
                                            "name":  "actn_cd_shrt_val_txt",
                                            "dataType":  "varchar",
                                            "length":  "8",
@@ -199,7 +167,7 @@
                                            "identity":  false
                                        },
                                        {
-                                           "ordinal":  13,
+                                           "ordinal":  9,
                                            "name":  "rslt_cd_shrt_val_txt",
                                            "dataType":  "varchar",
                                            "length":  "8",
@@ -207,7 +175,15 @@
                                            "identity":  false
                                        },
                                        {
-                                           "ordinal":  14,
+                                           "ordinal":  10,
+                                           "name":  "cnsmr_accnt_ar_mssg_txt",
+                                           "dataType":  "varchar",
+                                           "length":  "8000",
+                                           "nullable":  true,
+                                           "identity":  false
+                                       },
+                                       {
+                                           "ordinal":  11,
                                            "name":  "cnsmr_accnt_ar_log_crt_usr_nm",
                                            "dataType":  "varchar",
                                            "length":  "128",
