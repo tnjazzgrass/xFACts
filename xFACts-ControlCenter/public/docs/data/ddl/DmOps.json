@@ -198,6 +198,15 @@
                                        },
                                        {
                                            "ordinal":  6,
+                                           "name":  "source_workgroup",
+                                           "dataType":  "varchar",
+                                           "length":  "10",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "The crs5_oltp consumer workgroup this batch selected from, identifying the line of business: WFAARCH1 (1st party) or WFAARCH3 (3rd party)."
+                                       },
+                                       {
+                                           "ordinal":  7,
                                            "name":  "consumer_count",
                                            "dataType":  "int",
                                            "nullable":  false,
@@ -206,7 +215,7 @@
                                            "description":  "Number of consumers selected in this batch. May be less than batch_size_used if fewer consumers have TA_ARCH tagged accounts remaining."
                                        },
                                        {
-                                           "ordinal":  7,
+                                           "ordinal":  8,
                                            "name":  "account_count",
                                            "dataType":  "int",
                                            "nullable":  false,
@@ -215,7 +224,7 @@
                                            "description":  "Number of tagged accounts expanded from the selected consumers. Each consumer may have one or more TA_ARCH tagged accounts."
                                        },
                                        {
-                                           "ordinal":  8,
+                                           "ordinal":  9,
                                            "name":  "exception_count",
                                            "dataType":  "int",
                                            "nullable":  false,
@@ -224,7 +233,7 @@
                                            "description":  "Number of consumers in the candidate batch that failed runtime TC_ARCH re-verification and were removed before the delete sequence ran. See DmOps.Archive_ConsumerExceptionLog for the per-consumer detail."
                                        },
                                        {
-                                           "ordinal":  9,
+                                           "ordinal":  10,
                                            "name":  "total_rows_deleted",
                                            "dataType":  "bigint",
                                            "nullable":  false,
@@ -233,7 +242,7 @@
                                            "description":  "Sum of all rows deleted across all tables in the delete sequence. In preview mode, this is the count of rows that would be deleted."
                                        },
                                        {
-                                           "ordinal":  10,
+                                           "ordinal":  11,
                                            "name":  "tables_processed",
                                            "dataType":  "int",
                                            "nullable":  false,
@@ -242,7 +251,7 @@
                                            "description":  "Number of tables in the delete sequence that had rows deleted (non-zero row count)."
                                        },
                                        {
-                                           "ordinal":  11,
+                                           "ordinal":  12,
                                            "name":  "tables_skipped",
                                            "dataType":  "int",
                                            "nullable":  false,
@@ -251,7 +260,7 @@
                                            "description":  "Number of tables in the delete sequence that had zero rows and were skipped."
                                        },
                                        {
-                                           "ordinal":  12,
+                                           "ordinal":  13,
                                            "name":  "tables_failed",
                                            "dataType":  "int",
                                            "nullable":  false,
@@ -260,7 +269,7 @@
                                            "description":  "Number of tables in the delete sequence where the DELETE operation failed. Any value greater than zero results in a Failed batch status."
                                        },
                                        {
-                                           "ordinal":  13,
+                                           "ordinal":  14,
                                            "name":  "duration_ms",
                                            "dataType":  "int",
                                            "nullable":  true,
@@ -268,7 +277,7 @@
                                            "description":  "Total batch execution time in milliseconds. NULL while the batch is still running. Measured from script start to completion of cleanup."
                                        },
                                        {
-                                           "ordinal":  14,
+                                           "ordinal":  15,
                                            "name":  "status",
                                            "dataType":  "varchar",
                                            "length":  "20",
@@ -278,7 +287,7 @@
                                            "description":  "Final outcome of the batch execution."
                                        },
                                        {
-                                           "ordinal":  15,
+                                           "ordinal":  16,
                                            "name":  "error_message",
                                            "dataType":  "varchar",
                                            "length":  "2000",
@@ -287,7 +296,7 @@
                                            "description":  "Error detail when status is Failed. NULL on successful completion. Captures the first failure message from the delete sequence."
                                        },
                                        {
-                                           "ordinal":  16,
+                                           "ordinal":  17,
                                            "name":  "batch_retry",
                                            "dataType":  "bit",
                                            "nullable":  false,
@@ -296,7 +305,7 @@
                                            "description":  "Set to 1 when a retry batch has been created to reprocess this failed batch. Used by the retry check query (status = Failed AND batch_retry = 0) to identify unresolved failures. Set immediately at retry batch creation, not conditional on retry success."
                                        },
                                        {
-                                           "ordinal":  17,
+                                           "ordinal":  18,
                                            "name":  "retry_batch_id",
                                            "dataType":  "bigint",
                                            "nullable":  true,
@@ -304,7 +313,7 @@
                                            "description":  "Points to the batch_id that was created to retry this failed batch. NULL for non-failed batches and for failed batches that have not yet been retried. Populated at the same time as batch_retry. Provides audit trail linkage from original failure to retry attempt."
                                        },
                                        {
-                                           "ordinal":  18,
+                                           "ordinal":  19,
                                            "name":  "bidata_status",
                                            "dataType":  "varchar",
                                            "length":  "20",
@@ -313,7 +322,7 @@
                                            "description":  "Outcome of the BIDATA P-to-C migration step for this batch. NULL for batches that ran before this feature was added."
                                        },
                                        {
-                                           "ordinal":  19,
+                                           "ordinal":  20,
                                            "name":  "executed_by",
                                            "dataType":  "varchar",
                                            "length":  "128",
@@ -359,6 +368,10 @@
                                                 {
                                                     "name":  "CK_Archive_BatchLog_schedule_mode",
                                                     "definition":  "([schedule_mode]=\u0027Retry\u0027 OR [schedule_mode]=\u0027Manual\u0027 OR [schedule_mode]=\u0027Reduced\u0027 OR [schedule_mode]=\u0027Full\u0027)"
+                                                },
+                                                {
+                                                    "name":  "CK_Archive_BatchLog_source_workgroup",
+                                                    "definition":  "([source_workgroup]=\u0027WFAARCH3\u0027 OR [source_workgroup]=\u0027WFAARCH1\u0027)"
                                                 },
                                                 {
                                                     "name":  "CK_Archive_BatchLog_status",
