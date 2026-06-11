@@ -1764,7 +1764,7 @@ function adm_renderMetaCompExpanded(comp) {
     html += '</div>';
     html += '<div class="adm-meta-bump-hint">Next version. Current: ' + cc_escapeHtml(comp.version || '-') + '</div>';
     html += '<div class="adm-meta-desc-row">';
-    html += '<textarea class="adm-meta-desc-area" id="adm-desc-' + ce + '" placeholder="Description of changes\u2026" maxlength="1000" rows="3" data-action-input="adm-meta-desc-input" data-action-adm-comp="' + ce + '"></textarea>';
+    html += '<textarea class="adm-meta-desc-area" id="adm-desc-' + ce + '" placeholder="Description of changes\u2026" maxlength="4000" rows="3" data-action-input="adm-meta-desc-input" data-action-adm-comp="' + ce + '"></textarea>';
     html += '</div>';
     html += '<div class="adm-meta-bump-status" id="adm-bst-' + ce + '"></div>';
     html += '</div>';
