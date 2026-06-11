@@ -57,11 +57,51 @@
    Prefix: dmo
    ============================================================================ */
 
-/* The responsive grid container for the lifetime summary cards. */
-.dmo-summary-cards {
+/* The Archive totals grid: a single row of 4 summary cards. */
+.dmo-archive-totals-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    grid-template-columns: repeat(4, 1fr);
     gap: var(--size-spacing-lg);
+}
+
+/* The Shell Purge totals grid: two cards side by side. */
+.dmo-shell-totals-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--size-spacing-lg);
+}
+
+/* The Archive totals line-of-business filter button group. */
+.dmo-filter-group {
+    display: flex;
+    gap: 2px;
+}
+
+/* A line-of-business filter toggle button. */
+.dmo-filter-btn {
+    padding: var(--size-radius-sm) 10px;
+    background: var(--color-border-divider);
+    border: var(--size-border-thin) solid var(--color-border-strong);
+    border-radius: var(--size-radius-sm);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body);
+    cursor: pointer;
+    transition: all var(--duration-fast);
+}
+
+.dmo-filter-btn:hover { /* hover state for a line-of-business filter button */
+    background: var(--color-bg-card-hover);
+    color: var(--color-text-primary);
+}
+
+/* Marks the active line-of-business filter button. */
+.dmo-filter-active { }
+
+.dmo-filter-btn.dmo-filter-active { /* selected state for a line-of-business filter button */
+    background: var(--color-accent-platform);
+    border-color: var(--color-accent-platform);
+    color: var(--color-bg-page);
+    font-weight: 600;
 }
 
 /* A single lifetime summary card. */
@@ -484,6 +524,42 @@
 }
 
 .dmo-mode-badge.dmo-unknown { /* unknown-mode badge (subtle gray) */
+    color: var(--color-text-subtle);
+    background: var(--color-bg-card);
+    border-color: var(--color-border-default);
+}
+
+/* The line-of-business badge (1P/3P) shown on archive batch rows. */
+.dmo-wg-badge {
+    display: inline-block;
+    font-size: var(--font-size-default);
+    font-weight: 600;
+    padding: 1px var(--size-spacing-sm);
+    border-radius: var(--size-radius-sm);
+    border: var(--size-border-thin) solid transparent;
+    letter-spacing: 0.3px;
+    line-height: 14px;
+}
+
+/* Line-of-business tag marking a badge as first-party. */
+.dmo-wg-1p { }
+
+.dmo-wg-badge.dmo-wg-1p { /* first-party badge (blue) */
+    color: var(--color-accent-platform);
+    background: #1f2a3a;
+    border-color: #2d4d6e;
+}
+
+/* Line-of-business tag marking a badge as third-party. */
+.dmo-wg-3p { }
+
+.dmo-wg-badge.dmo-wg-3p { /* third-party badge (teal) */
+    color: var(--color-accent-shared);
+    background: #1f3a30;
+    border-color: #2d5a47;
+}
+
+.dmo-wg-badge.dmo-unknown { /* unknown line-of-business badge (subtle gray) */
     color: var(--color-text-subtle);
     background: var(--color-bg-card);
     border-color: var(--color-border-default);
