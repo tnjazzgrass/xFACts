@@ -21,7 +21,7 @@
    FUNCTIONS: INITIALIZATION
    FUNCTIONS: ACTION DISPATCH
    FUNCTIONS: LIVE POLLING
-   FUNCTIONS: LIVE ACTIVITY
+   FUNCTIONS: REVIEW REQUESTS
    FUNCTIONS: DISTRIBUTION
    FUNCTIONS: HISTORY TREE
    FUNCTIONS: DAY DETAIL
@@ -95,6 +95,8 @@ const bsv_clickActions = {
     'bsv-open-user-day':     bsv_handleOpenUserDay,
     'bsv-back-to-day':       bsv_handleBackToDay,
     'bsv-open-request-detail': bsv_handleOpenRequestDetail,
+    'bsv-open-history':      bsv_openHistory,
+    'bsv-close-history':     bsv_closeHistory,
     'bsv-close-slideout':    bsv_closeSlideout,
     'bsv-close-modal':       bsv_closeDetailModal
 };
@@ -138,22 +140,23 @@ var bsv_historyGroupList = [];
    ----------------------------------------------------------------------------
    The page boot function invoked by the cc-shared.js bootloader after this
    module loads. Registers the page-local delegated event listeners, performs
-   the first data load for all three sections, reads the refresh interval from
-   GlobalConfig, starts the refresh timers, and registers the engine-events
-   chrome with cc-shared.js.
+   the first data load for the Review Requests and Distribution sections,
+   reads the refresh interval from GlobalConfig, starts the refresh timers,
+   and registers the engine-events chrome with cc-shared.js. Request History
+   is loaded on demand when its tool card opens the history slide-up.
    Prefix: bsv
    ============================================================================ */
 
 /* Page boot entry point. The bootloader resolves window['bsv_init'] and calls
    it once after the module loads. Registers one delegated click listener per
-   stable container for page-local actions, loads each section, starts the
-   refresh timers, and hands the engine subsystem to cc-shared.js. */
+   stable container for page-local actions, loads the Review Requests and
+   Distribution sections, starts the refresh timers, and hands the engine
+   subsystem to cc-shared.js. */
 function bsv_init() {
     document.body.addEventListener('click', bsv_handleClick);
 
-    bsv_loadLiveActivity();
+    bsv_loadReviewRequests();
     bsv_loadDistribution();
-    bsv_loadHistory();
 
     bsv_loadRefreshInterval();
     bsv_startAutoRefresh();
@@ -247,58 +250,59 @@ function bsv_stopLivePolling() {
 /* Refreshes only the live-activity section. Called by the live-polling timer;
    updates the page timestamp once data lands. */
 function bsv_refreshLiveSections() {
-    bsv_loadLiveActivity();
+    bsv_loadReviewRequests();
     bsv_updateTimestamp((new Date()).toLocaleTimeString());
 }
 
-/* Refreshes the event-driven sections (Distribution and History). Called by
-   the bsv_onEngineProcessCompleted hook when a relevant orchestrator process
-   finishes. */
+/* Refreshes the event-driven section (Distribution). Called by the
+   bsv_onEngineProcessCompleted hook when a relevant orchestrator process
+   finishes. Request History is loaded on demand from the history slide-up and
+   is not part of the event-refresh path. */
 function bsv_refreshEventSections() {
     bsv_loadDistribution();
-    bsv_loadHistory();
 }
 
-/* Refreshes everything on the page. Called by the bsv_onPageRefresh hook (the
-   manual refresh button) and by the bsv_onPageResumed hook on tab resume. */
+/* Refreshes the on-page sections (Review Requests and Distribution). Called by
+   the bsv_onPageRefresh hook (the manual refresh button) and by the
+   bsv_onPageResumed hook on tab resume. Request History is loaded on demand
+   from its slide-up and fetches fresh each time it opens. */
 function bsv_refreshAll() {
-    bsv_loadLiveActivity();
+    bsv_loadReviewRequests();
     bsv_loadDistribution();
-    bsv_loadHistory();
     bsv_updateTimestamp((new Date()).toLocaleTimeString());
 }
 
 /* ============================================================================
-   FUNCTIONS: LIVE ACTIVITY
+   FUNCTIONS: REVIEW REQUESTS
    ----------------------------------------------------------------------------
-   The top-of-page live activity cards: one card per work group, showing
+   The Review Requests live activity cards: one card per work group, showing
    real-time counts of open, assigned, unassigned, new-today, and closed-today
    requests. Threshold-based urgency colors highlight groups with high
    unassigned counts.
    Prefix: bsv
    ============================================================================ */
 
-/* Loads live activity data and re-renders the cards. Updates the page
-   timestamp and clears the connection error banner on success. */
-function bsv_loadLiveActivity() {
+/* Loads review request activity data and re-renders the cards. Updates the
+   page timestamp and clears the connection error banner on success. */
+function bsv_loadReviewRequests() {
     cc_engineFetch('/api/business-services/live-activity')
         .then(function(data) {
             if (!data) return;
             bsv_clearConnectionError();
-            bsv_renderLiveActivity(data.groups);
+            bsv_renderReviewRequests(data.groups);
             bsv_updateTimestamp(data.timestamp);
         })
         .catch(function(err) {
-            bsv_showConnectionError('Failed to load live activity: ' + err.message);
+            bsv_showConnectionError('Failed to load review requests: ' + err.message);
         });
 }
 
-/* Renders the live activity cards: one per group, showing the five real-time
+/* Renders the review request cards: one per group, showing the five real-time
    counts. Urgency class is derived from the unassigned count and applied to
    the card root. */
-function bsv_renderLiveActivity(groups) {
-    var container = document.getElementById('bsv-live-activity-cards');
-    var loading = document.getElementById('bsv-live-activity-loading');
+function bsv_renderReviewRequests(groups) {
+    var container = document.getElementById('bsv-review-requests-cards');
+    var loading = document.getElementById('bsv-review-requests-loading');
 
     loading.classList.add('bsv-hidden');
     container.classList.remove('bsv-hidden');
@@ -446,12 +450,55 @@ function bsv_handleFlipCard(target, event) {
 /* ============================================================================
    FUNCTIONS: HISTORY TREE
    ----------------------------------------------------------------------------
-   The Year/Month/Day drill-down view of historical request volume. Loads
-   aggregate yearly counts on first render; expanding a year shows per-month
-   rows; expanding a month lazy-loads per-day rows from a separate endpoint.
-   The group filter badges above the tree scope every level of the drill-down.
+   The Year/Month/Day drill-down view of historical request volume, rendered
+   inside the history slide-up. Opening the slide-up loads aggregate yearly
+   counts; expanding a year shows per-month rows; expanding a month lazy-loads
+   per-day rows from a separate endpoint. The group filter badges in the
+   slide-up header scope every level of the drill-down.
    Prefix: bsv
    ============================================================================ */
+
+/* Opens the history slide-up and loads the history tree fresh. Resets the body
+   to its loading state, adds cc-open to the overlay, then adds cc-open to the
+   inner cc-dialog inside a requestAnimationFrame callback so the slide-up
+   transition runs. Dispatched from the bsv-open-history click action. */
+function bsv_openHistory() {
+    var loading = document.getElementById('bsv-history-loading');
+    var tree = document.getElementById('bsv-history-tree');
+    loading.classList.remove('bsv-hidden');
+    tree.classList.add('bsv-hidden');
+
+    var overlay = document.getElementById('bsv-slideup-history');
+    var dialog = overlay.querySelector('.cc-dialog');
+    overlay.classList.add('cc-open');
+    requestAnimationFrame(function() {
+        dialog.classList.add('cc-open');
+    });
+
+    bsv_loadHistory();
+}
+
+/* Closes the history slide-up. Attaches a one-shot transitionend listener to
+   the inner cc-dialog that removes cc-open from the overlay once the slide-out
+   transition finishes, then removes cc-open from the dialog to start it. Wired
+   from the close button and the overlay backdrop via the bsv-close-history
+   click action. The dispatcher passes the matched action element as target.
+   When target is the overlay itself, the click is only a dismiss if it landed
+   directly on the backdrop (event.target === target); a click that bubbled up
+   from the dialog interior is ignored. When target is the close button, the
+   slide-up always closes. */
+function bsv_closeHistory(target, event) {
+    if (event && target.id === 'bsv-slideup-history' && event.target !== target) {
+        return;
+    }
+    var overlay = document.getElementById('bsv-slideup-history');
+    var dialog = overlay.querySelector('.cc-dialog');
+    dialog.addEventListener('transitionend', function handler() {
+        dialog.removeEventListener('transitionend', handler);
+        overlay.classList.remove('cc-open');
+    });
+    dialog.classList.remove('cc-open');
+}
 
 /* Loads the history tree data scoped to the active group filter. The response
    carries the available group list (used to render the filter badges) and the
