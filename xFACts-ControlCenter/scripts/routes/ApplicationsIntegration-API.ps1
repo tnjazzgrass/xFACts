@@ -994,3 +994,76 @@ Add-PodeRoute -Method Post -Path '/api/apps-int/balance-sync' -Authentication 'A
         Write-PodeJsonResponse -Value @{ Error = $_.Exception.Message } -StatusCode 500
     }
 }
+Add-PodeRoute -Method Post -Path '/api/applications-integration/redaction-search' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+    try {
+        $body = $WebEvent.Data
+        $mode = $body.mode
+
+        if ($mode -eq 'id') {
+            if (-not $body.log_id) {
+                Write-PodeJsonResponse -Value @{ error = 'log_id required' } -StatusCode 400
+                return
+            }
+            $events = Get-RedactionEvent -LogId ([long]$body.log_id)
+        }
+        elseif ($mode -eq 'consumer') {
+            if (-not $body.agency_id -or -not $body.event_date) {
+                Write-PodeJsonResponse -Value @{ error = 'agency_id and event_date required' } -StatusCode 400
+                return
+            }
+            $events = Get-RedactionEvent -AgencyId $body.agency_id -EventDate $body.event_date
+        }
+        else {
+            Write-PodeJsonResponse -Value @{ error = 'invalid search mode' } -StatusCode 400
+            return
+        }
+
+        $shaped = @()
+        foreach ($ev in $events) {
+            $actn = ConvertFrom-DBNull $ev.actn_cd
+            $rslt = ConvertFrom-DBNull $ev.rslt_cd
+            $shaped += @{
+                log_id    = [string](ConvertFrom-DBNull $ev.cnsmr_accnt_ar_log_id)
+                cnsmr_id  = [string](ConvertFrom-DBNull $ev.cnsmr_id)
+                actn_cd   = $actn
+                rslt_cd   = $rslt
+                message   = [string](ConvertFrom-DBNull $ev.cnsmr_accnt_ar_mssg_txt)
+                is_likely = ([int]$actn -eq 352 -and [int]$rslt -eq 617)
+            }
+        }
+
+        Write-PodeJsonResponse -Value @{ events = $shaped }
+    }
+    catch {
+        Write-PodeJsonResponse -Value @{ error = $_.Exception.Message } -StatusCode 500
+    }
+}
+
+Add-PodeRoute -Method Post -Path '/api/applications-integration/redaction-apply' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+    try {
+        $body = $WebEvent.Data
+
+        if (-not $body.log_id) {
+            Write-PodeJsonResponse -Value @{ error = 'log_id required' } -StatusCode 400
+            return
+        }
+
+        $username = $WebEvent.Auth.User.Username
+        if ($username -and $username.Contains('\')) {
+            $username = $username.Split('\')[1]
+        }
+
+        Invoke-ProfanityRedaction `
+            -LogId ([long]$body.log_id) `
+            -Username $username `
+            -RedactionBody ([string]$body.redaction_body) `
+            -ReviewMessage ([string]$body.review_message)
+
+        Write-PodeJsonResponse -Value @{ success = $true }
+    }
+    catch {
+        Write-PodeJsonResponse -Value @{ error = $_.Exception.Message } -StatusCode 500
+    }
+}
