@@ -13,11 +13,6 @@
    custom property tokens in :root (e.g., var(--color-bg-card),
    var(--size-radius-default)).
 
-   This file replaces the legacy engine-events.css as the canonical shared
-   resource. During the page-by-page migration both files coexist; once
-   the last page has migrated to consume cc-shared.css, engine-events.css
-   is deleted.
-
    FILE ORGANIZATION
    -----------------
    FOUNDATION: TOKENS, RESETS, KEYFRAMES, ANIMATION UTILITIES
@@ -30,6 +25,7 @@
    CHROME: BACK LINK
    CONTENT: SECTIONS
    CONTENT: OVERLAYS
+   CONTENT: REDACTION
    FEEDBACK_OVERLAYS: IDLE OVERLAY
    ============================================================================ */
 
@@ -1775,6 +1771,244 @@ a { color: var(--color-text-link); }
     font-size: var(--font-size-content-lg);
     padding: var(--size-spacing-2xl);
     text-align: center;
+}
+
+/* ============================================================================
+   CONTENT: REDACTION
+   ----------------------------------------------------------------------------
+   Page-local content for the shared profanity redaction modal surfaced on the
+   Business Services and Applications & Integration pages. The modal structure
+   is the standard cc-modal-overlay / cc-dialog cc-dialog-modal chrome; this
+   section styles the body content the redaction tool builds: the search-mode
+   toggle, the search inputs, the candidate results list (with a flag for the
+   likely non-standard-reply events), the selected event's read-only message,
+   and the two editable message fields for the redaction and review events.
+   Prefix: cc
+   ============================================================================ */
+
+/* Vertical container for the redaction modal's search controls and results. */
+.cc-redaction-search {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-spacing-lg);
+    margin-bottom: var(--size-spacing-xl);
+}
+
+/* Horizontal row of search-mode toggle buttons. */
+.cc-redaction-mode-tabs {
+    display: flex;
+    gap: 0;
+}
+
+/* A single search-mode toggle button. */
+.cc-redaction-mode-tab {
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--color-text-muted);
+    font-family: var(--font-family-default);
+    font-size: var(--font-size-content);
+    font-weight: 600;
+    padding: var(--size-spacing-sm) var(--size-spacing-xl);
+    cursor: pointer;
+    transition: all var(--duration-fast);
+}
+
+.cc-redaction-mode-tab:hover { /* hover state -- brighten the tab label */
+    color: var(--color-text-primary);
+}
+
+/* State tag marking the active search-mode tab. */
+.cc-active { }
+
+.cc-redaction-mode-tab.cc-active { /* active state -- shared-teal label and underline */
+    color: var(--color-accent-shared);
+    border-bottom-color: var(--color-accent-shared);
+}
+
+/* Row holding the search input fields for the active mode. */
+.cc-redaction-input-row {
+    display: flex;
+    gap: var(--size-spacing-md);
+    align-items: flex-end;
+    flex-wrap: wrap;
+}
+
+/* A labeled field wrapper inside the search input row. */
+.cc-redaction-field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-spacing-xs);
+}
+
+/* Small uppercase label above a redaction search field. */
+.cc-redaction-label {
+    font-size: var(--font-size-default);
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+/* Text input used for the redaction search fields. */
+.cc-redaction-input {
+    background: var(--color-bg-page);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    color: var(--color-text-primary);
+    font-family: var(--font-family-default);
+    font-size: var(--font-size-content);
+    padding: var(--size-spacing-sm) 10px;
+    border-radius: var(--size-radius-default);
+    outline: none;
+    width: 200px;
+}
+
+.cc-redaction-input:focus { /* focus state -- shared-teal accent border */
+    border-color: var(--color-accent-shared);
+}
+
+/* Caption shown above the candidate results list. */
+.cc-redaction-results-caption {
+    font-size: var(--font-size-body);
+    color: var(--color-text-muted);
+    margin-bottom: var(--size-spacing-sm);
+}
+
+/* Scrollable container for the candidate event results. */
+.cc-redaction-results {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-spacing-xs);
+    max-height: 220px;
+    overflow-y: auto;
+}
+
+/* A single candidate event row in the results list. */
+.cc-redaction-result-row {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: var(--size-spacing-md) var(--size-spacing-lg);
+    background: var(--color-bg-card);
+    border: var(--size-border-thin) solid var(--color-border-divider);
+    border-radius: var(--size-radius-sm);
+    cursor: pointer;
+    transition: border-color var(--duration-instant);
+}
+
+.cc-redaction-result-row:hover { /* hover state -- lighten the border */
+    border-color: var(--color-border-strong);
+}
+
+/* State tag marking a result row as the current selection. */
+.cc-selected { }
+
+.cc-redaction-result-row.cc-selected { /* selected state -- shared-teal tint border and background */
+    border-color: var(--color-accent-shared);
+    background: var(--color-bg-card-hover);
+}
+
+/* State tag marking a result row as a likely non-standard reply (actn 352 / rslt 617). */
+.cc-likely { }
+
+.cc-redaction-result-row.cc-likely { /* likely-target state -- left accent stripe in shared teal */
+    border-left: 3px solid var(--color-accent-shared);
+}
+
+/* Top line of a result row: id, codes, and the likely flag. */
+.cc-redaction-result-head {
+    display: flex;
+    align-items: center;
+    gap: var(--size-spacing-md);
+    font-size: var(--font-size-body);
+    color: var(--color-text-muted);
+}
+
+/* Monospace event id in a result row head. */
+.cc-redaction-result-id {
+    font-family: var(--font-family-monospace);
+    color: var(--color-text-primary);
+}
+
+/* The likely-target badge shown on flagged result rows. */
+.cc-redaction-likely-badge {
+    font-size: var(--font-size-xs);
+    font-weight: 700;
+    color: var(--color-accent-shared);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* The message-preview line in a result row. */
+.cc-redaction-result-preview {
+    font-size: var(--font-size-content);
+    color: var(--color-text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Wrapper for the selected event's detail and the editable message fields. */
+.cc-redaction-detail {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-spacing-lg);
+    border-top: var(--size-border-thin) solid var(--color-border-divider);
+    padding-top: var(--size-spacing-lg);
+}
+
+/* Read-only display of the selected event's current message text. */
+.cc-redaction-current {
+    background: var(--color-bg-page);
+    border: var(--size-border-thin) solid var(--color-border-divider);
+    border-radius: var(--size-radius-default);
+    padding: var(--size-spacing-lg);
+    font-size: var(--font-size-content);
+    color: var(--color-text-primary);
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+/* An editable message field block (label plus textarea). */
+.cc-redaction-message-field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-spacing-xs);
+}
+
+/* The editable textarea for a redaction or review message. */
+.cc-redaction-textarea {
+    background: var(--color-bg-page);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    color: var(--color-text-primary);
+    font-family: var(--font-family-default);
+    font-size: var(--font-size-content);
+    line-height: 1.5;
+    padding: var(--size-spacing-sm) 10px;
+    border-radius: var(--size-radius-default);
+    outline: none;
+    width: 100%;
+    min-height: 60px;
+    resize: vertical;
+    box-sizing: border-box;
+}
+
+.cc-redaction-textarea:focus { /* focus state -- shared-teal accent border */
+    border-color: var(--color-accent-shared);
+}
+
+/* Centered status/empty caption shown inside the redaction modal body. */
+.cc-redaction-status {
+    text-align: center;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-content);
+    padding: var(--size-spacing-lg);
+}
+
+/* State tag marking a redaction status caption as an error message. */
+.cc-error { }
+
+.cc-redaction-status.cc-error { /* error state -- critical-status color */
+    color: var(--color-status-critical);
 }
 
 /* ============================================================================
