@@ -7,12 +7,13 @@
    Universal chrome (nav bar, header bar, refresh info, sections, engine
    cards, connection banner, slide overlays, modals, animations, design
    tokens) is provided by cc-shared.css per the CC Page Chrome Contract.
-   This file contains only the BS page's local content classes -- the live
-   activity card grid, distribution flip cards with per-user fill bars,
-   group filter badges, the year/month/day history tree, page-local
-   slideout content rendered inside the shared cc-dialog cc-dialog-slide,
-   and the request detail content rendered inside the shared cc-dialog
-   cc-dialog-modal cc-wide.
+   This file contains only the BS page's local content classes -- the
+   Business Services Tools card grid, the live activity card grid (rendered
+   under the Review Requests heading), distribution flip cards with per-user
+   fill bars, group filter badges, the year/month/day history tree (rendered
+   inside the history slide-up), page-local slideout content rendered inside
+   the shared cc-dialog cc-dialog-slide, and the request detail content
+   rendered inside the shared cc-dialog cc-dialog-modal cc-wide.
 
    All page-local classes are prefixed bsv- to make scope visible at a
    glance: bsv-* in HTML or in another CSS file is unambiguously a
@@ -23,6 +24,7 @@
    FILE ORGANIZATION
    -----------------
    LAYOUT: TOP ROW
+   CONTENT: TOOL CARDS
    CONTENT: SECTION BODY
    CONTENT: LIVE ACTIVITY CARDS
    CONTENT: DISTRIBUTION FLIP CARDS
@@ -37,10 +39,10 @@
 /* ============================================================================
    LAYOUT: TOP ROW
    ----------------------------------------------------------------------------
-   The top row of the BS page splits horizontally into a wide content
-   column on the left (Live Activity cards) and a narrow column on the
-   right (Group Filter badges and the start of the History tree). The
-   width tiers are page-specific: 1fr left, 320px right.
+   The Review Requests workspace row splits horizontally into a wide content
+   column on the left (the live activity cards) and a narrow column on the
+   right (the distribution flip cards). The width tiers are page-specific:
+   1fr left, 320px right.
    Prefix: bsv
    ============================================================================ */
 
@@ -50,6 +52,77 @@
     grid-template-columns: 1fr 320px;
     gap: 15px;
     margin-bottom: 15px;
+}
+
+/* ============================================================================
+   CONTENT: TOOL CARDS
+   ----------------------------------------------------------------------------
+   The Business Services Tools card grid shown in the master control section
+   at the top of the page. Cards are clickable tiles with an icon, a label,
+   and a status line; the live card opens the Request History slide-up. Future
+   tools are dimmed, non-interactive placeholders that size identically to the
+   live cards so the grid reads as a normal dashboard.
+   Prefix: bsv
+   ============================================================================ */
+
+/* Responsive grid container that lays out the tool cards. */
+.bsv-tool-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 10px;
+}
+
+/* A single clickable tool-card tile. */
+.bsv-tool-card {
+    display: block;
+    width: 100%;
+    font-family: inherit;
+    font-size: inherit;
+    color: inherit;
+    text-decoration: none;
+    background: var(--color-bg-page);
+    border: var(--size-border-thin) solid var(--color-border-divider);
+    border-radius: var(--size-radius-lg);
+    padding: var(--size-spacing-xl);
+    text-align: center;
+    cursor: pointer;
+    transition: border-color var(--duration-fast);
+}
+
+.bsv-tool-card:hover { /* hover state -- accent the border in departmental yellow */
+    border-color: var(--color-accent-departmental);
+}
+
+/* State tag marking a tool card as a not-yet-available placeholder. */
+.bsv-placeholder { }
+
+.bsv-tool-card.bsv-placeholder { /* placeholder state -- dimmed and non-interactive */
+    opacity: 0.4;
+    cursor: default;
+}
+
+.bsv-tool-card.bsv-placeholder:hover { /* placeholder hover -- suppress the border accent */
+    border-color: var(--color-border-divider);
+}
+
+/* The large emoji/glyph icon at the top of a tool card. */
+.bsv-tool-icon {
+    font-size: 28px;
+    margin-bottom: var(--size-spacing-sm);
+}
+
+/* The tool name label below the icon. */
+.bsv-tool-label {
+    font-size: var(--font-size-content-lg);
+    font-weight: 600;
+    color: var(--color-text-primary);
+    margin-bottom: var(--size-spacing-xs);
+}
+
+/* The small status caption at the bottom of a tool card. */
+.bsv-tool-status {
+    font-size: var(--font-size-body);
+    color: var(--color-text-muted);
 }
 
 /* ============================================================================
@@ -606,6 +679,15 @@
 /* Alternating row stripe applied to odd-indexed day rows for readability. */
 .bsv-row-odd {
     background: #242424;
+}
+
+/* The total-request count caption shown in the history slide-up header actions. */
+.bsv-history-count {
+    font-size: var(--font-size-content);
+    font-weight: 600;
+    color: var(--color-accent-shared);
+    text-transform: uppercase;
+    letter-spacing: 1px;
 }
 
 /* ============================================================================
