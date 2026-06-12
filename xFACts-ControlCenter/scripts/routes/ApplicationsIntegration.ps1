@@ -33,6 +33,11 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-06-11  Added a live Profanity Redaction tool card to the Debt Manager
+#             Tools section, wired to the shared cc-open-redaction chrome action
+#             that opens the shared redaction modal in cc-shared.js. The tool's
+#             logic, modal, and styling live in the shared layer; this page
+#             contributes the tile and its two API endpoints.
 # 2026-06-07  Converted the BDL Catalog panel and detail dock to shared chrome
 #             overlay constructs: the catalog panel is now a cc-slideup-overlay
 #             / cc-dialog-slideup, the detail dock is a cc-dialog-dock, and the
@@ -126,6 +131,11 @@ $navHtml
                 <div class="aai-tool-label">BDL Import</div>
                 <div class="aai-tool-status">Bulk Data Load</div>
             </a>
+            <button class="aai-tool-card" data-action-click="cc-open-redaction">
+                <div class="aai-tool-icon">&#128683;</div>
+                <div class="aai-tool-label">Profanity Redaction</div>
+                <div class="aai-tool-status">Redact AR Events</div>
+            </button>
             <div class="aai-tool-card aai-placeholder">
                 <div class="aai-tool-icon">&#128100;</div>
                 <div class="aai-tool-label">Consumer Ops</div>
