@@ -35,6 +35,7 @@
    CHROME: SHARED FORMATTING
    CHROME: SHARED PAGE REFRESH
    CHROME: SHARED MODALS
+   CHROME: REDACTION
    ============================================================================ */
 
 /* ============================================================================
@@ -77,6 +78,11 @@ const cc_ENGINE_RECONNECT_SEC = 3;
 
 /* Countdown ticker interval in milliseconds. */
 const cc_ENGINE_TICK_MS = 1000;
+
+/* Default replacement body for a redacted cnsmr_accnt_ar_log event message in
+   the shared profanity redaction modal. The original received-timestamp tail,
+   when present, is preserved and appended server-side. */
+const cc_REDACTION_DEFAULT_BODY = 'Consumer Replied: Non-standard vulgar text reply - do not text.';
 
 /* ============================================================================
    STATE: ENGINE STATE
@@ -198,8 +204,9 @@ const cc_RECOGNIZED_EVENTS = ['click', 'change', 'input', 'submit',
    values to handler functions exposed by other sections of this file.
    Entries are added one at a time as pages surface concrete needs. */
 const cc_clickActions = {
-    'cc-page-refresh': cc_pageRefresh,
-    'cc-reload-page':  cc_reloadPage
+    'cc-page-refresh':   cc_pageRefresh,
+    'cc-reload-page':    cc_reloadPage,
+    'cc-open-redaction': cc_openRedaction
 };
 
 /* Shared chrome change-action dispatch table. Parallel to cc_clickActions
@@ -1736,4 +1743,289 @@ function cc_showConfirm(message, options) {
             resolve(true);
         });
     });
+}
+
+/* ============================================================================
+   CHROME: REDACTION
+   ----------------------------------------------------------------------------
+   The shared profanity redaction modal, surfaced via the cc-open-redaction
+   click action on the Business Services and Applications & Integration pages.
+   cc_openRedaction builds and appends the modal; the search drives
+   /api/.../redaction-search through the page's own slug, the operator selects
+   a candidate event, reviews and optionally edits the redaction and review
+   messages, confirms via cc_showConfirm, and cc_redactionApply posts to
+   /api/.../redaction-apply. All markup is built here (the dynamic-modal
+   pattern shared with cc_showAlert / cc_showConfirm); the cc-redaction-*
+   content classes live in cc-shared.css. The API base path is derived from
+   the page's data-cc-page slug so one shared implementation serves every page
+   that surfaces the tool.
+   Prefix: cc
+   ============================================================================ */
+
+/* Resolves the redaction API base path for the current page from the body's
+   data-cc-page slug, so the shared modal posts to the page's own endpoints. */
+function cc_redactionApiBase() {
+    var slug = document.body.dataset.ccPage || '';
+    return '/api/' + slug;
+}
+
+/* Builds and appends the redaction modal overlay to document.body, wires its
+   controls, and focuses the search input. Dispatched from the cc-open-redaction
+   click action. */
+function cc_openRedaction() {
+    if (document.getElementById('cc-modal-redaction')) {
+        return;
+    }
+
+    var overlay = document.createElement('div');
+    overlay.id = 'cc-modal-redaction';
+    overlay.className = 'cc-modal-overlay';
+    overlay.innerHTML = cc_redactionModalHtml();
+    document.body.appendChild(overlay);
+
+    overlay.addEventListener('click', function(event) {
+        if (event.target === overlay) {
+            cc_closeRedaction();
+        }
+    });
+
+    document.getElementById('cc-redaction-close').addEventListener('click', cc_closeRedaction);
+    document.getElementById('cc-redaction-tab-id').addEventListener('click', function() {
+        cc_redactionSetMode('id');
+    });
+    document.getElementById('cc-redaction-tab-consumer').addEventListener('click', function() {
+        cc_redactionSetMode('consumer');
+    });
+    document.getElementById('cc-redaction-search-btn').addEventListener('click', cc_redactionSearch);
+
+    cc_redactionSetMode('id');
+}
+
+/* Returns the inner HTML for the redaction modal dialog. The body holds the
+   search controls and an empty results/detail region the handlers populate. */
+function cc_redactionModalHtml() {
+    return '<div class="cc-dialog cc-dialog-modal cc-wide">'
+        + '<div class="cc-dialog-header">'
+        + '<h3 class="cc-dialog-title">Profanity Redaction</h3>'
+        + '<button class="cc-dialog-close" id="cc-redaction-close">&times;</button>'
+        + '</div>'
+        + '<div class="cc-dialog-body">'
+        + '<div class="cc-redaction-search">'
+        + '<div class="cc-redaction-mode-tabs">'
+        + '<button class="cc-redaction-mode-tab" id="cc-redaction-tab-id">By Event ID</button>'
+        + '<button class="cc-redaction-mode-tab" id="cc-redaction-tab-consumer">By Consumer + Date</button>'
+        + '</div>'
+        + '<div class="cc-redaction-input-row" id="cc-redaction-inputs"></div>'
+        + '</div>'
+        + '<div id="cc-redaction-results-region"></div>'
+        + '<div id="cc-redaction-detail-region"></div>'
+        + '</div>'
+        + '</div>';
+}
+
+/* Switches the search mode between 'id' and 'consumer', updates the active tab
+   styling, and renders the matching input fields. Clears any prior results and
+   detail so a mode switch starts clean. */
+function cc_redactionSetMode(mode) {
+    var idTab = document.getElementById('cc-redaction-tab-id');
+    var consumerTab = document.getElementById('cc-redaction-tab-consumer');
+    idTab.classList.toggle('cc-active', mode === 'id');
+    consumerTab.classList.toggle('cc-active', mode === 'consumer');
+
+    var inputs = document.getElementById('cc-redaction-inputs');
+    if (mode === 'id') {
+        inputs.innerHTML = '<div class="cc-redaction-field">'
+            + '<span class="cc-redaction-label">Event ID</span>'
+            + '<input type="text" class="cc-redaction-input" id="cc-redaction-log-id" placeholder="cnsmr_accnt_ar_log_id">'
+            + '</div>'
+            + '<button class="cc-dialog-btn-primary" id="cc-redaction-search-btn">Search</button>';
+    } else {
+        inputs.innerHTML = '<div class="cc-redaction-field">'
+            + '<span class="cc-redaction-label">Consumer ID</span>'
+            + '<input type="text" class="cc-redaction-input" id="cc-redaction-agency-id" placeholder="Agency consumer id">'
+            + '</div>'
+            + '<div class="cc-redaction-field">'
+            + '<span class="cc-redaction-label">Event Date</span>'
+            + '<input type="date" class="cc-redaction-input" id="cc-redaction-event-date">'
+            + '</div>'
+            + '<button class="cc-dialog-btn-primary" id="cc-redaction-search-btn">Search</button>';
+    }
+
+    document.getElementById('cc-redaction-search-btn').addEventListener('click', cc_redactionSearch);
+    document.getElementById('cc-redaction-results-region').innerHTML = '';
+    document.getElementById('cc-redaction-detail-region').innerHTML = '';
+}
+
+/* Reads the active search inputs, posts to the redaction-search endpoint, and
+   renders the candidate results. Shows an inline status while in flight and on
+   error. */
+function cc_redactionSearch() {
+    var idInput = document.getElementById('cc-redaction-log-id');
+    var mode = idInput ? 'id' : 'consumer';
+    var payload = { mode: mode };
+
+    if (mode === 'id') {
+        var logId = idInput.value.trim();
+        if (!logId) {
+            return;
+        }
+        payload.log_id = logId;
+    } else {
+        var agencyId = document.getElementById('cc-redaction-agency-id').value.trim();
+        var eventDate = document.getElementById('cc-redaction-event-date').value;
+        if (!agencyId || !eventDate) {
+            return;
+        }
+        payload.agency_id = agencyId;
+        payload.event_date = eventDate;
+    }
+
+    var resultsRegion = document.getElementById('cc-redaction-results-region');
+    var detailRegion = document.getElementById('cc-redaction-detail-region');
+    detailRegion.innerHTML = '';
+    resultsRegion.innerHTML = '<div class="cc-redaction-status">Searching...</div>';
+
+    cc_engineFetch(cc_redactionApiBase() + '/redaction-search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    })
+        .then(function(data) {
+            if (!data) {
+                return;
+            }
+            if (data.error) {
+                resultsRegion.innerHTML = '<div class="cc-redaction-status cc-error">' + cc_escapeHtml(data.error) + '</div>';
+                return;
+            }
+            cc_redactionRenderResults(data.events || []);
+        })
+        .catch(function(err) {
+            resultsRegion.innerHTML = '<div class="cc-redaction-status cc-error">Search failed: ' + cc_escapeHtml(err.message) + '</div>';
+        });
+}
+
+/* Renders the candidate result rows into the results region. Each row shows the
+   event id, its action/result codes, a likely-target flag for the non-standard
+   reply codes, and a message preview. Clicking a row selects it for redaction. */
+function cc_redactionRenderResults(events) {
+    var resultsRegion = document.getElementById('cc-redaction-results-region');
+
+    if (!events.length) {
+        resultsRegion.innerHTML = '<div class="cc-redaction-status">No matching events found.</div>';
+        return;
+    }
+
+    var html = '<div class="cc-redaction-results-caption">' + events.length + ' event(s) found. Select the event to redact:</div>';
+    html += '<div class="cc-redaction-results">';
+    events.forEach(function(ev) {
+        var likely = ev.is_likely ? ' cc-likely' : '';
+        var badge = ev.is_likely ? '<span class="cc-redaction-likely-badge">Likely</span>' : '';
+        html += '<div class="cc-redaction-result-row' + likely + '">'
+            + '<div class="cc-redaction-result-head">'
+            + '<span class="cc-redaction-result-id">' + cc_escapeHtml(String(ev.log_id)) + '</span>'
+            + '<span>actn ' + cc_escapeHtml(String(ev.actn_cd)) + ' / rslt ' + cc_escapeHtml(String(ev.rslt_cd)) + '</span>'
+            + badge
+            + '</div>'
+            + '<div class="cc-redaction-result-preview">' + cc_escapeHtml(ev.message || '') + '</div>'
+            + '</div>';
+    });
+    html += '</div>';
+    resultsRegion.innerHTML = html;
+
+    var rows = resultsRegion.querySelectorAll('.cc-redaction-result-row');
+    Array.prototype.forEach.call(rows, function(row, index) {
+        row.addEventListener('click', function() {
+            cc_redactionSelect(events[index], rows, row);
+        });
+    });
+}
+
+/* Marks the clicked result row as selected and renders the redaction detail:
+   the event's current message read-only, plus the editable redaction and review
+   message fields pre-filled with their defaults. */
+function cc_redactionSelect(ev, rows, selectedRow) {
+    Array.prototype.forEach.call(rows, function(r) {
+        r.classList.remove('cc-selected');
+    });
+    selectedRow.classList.add('cc-selected');
+
+    var reviewDefault = 'Non-standard vulgar text reviewed: ID: ' + ev.log_id;
+
+    var detailRegion = document.getElementById('cc-redaction-detail-region');
+    detailRegion.innerHTML = '<div class="cc-redaction-detail">'
+        + '<div class="cc-redaction-message-field">'
+        + '<span class="cc-redaction-label">Current Message</span>'
+        + '<div class="cc-redaction-current">' + cc_escapeHtml(ev.message || '') + '</div>'
+        + '</div>'
+        + '<div class="cc-redaction-message-field">'
+        + '<span class="cc-redaction-label">Redaction Message (Redacted Event)</span>'
+        + '<textarea class="cc-redaction-textarea" id="cc-redaction-body"></textarea>'
+        + '</div>'
+        + '<div class="cc-redaction-message-field">'
+        + '<span class="cc-redaction-label">Review Message (New Event)</span>'
+        + '<textarea class="cc-redaction-textarea" id="cc-redaction-review"></textarea>'
+        + '</div>'
+        + '<div class="cc-dialog-actions">'
+        + '<button class="cc-dialog-btn-danger" id="cc-redaction-apply-btn">Redact Event</button>'
+        + '</div>'
+        + '</div>';
+
+    document.getElementById('cc-redaction-body').value = cc_REDACTION_DEFAULT_BODY;
+    document.getElementById('cc-redaction-review').value = reviewDefault;
+    document.getElementById('cc-redaction-apply-btn').addEventListener('click', function() {
+        cc_redactionApply(ev.log_id);
+    });
+}
+
+/* Confirms the redaction via cc_showConfirm, then posts the log id and the
+   edited redaction and review messages to the redaction-apply endpoint. On
+   success notifies via cc_showAlert and closes the modal; on error surfaces the
+   message via cc_showAlert. */
+function cc_redactionApply(logId) {
+    var redactionBody = document.getElementById('cc-redaction-body').value;
+    var reviewMessage = document.getElementById('cc-redaction-review').value;
+
+    cc_showConfirm('<p class="cc-dialog-paragraph cc-last">Redact this event? This updates the live Debt Manager record and cannot be undone.</p>', {
+        html: true,
+        title: 'Confirm Redaction',
+        confirmLabel: 'Redact',
+        confirmClass: 'cc-dialog-btn-danger'
+    }).then(function(confirmed) {
+        if (!confirmed) {
+            return;
+        }
+        cc_engineFetch(cc_redactionApiBase() + '/redaction-apply', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                log_id: logId,
+                redaction_body: redactionBody,
+                review_message: reviewMessage
+            })
+        })
+            .then(function(data) {
+                if (!data) {
+                    return;
+                }
+                if (data.error) {
+                    cc_showAlert('Redaction failed: ' + data.error, { title: 'Error' });
+                    return;
+                }
+                cc_closeRedaction();
+                cc_showAlert('Event redacted and review event recorded.', { title: 'Redaction Complete' });
+            })
+            .catch(function(err) {
+                cc_showAlert('Redaction failed: ' + err.message, { title: 'Error' });
+            });
+    });
+}
+
+/* Removes the redaction modal overlay from document.body. Wired from the close
+   button and a backdrop click. */
+function cc_closeRedaction() {
+    var overlay = document.getElementById('cc-modal-redaction');
+    if (overlay) {
+        overlay.remove();
+    }
 }
