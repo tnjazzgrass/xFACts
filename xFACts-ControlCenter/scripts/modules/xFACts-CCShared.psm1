@@ -38,6 +38,7 @@
     FUNCTIONS: ACCESS DENIED RESPONSES
     FUNCTIONS: API CACHE
     FUNCTIONS: CRS5 DATABASE
+    FUNCTIONS: PROFANITY REDACTION
     FUNCTIONS: DMOPS CACHE
     FUNCTIONS: SERVICE CREDENTIALS
     FUNCTIONS: AG READ QUERY
@@ -1935,6 +1936,192 @@ function Invoke-CRS5WriteQuery {
 }
 
 <# ============================================================================
+   FUNCTIONS: PROFANITY REDACTION
+   ----------------------------------------------------------------------------
+   Shared logic for the profanity redaction tool surfaced on the Business
+   Services and Applications & Integration pages. Get-RedactionEvent finds
+   candidate cnsmr_accnt_ar_log events to redact; Invoke-ProfanityRedaction
+   performs the paired write (redact the message, insert a review event) as a
+   single CRS5 transaction. Both consume the CRS5 read/write helpers above.
+   Prefix: (none)
+   ============================================================================ #>
+
+function Get-RedactionEvent {
+    [CmdletBinding(DefaultParameterSetName = 'ById')]
+    param(
+        [Parameter(Mandatory, ParameterSetName = 'ById')]
+        [long]$LogId,
+
+        [Parameter(Mandatory, ParameterSetName = 'ByConsumer')]
+        [string]$AgencyId,
+
+        [Parameter(Mandatory, ParameterSetName = 'ByConsumer')]
+        [string]$EventDate
+    )
+
+    <#
+    .SYNOPSIS
+        Finds cnsmr_accnt_ar_log events that are candidates for profanity redaction.
+
+    .DESCRIPTION
+        Searches the CRS5 cnsmr_accnt_ar_log table for events to redact, in one
+        of two modes. ById returns the single event with the supplied
+        cnsmr_accnt_ar_log_id. ByConsumer joins to the cnsmr table on cnsmr_id,
+        filters by the consumer's agency identifier (cnsmr_idntfr_agncy_id) and
+        the event date (the date portion of upsrt_dttm), and returns every event
+        for that consumer on that day. Results are ordered so the events carrying
+        the non-standard-reply action/result codes (actn_cd 352, rslt_cd 617)
+        sort first, since those are the likely redaction targets, with everything
+        else following. Read-only; uses Invoke-CRS5ReadQuery.
+
+    .PARAMETER LogId
+        The cnsmr_accnt_ar_log_id of the specific event to retrieve (ById mode).
+
+    .PARAMETER AgencyId
+        The consumer's cnsmr_idntfr_agncy_id to search by (ByConsumer mode).
+
+    .PARAMETER EventDate
+        The event date (yyyy-MM-dd) to search by (ByConsumer mode).
+    #>
+
+    if ($PSCmdlet.ParameterSetName -eq 'ById') {
+        return Invoke-CRS5ReadQuery -Query @"
+            SELECT
+                ar.cnsmr_accnt_ar_log_id,
+                ar.cnsmr_id,
+                ar.actn_cd,
+                ar.rslt_cd,
+                ar.cnsmr_accnt_ar_mssg_txt,
+                ar.upsrt_dttm
+            FROM crs5_oltp.dbo.cnsmr_accnt_ar_log ar
+            WHERE ar.cnsmr_accnt_ar_log_id = @log_id
+"@ -Parameters @{ log_id = $LogId }
+    }
+
+    return Invoke-CRS5ReadQuery -Query @"
+        SELECT
+            ar.cnsmr_accnt_ar_log_id,
+            ar.cnsmr_id,
+            ar.actn_cd,
+            ar.rslt_cd,
+            ar.cnsmr_accnt_ar_mssg_txt,
+            ar.upsrt_dttm
+        FROM crs5_oltp.dbo.cnsmr_accnt_ar_log ar
+        INNER JOIN crs5_oltp.dbo.cnsmr c
+            ON c.cnsmr_id = ar.cnsmr_id
+        WHERE c.cnsmr_idntfr_agncy_id = @agency_id
+          AND CAST(ar.upsrt_dttm AS DATE) = @event_date
+        ORDER BY
+            CASE WHEN ar.actn_cd = 352 AND ar.rslt_cd = 617 THEN 0 ELSE 1 END,
+            ar.upsrt_dttm DESC
+"@ -Parameters @{ agency_id = $AgencyId; event_date = $EventDate }
+}
+
+function Invoke-ProfanityRedaction {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][long]$LogId,
+        [Parameter(Mandatory)][string]$Username,
+        [Parameter(Mandatory)][string]$RedactionBody,
+        [Parameter(Mandatory)][string]$ReviewMessage
+    )
+
+    <#
+    .SYNOPSIS
+        Redacts a cnsmr_accnt_ar_log event's message and inserts a paired review event.
+
+    .DESCRIPTION
+        Performs the profanity redaction as a single CRS5 transaction. Resolves
+        the acting user's DM usr_id from the CRS5 usr table by usr_usrnm; if the
+        user is not provisioned in DM the batch raises USER_NOT_PROVISIONED and
+        nothing is written. Reads the target event's cnsmr_id and current message;
+        if the event is missing the batch raises EVENT_NOT_FOUND. Preserves the
+        original received-timestamp tail (everything from the last '@' in the
+        original message) by appending it to the supplied redaction body; when the
+        original carries no '@' tail the redaction body stands alone. Inside one
+        transaction it (1) updates the target event's message text, stamps
+        upsrt_soft_comp_id 114, and increments upsrt_trnsctn_nmbr, and (2) inserts
+        a review event on the same cnsmr_id carrying actn_cd 228, rslt_cd 236, the
+        supplied review message, the resolved usr_id as both creator and upsert
+        user, the current datetime, upsrt_soft_comp_id 114, and upsrt_trnsctn_nmbr
+        0. The original event's upsrt_usr_id and upsrt_dttm are deliberately not
+        touched, so the redaction does not overwrite the original actor or time.
+        Both writes commit together or roll back together (SET XACT_ABORT ON).
+        Returns the affected row count from Invoke-CRS5WriteQuery.
+
+    .PARAMETER LogId
+        The cnsmr_accnt_ar_log_id of the event to redact.
+
+    .PARAMETER Username
+        The acting user's bare username, matched against crs5_oltp.dbo.usr.usr_usrnm.
+
+    .PARAMETER RedactionBody
+        The replacement message body for the redacted event. The preserved
+        timestamp tail, when present, is appended to this server-side.
+
+    .PARAMETER ReviewMessage
+        The full message text for the inserted review event, including the
+        redacted event's id (composed by the caller).
+    #>
+
+    $batch = @"
+SET XACT_ABORT ON;
+SET NOCOUNT ON;
+
+DECLARE @usr_id BIGINT;
+SELECT @usr_id = usr_id FROM crs5_oltp.dbo.usr WHERE usr_usrnm = @username;
+IF @usr_id IS NULL
+BEGIN
+    RAISERROR('USER_NOT_PROVISIONED', 16, 1);
+    RETURN;
+END
+
+DECLARE @cnsmr_id BIGINT;
+DECLARE @orig_msg VARCHAR(8000);
+SELECT @cnsmr_id = cnsmr_id, @orig_msg = cnsmr_accnt_ar_mssg_txt
+FROM crs5_oltp.dbo.cnsmr_accnt_ar_log
+WHERE cnsmr_accnt_ar_log_id = @log_id;
+IF @cnsmr_id IS NULL
+BEGIN
+    RAISERROR('EVENT_NOT_FOUND', 16, 1);
+    RETURN;
+END
+
+DECLARE @tail VARCHAR(8000) = '';
+IF CHARINDEX('@', REVERSE(@orig_msg)) > 0
+    SET @tail = ' ' + SUBSTRING(@orig_msg,
+        LEN(@orig_msg) - CHARINDEX('@', REVERSE(@orig_msg)) + 1, 8000);
+
+DECLARE @new_msg VARCHAR(8000) = @redaction_body + @tail;
+
+BEGIN TRAN;
+
+UPDATE crs5_oltp.dbo.cnsmr_accnt_ar_log
+SET cnsmr_accnt_ar_mssg_txt = @new_msg,
+    upsrt_soft_comp_id      = 114,
+    upsrt_trnsctn_nmbr      = upsrt_trnsctn_nmbr + 1
+WHERE cnsmr_accnt_ar_log_id = @log_id;
+
+INSERT INTO crs5_oltp.dbo.cnsmr_accnt_ar_log
+    (actn_cd, cnsmr_id, rslt_cd, cnsmr_accnt_ar_mssg_txt,
+     cnsmr_accnt_ar_log_crt_usr_id, upsrt_dttm,
+     upsrt_soft_comp_id, upsrt_trnsctn_nmbr, upsrt_usr_id)
+VALUES
+    (228, @cnsmr_id, 236, @review_msg,
+     @usr_id, GETDATE(), 114, 0, @usr_id);
+
+COMMIT TRAN;
+"@
+
+    return Invoke-CRS5WriteQuery -Query $batch -Parameters @{
+        log_id         = $LogId
+        username       = $Username
+        redaction_body = $RedactionBody
+        review_msg     = $ReviewMessage
+    }
+}
+
+<# ============================================================================
    FUNCTIONS: DMOPS CACHE
    ----------------------------------------------------------------------------
    Cached aggregate counts for the DmOps archive pipeline dashboard,
@@ -3100,6 +3287,7 @@ Export-ModuleMember -Function @(
     'Get-PageBrowserTitle',
     'Get-PageHeaderHtml',
     'Get-PageScriptTagHtml',
+    'Get-RedactionEvent',
     'Get-RemainingCounts',
     'Get-ServiceCredentials',
     'Get-TierLevel',
@@ -3113,6 +3301,7 @@ Export-ModuleMember -Function @(
     'Invoke-BDLImportLogReconcile',
     'Invoke-CRS5ReadQuery',
     'Invoke-CRS5WriteQuery',
+    'Invoke-ProfanityRedaction',
     'Invoke-XFActsNonQuery',
     'Invoke-XFActsProc',
     'Invoke-XFActsQuery',
