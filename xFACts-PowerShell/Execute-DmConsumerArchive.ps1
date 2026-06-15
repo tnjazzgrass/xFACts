@@ -1607,11 +1607,7 @@ function Step-dmo_Update {
 
 $scriptStart = Get-Date
 
-Write-Host ""
-Write-Host "================================================================" -ForegroundColor Cyan
-Write-Host "  xFACts DM Consumer Archive (Unified)" -ForegroundColor Cyan
-Write-Host "================================================================" -ForegroundColor Cyan
-Write-Host ""
+Write-ConsoleBanner "xFACts DM Consumer Archive (Unified)"
 
 # STEP 1: Load Configuration & Pre-Flight Checks
 
@@ -1848,11 +1844,7 @@ if ($failedBatchId) {
         Write-Log "  Could not read source_workgroup for failed batch $failedBatchId -- retry will record NULL workgroup" "WARN"
     }
 
-    Write-Host ""
-    Write-Host "────────────────────────────────────────────────────────────────" -ForegroundColor Yellow
-    Write-Host "  RETRY Batch #$($script:dmo_TotalBatchesRun) — retrying failed batch_id $failedBatchId" -ForegroundColor Yellow
-    Write-Host "────────────────────────────────────────────────────────────────" -ForegroundColor Yellow
-    Write-Host ""
+    Write-ConsoleBanner "RETRY Batch #$($script:dmo_TotalBatchesRun) — retrying failed batch_id $failedBatchId" 'Yellow' '-'
 
     Write-Log "--- Step 3: Load Batch from ConsumerLog (retry of batch_id $failedBatchId) ---"
 
@@ -1925,11 +1917,7 @@ else {
     $script:dmo_BatchWorkgroup = $batchWorkgroup
     $batchWorkgroupId = if ($batchWorkgroup -eq 'WFAARCH1') { $script:dmo_WfaArch1Id } else { $script:dmo_WfaArch3Id }
 
-    Write-Host ""
-    Write-Host "----------------------------------------------------------------" -ForegroundColor DarkCyan
-    Write-Host "  Batch #$($script:dmo_TotalBatchesRun) -- $($script:dmo_ScheduleMode) mode ($activeBatchSize consumers) -- $batchWorkgroup" -ForegroundColor DarkCyan
-    Write-Host "----------------------------------------------------------------" -ForegroundColor DarkCyan
-    Write-Host ""
+    Write-ConsoleBanner "Batch #$($script:dmo_TotalBatchesRun) -- $($script:dmo_ScheduleMode) mode ($activeBatchSize consumers) -- $batchWorkgroup" 'DarkCyan' '-'
 
     Write-Log "--- Step 3: Select Batch ($batchWorkgroup) ---"
 
@@ -3223,11 +3211,7 @@ $scriptEnd = Get-Date
 $scriptDuration = $scriptEnd - $scriptStart
 $totalMs = [int]$scriptDuration.TotalMilliseconds
 
-Write-Host ""
-Write-Host "================================================================" -ForegroundColor Cyan
-Write-Host "  Session Summary" -ForegroundColor Cyan
-Write-Host "================================================================" -ForegroundColor Cyan
-Write-Host ""
+Write-ConsoleBanner "Session Summary"
 Write-Log "  Mode             : $(if ($script:XFActsExecute) { 'EXECUTE' } else { 'PREVIEW' })"
 Write-Log "  Target           : $($script:dmo_TargetServer)"
 Write-Log "  Batches Run      : $($script:dmo_TotalBatchesRun)"
@@ -3241,12 +3225,12 @@ if (-not $script:XFActsExecute) {
     Write-Log "  Rows Deleted     : $($script:dmo_SessionTotalDeleted)"
 }
 Write-Log "  Duration         : $([math]::Round($scriptDuration.TotalSeconds, 1))s"
-Write-Host ""
+Write-Console
 
 if (-not $script:XFActsExecute) {
-    Write-Host "  *** PREVIEW MODE — No changes were made ***" -ForegroundColor Yellow
-    Write-Host "  Run with -Execute to perform actual deletions" -ForegroundColor Yellow
-    Write-Host ""
+    Write-Console "  *** PREVIEW MODE — No changes were made ***" 'Yellow'
+    Write-Console "  Run with -Execute to perform actual deletions" 'Yellow'
+    Write-Console
 }
 
 # Orchestrator callback
