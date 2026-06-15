@@ -117,7 +117,7 @@ $ErrorActionPreference = 'Stop'
    CONSTANTS: PATHS AND DISCOVERY
    ----------------------------------------------------------------------------
    Scan roots and file-classification lists (shared libraries, shared modules,
-   standalone path exceptions, Write-Host exemptions).
+   standalone path exceptions).
    Prefix: (none)
    ============================================================================ #>
 
@@ -146,13 +146,35 @@ $SharedModuleFiles = @(
 
 # Files in a routes-style directory that are structurally standalone.
 $StandalonePathExceptions = @(
-    'Start-ControlCenter.ps1'
 )
 
-# Files exempt from Write-Host drift; these legitimately use Write-Host for
-# operator-facing output.
-$WriteHostExemptFiles = @(
-    'Start-xFACtsOrchestrator.ps1'
+# The sanctioned console-output helper functions. Write-Host is forbidden
+# everywhere EXCEPT inside these function bodies -- they are the one place the
+# primitive legitimately lives, since they are what makes Write-Host
+# unnecessary in all other code. A Write-Host call whose enclosing function is
+# one of these is not drift.
+$ConsoleHelperFunctions = @(
+    'Write-Console',
+    'Write-ConsoleBanner',
+    'Write-ConsoleRule'
+)
+
+# Routes exempt from the MISSING_AUTHENTICATION check. These are infrastructure
+# routes that legitimately do not (and in most cases cannot) carry AD
+# authentication:
+#   /login                      - the login page itself; requiring auth would
+#                                 redirect-loop (you reach it when NOT logged in).
+#   /logout                     - clears the session; auth to log out is backwards.
+#   /api/internal/engine-event  - machine-to-machine endpoint the orchestrator
+#                                 POSTs to; AD form-login is the wrong auth type
+#                                 for a non-interactive caller. Protected instead
+#                                 by a localhost-only IP check inside the route.
+# Any route NOT in this list still requires -Authentication 'ADLogin'; a new
+# unauthenticated route flags MISSING_AUTHENTICATION on first scan.
+$AuthExemptRoutes = @(
+    '/login',
+    '/logout',
+    '/api/internal/engine-event'
 )
 
 <# ============================================================================
@@ -202,6 +224,7 @@ $ValidSectionTypesByRole = @{
     'module'         = @('CHANGELOG','IMPORTS','CONSTANTS','VARIABLES','FUNCTIONS','EXPORTS')
     'standalone'     = @('CHANGELOG','IMPORTS','PARAMETERS','INITIALIZATION','CONSTANTS','VARIABLES','FUNCTIONS','EXECUTION')
     'shared-library' = @('CHANGELOG','IMPORTS','CONSTANTS','VARIABLES','FUNCTIONS','EXPORTS')
+    'cc-bootstrap'   = @('CHANGELOG','IMPORTS','CONSTANTS','VARIABLES','EXECUTION')
 }
 
 # Section types that appear exactly once per file (DUPLICATE_SINGULAR_SECTION).
@@ -239,10 +262,11 @@ $RequiredSectionsByRole = @{
     'module'         = @('FUNCTIONS','EXPORTS')
     'standalone'     = @('EXECUTION')
     'shared-library' = @('FUNCTIONS')
+    'cc-bootstrap'   = @('EXECUTION')
 }
 
 # Roles for which .COMPONENT in the header is required rather than optional.
-$ComponentRequiredRoles = @('page-route','api-route','module','shared-library','standalone')
+$ComponentRequiredRoles = @('page-route','api-route','module','shared-library','standalone','cc-bootstrap')
 
 # Function names that count as RBAC checks.
 $RBACCheckFunctions = @(
@@ -383,7 +407,7 @@ $DriftDescriptions = [ordered]@{
     # Routes
     'ROUTE_OUTSIDE_ROUTE_SECTION'       = "An Add-PodeRoute call appears outside a ROUTE section."
     'MIDDLEWARE_OUTSIDE_INIT_SECTION'   = "An Add-PodeMiddleware call appears outside an INITIALIZATION section."
-    'MISSING_AUTHENTICATION'            = "An Add-PodeRoute call lacks -Authentication 'ADLogin'."
+    'MISSING_AUTHENTICATION'            = "An Add-PodeRoute call lacks -Authentication 'ADLogin'. Exempt: the named infrastructure routes in \$AuthExemptRoutes (login, logout, internal engine-event), which legitimately carry no AD auth."
     'MISSING_RBAC_CHECK_PAGE'           = "A page route scriptblock does not call Get-UserAccess as the first statement."
     'MISSING_RBAC_CHECK_API'            = "An API route scriptblock does not call Test-ActionEndpoint anywhere in the scriptblock."
     'MISSING_RESPONSE_WRITE_PAGE'       = "A page route scriptblock does not end with Write-PodeHtmlResponse."
@@ -411,7 +435,7 @@ $DriftDescriptions = [ordered]@{
     'MISSING_EXPORTS_SECTION'           = "A module file lacks an EXPORTS section."
 
     # Logging
-    'FORBIDDEN_WRITE_HOST'              = "A Write-Host call appears in a standalone or shared-library file. Use Write-Log instead. The Start-xFACtsOrchestrator.ps1 entry-point script is exempt."
+    'FORBIDDEN_WRITE_HOST'              = "A Write-Host call appears in a PowerShell file. Write-Host is forbidden everywhere except inside the sanctioned console-helper functions (Write-Console, Write-ConsoleBanner, Write-ConsoleRule); durable output uses Write-Log and ephemeral console output uses Write-Console."
 
     # Registration
     'FILE_NOT_REGISTERED'               = "The file has no active row in Object_Registry, so its zone and scope could not be determined. Every scanned file must be registered; add it to dbo.Object_Registry. Rows from this file carry zone and scope of '<undefined>'."
@@ -511,13 +535,14 @@ $script:ApprovedVerbs             = $null
    Prefix: (none)
    ============================================================================ #>
 
-# Classify a .ps1 or .psm1 file into one of five roles. Path-based:
+# Classify a .ps1 or .psm1 file into one of six roles. Path-based:
 # *.psm1 anywhere                                          -> 'module'
 # *.psd1 anywhere                                          -> 'data-file' (basic inventory only)
+# Start-ControlCenter.ps1                                  -> 'cc-bootstrap' (CC server composition root)
 # ...\scripts\routes\<Name>\<Name>-API.ps1                 -> 'api-route'
 # ...\scripts\routes\<Name>\<Name>.ps1                     -> 'page-route'
 # ...\xFACts-PowerShell\xFACts-<Name>.ps1                  -> 'shared-library' (if in $SharedLibraryFiles)
-# any .ps1 in $StandalonePathExceptions                    -> 'standalone' (e.g. Start-ControlCenter.ps1)
+# any .ps1 in $StandalonePathExceptions                    -> 'standalone'
 # any other .ps1 under xFACts-PowerShell\                  -> 'standalone'
 # Returns the role string. Throws if the path doesn't match any known shape;
 # the caller decides whether to skip or error.
@@ -531,6 +556,11 @@ function Get-PSFileRole {
 
     # Shared libraries: explicit list lookup
     if ($SharedLibraryFiles -contains $fileName) { return 'shared-library' }
+
+    # CC bootstrap: the Control Center server composition root. Distinct from
+    # the page/api route files it loads; its body is a single Start-PodeServer
+    # block (treated as opaque EXECUTION).
+    if ($fileName -eq 'Start-ControlCenter.ps1') { return 'cc-bootstrap' }
 
     # Standalone path exceptions (files in a routes-style directory that
     # aren't actually routes)
@@ -2053,8 +2083,10 @@ function Add-PSRouteRow {
         -RawText           $sig
     $script:rows.Add($row)
 
-    # ROUTE_OUTSIDE_ROUTE_SECTION: spec requires PS_ROUTE in a ROUTE section
-    if ($section -and $section.TypeName -ne 'ROUTE') {
+    # ROUTE_OUTSIDE_ROUTE_SECTION: spec requires PS_ROUTE in a ROUTE section.
+    # cc-bootstrap is exempt: its routes are registered inside the Start-PodeServer
+    # EXECUTION block by necessity and cannot live in a file-scope ROUTE section.
+    if ($section -and $section.TypeName -ne 'ROUTE' -and $script:CurrentFileRole -ne 'cc-bootstrap') {
         Add-DriftCode -Row $row -Code 'ROUTE_OUTSIDE_ROUTE_SECTION' `
             -Context "Add-PodeRoute call appears in a $($section.TypeName) section; spec requires the ROUTE section."
     }
@@ -2081,7 +2113,9 @@ function Add-PSRouteRow {
             }
         }
     }
-    if (-not $hasAdLoginAuth) {
+    # Named infrastructure routes (login/logout/internal engine-event) legitimately
+    # carry no AD auth; they are exempt. The row is still cataloged for visibility.
+    if (-not $hasAdLoginAuth -and $AuthExemptRoutes -notcontains $Path) {
         Add-DriftCode -Row $row -Code 'MISSING_AUTHENTICATION' `
             -Context "Add-PodeRoute call lacks -Authentication 'ADLogin'."
     }
@@ -2182,7 +2216,9 @@ function Add-PSMiddlewareRow {
         -RawText       $sig
     $script:rows.Add($row)
 
-    if ($section -and $section.TypeName -ne 'INITIALIZATION') {
+    # cc-bootstrap is exempt: middleware is registered inside the Start-PodeServer
+    # EXECUTION block by necessity and cannot live in a file-scope INITIALIZATION section.
+    if ($section -and $section.TypeName -ne 'INITIALIZATION' -and $script:CurrentFileRole -ne 'cc-bootstrap') {
         Add-DriftCode -Row $row -Code 'MIDDLEWARE_OUTSIDE_INIT_SECTION' `
             -Context "Add-PodeMiddleware call appears in a $($section.TypeName) section; spec requires INITIALIZATION."
     }
@@ -2457,8 +2493,8 @@ function Add-PSFunctionCallRow {
     return $row
 }
 
-# Emit a PS_WRITE_HOST row for a Write-Host call. Files in
-# $WriteHostExemptFiles skip this entirely (caller checks before calling).
+# Emit a PS_WRITE_HOST row for a Write-Host call. Write-Host is forbidden in
+# all files; the sanctioned console-output path is the Write-Console helper.
 function Add-PSWriteHostRow {
     param([Parameter(Mandatory)]$CommandAst)
 
@@ -2494,8 +2530,13 @@ function Add-PSWriteHostRow {
         -RawText        $sig
     $script:rows.Add($row)
 
-    Add-DriftCode -Row $row -Code 'FORBIDDEN_WRITE_HOST' `
-        -Context "Write-Host call at line $line in $($script:CurrentFile)."
+    # Write-Host inside a sanctioned console-helper body is permitted: these
+    # helpers are the one place the primitive legitimately lives. The row is
+    # still cataloged for visibility; it just carries no drift.
+    if ($ConsoleHelperFunctions -notcontains $parentFn) {
+        Add-DriftCode -Row $row -Code 'FORBIDDEN_WRITE_HOST' `
+            -Context "Write-Host call at line $line in $($script:CurrentFile)."
+    }
     return $row
 }
 
@@ -2700,8 +2741,12 @@ function Add-PSModuleImportRow {
     $script:rows.Add($row)
 
     # MISPLACED_IMPORT: imports must appear in the IMPORTS section.
+    # cc-bootstrap exemption: imports inside the Start-PodeServer EXECUTION block
+    # (the shared-module load and the dynamic route-loader dot-source) are
+    # registered there by necessity and are treated as opaque execution.
     $section = Get-SectionForLine -Sections $script:CurrentSections -Line $line
-    if ($null -eq $section -or $section.TypeName -ne 'IMPORTS') {
+    $ccBootstrapExecImport = ($script:CurrentFileRole -eq 'cc-bootstrap' -and $section -and $section.TypeName -eq 'EXECUTION')
+    if (($null -eq $section -or $section.TypeName -ne 'IMPORTS') -and -not $ccBootstrapExecImport) {
         $where = if ($section) { "the $($section.TypeName) section" } else { 'outside any section banner' }
         Add-DriftCode -Row $row -Code 'MISPLACED_IMPORT' `
             -Context "Import statement appears in $where; spec requires the IMPORTS section."
@@ -2895,13 +2940,13 @@ foreach ($file in $PSFiles) {
     $name = [System.IO.Path]::GetFileName($file)
     $role = Get-PSFileRole -FullPath $file
 
-    Write-Host "  Parsing $name (role=$role)..." -NoNewline
+    Write-Console "  Parsing $name (role=$role)..." -NoNewline
     $parsed = Invoke-PSParse -FilePath $file
     if ($null -eq $parsed) {
-        Write-Host " FAILED" -ForegroundColor Red
+        Write-Console " FAILED" 'Red'
         continue
     }
-    Write-Host " ok" -ForegroundColor Green
+    Write-Console " ok" 'Green'
     $astCache[$file] = @{ Parsed = $parsed; Role = $role }
 
     # Collect shared-scope functions from files whose Object_Registry scope is
@@ -3038,7 +3083,7 @@ foreach ($file in $PSFiles) {
 
     $startCount = $script:rows.Count
     $scopeLabel = $script:CurrentFileScope
-    Write-Host ("  Walking {0} ({1}, role={2})..." -f $name, $scopeLabel, $role) -ForegroundColor Cyan
+    Write-Console ("  Walking {0} ({1}, role={2})..." -f $name, $scopeLabel, $role) 'Cyan'
 
     # Emit PS_FILE anchor row
     $psFileRow = Add-PSFileRow -LineEnd $script:CurrentFileLineCount
@@ -3349,9 +3394,7 @@ foreach ($file in $PSFiles) {
                     Add-PSModuleImportRow -ImportAst $cmd -ImportKind 'Import-Module' -ImportedPath $importedPath | Out-Null
                 }
                 '^Write-Host$' {
-                    if ($WriteHostExemptFiles -notcontains $name) {
-                        Add-PSWriteHostRow -CommandAst $cmd | Out-Null
-                    }
+                    Add-PSWriteHostRow -CommandAst $cmd | Out-Null
                 }
                 default {
                     # RBAC checks
@@ -3882,7 +3925,7 @@ foreach ($file in $PSFiles) {
     }
 
     $delta = $script:rows.Count - $startCount
-    Write-Host ("    -> {0} rows" -f $delta) -ForegroundColor Green
+    Write-Console ("    -> {0} rows" -f $delta) 'Green'
 }
 
 # -- Pass 3: Cross-File Compliance Checks --
