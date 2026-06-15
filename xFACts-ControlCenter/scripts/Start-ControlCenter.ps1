@@ -1,51 +1,52 @@
-# ============================================================================
-# xFACts Control Center
-# Version: Tracked in dbo.System_Metadata (component: ControlCenter.Shared)
-# Location: E:\xFACts-ControlCenter\scripts\Start-ControlCenter.ps1
-#
-# Main entry point for the xFACts Control Center web interface.
-# Loads shared module, configures AD authentication with RBAC audit logging,
-# initializes API caching, and starts the Pode server.
-#
-# Usage:
-#   Interactive: .\Start-ControlCenter.ps1
-#   As Service:  Managed via NSSM (xFACtsControlCenter service)
-#
-# Prerequisites:
-#   - RSAT-AD-PowerShell feature must be installed
-#   - Install-WindowsFeature -Name "RSAT-AD-PowerShell"
-#
-# File Structure:
-#   E:\xFACts-ControlCenter\
-#   +-- scripts\
-#   |   +-- Start-ControlCenter.ps1        # This file - main entry point
-#   |   +-- modules\
-#   |   |   +-- xFACts-CCShared.psm1       # Shared module (DB, RBAC, cache, CRS5, chrome)
-#   |   +-- routes\
-#   |       +-- Home.ps1                   # / route (navigation hub)
-#   |       +-- {Feature}.ps1              # Page routes (one per feature)
-#   |       +-- {Feature}-API.ps1          # API endpoints (one per feature)
-#   +-- public\
-#   |   +-- css\                           # Page-specific stylesheets
-#   |   +-- js\                            # Page-specific JavaScript
-#   |   +-- images\                        # Image assets
-#   +-- logs\                              # Pode request/error logs (auto-generated)
-#
-# Authentication:
-#   - Windows AD authentication via form login (fac.local)
-#   - RBAC via xFACts-CCShared.psm1 (roles resolved from AD groups)
-#   - User info available in routes via $WebEvent.Auth.User
-#   - Failed login surfaces an error banner and preserves the attempted
-#     username so users only need to re-type the password
-# ============================================================================
+<#
+.SYNOPSIS
+    Main entry point for the xFACts Control Center web interface.
+
+.DESCRIPTION
+    Loads the shared module, configures Windows AD authentication with RBAC
+    audit logging, initializes API caching and engine-event broadcasting, and
+    starts the Pode server. Routes are loaded dynamically from the routes
+    directory at startup. Authentication is Windows AD via form login against
+    fac.local, with RBAC roles resolved from AD groups; a failed login surfaces
+    an error banner and preserves the attempted username for re-entry.
+
+.COMPONENT
+    ControlCenter.Shared
+
+.NOTES
+    File Name : Start-ControlCenter.ps1
+    Location  : E:\xFACts-ControlCenter\scripts\Start-ControlCenter.ps1
+
+    FILE ORGANIZATION
+    -----------------
+    IMPORTS: SCRIPT DEPENDENCIES
+    CONSTANTS: SERVER CONFIGURATION
+    EXECUTION: SCRIPT EXECUTION
+#>
+
+<# ============================================================================
+   IMPORTS: SCRIPT DEPENDENCIES
+   ----------------------------------------------------------------------------
+   The Pode web framework. The shared module (xFACts-CCShared.psm1) is imported
+   inside the server scriptblock so its functions are available to all route
+   runspaces.
+   Prefix: (none)
+   ============================================================================ #>
 
 Import-Module Pode
 
-# ============================================================================
-# CONFIGURATION
-# ============================================================================
+<# ============================================================================
+   CONSTANTS: SERVER CONFIGURATION
+   ----------------------------------------------------------------------------
+   Base paths and the server configuration map (port, bind address, public and
+   log roots, AD domain) used throughout server startup.
+   Prefix: (none)
+   ============================================================================ #>
+
+# Repository root (parent of the scripts directory), used to derive public/log paths.
 $script:BaseRoot = Split-Path $PSScriptRoot -Parent
 
+# Server configuration: listening port/address, asset roots, and AD domain.
 $script:Config = @{
     Port        = 8085
     Address     = '*'
@@ -55,59 +56,53 @@ $script:Config = @{
     ADDomain    = 'fac.local'
 }
 
-# ============================================================================
-# START PODE SERVER
-# ============================================================================
+<# ============================================================================
+   EXECUTION: SCRIPT EXECUTION
+   ----------------------------------------------------------------------------
+   Starts the Pode server: endpoints, static routes, logging, session
+   middleware, the shared-module load, AD authentication, the auth/login/logout
+   and internal engine-event routes, and dynamic loading of all page/API route
+   files from the routes directory.
+   Prefix: (none)
+   ============================================================================ #>
 Start-PodeServer {
 
-    # ------------------------------------------
     # Server Configuration
-    # ------------------------------------------
     Add-PodeEndpoint -Address $script:Config.Address -Port $script:Config.Port -Protocol Http
     Add-PodeEndpoint -Address $script:Config.Address -Port $script:Config.Port -Protocol Ws
 
-    # ------------------------------------------
     # Static File Serving
-    # ------------------------------------------
     Add-PodeStaticRoute -Path '/css' -Source (Join-Path $script:Config.PublicRoot 'css')
     Add-PodeStaticRoute -Path '/js' -Source (Join-Path $script:Config.PublicRoot 'js')
     Add-PodeStaticRoute -Path '/images' -Source (Join-Path $script:Config.PublicRoot 'images')
     Add-PodeStaticRoute -Path '/docs' -Source (Join-Path $script:Config.PublicRoot 'docs')
 
-    # ------------------------------------------
     # Pode File Logging
-    # ------------------------------------------
     New-PodeLoggingMethod -File -Name 'requests' -Path $script:Config.LogPath | Enable-PodeRequestLogging
     New-PodeLoggingMethod -File -Name 'errors' -Path $script:Config.LogPath | Enable-PodeErrorLogging
 
-    # ------------------------------------------
     # Session Middleware (required for auth)
-    # ------------------------------------------
-    Enable-PodeSessionMiddleware -Duration 3600 -Extend  # 1 hour session, extends on activity
+    # 1 hour session, extends on activity
+    Enable-PodeSessionMiddleware -Duration 3600 -Extend
 
-    # ------------------------------------------
     # Load Shared Module (available to all runspaces)
     # Must load BEFORE auth setup and middleware so
     # Invoke-XFActsQuery and Write-RBACAuditLog are
     # available in scriptblocks.
-    # ------------------------------------------
     $modulePath = Join-Path $script:Config.ScriptRoot "modules\xFACts-CCShared.psm1"
     if (Test-Path $modulePath) {
         Import-Module -Name $modulePath -Force -DisableNameChecking
-        Write-Host "  Loaded module: xFACts-CCShared.psm1" -ForegroundColor DarkGray
+        Write-Console "  Loaded module: xFACts-CCShared.psm1" 'DarkGray'
     } else {
-        Write-Host "  FATAL: xFACts-CCShared.psm1 not found at $modulePath" -ForegroundColor Red
-        throw "Required module xFACts-CCShared.psm1 not found. Cannot start."
+        throw "FATAL: Required module xFACts-CCShared.psm1 not found at $modulePath. Cannot start."
     }
 
-    # ------------------------------------------
     # Windows AD Authentication
     # ScriptBlock runs after successful AD validation
     # to log the LOGIN_SUCCESS event with full context.
     # On failure, Pode redirects to FailureUrl. The endware
     # below stashes the attempted username in the session so
     # the login page can prefill it on the next render.
-    # ------------------------------------------
     New-PodeAuthScheme -Form | Add-PodeAuthWindowsAd -Name 'ADLogin' `
         -Fqdn $script:Config.ADDomain -DirectGroups `
         -FailureUrl '/login' -SuccessUrl '/' `
@@ -149,22 +144,18 @@ Start-PodeServer {
             return @{ User = $user }
         }
 
-    # ------------------------------------------
     # API Request Logging Middleware
     # Captures request start time for duration calculation.
-    # ------------------------------------------
     Add-PodeMiddleware -Name 'APIRequestLogging' -ScriptBlock {
         $WebEvent.Metadata['RequestStart'] = Get-Date
         return $true
     }
 
-    # ------------------------------------------
     # Request Logging Endware
     # Logs all non-static requests to dbo.API_RequestLog.
     # Also detects failed login attempts for RBAC audit and
     # stashes the attempted username in the session so the
     # login page can prefill it on the next render.
-    # ------------------------------------------
     Add-PodeEndware -ScriptBlock {
         try {
             $endpoint = $WebEvent.Path
@@ -243,13 +234,11 @@ Start-PodeServer {
         }
     }
 
-    # ------------------------------------------
     # Login Page Route
     # On failed login, Pode redirects here. We check for a LoginFailure flash
     # message - present only when the user just failed a login attempt. The
     # message value is the attempted username, which we prefill into the form
     # so the user only needs to re-enter their password.
-    # ------------------------------------------
     Add-PodeRoute -Method Get -Path '/login' -ScriptBlock {
         # Check if already logged in
         if ($WebEvent.Auth.User) {
@@ -423,12 +412,10 @@ $errorBanner
         Move-PodeResponseUrl -Url '/login'
     }
 
-    Write-Host "xFACts Control Center starting on port $($script:Config.Port)..." -ForegroundColor Cyan
-    Write-Host "  Authentication: Windows AD ($($script:Config.ADDomain))" -ForegroundColor DarkGray
+    Write-Console "xFACts Control Center starting on port $($script:Config.Port)..." 'Cyan'
+    Write-Console "  Authentication: Windows AD ($($script:Config.ADDomain))" 'DarkGray'
 
-    # ------------------------------------------
     # API Cache Initialization
-    # ------------------------------------------
     # Shared cache for API endpoint results. Uses Pode shared state
     # with a named lockable for thread-safe cross-runspace access.
     # TTL settings are loaded from GlobalConfig and refreshed periodically.
@@ -438,27 +425,23 @@ $errorBanner
 
     # Load initial cache TTL configuration from GlobalConfig
     Initialize-ApiCacheConfig
-    Write-Host "  API cache initialized" -ForegroundColor DarkGray
+    Write-Console "  API cache initialized" 'DarkGray'
 
     # Refresh cache TTL configuration from GlobalConfig every 5 minutes
     Add-PodeTimer -Name 'RefreshApiCacheConfig' -Interval 300 -ScriptBlock {
         Initialize-ApiCacheConfig
     }
 
-    # ------------------------------------------
     # Engine Events (Real-Time WebSocket Push)
-    # ------------------------------------------
     # Shared state holds latest engine event per process. Populated by
     # the internal POST route when the Orchestrator engine pushes events.
     # Used by the bootstrap GET route to hydrate pages on initial load.
     New-PodeLockable -Name 'EngineState'
     Set-PodeState -Name 'EngineState' -Value @{}
 
-    Write-Host "  Engine events initialized (WebSocket on port $($script:Config.Port))" -ForegroundColor DarkGray
+    Write-Console "  Engine events initialized (WebSocket on port $($script:Config.Port))" 'DarkGray'
 
-    # ------------------------------------------
     # Engine Event Routes (Internal + Bootstrap)
-    # ------------------------------------------
 
     # POST /api/internal/engine-event
     # Receives process execution events from the Orchestrator engine.
@@ -584,9 +567,7 @@ $errorBanner
         }
     }
 
-    # ------------------------------------------
     # Shared Configuration Routes
-    # ------------------------------------------
 
     # GET /api/config/refresh-interval?page={pagename}
     # Returns the live polling interval for the requested page.
@@ -623,16 +604,14 @@ $errorBanner
         }
     }
 
-    # ------------------------------------------
     # Load Route Modules
-    # ------------------------------------------
     $routesPath = Join-Path $script:Config.ScriptRoot "routes"
     if (Test-Path $routesPath) {
         Get-ChildItem -Path $routesPath -Filter "*.ps1" | ForEach-Object {
-            Write-Host "  Loading route: $($_.Name)" -ForegroundColor DarkGray
+            Write-Console "  Loading route: $($_.Name)" 'DarkGray'
             . $_.FullName
         }
     }
 
-    Write-Host "Startup complete." -ForegroundColor Green
+    Write-Console "Startup complete." 'Green'
 }
