@@ -247,6 +247,104 @@ function Write-Log {
     }
 }
 
+function Write-Console {
+    <#
+    .SYNOPSIS
+        Writes a line to the console. Sanctioned replacement for Write-Host
+        in standalone scripts; carries no log-file or timestamp behavior.
+
+    .DESCRIPTION
+        A faithful Write-Host stand-in for operator-facing console narration
+        in manually-run scripts. Unlike Write-Log, it does not timestamp,
+        does not tag a level, and does not write to the log file -- it is
+        purely ephemeral console output. Use Write-Log for anything that
+        belongs in the durable record.
+
+    .PARAMETER Message
+        The text to print. Defaults to empty (a blank spacer line).
+
+    .PARAMETER Color
+        Console foreground color. Defaults to Gray.
+
+    .PARAMETER NoNewline
+        Suppresses the trailing newline, so a later call continues the line
+        (used for "Parsing X ..." then " ok" on the same line).
+    #>
+    param(
+        [string]$Message = '',
+        [string]$Color = 'Gray',
+        [switch]$NoNewline
+    )
+
+    if ($NoNewline) {
+        Write-Host $Message -ForegroundColor $Color -NoNewline
+    }
+    else {
+        Write-Host $Message -ForegroundColor $Color
+    }
+}
+
+function Write-ConsoleBanner {
+    <#
+    .SYNOPSIS
+        Writes a standard framed banner block to the console: a rule line,
+        an indented label, a matching rule line, and a trailing blank.
+
+    .DESCRIPTION
+        Emits the platform-standard console banner used to announce a phase
+        or step during a manually-run script. The frame (rule width, indent,
+        trailing blank) is fixed here so every banner across every script
+        looks identical; callers supply the label and, optionally, a color
+        and a rule character. The default '=' rule denotes a major phase;
+        passing -RuleChar '-' denotes a minor step within a phase, preserving
+        a visual hierarchy. Rule width matches the structural section-banner
+        width used throughout the platform.
+
+    .PARAMETER Label
+        The banner text (e.g., "Session Summary").
+
+    .PARAMETER Color
+        Console foreground color for the whole block. Defaults to Cyan.
+
+    .PARAMETER RuleChar
+        The character used for the top and bottom rule lines. Defaults to '='
+        (major phase). Pass '-' for a minor step divider.
+    #>
+    param(
+        [Parameter(Mandatory)][string]$Label,
+        [string]$Color = 'Cyan',
+        [ValidateSet('=', '-')]
+        [string]$RuleChar = '='
+    )
+
+    $rule = $RuleChar * 76
+    Write-Host ''              -ForegroundColor $Color
+    Write-Host $rule           -ForegroundColor $Color
+    Write-Host ("  " + $Label) -ForegroundColor $Color
+    Write-Host $rule           -ForegroundColor $Color
+    Write-Host ''              -ForegroundColor $Color
+}
+
+function Write-ConsoleRule {
+    <#
+    .SYNOPSIS
+        Writes a single horizontal rule line to the console.
+
+    .DESCRIPTION
+        Emits one platform-standard separator rule, used to divide sections
+        of console output where a full banner would be too heavy. Width
+        matches Write-ConsoleBanner for visual consistency.
+
+    .PARAMETER Color
+        Console foreground color. Defaults to DarkGray.
+    #>
+    param(
+        [string]$Color = 'DarkGray'
+    )
+
+    Write-Host ('-' * 76) -ForegroundColor $Color
+}
+
 # ============================================================================
 # SQL DATA ACCESS
 # ============================================================================
