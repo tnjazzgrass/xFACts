@@ -110,18 +110,18 @@ All other commentary uses `#` line comments.
 
 ### 4.1 Allowed types per role
 
-| TYPE | page-route | api-route | module | standalone | shared-library |
-|---|---|---|---|---|---|
-| `CHANGELOG` | Allowed | Forbidden | Forbidden | Allowed | Allowed |
-| `PARAMETERS` | Forbidden | Forbidden | Forbidden | Allowed | Forbidden |
-| `IMPORTS` | Forbidden | Forbidden | Allowed | Allowed | Forbidden |
-| `INITIALIZATION` | Forbidden | Forbidden | Forbidden | Allowed | Forbidden |
-| `CONSTANTS` | Forbidden | Forbidden | Allowed | Allowed | Allowed |
-| `VARIABLES` | Forbidden | Forbidden | Allowed | Allowed | Allowed |
-| `FUNCTIONS` | Forbidden | Forbidden | Required (1+) | Allowed | Required (1+) |
-| `EXECUTION` | Forbidden | Forbidden | Forbidden | Required (exactly 1) | Forbidden |
-| `ROUTE` | Required (exactly 1) | Required (exactly 1) | Forbidden | Forbidden | Forbidden |
-| `EXPORTS` | Forbidden | Forbidden | Required (exactly 1) | Forbidden | Forbidden |
+| TYPE | page-route | api-route | module | standalone | shared-library | cc-bootstrap |
+|---|---|---|---|---|---|---|
+| `CHANGELOG` | Allowed | Forbidden | Forbidden | Allowed | Allowed | Allowed |
+| `PARAMETERS` | Forbidden | Forbidden | Forbidden | Allowed | Forbidden | Forbidden |
+| `IMPORTS` | Forbidden | Forbidden | Allowed | Allowed | Forbidden | Allowed |
+| `INITIALIZATION` | Forbidden | Forbidden | Forbidden | Allowed | Forbidden | Forbidden |
+| `CONSTANTS` | Forbidden | Forbidden | Allowed | Allowed | Allowed | Allowed |
+| `VARIABLES` | Forbidden | Forbidden | Allowed | Allowed | Allowed | Allowed |
+| `FUNCTIONS` | Forbidden | Forbidden | Required (1+) | Allowed | Required (1+) | Forbidden |
+| `EXECUTION` | Forbidden | Forbidden | Forbidden | Required (exactly 1) | Forbidden | Required (exactly 1) |
+| `ROUTE` | Required (exactly 1) | Required (exactly 1) | Forbidden | Forbidden | Forbidden | Forbidden |
+| `EXPORTS` | Forbidden | Forbidden | Required (exactly 1) | Forbidden | Forbidden | Forbidden |
 
 ### 4.2 Type ordering
 
@@ -170,7 +170,7 @@ Two forms, no others:
 ### 5.3 Identifier prefix rules
 
 - In prefixable files (files whose component has a non-NULL `cc_prefix`), top-level identifiers in CONSTANTS, VARIABLES, and FUNCTIONS sections begin with the file's registered prefix followed by an underscore.
-- In files whose component has `cc_prefix = NULL`, top-level identifiers are not prefix-constrained. This applies regardless of file role, including standalone scripts (e.g., `Start-ControlCenter.ps1`), shared-library files, and modules whose components are platform-wide buckets. Function-naming rules in these files are governed by §8.1.
+- In files whose component has `cc_prefix = NULL`, top-level identifiers are not prefix-constrained. This applies regardless of file role, including standalone scripts (e.g., engine collectors and monitors), the `cc-bootstrap` file, shared-library files, and modules whose components are platform-wide buckets. Function-naming rules in these files are governed by §8.1.
 
 ---
 
@@ -184,13 +184,14 @@ Separately, files carry classification attributes (zone, scope, scope_tier) from
 
 | Role | Detection rule |
 |---|---|
+| `cc-bootstrap` | `.ps1`, filename is `Start-ControlCenter.ps1` (the Control Center server composition root). Checked before the standalone fallback. |
 | `page-route` | `.ps1`, path is `xFACts-ControlCenter\scripts\routes\<Name>.ps1` with no `-API` suffix. |
 | `api-route` | `.ps1`, path is `xFACts-ControlCenter\scripts\routes\<Name>-API.ps1`. |
 | `module` | `.psm1`, path is `xFACts-ControlCenter\scripts\modules\<Name>.psm1`. |
-| `standalone` | `.ps1`, path is `xFACts-PowerShell\<Name>.ps1` where `<Name>` does NOT start with `xFACts-`. The Pode application entry point at `xFACts-ControlCenter\scripts\Start-ControlCenter.ps1` is also treated as standalone. |
+| `standalone` | `.ps1`, path is `xFACts-PowerShell\<Name>.ps1` where `<Name>` does NOT start with `xFACts-`. |
 | `shared-library` | `.ps1`, path is `xFACts-PowerShell\xFACts-<Name>.ps1`. |
 
-Files at other paths or with other extensions are out of scope for this spec — including any `.ps1` file in `xFACts-ControlCenter\scripts\` other than `Start-ControlCenter.ps1`. `.psd1` data files such as `server.psd1` are out of scope.
+Files at other paths or with other extensions are out of scope for this spec — including any `.ps1` file in `xFACts-ControlCenter\scripts\` other than `Start-ControlCenter.ps1` (which is the `cc-bootstrap` role). `.psd1` data files such as `server.psd1` are out of scope.
 
 ### 6.2 Role file structure
 
@@ -225,6 +226,14 @@ Forbidden: `ROUTE`, `EXPORTS`.
 Required: `FUNCTIONS` (1+).
 Allowed: `CHANGELOG`, `CONSTANTS`, `VARIABLES`.
 Forbidden: `PARAMETERS`, `IMPORTS`, `INITIALIZATION`, `EXECUTION`, `ROUTE`, `EXPORTS`.
+
+#### 6.2.6 cc-bootstrap
+
+The Control Center server composition root (`Start-ControlCenter.ps1`). Unlike the page/api route files it loads, its working body is a single `Start-PodeServer` block, bannered as `EXECUTION` and treated as opaque: the `Add-PodeRoute`, `Add-PodeMiddleware`, and import statements registered inside that block are not subject to file-scope section placement (they cannot be lifted out of the server scriptblock, which Pode requires them to run inside). Accordingly, `ROUTE_OUTSIDE_ROUTE_SECTION`, `MIDDLEWARE_OUTSIDE_INIT_SECTION`, and `MISPLACED_IMPORT` (for imports inside the `EXECUTION` block) do not apply to this role.
+
+Required: `EXECUTION` (exactly one, with NAME `SCRIPT EXECUTION`).
+Allowed: `CHANGELOG`, `IMPORTS`, `CONSTANTS`, `VARIABLES`.
+Forbidden: `PARAMETERS`, `INITIALIZATION`, `FUNCTIONS`, `ROUTE`, `EXPORTS`.
 
 #### 6.3 Classification: zone, scope, and scope_tier
 
@@ -313,9 +322,8 @@ Applies to files with scope_tier = PLATFORM (broadly-consumed shared infrastruct
 
 ### 8.4 SCOPED-tier and standalone files
 
-Applies to files with scope_tier = SCOPED (narrowly-scoped shared helpers) and to standalone-role scripts (which carry no scope_tier).
+Applies to files with scope_tier = SCOPED (narrowly-scoped shared helpers), to standalone-role scripts (which carry no scope_tier), and to the cc-bootstrap file (should it ever define functions). The latter two carry no scope_tier.- `[CmdletBinding()]` is permitted but not required.
 
-- `[CmdletBinding()]` is permitted but not required.
 - Each function carries a single-line `#` purpose comment on the line directly above the function declaration, stating the purpose the docblock's `.SYNOPSIS` would otherwise convey.
 - A comment-based-help docblock is not used.
 
@@ -404,12 +412,22 @@ Add-PodeRoute -Method Post -Path '/api/example/do-thing' -Authentication 'ADLogi
 
 ### 11.2 Rules
 
-- Every `Add-PodeRoute` call declares `-Authentication 'ADLogin'`.
+- Every `Add-PodeRoute` call declares `-Authentication 'ADLogin'`, except the named infrastructure routes listed in §11.3, which legitimately carry no AD authentication.
 - Page routes call `Get-UserAccess` as the first statement of the scriptblock, before any other work. The result governs whether the route renders the page or returns an access-denied response.
 - Every API route, regardless of HTTP method, calls `Test-ActionEndpoint` as the first line of the scriptblock. The call is the universal hook point; `Test-ActionEndpoint` is fail-open for endpoints not yet registered in `RBAC_ActionRegistry`, so registration takes effect automatically when added.
 - Page routes end the scriptblock with `Write-PodeHtmlResponse`.
 - API routes end the scriptblock with `Write-PodeJsonResponse`.
 - Page-route files emit HTML via PowerShell here-strings (`@"..."@`).
+
+### 11.3 Authentication-exempt infrastructure routes
+
+A small, closed set of infrastructure routes legitimately carry no `-Authentication 'ADLogin'`, because AD form-login is either impossible or the wrong mechanism for them. These are exempt from the authentication requirement; every other route still requires it, and a new unauthenticated route flags `MISSING_AUTHENTICATION` on first scan. Adding to this set requires a spec amendment.
+
+| Route | Why exempt |
+|---|---|
+| `/login` | The login page itself. Requiring authentication would redirect-loop, since it is reached precisely when the user is not authenticated. |
+| `/logout` | Clears the session. Authentication to log out is backwards and breaks the expired-session case. |
+| `/api/internal/engine-event` | Machine-to-machine endpoint the orchestrator POSTs engine events to. AD form-login is the wrong authentication type for a non-interactive caller; the route is protected instead by a localhost-only IP check (`127.0.0.1`/`::1`, else 403). |
 
 ---
 
@@ -493,15 +511,13 @@ Module files declare exactly one `EXPORTS` section containing one or more `Expor
 
 ## 15. Logging and output
 
-Standalone scripts and shared-library files use `Write-Log` (defined in `xFACts-OrchestratorFunctions.ps1`) for operator-facing output. `Write-Host` calls are forbidden in these roles.
+PowerShell files use two sanctioned output mechanisms: `Write-Log` (defined in `xFACts-OrchestratorFunctions.ps1`) for durable, operator-facing output that belongs in the record, and the `Write-Console` helper family for ephemeral console output during interactive runs. `Write-Host` is forbidden in all files, with no exceptions.
 
 ### 15.1 Rules
 
-- Standalone and shared-library files use `Write-Log` for operator output. `Write-Host` calls are forbidden in these roles. Exempt files are enumerated below; amendments to this list require a spec amendment.
-
-| Exempt file | Reason |
-|---|---|
-| `Start-xFACtsOrchestrator.ps1` | Platform entry-point script. Runs interactively with no orchestrator parent; uses `Write-Host` for direct operator feedback during startup. |
+- `Write-Log` is the mechanism for durable operator output (the audit/run record).
+- `Write-Console` (and its companions `Write-ConsoleBanner` and `Write-ConsoleRule`) is the mechanism for ephemeral console output — real-time, colored, operator-facing narration during an interactive run. It is a faithful replacement for the console behavior `Write-Host` provided.
+- `Write-Host` is forbidden in all files, with one exception: it is permitted inside the bodies of the sanctioned console-helper functions `Write-Console`, `Write-ConsoleBanner`, and `Write-ConsoleRule`. These helpers are the one place the primitive legitimately lives, because they are what make `Write-Host` unnecessary everywhere else. A `Write-Host` call anywhere else is always drift; the sanctioned path is `Write-Console`.
 
 ---
 
@@ -535,7 +551,7 @@ Standalone scripts and shared-library files use `Write-Log` (defined in `xFACts-
 | Function name matching a SHARED function's name in the same zone | §8.1 |
 | Duplicate function definition within a zone | §8.1 |
 | Function call to a name not defined in any cataloged PS file | §8.1 |
-| `Add-PodeRoute` without `-Authentication 'ADLogin'` | §11.1 |
+| `Add-PodeRoute` without `-Authentication 'ADLogin'` (except the §11.3 infrastructure routes) | §11.2, §11.3 |
 | Page route without `Get-UserAccess` as first statement | §11.1 |
 | API route without `Test-ActionEndpoint` call | §11.1 |
 | Page route without `Write-PodeHtmlResponse` | §11.1 |
@@ -548,7 +564,7 @@ Standalone scripts and shared-library files use `Write-Log` (defined in `xFACts-
 | `Export-ModuleMember -Function *` (wildcard) | §14.1 |
 | `Export-ModuleMember` referencing undefined function | §14.1 |
 | Module function declared but not exported | §14.1 |
-| `Write-Host` in standalone or shared-library file (except files enumerated in §15.1) | §15.1 |
+| `Write-Host` outside the sanctioned console-helper bodies (`Write-Console`, `Write-ConsoleBanner`, `Write-ConsoleRule`) | §15.1 |
 | Import statement outside the IMPORTS section | §10.1 |
 | More than one blank line between top-level constructs | §16.1 |
 | Trailing whitespace on a line | §16.1 |
@@ -635,7 +651,7 @@ The populator emits a drift code on every spec violation. Each code maps to a si
 | `MISSING_VARIABLE_COMMENT` | Variable declaration not preceded by a purpose comment. | §9.2 |
 | `MISPLACED_DECLARATION` | `$script:` declaration appears outside a CONSTANTS or VARIABLES section. | §9.2 |
 | `MISPLACED_IMPORT` | Import statement appears outside the IMPORTS section. | §10.1 |
-| `MISSING_AUTHENTICATION` | `Add-PodeRoute` call lacks `-Authentication 'ADLogin'`. | §11.1 |
+| `MISSING_AUTHENTICATION` | `Add-PodeRoute` lacks `-Authentication 'ADLogin'`. The §11.3 infrastructure routes (login, logout, internal engine-event) are exempt. | §11.2, §11.3 |
 | `MISSING_RBAC_CHECK_PAGE` | Page route scriptblock does not call `Get-UserAccess` as the first statement. | §11.1 |
 | `MISSING_RBAC_CHECK_API` | API route scriptblock does not call `Test-ActionEndpoint`. | §11.1 |
 | `MISSING_RESPONSE_WRITE_PAGE` | Page route scriptblock does not end with `Write-PodeHtmlResponse`. | §11.1 |
