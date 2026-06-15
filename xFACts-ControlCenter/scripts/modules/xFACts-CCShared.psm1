@@ -29,6 +29,7 @@
     CONSTANTS: CONNECTION STRINGS
     VARIABLES: RBAC CACHE
     VARIABLES: DMOPS CACHE
+    FUNCTIONS: CONSOLE OUTPUT
     FUNCTIONS: DATABASE
     FUNCTIONS: RBAC CACHE
     FUNCTIONS: RBAC HELPERS
@@ -100,17 +101,64 @@ $script:RBACCache = @{
 # In-memory DmOps remaining-counts cache. Populated by Get-RemainingCounts on
 # first read or after TTL expiry.
 $script:DmOpsRemainingCache = @{
-    ArchiveConsumersRemaining   = $null   # ALL: WFAARCH1 + WFAARCH3
-    ArchiveAccountsRemaining    = $null   # ALL: WFAARCH1 + WFAARCH3
-    ArchiveConsumersRemaining1P = $null   # WFAARCH1
-    ArchiveAccountsRemaining1P  = $null   # WFAARCH1
-    ArchiveConsumersRemaining3P = $null   # WFAARCH3
-    ArchiveAccountsRemaining3P  = $null   # WFAARCH3
+    ArchiveConsumersRemaining   = $null
+    ArchiveAccountsRemaining    = $null
+    ArchiveConsumersRemaining1P = $null
+    ArchiveAccountsRemaining1P  = $null
+    ArchiveConsumersRemaining3P = $null
+    ArchiveAccountsRemaining3P  = $null
     ShellRemaining              = $null
     BaselineDttm                = $null
     ArchiveTargetInstance       = $null
     ShellPurgeTargetInstance    = $null
     CacheMaxAgeMinutes          = 60
+}
+
+<# ============================================================================
+   FUNCTIONS: CONSOLE OUTPUT
+   ----------------------------------------------------------------------------
+   Sanctioned console-output helper for operator-facing narration when the
+   Control Center is launched interactively from a console (rather than the
+   Windows service). The one permitted home for Write-Host in the CC zone.
+   Prefix: (none)
+   ============================================================================ #>
+
+function Write-Console {
+    [CmdletBinding()]
+    param(
+        [string]$Message = '',
+
+        [string]$Color = 'Gray',
+
+        [switch]$NoNewline
+    )
+
+    <#
+    .SYNOPSIS
+        Writes a line to the console. Sanctioned replacement for Write-Host in the CC zone.
+
+    .DESCRIPTION
+        A faithful Write-Host stand-in for operator-facing console narration
+        when Start-ControlCenter.ps1 is run interactively. It is purely
+        ephemeral console output: no timestamp, no level tag, no log file.
+        Durable output belongs in the platform log, not here.
+
+    .PARAMETER Message
+        The text to print. Defaults to empty (a blank spacer line).
+
+    .PARAMETER Color
+        Console foreground color. Defaults to Gray.
+
+    .PARAMETER NoNewline
+        Suppresses the trailing newline so a later call continues the line.
+    #>
+
+    if ($NoNewline) {
+        Write-Host $Message -ForegroundColor $Color -NoNewline
+    }
+    else {
+        Write-Host $Message -ForegroundColor $Color
+    }
 }
 
 <# ============================================================================
@@ -2139,18 +2187,30 @@ function Get-RemainingCounts {
 
     .DESCRIPTION
         Reads the cached counts from $script:DmOpsRemainingCache, refreshing
-        the cache from the database when stale. Returns a hashtable with the
-        counts the DmOps dashboard renders. Cache TTL is short because the
-        underlying numbers change with every archive run.
+        from the database when stale. Archive and shell sources refresh
+        independently: a failure in one cannot discard or block the other.
+        Failed sources report $null (unknown) rather than stale values, and
+        retries are throttled to one attempt per RetryIntervalMinutes so a
+        failing source cannot stall every page load. BaselineDttm reflects
+        the last successful archive refresh.
     #>
 
     $cache = $script:DmOpsRemainingCache
     $now = Get-Date
+    $maxAge = $cache.CacheMaxAgeMinutes
+    $retryMinutes = 5
 
-    # Check if cache is still valid
-    if ($cache.BaselineDttm -and ($now - $cache.BaselineDttm).TotalMinutes -lt $cache.CacheMaxAgeMinutes) {
+    $archiveFresh = $cache.ArchiveAsOfDttm -and ($now - $cache.ArchiveAsOfDttm).TotalMinutes -lt $maxAge
+    $shellFresh   = $cache.ShellAsOfDttm   -and ($now - $cache.ShellAsOfDttm).TotalMinutes   -lt $maxAge
+
+    # Everything fresh -- serve from cache
+    if ($archiveFresh -and $shellFresh) { return $cache }
+
+    # Something is stale or failed -- but throttle refresh attempts
+    if ($cache.LastAttemptDttm -and ($now - $cache.LastAttemptDttm).TotalMinutes -lt $retryMinutes) {
         return $cache
     }
+    $cache.LastAttemptDttm = $now
 
     # Get Archive and ShellPurge target instances independently from GlobalConfig
     $targetConfig = Invoke-XFActsQuery -Query @"
@@ -2169,72 +2229,60 @@ function Get-RemainingCounts {
         }
     }
 
-    try {
-        # Archive remaining: TC_ARCH-tagged consumers in the two archive
-        # workgroups, split by line of business (WFAARCH1 = 1P, WFAARCH3 = 3P),
-        # plus the accounts on those consumers. Under the workgroup model a
-        # TC_ARCH consumer is only archivable once moved into one of these
-        # workgroups, so the per-workgroup counts are the real remaining work;
-        # ALL is their sum. Single query keeps this one OLTP round-trip.
-        $archiveResult = Invoke-CRS5ReadQuery -TargetInstance $archiveTargetInstance -Query @"
-            SELECT
-                (SELECT COUNT(*)
-                 FROM crs5_oltp.dbo.cnsmr_Tag ct
-                 INNER JOIN crs5_oltp.dbo.tag t ON t.tag_id = ct.tag_id
-                 INNER JOIN crs5_oltp.dbo.cnsmr c ON c.cnsmr_id = ct.cnsmr_id
-                 INNER JOIN crs5_oltp.dbo.wrkgrp w ON w.wrkgrp_id = c.wrkgrp_id
-                 WHERE ct.cnsmr_tag_sft_delete_flg = 'N'
-                   AND t.tag_shrt_nm = 'TC_ARCH'
-                   AND w.wrkgrp_shrt_nm = 'WFAARCH1') AS consumers_1p,
-                (SELECT COUNT(*)
-                 FROM crs5_oltp.dbo.cnsmr_Tag ct
-                 INNER JOIN crs5_oltp.dbo.tag t ON t.tag_id = ct.tag_id
-                 INNER JOIN crs5_oltp.dbo.cnsmr c ON c.cnsmr_id = ct.cnsmr_id
-                 INNER JOIN crs5_oltp.dbo.wrkgrp w ON w.wrkgrp_id = c.wrkgrp_id
-                 WHERE ct.cnsmr_tag_sft_delete_flg = 'N'
-                   AND t.tag_shrt_nm = 'TC_ARCH'
-                   AND w.wrkgrp_shrt_nm = 'WFAARCH3') AS consumers_3p,
-                (SELECT COUNT(*)
-                 FROM crs5_oltp.dbo.cnsmr_accnt ca
-                 WHERE ca.cnsmr_id IN (
-                     SELECT ct.cnsmr_id
-                     FROM crs5_oltp.dbo.cnsmr_Tag ct
-                     INNER JOIN crs5_oltp.dbo.tag t ON t.tag_id = ct.tag_id
-                     INNER JOIN crs5_oltp.dbo.cnsmr c ON c.cnsmr_id = ct.cnsmr_id
-                     INNER JOIN crs5_oltp.dbo.wrkgrp w ON w.wrkgrp_id = c.wrkgrp_id
-                     WHERE ct.cnsmr_tag_sft_delete_flg = 'N'
-                       AND t.tag_shrt_nm = 'TC_ARCH'
-                       AND w.wrkgrp_shrt_nm = 'WFAARCH1'
-                 )) AS accounts_1p,
-                (SELECT COUNT(*)
-                 FROM crs5_oltp.dbo.cnsmr_accnt ca
-                 WHERE ca.cnsmr_id IN (
-                     SELECT ct.cnsmr_id
-                     FROM crs5_oltp.dbo.cnsmr_Tag ct
-                     INNER JOIN crs5_oltp.dbo.tag t ON t.tag_id = ct.tag_id
-                     INNER JOIN crs5_oltp.dbo.cnsmr c ON c.cnsmr_id = ct.cnsmr_id
-                     INNER JOIN crs5_oltp.dbo.wrkgrp w ON w.wrkgrp_id = c.wrkgrp_id
-                     WHERE ct.cnsmr_tag_sft_delete_flg = 'N'
-                       AND t.tag_shrt_nm = 'TC_ARCH'
-                       AND w.wrkgrp_shrt_nm = 'WFAARCH3'
-                 )) AS accounts_3p
+    # ── Archive remaining (independent) ──
+    # Materialize the TC_ARCH consumer set once, then aggregate accounts off
+    # it. The temp-table shape avoids the multi-DISTINCT single-pass plan
+    # that scales catastrophically (3 min vs ~20 sec at 9M consumers).
+    if (-not $archiveFresh) {
+        try {
+            $archiveResult = Invoke-CRS5ReadQuery -TargetInstance $archiveTargetInstance -Query @"
+                SET NOCOUNT ON;
+
+                SELECT DISTINCT c.cnsmr_id, w.wrkgrp_shrt_nm
+                INTO #arch
+                FROM crs5_oltp.dbo.cnsmr_Tag ct
+                INNER JOIN crs5_oltp.dbo.tag t ON t.tag_id = ct.tag_id AND t.tag_shrt_nm = 'TC_ARCH'
+                INNER JOIN crs5_oltp.dbo.cnsmr c ON c.cnsmr_id = ct.cnsmr_id
+                INNER JOIN crs5_oltp.dbo.wrkgrp w ON w.wrkgrp_id = c.wrkgrp_id
+                    AND w.wrkgrp_shrt_nm IN ('WFAARCH1', 'WFAARCH3')
+                WHERE ct.cnsmr_tag_sft_delete_flg = 'N';
+
+                CREATE UNIQUE CLUSTERED INDEX CIX ON #arch (cnsmr_id);
+
+                SELECT a.wrkgrp_shrt_nm, COUNT(*) AS accounts_remaining
+                INTO #acc
+                FROM #arch a
+                INNER JOIN crs5_oltp.dbo.cnsmr_accnt ca ON ca.cnsmr_id = a.cnsmr_id
+                GROUP BY a.wrkgrp_shrt_nm;
+
+                SELECT con.wrkgrp_shrt_nm,
+                       con.consumers_remaining,
+                       ISNULL(acc.accounts_remaining, 0) AS accounts_remaining
+                FROM (
+                    SELECT wrkgrp_shrt_nm, COUNT(*) AS consumers_remaining
+                    FROM #arch
+                    GROUP BY wrkgrp_shrt_nm
+                ) con
+                LEFT JOIN #acc acc ON acc.wrkgrp_shrt_nm = con.wrkgrp_shrt_nm;
+
+                DROP TABLE #acc;
+                DROP TABLE #arch;
 "@ -TimeoutSeconds 60
 
-        # Shell remaining: WFAPURGE workgroup consumers (naturally-occurring shells).
-        # Routes against ShellPurge's configured target_instance.
-        $shellResult = Invoke-CRS5ReadQuery -TargetInstance $shellPurgeTargetInstance -Query @"
-            SELECT COUNT(c.cnsmr_id) AS remaining_count
-            FROM crs5_oltp.dbo.cnsmr c
-            INNER JOIN crs5_oltp.dbo.wrkgrp w ON w.wrkgrp_id = c.wrkgrp_id
-                AND w.wrkgrp_shrt_nm = 'WFAPURGE'
-"@ -TimeoutSeconds 30
-
-        # Update cache: per-workgroup figures and the ALL combined sums.
-        if ($archiveResult -and $archiveResult.Count -gt 0) {
-            $c1p = [long]$archiveResult[0].consumers_1p
-            $c3p = [long]$archiveResult[0].consumers_3p
-            $a1p = [long]$archiveResult[0].accounts_1p
-            $a3p = [long]$archiveResult[0].accounts_3p
+            # Missing workgroup row = empty workgroup = genuine zero
+            $c1p = [long]0; $c3p = [long]0; $a1p = [long]0; $a3p = [long]0
+            if ($archiveResult) {
+                foreach ($row in $archiveResult) {
+                    if ($row.wrkgrp_shrt_nm -eq 'WFAARCH1') {
+                        $c1p = [long]$row.consumers_remaining
+                        $a1p = [long]$row.accounts_remaining
+                    }
+                    elseif ($row.wrkgrp_shrt_nm -eq 'WFAARCH3') {
+                        $c3p = [long]$row.consumers_remaining
+                        $a3p = [long]$row.accounts_remaining
+                    }
+                }
+            }
 
             $cache.ArchiveConsumersRemaining1P = $c1p
             $cache.ArchiveConsumersRemaining3P = $c3p
@@ -2242,23 +2290,44 @@ function Get-RemainingCounts {
             $cache.ArchiveAccountsRemaining3P  = $a3p
             $cache.ArchiveConsumersRemaining   = $c1p + $c3p
             $cache.ArchiveAccountsRemaining    = $a1p + $a3p
+            $cache.ArchiveAsOfDttm             = $now
+            $cache.BaselineDttm                = $now
         }
-        else {
+        catch {
+            # Honest unknown -- never serve stale values as current
             $cache.ArchiveConsumersRemaining1P = $null
             $cache.ArchiveConsumersRemaining3P = $null
             $cache.ArchiveAccountsRemaining1P  = $null
             $cache.ArchiveAccountsRemaining3P  = $null
             $cache.ArchiveConsumersRemaining   = $null
             $cache.ArchiveAccountsRemaining    = $null
+            $cache.ArchiveAsOfDttm             = $null
+            Write-Warning "Failed to refresh archive remaining counts from crs5_oltp ($archiveTargetInstance): $($_.Exception.Message)"
         }
-        $cache.ShellRemaining = if ($shellResult -and $shellResult.Count -gt 0) { [long]$shellResult[0].remaining_count } else { $null }
-        $cache.BaselineDttm = $now
-        $cache.ArchiveTargetInstance    = $archiveTargetInstance
-        $cache.ShellPurgeTargetInstance = $shellPurgeTargetInstance
     }
-    catch {
-        Write-Warning "Failed to refresh remaining counts from crs5_oltp (Archive: $archiveTargetInstance, ShellPurge: $shellPurgeTargetInstance): $($_.Exception.Message)"
+
+    # ── Shell remaining (independent) ──
+    if (-not $shellFresh) {
+        try {
+            $shellResult = Invoke-CRS5ReadQuery -TargetInstance $shellPurgeTargetInstance -Query @"
+                SELECT COUNT(c.cnsmr_id) AS remaining_count
+                FROM crs5_oltp.dbo.cnsmr c
+                INNER JOIN crs5_oltp.dbo.wrkgrp w ON w.wrkgrp_id = c.wrkgrp_id
+                    AND w.wrkgrp_shrt_nm = 'WFAPURGE'
+"@ -TimeoutSeconds 30
+
+            $cache.ShellRemaining = if ($shellResult -and $shellResult.Count -gt 0) { [long]$shellResult[0].remaining_count } else { $null }
+            $cache.ShellAsOfDttm  = $now
+        }
+        catch {
+            $cache.ShellRemaining = $null
+            $cache.ShellAsOfDttm  = $null
+            Write-Warning "Failed to refresh shell remaining counts from crs5_oltp ($shellPurgeTargetInstance): $($_.Exception.Message)"
+        }
     }
+
+    $cache.ArchiveTargetInstance    = $archiveTargetInstance
+    $cache.ShellPurgeTargetInstance = $shellPurgeTargetInstance
 
     return $cache
 }
@@ -3309,5 +3378,6 @@ Export-ModuleMember -Function @(
     'Test-ActionEndpoint',
     'Test-ActionPermission',
     'Test-TierSufficient',
+    'Write-Console',
     'Write-RBACAuditLog'
 )
