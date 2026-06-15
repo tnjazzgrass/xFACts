@@ -1131,6 +1131,139 @@
                                         ]
                    },
                    {
+                       "name":  "Archive_WorkgroupRegistry",
+                       "description":  "Authoritative registry of the DM workgroups that constitute the archive candidate pool, per line of business (1P/3P). The DM nightly tagging jobs (account-level JA_ARCH* and consumer-level JC_ARCH*) filter their candidate selection against the active rows in this table via cross-database reference, so pool changes are a row insert/update here rather than a DM job edit. Deliberately excludes the archive destination workgroups (WFAARCH1/WFAARCH3): this table defines where candidates come FROM, never where the archive process operates.",
+                       "module":  "DmOps",
+                       "category":  "Archive",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "registry_id",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  true,
+                                           "description":  "Surrogate identity key."
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "wrkgrp_shrt_nm",
+                                           "dataType":  "varchar",
+                                           "length":  "8",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "DM workgroup short name, matching crs5_oltp.dbo.wrkgrp.wrkgrp_shrt_nm (VARCHAR(8)). Stored by name rather than wrkgrp_id because names are stable across environments while ids are environment-specific surrogates; consumers resolve the id at point of use."
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "lob",
+                                           "dataType":  "char",
+                                           "length":  "2",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Line of business this workgroup belongs to: 1P (first party) or 3P (third party). Each tagger job selects only its own LOB slice."
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "description",
+                                           "dataType":  "varchar",
+                                           "length":  "500",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Free-text rationale for the workgroup\u0027s inclusion in the candidate pool (client context, in-scope confirmation date, etc.)."
+                                       },
+                                       {
+                                           "ordinal":  5,
+                                           "name":  "is_active",
+                                           "dataType":  "bit",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "((1))",
+                                           "description":  "Soft enable/disable. Inactive rows are retained for history but excluded by all consumers."
+                                       },
+                                       {
+                                           "ordinal":  6,
+                                           "name":  "created_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(getdate())",
+                                           "description":  "Row creation timestamp."
+                                       },
+                                       {
+                                           "ordinal":  7,
+                                           "name":  "created_by",
+                                           "dataType":  "varchar",
+                                           "length":  "128",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(suser_sname())",
+                                           "description":  "Login that created the row."
+                                       },
+                                       {
+                                           "ordinal":  8,
+                                           "name":  "modified_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Timestamp of the most recent modification. NULL when never modified."
+                                       },
+                                       {
+                                           "ordinal":  9,
+                                           "name":  "modified_by",
+                                           "dataType":  "varchar",
+                                           "length":  "128",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Login that performed the most recent modification. NULL when never modified."
+                                       }
+                                   ],
+                       "indexes":  [
+                                       {
+                                           "name":  "PK_Archive_WorkgroupRegistry",
+                                           "type":  "CLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  true,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "registry_id"
+                                       },
+                                       {
+                                           "name":  "UQ_Archive_WorkgroupRegistry_wrkgrp_shrt_nm",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  true,
+                                           "keyColumns":  "wrkgrp_shrt_nm"
+                                       }
+                                   ],
+                       "checkConstraints":  [
+                                                {
+                                                    "name":  "CK_Archive_WorkgroupRegistry_lob",
+                                                    "definition":  "([lob]=\u00273P\u0027 OR [lob]=\u00271P\u0027)"
+                                                }
+                                            ],
+                       "designNotes":  [
+                                           {
+                                               "topic":  "Explicit List Over Pattern Matching",
+                                               "note":  "Workgroup membership is an explicit per-row decision rather than a name-pattern rule. Explicit rows make inclusion a deliberate act with an audit trail.",
+                                               "sortOrder":  1
+                                           }
+                                       ],
+                       "statusValues":  [
+                                            {
+                                                "column":  "lob",
+                                                "value":  "1P",
+                                                "meaning":  "First-party line of business. Candidate pool for the JA_ARCH1/JC_ARCH1 nightly jobs feeding WFAARCH1.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "lob",
+                                                "value":  "3P",
+                                                "meaning":  "Third-party line of business. Candidate pool for the JA_ARCH3/JC_ARCH3 nightly jobs feeding WFAARCH3.",
+                                                "sortOrder":  2
+                                            }
+                                        ]
+                   },
+                   {
                        "name":  "ShellPurge_BatchDetail",
                        "description":  "Per-table operation detail within each shell purge batch. One row per table in the delete sequence per batch, capturing the delete order, table name, rows affected, duration, and status. Provides a full replay of every batch execution for audit trails and troubleshooting.",
                        "module":  "DmOps",
