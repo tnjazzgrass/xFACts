@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-06-12 04:16:59
+Generated: 2026-06-15 06:18:15
 
 ## Module Registry
 
@@ -128,6 +128,7 @@ Generated: 2026-06-12 04:16:59
 | DmOps | Archive_ConsumerExceptionLog | Database | Table | DmOps | Audit trail of TC_ARCH-tagged consumers removed from a batch by runtime re-verification — one row per excepted consumer with confirmation flags for tag removal and AR event writes |
 | DmOps | Archive_ConsumerLog | Database | Table | DmOps | Audit trail of every consumer and account archived — tall skinny log for BI cross-reference and reconciliation |
 | DmOps | Archive_Schedule | Database | Table | DmOps | Weekly schedule grid controlling archive execution mode per hour — blocked, full batch, or reduced batch |
+| DmOps | Archive_WorkgroupRegistry | Database | Table | DmOps | Authoritative registry of archive candidate-pool workgroups per line of business. Consumed by the DM nightly tagging job filters (via cross-database reference), the Control Center DM Operations UI, and candidate-pool drift auditing. Deliberately excludes the destination workgroups (WFAARCH1/WFAARCH3). |
 | DmOps | ShellPurge_BatchDetail | Database | Table | DmOps | Per-table operation detail within each shell purge batch — delete order, rows affected, duration, and status |
 | DmOps | ShellPurge_BatchLog | Database | Table | DmOps | Batch-level execution summary for shell purge processing — one row per batch with counts, timing, and status |
 | DmOps | ShellPurge_ConsumerExceptionLog | Database | Table | DmOps | Consumers excluded from shell purge due to qualifying data in tables not covered by the delete sequence — one row per consumer per exclusion reason |
@@ -631,7 +632,7 @@ Generated: 2026-06-12 04:16:59
 | ServerOps | Index | index_frag_med_max | 60 | INT | Upper fragmentation bound for medium range (%) |
 | ServerOps | Index | index_frag_med_score | 15 | INT | Priority score for moderately fragmented indexes (30-60%) |
 | ServerOps | Index | index_fragmentation_threshold | 15.00 | DECIMAL | Minimum fragmentation % to qualify for maintenance |
-| ServerOps | Index | index_lock_timeout_seconds | 60 | INT | Seconds to wait for a lock before skipping an index |
+| ServerOps | Index | index_lock_timeout_seconds | 120 | INT | Seconds to wait for a lock before skipping an index |
 | ServerOps | Index | index_maintenance_priority_1_score | 40 | INT | Priority score for Critical maintenance priority databases |
 | ServerOps | Index | index_maintenance_priority_2_score | 25 | INT | Priority score for High maintenance priority databases |
 | ServerOps | Index | index_maintenance_priority_3_score | 15 | INT | Priority score for Normal maintenance priority databases |
@@ -647,10 +648,10 @@ Generated: 2026-06-12 04:16:59
 | ServerOps | Index | index_scan_abort | 0 | BIT | Emergency stop: abort fragmentation scanning after current batch |
 | ServerOps | Index | index_scan_batch_check_size | 50 | INT | Indexes to scan between abort/time-limit checks |
 | ServerOps | Index | index_scan_interval_minutes | 2880 | INT | Minimum minutes between full fragmentation scan runs |
-| ServerOps | Index | index_scan_pages_per_second | 150000 | INT | Estimated scan speed for timeout calculation (pages/sec) |
+| ServerOps | Index | index_scan_pages_per_second | 120000 | INT | Estimated scan speed for timeout calculation (pages/sec) |
 | ServerOps | Index | index_scan_skip_rebuilt_days | 3 | INT | Days to skip scanning recently rebuilt indexes |
 | ServerOps | Index | index_scan_time_limit_minutes | 0 | INT | Maximum scan duration in minutes (0 = no limit) |
-| ServerOps | Index | index_scan_timeout_base_seconds | 90 | INT | Minimum timeout per index during scanning (seconds) |
+| ServerOps | Index | index_scan_timeout_base_seconds | 120 | INT | Minimum timeout per index during scanning (seconds) |
 | ServerOps | Index | index_seconds_per_page_offline | 0.00020 | DECIMAL | Time estimate factor for offline rebuilds (seconds per page) |
 | ServerOps | Index | index_seconds_per_page_online | 0.0004 | DECIMAL | Time estimate factor for online rebuilds (seconds per page) |
 | ServerOps | Index | index_sync_interval_minutes | 1440 | INT | Minimum minutes between index discovery runs |
