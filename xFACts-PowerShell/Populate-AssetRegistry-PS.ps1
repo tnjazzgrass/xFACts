@@ -402,7 +402,7 @@ $DriftDescriptions = [ordered]@{
     'WRONG_DECLARATION_SECTION'         = "An assignment statement appears in a section type that disallows it (e.g., a constant in a VARIABLES section)."
 
     # Imports
-    'MISPLACED_IMPORT'                  = "An import statement (dot-source or Import-Module) appears outside the IMPORTS section."
+    'MISPLACED_IMPORT'                  = "An import statement (dot-source or Import-Module) appears outside the IMPORTS section. Exempt: cc-bootstrap imports inside the Start-PodeServer EXECUTION block, and shared-library imports inside a function body (the role has no IMPORTS section available, so an in-function platform-dependency load is sanctioned)."
 
     # Routes
     'ROUTE_OUTSIDE_ROUTE_SECTION'       = "An Add-PodeRoute call appears outside a ROUTE section."
@@ -2741,12 +2741,34 @@ function Add-PSModuleImportRow {
     $script:rows.Add($row)
 
     # MISPLACED_IMPORT: imports must appear in the IMPORTS section.
-    # cc-bootstrap exemption: imports inside the Start-PodeServer EXECUTION block
-    # (the shared-module load and the dynamic route-loader dot-source) are
-    # registered there by necessity and are treated as opaque execution.
+    # Two exemptions apply, both for imports that have no compliant home in
+    # their file's role:
+    #   1. cc-bootstrap: imports inside the Start-PodeServer EXECUTION block
+    #      (the shared-module load and the dynamic route-loader dot-source) are
+    #      registered there by necessity and are treated as opaque execution.
+    #   2. shared-library: an import inside a function body is the sanctioned
+    #      mechanism for the shared library to own a platform dependency on its
+    #      consumers' behalf (e.g. the SqlServer/SQLPS load in
+    #      Initialize-XFActsScript). The shared-library role is forbidden an
+    #      IMPORTS section, so an in-function load is its only available home.
+    #      Does not extend to standalone or module roles: those have an IMPORTS
+    #      section available and must declare imports there.
     $section = Get-SectionForLine -Sections $script:CurrentSections -Line $line
     $ccBootstrapExecImport = ($script:CurrentFileRole -eq 'cc-bootstrap' -and $section -and $section.TypeName -eq 'EXECUTION')
-    if (($null -eq $section -or $section.TypeName -ne 'IMPORTS') -and -not $ccBootstrapExecImport) {
+
+    $sharedLibInFunctionImport = $false
+    if ($script:CurrentFileRole -eq 'shared-library') {
+        $cursor = $ImportAst.Parent
+        while ($null -ne $cursor) {
+            if ($cursor -is [System.Management.Automation.Language.FunctionDefinitionAst]) {
+                $sharedLibInFunctionImport = $true
+                break
+            }
+            $cursor = $cursor.Parent
+        }
+    }
+
+    if (($null -eq $section -or $section.TypeName -ne 'IMPORTS') -and -not $ccBootstrapExecImport -and -not $sharedLibInFunctionImport) {
         $where = if ($section) { "the $($section.TypeName) section" } else { 'outside any section banner' }
         Add-DriftCode -Row $row -Code 'MISPLACED_IMPORT' `
             -Context "Import statement appears in $where; spec requires the IMPORTS section."
