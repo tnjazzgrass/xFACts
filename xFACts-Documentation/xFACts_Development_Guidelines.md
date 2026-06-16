@@ -670,13 +670,19 @@ The function does not load GlobalConfig, ServerRegistry, or credentials -- scrip
 
 **Ordering matters:** The dot-source of `xFACts-OrchestratorFunctions.ps1` must happen before calling `Initialize-XFActsScript`. The `$Execute` parameter must be declared in the script's `param()` block. `Initialize-XFActsScript` does not return a value -- it sets script-scope context variables that the shared functions read; there is no return to capture or guard on.
 
-**Standalone scripts** that are not orchestrator-managed (utility scripts, one-time tools) may still use manual initialization if they don't need the full shared infrastructure. The key requirements remain: SQL module import, `-Execute` guard for anything that makes changes, and `-TrustServerCertificate` on all `Invoke-Sqlcmd` calls.
+**Standalone scripts** that are not orchestrator-managed (utility scripts, one-time tools) may still use manual initialization if they don't need the full shared infrastructure. The key requirements remain: SQL module import, `-Execute` guard for anything that makes changes, and connection identity on every SQL call as described in Section 3.3.
 
 ### 3.3 Connection Identity
 
-All `Invoke-Sqlcmd` calls MUST include `-ApplicationName` to identify the calling script in SQL Server DMVs and Extended Events.
+Every database call made from an xFACts script must identify itself to SQL Server, so that activity is attributable in DMVs and Extended Events. Without it, connections appear as anonymous "Core .Net SqlClient Data Provider" entries, making it impossible to attribute database load to a specific script. Identity has two parts: the application name (`-ApplicationName`) and the trusted-connection flag (`-TrustServerCertificate`), which every AG-listener and instance connection in this environment requires.
 
-**Convention:** `xFACts <script-name-without-extension>`
+**Application name convention:** `xFACts <script-name-without-extension>` -- for example, `xFACts Collect-XEEvents`.
+
+**How identity is supplied depends on how the call is made:**
+
+- **Through the shared SQL helpers** (`Get-SqlData`, `Invoke-SqlNonQuery`) and the `Invoke-XFACts*` wrappers: identity is applied automatically. The helpers read the application name from the context that `Initialize-XFActsScript` established and attach both `-ApplicationName` and `-TrustServerCertificate` to the underlying call. A script that uses these helpers writes nothing extra -- it gets correct attribution for free. This is the preferred path for orchestrated scripts.
+
+- **On a bare `Invoke-Sqlcmd` call** (a direct call that does not go through a helper): both `-ApplicationName` and `-TrustServerCertificate` must be passed as explicit parameters on the call itself. They are never folded into a splatted hashtable, so that the attribution is plainly visible on every bare call. Any other parameters may be passed explicitly or folded into a splatted hashtable, but these two are always explicit.
 
 ```powershell
 Invoke-Sqlcmd -ServerInstance $Instance -Database $DB -Query $Query `
@@ -684,9 +690,9 @@ Invoke-Sqlcmd -ServerInstance $Instance -Database $DB -Query $Query `
     -QueryTimeout 300 -ErrorAction Stop -TrustServerCertificate
 ```
 
-This applies to every `Invoke-Sqlcmd` call in the script -- inline calls, calls inside helper functions, everything. Without this, connections appear as anonymous "Core .Net SqlClient Data Provider" in DMVs and XE data, making it impossible to attribute database load to specific scripts.
+This applies to every bare `Invoke-Sqlcmd` call in a script -- inline calls and calls inside helper functions alike.
 
-The Control Center uses ADO.NET connection strings with `Application Name=xFACts Control Center` -- handled centrally in the helpers module and does not require per-route changes.
+The Control Center uses ADO.NET connection strings with `Application Name=xFACts Control Center` -- handled centrally in the helpers module, so Control Center routes require no per-route changes.
 
 ### 3.4 Orchestrator Integration
 
