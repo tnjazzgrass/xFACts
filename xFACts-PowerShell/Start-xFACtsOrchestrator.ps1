@@ -1155,10 +1155,10 @@ Register-EngineEvent -SourceIdentifier PowerShell.Exiting -Action {
 
 # Ctrl+C handling for interactive testing.
 [Console]::TreatControlCAsInput = $false
-$null = Register-ObjectEvent -InputObject ([Console]) -EventName CancelKeyPress -Action {
+Register-ObjectEvent -InputObject ([Console]) -EventName CancelKeyPress -Action {
     $Script:ShutdownRequested = $true
     $Event.SourceEventArgs.Cancel = $true
-} -ErrorAction SilentlyContinue
+} -ErrorAction SilentlyContinue | Out-Null
 
 # Ensure the log directory exists before the engine begins writing logs.
 if (-not (Test-Path $script:logDir)) { New-Item -ItemType Directory -Path $script:logDir -Force | Out-Null }
