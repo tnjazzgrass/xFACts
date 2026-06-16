@@ -1,142 +1,117 @@
 <#
 .SYNOPSIS
-    xFACts - Shared Orchestrator & Script Infrastructure Functions
+    Shared orchestrator and script-infrastructure functions for the xFACts platform.
 
 .DESCRIPTION
-    Common functions used by all scripts running under the xFACts platform:
-    - Script initialization (SQL module, logging, execute guard, application identity)
-    - Standardized logging (console + file)
-    - SQL data access with automatic application name tagging
-    - Task completion callback (updates TaskLog and ProcessRegistry)
-    - Teams alert queuing with mandatory deduplication
-    
-    Dot-source this file at the top of all xFACts scripts:
-    . "$PSScriptRoot\xFACts-OrchestratorFunctions.ps1"
+    Common functions dot-sourced by every script running under the xFACts
+    platform: standardized script initialization, durable and ephemeral
+    logging, SQL data access with automatic application-name tagging,
+    credential retrieval, the orchestrator task-completion callback, real-time
+    engine-event push, and Teams alert queuing with mandatory deduplication.
+    Dot-source this file at the top of a script with
+    . "$PSScriptRoot\xFACts-OrchestratorFunctions.ps1" and then call
+    Initialize-XFActsScript before any other shared function.
+
+.COMPONENT
+    Engine.Orchestrator
 
 .NOTES
-    File Name      : xFACts-OrchestratorFunctions.ps1
-    Location       : E:\xFACts-PowerShell
-    Author         : Frost Arnett Applications Team
-    Version        : Tracked in dbo.System_Metadata (component: Engine.Orchestrator)
+    File Name : xFACts-OrchestratorFunctions.ps1
+    Location  : E:\xFACts-PowerShell\xFACts-OrchestratorFunctions.ps1
 
-================================================================================
-CHANGELOG
-================================================================================
-2026-04-28  Added -CardJson optional parameter to Send-TeamsAlert. When provided,
-            the value is written to Teams.AlertQueue.card_json for rich Adaptive
-            Card rendering. Title/Message/Color remain required for the plain-text
-            audit trail. Standardizes all Teams alerting on the shared function
-            regardless of payload type. Replaces direct INSERT pattern previously
-            used by Send-OpenBatchSummary and Send-DiskHealthSummary.
-2026-04-22  Added -MaxBinaryLength parameter to Get-SqlData and Invoke-SqlNonQuery
-            (parallel to existing -MaxCharLength). Optional; when specified,
-            passed through to Invoke-Sqlcmd -MaxBinaryLength. Required for
-            queries returning large VARBINARY data (e.g., Sterling b2bi
-            TRANS_DATA compressed XML blobs). Invoke-Sqlcmd default is 1024
-            bytes — anything larger gets silently truncated mid-blob, which
-            breaks gzip decompression downstream without raising an error.
-2026-03-16  Added Send-TeamsAlert shared function for Teams alert queuing with
-            mandatory dedup against Teams.RequestLog. Replaces inline INSERT
-            pattern used by individual scripts. No opt-out for dedup — callers
-            needing repeating alerts must pass unique TriggerValue each time.
-2026-03-10  Added -MaxCharLength parameter to Get-SqlData and Invoke-SqlNonQuery.
-            Optional; when specified, passed through to Invoke-Sqlcmd. Required
-            for scripts processing large XML/text (XE sessions, DMVs, replication).
-            Refactored both functions to use splatting for cleaner parameter passing.
-2026-03-08  Added Get-ServiceCredentials for standalone credential retrieval
-            using two-tier decryption via Get-SqlData. Replaces per-script
-            inline credential functions (Jira, SFTP, etc.).
-            Bug fix: Renamed -Db parameter to -DatabaseName in Get-SqlData
-            and Invoke-SqlNonQuery. -Db conflicts with PowerShell's built-in
-            -Debug alias when callers use [CmdletBinding()].
-2.2.0  Engine event scheduling metadata
-       - Send-EngineEvent: added IntervalSeconds, ScheduledTime,
-         RunMode parameters. Included in PROCESS_COMPLETED payload
-         so engine-events.js uses live scheduling values for
-         countdown timers instead of hardcoded defaults.
-       - Complete-OrchestratorTask: expanded ProcessRegistry metadata
-         query to include interval_seconds, scheduled_time, run_mode.
-         Passes scheduling fields through to Send-EngineEvent.
-2.1.0  Real-time engine event push
-       - Added Send-EngineEvent function: fire-and-forget HTTP POST to
-         Control Center internal WebSocket endpoint (localhost:8085)
-       - Added PROCESS_COMPLETED event push in Complete-OrchestratorTask
-         for FIRE_AND_FORGET processes. Looks up process_name and
-         module_name from ProcessRegistry by process_id
-2.0.0  Shared script infrastructure
-       Added Initialize-XFActsScript for standardized startup
-       Added Write-Log for console + file logging
-       Added Get-SqlData for read queries with application identity
-       Added Invoke-SqlNonQuery for write queries with application identity
-       SQL module loading moved into Initialize-XFActsScript
-       Execute guard messaging standardized
-       All SQL calls automatically tagged with script name for DMV attribution
-1.1.0  Concurrent execution support
-       Changed ProcessRegistry update from is_running = 0 to running_count
-         decrement with floor protection at zero
-1.0.0  Initial implementation
-       Complete-OrchestratorTask callback function for fire-and-forget scripts
-================================================================================
+    FILE ORGANIZATION
+    -----------------
+    CHANGELOG: CHANGE HISTORY
+    VARIABLES: SCRIPT CONTEXT
+    FUNCTIONS: SCRIPT INITIALIZATION
+    FUNCTIONS: LOGGING AND CONSOLE OUTPUT
+    FUNCTIONS: SQL DATA ACCESS
+    FUNCTIONS: CREDENTIAL RETRIEVAL
+    FUNCTIONS: TASK COMPLETION CALLBACK
+    FUNCTIONS: ENGINE EVENT PUSH
+    FUNCTIONS: TEAMS ALERTING
 #>
 
-# ============================================================================
-# SCRIPT-LEVEL CONTEXT (set by Initialize-XFActsScript)
-# ============================================================================
+<# ============================================================================
+   CHANGELOG: CHANGE HISTORY
+   ----------------------------------------------------------------------------
+   Dated change history for this file, most recent first. Authoritative
+   version tracking lives in dbo.System_Metadata (component
+   Engine.Orchestrator); this section records what changed and when.
+   Prefix: (none)
+   ============================================================================ #>
 
-# These variables are populated by Initialize-XFActsScript and used by all
-# shared functions. They live at the dot-sourced script scope so they're
-# accessible throughout the calling script.
-$script:XFActsScriptName    = $null   # e.g., 'Collect-BackupStatus'
-$script:XFActsAppName       = $null   # e.g., 'xFACts Collect-BackupStatus'
-$script:XFActsLogFile       = $null   # e.g., 'E:\xFACts-PowerShell\Logs\Collect-BackupStatus_20260220.log'
-$script:XFActsServerInstance = $null  # Default SQL Server instance
-$script:XFActsDatabase      = $null   # Default database
-$script:XFActsExecute       = $false  # Whether -Execute was specified
+# 2026-06-15  Added the sanctioned console-output helper family - Write-Console,
+#             Write-ConsoleBanner, Write-ConsoleRule - the blessed replacement
+#             for Write-Host (ephemeral, colored, operator-facing console
+#             output) alongside the durable Write-Log lane.
+# 2026-04-28  Added optional -CardJson parameter to Send-TeamsAlert for Adaptive
+#             Card payloads. Title/Message/Color remain required for the
+#             plain-text audit trail and fallback. Mandatory dedup against
+#             Teams.RequestLog preserved.
+# 2026-04-23  Added optional -MaxBinaryLength parameter to Get-SqlData and
+#             Invoke-SqlNonQuery, parallel to -MaxCharLength. Passes through to
+#             Invoke-Sqlcmd when specified; required for VARBINARY(MAX) reads
+#             exceeding the 1024-byte default, which otherwise truncate silently.
+# 2026-03-17  Added Send-TeamsAlert shared function for Teams alert queuing with
+#             mandatory dedup against Teams.RequestLog. Replaces the inline
+#             INSERT pattern; available to all dot-sourced scripts.
+# 2026-03-10  Added optional -MaxCharLength parameter to Get-SqlData and
+#             Invoke-SqlNonQuery and refactored both to splatting. Engine-event
+#             timestamps now emitted UTC with Z suffix for timezone-agnostic
+#             countdown calculations.
+# 2026-02-27  Concurrent-execution handling in Complete-OrchestratorTask:
+#             ProcessRegistry status updates only when running_count reaches
+#             zero, preventing premature SUCCESS on parallel fire-and-forget
+#             processes.
+# 2026-02-25  Added Send-EngineEvent: fire-and-forget HTTP POST to the Control
+#             Center internal engine-event endpoint. Pushed on process launch,
+#             WAIT completion, and fire-and-forget callback completion.
+# 2026-02-20  Shared script infrastructure: Initialize-XFActsScript (SQL module
+#             loading, application identity, log path, Execute guard), Write-Log,
+#             Get-SqlData, Invoke-SqlNonQuery. Complete-OrchestratorTask
+#             refactored for context-based connection defaults with
+#             backward-compatible explicit parameters.
+# 2026-02-04  Complete-OrchestratorTask updated to decrement running_count with
+#             floor protection at zero, replacing the is_running reset, for
+#             concurrent execution tracking.
+# 2026-02-03  Initial implementation: Complete-OrchestratorTask callback for
+#             fire-and-forget scripts.
 
-# ============================================================================
-# SCRIPT INITIALIZATION
-# ============================================================================
+<# ============================================================================
+   VARIABLES: SCRIPT CONTEXT
+   ----------------------------------------------------------------------------
+   Script-scope context populated by Initialize-XFActsScript and read by the
+   shared functions throughout the dot-sourcing script: script name,
+   application identity, log-file path, default connection target, and the
+   Execute-mode flag.
+   Prefix: (none)
+   ============================================================================ #>
+
+# Calling script name without extension, e.g. 'Collect-BackupStatus'.
+$script:XFActsScriptName     = $null
+# Application name for DMV/XE attribution, e.g. 'xFACts Collect-BackupStatus'.
+$script:XFActsAppName        = $null
+# Daily log-file path for this script, set from the script name and date.
+$script:XFActsLogFile        = $null
+# Default SQL Server instance for Get-SqlData / Invoke-SqlNonQuery calls.
+$script:XFActsServerInstance = $null
+# Default database for Get-SqlData / Invoke-SqlNonQuery calls.
+$script:XFActsDatabase       = $null
+# Whether the calling script was launched with -Execute (vs preview mode).
+$script:XFActsExecute        = $false
+
+<# ============================================================================
+   FUNCTIONS: SCRIPT INITIALIZATION
+   ----------------------------------------------------------------------------
+   Standardized startup for every xFACts script: SQL module loading, working
+   directory, application identity, log path, default connection target, and
+   the preview-mode execute guard. Called once immediately after dot-sourcing.
+   Prefix: (none)
+   ============================================================================ #>
 
 function Initialize-XFActsScript {
-    <#
-    .SYNOPSIS
-        Standardized initialization for all xFACts scripts.
-
-    .DESCRIPTION
-        Performs all common startup tasks that every xFACts script requires:
-        1. Loads the SqlServer module (falls back to SQLPS if unavailable)
-        2. Sets working directory to script root (SQLPS changes to SQLSERVER:\)
-        3. Configures application identity for DMV/XE attribution
-        4. Sets up log file path
-        5. Stores default connection parameters for Get-SqlData / Invoke-SqlNonQuery
-        6. Displays Execute guard message if running in preview mode
-
-        Call this once at the top of every script, immediately after dot-sourcing.
-
-    .PARAMETER ScriptName
-        Name of the calling script without .ps1 extension.
-        Used for: application name tagging, log file naming, console output.
-
-    .PARAMETER ServerInstance
-        Default SQL Server instance for database calls. Individual calls
-        can override via -Instance parameter.
-
-    .PARAMETER Database
-        Default database name. Individual calls can override via -DatabaseName parameter.
-
-    .PARAMETER Execute
-        Pass the script's -Execute switch value. When $false (default),
-        displays a standardized preview mode warning.
-
-    .EXAMPLE
-        . "$PSScriptRoot\xFACts-OrchestratorFunctions.ps1"
-        Initialize-XFActsScript -ScriptName 'Collect-BackupStatus' -Execute:$Execute
-
-    .EXAMPLE
-        . "$PSScriptRoot\xFACts-OrchestratorFunctions.ps1"
-        Initialize-XFActsScript -ScriptName 'My-NewScript' `
-            -ServerInstance 'CUSTOM-INSTANCE' -Database 'OtherDB' -Execute:$Execute
-    #>
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
         [string]$ScriptName,
@@ -146,7 +121,37 @@ function Initialize-XFActsScript {
         [bool]$Execute = $false
     )
 
-    # Store context for shared functions
+    <#
+    .SYNOPSIS
+        Standardized initialization for all xFACts scripts.
+
+    .DESCRIPTION
+        Performs the common startup tasks every xFACts script requires: loads
+        the SqlServer module (falling back to SQLPS), sets the working directory
+        to the script root, configures the application identity used for DMV/XE
+        attribution, sets up the daily log-file path, stores the default
+        connection parameters used by Get-SqlData and Invoke-SqlNonQuery, and
+        displays the preview-mode guard message when -Execute was not supplied.
+        Call this once at the top of every script, immediately after
+        dot-sourcing this file.
+
+    .PARAMETER ScriptName
+        Name of the calling script without the .ps1 extension. Used for
+        application-name tagging, log-file naming, and console output.
+
+    .PARAMETER ServerInstance
+        Default SQL Server instance for database calls. Individual calls can
+        override it via their own -Instance parameter.
+
+    .PARAMETER Database
+        Default database name. Individual calls can override it via their own
+        -DatabaseName parameter.
+
+    .PARAMETER Execute
+        The calling script's -Execute switch value. When false (the default),
+        a standardized preview-mode warning is displayed.
+    #>
+
     $script:XFActsScriptName     = $ScriptName
     $script:XFActsAppName        = "xFACts $ScriptName"
     $script:XFActsLogFile        = "$PSScriptRoot\Logs\${ScriptName}_$(Get-Date -Format 'yyyyMMdd').log"
@@ -154,9 +159,6 @@ function Initialize-XFActsScript {
     $script:XFActsDatabase       = $Database
     $script:XFActsExecute        = $Execute
 
-    # -----------------------------------------------------------------
-    # SQL Module Loading
-    # -----------------------------------------------------------------
     $sqlModuleLoaded = $false
 
     try {
@@ -178,53 +180,53 @@ function Initialize-XFActsScript {
     }
 
     if (-not $sqlModuleLoaded) {
-        Write-Host "ERROR: No SQL module could be loaded (tried SqlServer and SQLPS)." -ForegroundColor Red
-        Write-Host "Install SqlServer module with: Install-Module SqlServer" -ForegroundColor Yellow
+        Write-Console "ERROR: No SQL module could be loaded (tried SqlServer and SQLPS)." 'Red'
+        Write-Console "Install SqlServer module with: Install-Module SqlServer" 'Yellow'
         exit 1
     }
 
-    # Ensure we're on a filesystem provider (SQLPS changes to SQLSERVER:\)
+    # Ensure we're on a filesystem provider (SQLPS changes to SQLSERVER:\).
     Set-Location $PSScriptRoot
 
-    # -----------------------------------------------------------------
-    # Execute Guard
-    # -----------------------------------------------------------------
     if (-not $Execute) {
-        Write-Host "*** PREVIEW MODE - No changes will be made. Use -Execute to run. ***" -ForegroundColor Yellow
+        Write-Console "*** PREVIEW MODE - No changes will be made. Use -Execute to run. ***" 'Yellow'
     }
 }
 
-# ============================================================================
-# LOGGING
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: LOGGING AND CONSOLE OUTPUT
+   ----------------------------------------------------------------------------
+   Durable and ephemeral operator output. Write-Log writes the timestamped,
+   level-tagged record to console and the daily log file. The Write-Console
+   family is the sanctioned, ephemeral console lane and the only permitted
+   home for Write-Host on the platform.
+   Prefix: (none)
+   ============================================================================ #>
 
 function Write-Log {
+    [CmdletBinding()]
+    param(
+        [string]$Message,
+        [string]$Level = "INFO"
+    )
+
     <#
     .SYNOPSIS
-        Writes a timestamped log entry to console and log file.
+        Writes a timestamped log entry to the console and the daily log file.
 
     .DESCRIPTION
-        Standard logging function for all xFACts scripts. Writes to both
-        the console (color-coded by level) and the daily log file set up
-        by Initialize-XFActsScript.
-
-        Log directory is created automatically if it doesn't exist.
+        The durable logging lane for all xFACts scripts. Writes a timestamped,
+        level-tagged line to the console (color-coded by level via Write-Console)
+        and appends the same line to the daily log file configured by
+        Initialize-XFActsScript. The log directory is created automatically if
+        it does not yet exist.
 
     .PARAMETER Message
         The log message text.
 
     .PARAMETER Level
-        Severity level: INFO (default), WARN, ERROR, SUCCESS, DEBUG.
-
-    .EXAMPLE
-        Write-Log "Starting collection"
-        Write-Log "Failed to connect" "ERROR"
-        Write-Log "Processed 15 records" "SUCCESS"
+        Severity level: INFO (default), WARN, ERROR, SUCCESS, or DEBUG.
     #>
-    param(
-        [string]$Message,
-        [string]$Level = "INFO"
-    )
 
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     $logMessage = "[$timestamp] [$Level] $Message"
@@ -236,7 +238,7 @@ function Write-Log {
         "DEBUG"   { "DarkGray" }
         default   { "White" }
     }
-    Write-Host $logMessage -ForegroundColor $color
+    Write-Console $logMessage $color
 
     if ($script:XFActsLogFile) {
         $logDir = Split-Path $script:XFActsLogFile -Parent
@@ -248,17 +250,22 @@ function Write-Log {
 }
 
 function Write-Console {
+    [CmdletBinding()]
+    param(
+        [string]$Message = '',
+        [string]$Color = 'Gray',
+        [switch]$NoNewline
+    )
+
     <#
     .SYNOPSIS
-        Writes a line to the console. Sanctioned replacement for Write-Host
-        in standalone scripts; carries no log-file or timestamp behavior.
+        Writes a line to the console. Sanctioned replacement for Write-Host.
 
     .DESCRIPTION
-        A faithful Write-Host stand-in for operator-facing console narration
-        in manually-run scripts. Unlike Write-Log, it does not timestamp,
-        does not tag a level, and does not write to the log file -- it is
-        purely ephemeral console output. Use Write-Log for anything that
-        belongs in the durable record.
+        A faithful Write-Host stand-in for operator-facing console narration in
+        manually-run scripts. Unlike Write-Log it does not timestamp, tag a
+        level, or write to the log file - it is purely ephemeral console output.
+        Use Write-Log for anything that belongs in the durable record.
 
     .PARAMETER Message
         The text to print. Defaults to empty (a blank spacer line).
@@ -267,14 +274,9 @@ function Write-Console {
         Console foreground color. Defaults to Gray.
 
     .PARAMETER NoNewline
-        Suppresses the trailing newline, so a later call continues the line
-        (used for "Parsing X ..." then " ok" on the same line).
+        Suppresses the trailing newline so a later call continues the same line
+        (used for "Parsing X ..." then " ok" on one line).
     #>
-    param(
-        [string]$Message = '',
-        [string]$Color = 'Gray',
-        [switch]$NoNewline
-    )
 
     if ($NoNewline) {
         Write-Host $Message -ForegroundColor $Color -NoNewline
@@ -285,20 +287,26 @@ function Write-Console {
 }
 
 function Write-ConsoleBanner {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$Label,
+        [string]$Color = 'Cyan',
+        [ValidateSet('=', '-')]
+        [string]$RuleChar = '='
+    )
+
     <#
     .SYNOPSIS
-        Writes a standard framed banner block to the console: a rule line,
-        an indented label, a matching rule line, and a trailing blank.
+        Writes a standard framed banner block to the console.
 
     .DESCRIPTION
-        Emits the platform-standard console banner used to announce a phase
-        or step during a manually-run script. The frame (rule width, indent,
-        trailing blank) is fixed here so every banner across every script
-        looks identical; callers supply the label and, optionally, a color
-        and a rule character. The default '=' rule denotes a major phase;
-        passing -RuleChar '-' denotes a minor step within a phase, preserving
-        a visual hierarchy. Rule width matches the structural section-banner
-        width used throughout the platform.
+        Emits the platform-standard console banner used to announce a phase or
+        step during a manually-run script: a rule line, an indented label, a
+        matching rule line, and a trailing blank. The frame is fixed here so
+        every banner looks identical; callers supply the label and optionally a
+        color and rule character. The default '=' rule denotes a major phase;
+        passing '-' denotes a minor step, preserving a visual hierarchy. Rule
+        width matches the structural section-banner width used platform-wide.
 
     .PARAMETER Label
         The banner text (e.g., "Session Summary").
@@ -310,59 +318,71 @@ function Write-ConsoleBanner {
         The character used for the top and bottom rule lines. Defaults to '='
         (major phase). Pass '-' for a minor step divider.
     #>
-    param(
-        [Parameter(Mandatory)][string]$Label,
-        [string]$Color = 'Cyan',
-        [ValidateSet('=', '-')]
-        [string]$RuleChar = '='
-    )
 
     $rule = $RuleChar * 76
-    Write-Host ''              -ForegroundColor $Color
-    Write-Host $rule           -ForegroundColor $Color
-    Write-Host ("  " + $Label) -ForegroundColor $Color
-    Write-Host $rule           -ForegroundColor $Color
-    Write-Host ''              -ForegroundColor $Color
+    Write-Console ''              $Color
+    Write-Console $rule           $Color
+    Write-Console ("  " + $Label) $Color
+    Write-Console $rule           $Color
+    Write-Console ''              $Color
 }
 
 function Write-ConsoleRule {
+    [CmdletBinding()]
+    param(
+        [string]$Color = 'DarkGray'
+    )
+
     <#
     .SYNOPSIS
         Writes a single horizontal rule line to the console.
 
     .DESCRIPTION
-        Emits one platform-standard separator rule, used to divide sections
-        of console output where a full banner would be too heavy. Width
-        matches Write-ConsoleBanner for visual consistency.
+        Emits one platform-standard separator rule, used to divide sections of
+        console output where a full banner would be too heavy. Width matches
+        Write-ConsoleBanner for visual consistency.
 
     .PARAMETER Color
         Console foreground color. Defaults to DarkGray.
     #>
-    param(
-        [string]$Color = 'DarkGray'
-    )
 
-    Write-Host ('-' * 76) -ForegroundColor $Color
+    Write-Console ('-' * 76) $Color
 }
 
-# ============================================================================
-# SQL DATA ACCESS
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: SQL DATA ACCESS
+   ----------------------------------------------------------------------------
+   Read and non-query SQL access wrapping Invoke-Sqlcmd. Both apply the
+   script's application identity for DMV/XE attribution, default to the
+   connection target set by Initialize-XFActsScript, and support large
+   character and binary result columns.
+   Prefix: (none)
+   ============================================================================ #>
 
 function Get-SqlData {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$Query,
+
+        [string]$Instance = $script:XFActsServerInstance,
+        [string]$DatabaseName = $script:XFActsDatabase,
+        [int]$Timeout = 300,
+        [int]$MaxCharLength = 0,
+        [int]$MaxBinaryLength = 0
+    )
+
     <#
     .SYNOPSIS
         Executes a SQL query and returns the result set.
 
     .DESCRIPTION
-        Wrapper around Invoke-Sqlcmd for read queries. Automatically applies:
-        - Application name from Initialize-XFActsScript context (for DMV/XE attribution)
-        - Default server instance and database (overridable per call)
-        - Configurable query timeout (default 300 seconds)
-        - Error logging via Write-Log
-        - Standard Invoke-Sqlcmd flags (-SuppressProviderContextWarning, -TrustServerCertificate)
-
-        Returns the result set on success, $null on failure.
+        Wrapper around Invoke-Sqlcmd for read queries. Automatically applies the
+        application name from Initialize-XFActsScript context, the default
+        server instance and database (overridable per call), a configurable
+        query timeout, and the standard Invoke-Sqlcmd flags
+        (-SuppressProviderContextWarning, -TrustServerCertificate). Returns the
+        result set on success and $null on failure, logging the error.
 
     .PARAMETER Query
         The SQL query to execute.
@@ -377,35 +397,42 @@ function Get-SqlData {
         Query timeout in seconds. Default: 300.
 
     .PARAMETER MaxCharLength
-        Maximum character length for string columns. When specified, passed to
-        Invoke-Sqlcmd -MaxCharLength. Required for queries returning large XML
-        or text data (XE sessions, DMV XML plans, replication XML, etc.).
-        When omitted, Invoke-Sqlcmd uses its default (4000).
+        Maximum character length for string columns. When greater than zero,
+        passed to Invoke-Sqlcmd -MaxCharLength. Required for queries returning
+        large XML or text data (XE sessions, DMV XML plans, replication XML).
+        When omitted, Invoke-Sqlcmd uses its default of 4000.
 
     .PARAMETER MaxBinaryLength
-        Maximum byte length for VARBINARY columns. When specified, passed to
-        Invoke-Sqlcmd -MaxBinaryLength. Required for queries returning large
-        binary blobs (Sterling b2bi TRANS_DATA/DATA_TABLE compressed XML, etc.).
-        When omitted, Invoke-Sqlcmd uses its default (1024) — which silently
-        truncates larger blobs mid-stream without raising an error. Always
-        specify this for any query that selects a VARBINARY(MAX) column.
-
-    .EXAMPLE
-        $results = Get-SqlData -Query "SELECT * FROM dbo.ServerRegistry WHERE is_monitored = 1"
-
-    .EXAMPLE
-        # Override instance for cross-server query
-        $remoteData = Get-SqlData -Query "SELECT ..." -Instance "OTHER-SERVER" -DatabaseName "msdb" -Timeout 60
-
-    .EXAMPLE
-        # Large text/XML data
-        $xeData = Get-SqlData -Query "SELECT target_data FROM sys.dm_xe_session_targets" -MaxCharLength 2147483647
-
-    .EXAMPLE
-        # Large binary data (compressed blobs)
-        $blobData = Get-SqlData -Query "SELECT DATA_OBJECT FROM dbo.TRANS_DATA WHERE WF_ID = 12345" `
-            -Instance 'FA-INT-DBP' -DatabaseName 'b2bi' -MaxBinaryLength 20971520
+        Maximum byte length for VARBINARY columns. When greater than zero,
+        passed to Invoke-Sqlcmd -MaxBinaryLength. Required for queries returning
+        large binary blobs (Sterling b2bi compressed XML, etc.). When omitted,
+        Invoke-Sqlcmd uses its default of 1024, which silently truncates larger
+        blobs mid-stream. Always specify this for any VARBINARY(MAX) column.
     #>
+
+    try {
+        # Optional result-size limits, included only when explicitly requested.
+        $optional = @{}
+        if ($MaxCharLength -gt 0) {
+            $optional['MaxCharLength'] = $MaxCharLength
+        }
+        if ($MaxBinaryLength -gt 0) {
+            $optional['MaxBinaryLength'] = $MaxBinaryLength
+        }
+
+        Invoke-Sqlcmd -ServerInstance $Instance -Database $DatabaseName -Query $Query `
+            -QueryTimeout $Timeout -ApplicationName $script:XFActsAppName `
+            -ErrorAction Stop -SuppressProviderContextWarning -TrustServerCertificate `
+            @optional
+    }
+    catch {
+        Write-Log "SQL Query failed on ${Instance}/${DatabaseName}: $($_.Exception.Message)" "ERROR"
+        return $null
+    }
+}
+
+function Invoke-SqlNonQuery {
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
         [string]$Query,
@@ -417,44 +444,15 @@ function Get-SqlData {
         [int]$MaxBinaryLength = 0
     )
 
-    try {
-        $params = @{
-            ServerInstance               = $Instance
-            Database                     = $DatabaseName
-            Query                        = $Query
-            QueryTimeout                 = $Timeout
-            ApplicationName              = $script:XFActsAppName
-            ErrorAction                  = 'Stop'
-            SuppressProviderContextWarning = $true
-            TrustServerCertificate       = $true
-        }
-
-        if ($MaxCharLength -gt 0) {
-            $params['MaxCharLength'] = $MaxCharLength
-        }
-        if ($MaxBinaryLength -gt 0) {
-            $params['MaxBinaryLength'] = $MaxBinaryLength
-        }
-
-        Invoke-Sqlcmd @params
-    }
-    catch {
-        Write-Log "SQL Query failed on ${Instance}/${DatabaseName}: $($_.Exception.Message)" "ERROR"
-        return $null
-    }
-}
-
-function Invoke-SqlNonQuery {
     <#
     .SYNOPSIS
         Executes a SQL statement that does not return a result set.
 
     .DESCRIPTION
         Wrapper around Invoke-Sqlcmd for INSERT, UPDATE, DELETE, and other
-        non-query operations. Automatically applies the same connection
-        defaults and application identity as Get-SqlData.
-
-        Returns $true on success, $false on failure.
+        non-query operations. Applies the same connection defaults and
+        application identity as Get-SqlData. Returns $true on success and
+        $false on failure, logging the error.
 
     .PARAMETER Query
         The SQL statement to execute.
@@ -469,54 +467,30 @@ function Invoke-SqlNonQuery {
         Query timeout in seconds. Default: 300.
 
     .PARAMETER MaxCharLength
-        Maximum character length for string columns. When specified, passed to
-        Invoke-Sqlcmd -MaxCharLength. Typically not needed for non-query
-        operations but included for parity with Get-SqlData.
+        Maximum character length for string columns. When greater than zero,
+        passed to Invoke-Sqlcmd -MaxCharLength. Typically not needed for
+        non-query operations but included for parity with Get-SqlData.
 
     .PARAMETER MaxBinaryLength
-        Maximum byte length for VARBINARY columns. When specified, passed to
-        Invoke-Sqlcmd -MaxBinaryLength. Typically not needed for non-query
-        operations but included for parity with Get-SqlData.
-
-    .EXAMPLE
-        $ok = Invoke-SqlNonQuery -Query "UPDATE dbo.SomeTable SET status = 'DONE' WHERE id = 1"
-        if (-not $ok) { Write-Log "Update failed" "ERROR" }
-
-    .EXAMPLE
-        # Short timeout for quick operations
-        Invoke-SqlNonQuery -Query "INSERT INTO ..." -Timeout 30
+        Maximum byte length for VARBINARY columns. When greater than zero,
+        passed to Invoke-Sqlcmd -MaxBinaryLength. Typically not needed for
+        non-query operations but included for parity with Get-SqlData.
     #>
-    param(
-        [Parameter(Mandatory)]
-        [string]$Query,
-
-        [string]$Instance = $script:XFActsServerInstance,
-        [string]$DatabaseName = $script:XFActsDatabase,
-        [int]$Timeout = 300,
-        [int]$MaxCharLength = 0,
-        [int]$MaxBinaryLength = 0
-    )
 
     try {
-        $params = @{
-            ServerInstance               = $Instance
-            Database                     = $DatabaseName
-            Query                        = $Query
-            QueryTimeout                 = $Timeout
-            ApplicationName              = $script:XFActsAppName
-            ErrorAction                  = 'Stop'
-            SuppressProviderContextWarning = $true
-            TrustServerCertificate       = $true
-        }
-
+        # Optional result-size limits, included only when explicitly requested.
+        $optional = @{}
         if ($MaxCharLength -gt 0) {
-            $params['MaxCharLength'] = $MaxCharLength
+            $optional['MaxCharLength'] = $MaxCharLength
         }
         if ($MaxBinaryLength -gt 0) {
-            $params['MaxBinaryLength'] = $MaxBinaryLength
+            $optional['MaxBinaryLength'] = $MaxBinaryLength
         }
 
-        Invoke-Sqlcmd @params
+        Invoke-Sqlcmd -ServerInstance $Instance -Database $DatabaseName -Query $Query `
+            -QueryTimeout $Timeout -ApplicationName $script:XFActsAppName `
+            -ErrorAction Stop -SuppressProviderContextWarning -TrustServerCertificate `
+            @optional
         return $true
     }
     catch {
@@ -525,51 +499,18 @@ function Invoke-SqlNonQuery {
     }
 }
 
-# ============================================================================
-# CREDENTIAL RETRIEVAL
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: CREDENTIAL RETRIEVAL
+   ----------------------------------------------------------------------------
+   Two-tier credential decryption for standalone scripts: the GlobalConfig
+   master passphrase decrypts a service passphrase, which in turn decrypts
+   the service's credential values. Returns a hashtable of decrypted
+   config-key/value pairs.
+   Prefix: (none)
+   ============================================================================ #>
 
 function Get-ServiceCredentials {
-    <#
-    .SYNOPSIS
-        Retrieves decrypted credentials for an external service from dbo.Credentials.
-
-    .DESCRIPTION
-        Implements the two-tier decryption model used across the xFACts platform:
-        1. Master passphrase retrieved from GlobalConfig (Shared.Credentials.master_passphrase)
-        2. Master passphrase decrypts the service-level passphrase
-        3. Service passphrase decrypts all credential values for the service
-
-        Returns a hashtable of ConfigKey = DecryptedValue pairs, excluding the
-        Passphrase key itself.
-
-        Designed for use in standalone collector/processor scripts that dot-source
-        xFACts-OrchestratorFunctions.ps1. Requires Initialize-XFActsScript to have
-        been called first (uses Get-SqlData for database access).
-
-        This is the standard credential retrieval pattern for all standalone scripts.
-        The equivalent function in xFACts-Helpers.psm1 serves the same purpose for
-        Pode-hosted Control Center routes.
-
-    .PARAMETER ServiceName
-        The service identifier in dbo.Credentials (e.g., 'JBossManagement', 'Jira', 'SFTP').
-
-    .PARAMETER Environment
-        Environment filter. Defaults to 'PROD'.
-
-    .RETURNS
-        Hashtable of decrypted ConfigKey = value pairs.
-        Example: @{ JBossUser = 'admin'; JBossPassword = 'secret123' }
-
-    .EXAMPLE
-        $creds = Get-ServiceCredentials -ServiceName 'JBossManagement'
-        $username = $creds.JBossUser
-        $password = $creds.JBossPassword
-
-    .EXAMPLE
-        $sftpCreds = Get-ServiceCredentials -ServiceName 'SFTP_Vendor'
-        $sftpCreds.Username  # decrypted username
-    #>
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
         [string]$ServiceName,
@@ -577,7 +518,28 @@ function Get-ServiceCredentials {
         [string]$Environment = 'PROD'
     )
 
-    # Step 1: Retrieve master passphrase from GlobalConfig
+    <#
+    .SYNOPSIS
+        Retrieves decrypted credentials for an external service from dbo.Credentials.
+
+    .DESCRIPTION
+        Implements the two-tier decryption model used across the xFACts
+        platform: the master passphrase is retrieved from GlobalConfig
+        (Shared.Credentials.master_passphrase), the master passphrase decrypts
+        the service-level passphrase, and the service passphrase decrypts all
+        credential values for the service. Returns a hashtable of
+        ConfigKey = DecryptedValue pairs, excluding the Passphrase key itself.
+        Designed for standalone scripts that dot-source this file; requires
+        Initialize-XFActsScript to have run first, since it uses Get-SqlData.
+
+    .PARAMETER ServiceName
+        The service identifier in dbo.Credentials (e.g., 'JBossManagement',
+        'Jira', 'SFTP').
+
+    .PARAMETER Environment
+        Environment filter. Defaults to 'PROD'.
+    #>
+
     $masterResult = Get-SqlData -Query @"
 SELECT setting_value
 FROM dbo.GlobalConfig
@@ -594,7 +556,6 @@ WHERE module_name = 'Shared'
 
     $masterPass = $masterResult.setting_value
 
-    # Step 2: Decrypt service passphrase, then decrypt all config keys
     # Passphrases are concatenated into the query (not parameterized) because
     # DECRYPTBYPASSPHRASE requires literal string values. This mirrors the
     # proven pattern across all xFACts credential retrieval.
@@ -633,7 +594,6 @@ WHERE Environment = '$escapedEnvironment'
         return $null
     }
 
-    # Build hashtable of key/value pairs
     $credentials = @{}
     foreach ($row in @($results)) {
         if ([string]::IsNullOrEmpty($row.DecryptedValue)) {
@@ -647,71 +607,18 @@ WHERE Environment = '$escapedEnvironment'
     return $credentials
 }
 
-# ============================================================================
-# TASK COMPLETION CALLBACK
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: TASK COMPLETION CALLBACK
+   ----------------------------------------------------------------------------
+   The fire-and-forget completion callback. Updates Orchestrator.TaskLog and
+   Orchestrator.ProcessRegistry with final status, decrements the running
+   count with floor protection, and pushes a PROCESS_COMPLETED engine event
+   only when the last concurrent instance finishes.
+   Prefix: (none)
+   ============================================================================ #>
 
 function Complete-OrchestratorTask {
-    <#
-    .SYNOPSIS
-        Updates Orchestrator TaskLog and ProcessRegistry with final execution status.
-        Called by fire-and-forget scripts at the end of their execution.
-
-    .DESCRIPTION
-        When the Orchestrator engine launches a script in FIRE_AND_FORGET mode,
-        it passes a TaskId and ProcessId. The script calls this function before
-        exiting to report its completion status back to the orchestrator tables.
-
-        Updates two tables:
-        - Orchestrator.TaskLog: end_dttm, duration_ms, task_status, output/error
-        - Orchestrator.ProcessRegistry: running_count decremented, last_execution_status, last_duration_ms
-
-        If the function fails (database connectivity issue, etc.), it writes to 
-        the console but does not throw - the script should not fail because of 
-        a callback error.
-
-    .PARAMETER ServerInstance
-        SQL Server instance. Optional -- defaults to the value set by Initialize-XFActsScript.
-        Retained for backward compatibility with existing scripts.
-
-    .PARAMETER Database
-        Database name. Optional -- defaults to the value set by Initialize-XFActsScript.
-        Retained for backward compatibility with existing scripts.
-
-    .PARAMETER TaskId
-        TaskLog ID passed by the orchestrator engine at launch.
-
-    .PARAMETER ProcessId
-        ProcessRegistry ID for this process.
-
-    .PARAMETER Status
-        Final execution status: SUCCESS, FAILED, POLLING, or NOT_STARTED.
-
-    .PARAMETER DurationMs
-        Total execution duration in milliseconds.
-
-    .PARAMETER Output
-        Optional stdout summary (truncated to 4000 chars).
-
-    .PARAMETER ErrorMessage
-        Optional stderr or error detail (truncated to 4000 chars).
-
-    .EXAMPLE
-        # New pattern (after Initialize-XFActsScript):
-        if ($TaskId -and $TaskId -gt 0) {
-            Complete-OrchestratorTask -TaskId $TaskId -ProcessId $ProcessId `
-                -Status "SUCCESS" -DurationMs $totalMs `
-                -Output "Processed 15 records"
-        }
-
-    .EXAMPLE
-        # Legacy pattern (still supported):
-        if ($TaskId -and $TaskId -gt 0) {
-            Complete-OrchestratorTask -ServerInstance $ServerInstance -Database $Database `
-                -TaskId $TaskId -ProcessId $ProcessId `
-                -Status "SUCCESS" -DurationMs $totalMs
-        }
-    #>
+    [CmdletBinding()]
     param(
         [string]$ServerInstance,
         [string]$Database,
@@ -733,26 +640,69 @@ function Complete-OrchestratorTask {
         [string]$ErrorMessage = ""
     )
 
+    <#
+    .SYNOPSIS
+        Reports fire-and-forget completion status to the orchestrator tables.
+
+    .DESCRIPTION
+        When the orchestrator launches a script in FIRE_AND_FORGET mode it
+        passes a TaskId and ProcessId. The script calls this function before
+        exiting to report its completion status. Updates Orchestrator.TaskLog
+        (end time, duration, status, exit code, optional output/error) and
+        Orchestrator.ProcessRegistry (running_count decremented with floor
+        protection; status fields updated only when this is the last active
+        instance, keeping the engine card RUNNING while any instance remains).
+        When the last instance finishes, pushes a PROCESS_COMPLETED engine
+        event. Callback failures are logged but never thrown, so a callback
+        error cannot crash the calling script.
+
+    .PARAMETER ServerInstance
+        SQL Server instance. Optional; defaults to the value set by
+        Initialize-XFActsScript. Retained for backward compatibility.
+
+    .PARAMETER Database
+        Database name. Optional; defaults to the value set by
+        Initialize-XFActsScript. Retained for backward compatibility.
+
+    .PARAMETER TaskId
+        TaskLog id passed by the orchestrator engine at launch.
+
+    .PARAMETER ProcessId
+        ProcessRegistry id for this process.
+
+    .PARAMETER Status
+        Final execution status: SUCCESS, FAILED, POLLING, or NOT_STARTED.
+
+    .PARAMETER DurationMs
+        Total execution duration in milliseconds.
+
+    .PARAMETER Output
+        Optional stdout summary (truncated to 4000 characters).
+
+    .PARAMETER ErrorMessage
+        Optional stderr or error detail (truncated to 4000 characters).
+    #>
+
     try {
-        # Resolve connection: explicit param > Initialize context > hardcoded default
+        # Resolve connection: explicit param, then Initialize context, then hardcoded default.
         $instance = if ($ServerInstance) { $ServerInstance } elseif ($script:XFActsServerInstance) { $script:XFActsServerInstance } else { "AVG-PROD-LSNR" }
         $db       = if ($Database) { $Database } elseif ($script:XFActsDatabase) { $script:XFActsDatabase } else { "xFACts" }
         $appName  = if ($script:XFActsAppName) { $script:XFActsAppName } else { "xFACts OrchestratorFunctions" }
 
-        # Sanitize and truncate strings for SQL
+        # Sanitize and truncate strings for SQL.
         $outputSafe = ($Output -replace "'", "''")
         if ($outputSafe.Length -gt 4000) { $outputSafe = $outputSafe.Substring(0, 4000) }
-        
+
         $errorSafe = ($ErrorMessage -replace "'", "''")
         if ($errorSafe.Length -gt 4000) { $errorSafe = $errorSafe.Substring(0, 4000) }
 
         $exitCode = if ($Status -eq "SUCCESS") { 0 } else { 1 }
 
-        # Build optional clauses
+        # Build optional clauses.
         $outputClause = if ($Output) { ", output_summary = '$outputSafe'" } else { "" }
         $errorClause = if ($ErrorMessage) { ", error_output = '$errorSafe'" } else { "" }
 
-        # Update TaskLog with final status
+        # Update TaskLog with final status.
         $taskQuery = @"
             UPDATE Orchestrator.TaskLog
             SET end_dttm = GETDATE(),
@@ -767,9 +717,9 @@ function Complete-OrchestratorTask {
             -Query $taskQuery -QueryTimeout 15 -ApplicationName $appName `
             -ErrorAction Stop -TrustServerCertificate
 
-        # Update ProcessRegistry - decrement running count and record result
-        # Only update status fields when this is the last active instance.
-        # This keeps the engine card blue while any instance is still running.
+        # Update ProcessRegistry: decrement running count and record result.
+        # Status fields update only when this is the last active instance, which
+        # keeps the engine card blue/RUNNING while any instance is still running.
         $successDateClause = if ($Status -eq "SUCCESS") {
             ", last_successful_date = CASE WHEN running_count <= 1 THEN CAST(GETDATE() AS DATE) ELSE last_successful_date END"
         } else { "" }
@@ -777,18 +727,18 @@ function Complete-OrchestratorTask {
         $regQuery = @"
             UPDATE Orchestrator.ProcessRegistry
             SET running_count = CASE WHEN running_count > 0 THEN running_count - 1 ELSE 0 END,
-                last_execution_status = CASE 
+                last_execution_status = CASE
                     WHEN running_count <= 1 THEN '$Status'
                     ELSE last_execution_status
                 END,
-                last_duration_ms = CASE 
+                last_duration_ms = CASE
                     WHEN running_count <= 1 THEN $DurationMs
                     ELSE last_duration_ms
                 END,
                 modified_dttm = GETDATE(),
                 modified_by = SUSER_SNAME()
                 $successDateClause
-            OUTPUT DELETED.running_count AS prev_count, 
+            OUTPUT DELETED.running_count AS prev_count,
             INSERTED.running_count AS new_count
             WHERE process_id = $ProcessId
 "@
@@ -796,13 +746,14 @@ function Complete-OrchestratorTask {
             -Query $regQuery -QueryTimeout 15 -ApplicationName $appName `
             -ErrorAction Stop -TrustServerCertificate
 
-        # Only push COMPLETED event when the last instance finishes.
-        # While other instances are still active, the engine card stays blue/RUNNING.
+        # Push the COMPLETED event only when the last instance finishes. While
+        # other instances are still active, the engine card stays blue/RUNNING.
         $prevCount = if ($regResult) { $regResult.prev_count } else { 0 }
         $newCount = if ($regResult) { $regResult.new_count } else { 0 }
 
-        # Skip if orchestrator already decremented (WAIT mode) -- prev was already 0
-        # Send only when we're the last instance to finish -- new reaches 0
+        # Skip if the orchestrator already decremented (WAIT mode) - prev was
+        # already 0. Send only when we are the last instance to finish - new
+        # reaches 0.
         if ($prevCount -gt 0 -and $newCount -eq 0) {
             $procMeta = Invoke-Sqlcmd -ServerInstance $instance -Database $db `
                 -Query "SELECT process_name, module_name, interval_seconds, CONVERT(VARCHAR(8), scheduled_time, 108) AS scheduled_time, run_mode FROM Orchestrator.ProcessRegistry WHERE process_id = $ProcessId" `
@@ -810,8 +761,8 @@ function Complete-OrchestratorTask {
                 -ErrorAction Stop -TrustServerCertificate
 
             if ($procMeta) {
-                $schedTime = if ($procMeta.scheduled_time -and $procMeta.scheduled_time -ne [DBNull]::Value) { 
-                    $procMeta.scheduled_time 
+                $schedTime = if ($procMeta.scheduled_time -and $procMeta.scheduled_time -ne [DBNull]::Value) {
+                    $procMeta.scheduled_time
                 } else { "" }
 
                 Send-EngineEvent -EventType "PROCESS_COMPLETED" `
@@ -830,52 +781,23 @@ function Complete-OrchestratorTask {
         }
     }
     catch {
-        # Log but do not throw - callback failure should not crash the calling script
-        Write-Host "[WARN] Orchestrator callback failed: $($_.Exception.Message)" -ForegroundColor Yellow
+        # Log but do not throw - a callback failure must not crash the calling script.
+        Write-Console "[WARN] Orchestrator callback failed: $($_.Exception.Message)" 'Yellow'
     }
 }
 
+<# ============================================================================
+   FUNCTIONS: ENGINE EVENT PUSH
+   ----------------------------------------------------------------------------
+   Real-time engine-event delivery to the Control Center. A fire-and-forget
+   HTTP POST to the internal engine-event endpoint that the CC broadcasts to
+   connected browsers over WebSocket. Never throws or blocks: if the CC is
+   unreachable the event is silently dropped.
+   Prefix: (none)
+   ============================================================================ #>
+
 function Send-EngineEvent {
-    <#
-    .SYNOPSIS
-        Posts an engine event to the Control Center for real-time WebSocket broadcast.
-
-    .DESCRIPTION
-        Fire-and-forget HTTP POST to the Control Center's internal engine-event
-        endpoint. The CC stores the event in shared state and broadcasts it to
-        all connected browsers via WebSocket.
-
-        This function must NEVER throw or block. If the Control Center is
-        unreachable, the event is silently dropped. The orchestrator engine
-        and managed scripts must never be dependent on the Control Center.
-
-    .PARAMETER EventType
-        PROCESS_STARTED or PROCESS_COMPLETED.
-
-    .PARAMETER ProcessId
-        ProcessRegistry process_id.
-
-    .PARAMETER ProcessName
-        ProcessRegistry process_name.
-
-    .PARAMETER ModuleName
-        ProcessRegistry module_name.
-
-    .PARAMETER TaskId
-        TaskLog task_id for this execution.
-
-    .PARAMETER Status
-        Execution status (for COMPLETED events): SUCCESS, FAILED, TIMEOUT, LAUNCHED.
-
-    .PARAMETER DurationMs
-        Execution duration in milliseconds (for COMPLETED events).
-
-    .PARAMETER ExitCode
-        Process exit code (for COMPLETED events).
-
-    .PARAMETER OutputSummary
-        Truncated stdout summary (for COMPLETED events).
-    #>
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
         [ValidateSet("PROCESS_STARTED","PROCESS_COMPLETED")]
@@ -900,18 +822,68 @@ function Send-EngineEvent {
         [int]$RunMode = 1
     )
 
+    <#
+    .SYNOPSIS
+        Posts an engine event to the Control Center for real-time broadcast.
+
+    .DESCRIPTION
+        Fire-and-forget HTTP POST to the Control Center's internal engine-event
+        endpoint. The CC stores the event in shared state and broadcasts it to
+        all connected browsers over WebSocket. This function must never throw or
+        block: if the Control Center is unreachable the event is silently
+        dropped, because the orchestrator engine and managed scripts must never
+        depend on Control Center availability.
+
+    .PARAMETER EventType
+        PROCESS_STARTED or PROCESS_COMPLETED.
+
+    .PARAMETER ProcessId
+        ProcessRegistry process_id.
+
+    .PARAMETER ProcessName
+        ProcessRegistry process_name.
+
+    .PARAMETER ModuleName
+        ProcessRegistry module_name.
+
+    .PARAMETER TaskId
+        TaskLog task_id for this execution.
+
+    .PARAMETER Status
+        Execution status for COMPLETED events: SUCCESS, FAILED, TIMEOUT, LAUNCHED.
+
+    .PARAMETER DurationMs
+        Execution duration in milliseconds, for COMPLETED events.
+
+    .PARAMETER ExitCode
+        Process exit code, for COMPLETED events.
+
+    .PARAMETER OutputSummary
+        Truncated stdout summary, for COMPLETED events.
+
+    .PARAMETER IntervalSeconds
+        Process schedule interval in seconds, included so the CC countdown uses
+        live scheduling values rather than hardcoded defaults.
+
+    .PARAMETER ScheduledTime
+        Process scheduled time-of-day string, included for CC countdown display.
+
+    .PARAMETER RunMode
+        Process run_mode (0=Disabled, 1=Scheduled, 2=Queue-driven).
+    #>
+
     try {
         $payload = @{
-            eventType     = $EventType
-            processId     = $ProcessId
-            processName   = $ProcessName
-            moduleName    = $ModuleName
-            taskId        = $TaskId
-            timestamp     = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
-            status        = $Status
-            durationMs    = $DurationMs
-            exitCode      = $ExitCode
-            outputSummary = $OutputSummary
+            eventType       = $EventType
+            processId       = $ProcessId
+            processName     = $ProcessName
+            moduleName      = $ModuleName
+            taskId          = $TaskId
+            timestamp       = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+            status          = $Status
+            durationMs      = $DurationMs
+            exitCode        = $ExitCode
+            outputSummary   = $OutputSummary
             intervalSeconds = $IntervalSeconds
             scheduledTime   = $ScheduledTime
             runMode         = $RunMode
@@ -925,76 +897,22 @@ function Send-EngineEvent {
             -TimeoutSec 3 | Out-Null
     }
     catch {
-        # Silent drop - Control Center availability must never affect engine operations
+        # Silent drop - Control Center availability must never affect engine operations.
     }
 }
 
+<# ============================================================================
+   FUNCTIONS: TEAMS ALERTING
+   ----------------------------------------------------------------------------
+   Teams alert queuing with mandatory deduplication. Inserts into
+   Teams.AlertQueue for delivery, always checking Teams.RequestLog for an
+   already-sent alert with the same trigger first. Supports plain-text and
+   Adaptive Card payloads.
+   Prefix: (none)
+   ============================================================================ #>
+
 function Send-TeamsAlert {
-    <#
-    .SYNOPSIS
-        Queues a Teams alert with mandatory deduplication.
-
-    .DESCRIPTION
-        Inserts a row into Teams.AlertQueue for delivery by Process-TeamsAlertQueue.
-        Always checks Teams.RequestLog for an existing successfully-sent alert with 
-        the same TriggerType + TriggerValue before inserting. If a match is found,
-        the alert is skipped and a log message is written.
-
-        Dedup is mandatory — there is no opt-out. Callers that need a repeating 
-        alert should pass a unique TriggerValue each time (e.g., include a timestamp 
-        or cycle identifier).
-
-        Supports both plain-text alerts and rich Adaptive Card payloads via the
-        optional -CardJson parameter. Title/Message/Color remain required even when
-        a card is supplied — they populate the audit trail and serve as plain-text
-        fallback for clients that cannot render the card.
-
-    .PARAMETER SourceModule
-        The owning module (e.g., 'ServerOps', 'BatchOps').
-
-    .PARAMETER AlertCategory
-        Severity level: 'CRITICAL', 'WARNING', or 'INFO'.
-
-    .PARAMETER Title
-        Alert card title. Supports Teams markdown (e.g., {{FIRE}} for emoji).
-
-    .PARAMETER Message
-        Alert card body. Supports Teams markdown formatting.
-
-    .PARAMETER Color
-        Teams card accent color. Default: 'attention' (red/orange).
-        Options: 'default', 'dark', 'light', 'accent', 'good', 'warning', 'attention'.
-
-    .PARAMETER TriggerType
-        Dedup key part 1: identifies the alert condition (e.g., 'NETWORK_COPY_EXHAUSTED').
-
-    .PARAMETER TriggerValue
-        Dedup key part 2: identifies the specific instance (e.g., tracking_id, batch_id).
-
-    .PARAMETER CardJson
-        Optional Adaptive Card JSON payload for rich card rendering. When supplied,
-        the value is written to Teams.AlertQueue.card_json. Title/Message/Color are
-        still required and populate the audit trail / plain-text fallback.
-
-    .OUTPUTS
-        [bool] $true if alert was queued, $false if skipped (dedup) or failed.
-
-    .EXAMPLE
-        # Plain-text alert
-        Send-TeamsAlert -SourceModule 'ServerOps' -AlertCategory 'CRITICAL' `
-            -Title '{{FIRE}} Backup Network Copy Failed' `
-            -Message "**File:** bigdb_full.sqb`n**Error:** Network timeout after 3 attempts" `
-            -TriggerType 'NETWORK_COPY_EXHAUSTED' -TriggerValue '572438'
-
-    .EXAMPLE
-        # Adaptive Card alert (with plain-text fallback)
-        Send-TeamsAlert -SourceModule 'ServerOps' -AlertCategory 'INFO' `
-            -Title 'Disk Health Summary' `
-            -Message 'Disk Health Summary: 5 servers, 18 drives. All drives healthy.' `
-            -Color 'good' `
-            -CardJson $adaptiveCardJson `
-            -TriggerType 'DiskHealthSummary' -TriggerValue '2026-04-28'
-    #>
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
         [string]$SourceModule,
@@ -1020,6 +938,53 @@ function Send-TeamsAlert {
         [string]$CardJson = $null
     )
 
+    <#
+    .SYNOPSIS
+        Queues a Teams alert with mandatory deduplication.
+
+    .DESCRIPTION
+        Inserts a row into Teams.AlertQueue for delivery by
+        Process-TeamsAlertQueue. Always checks Teams.RequestLog for an existing
+        successfully-sent alert with the same TriggerType and TriggerValue
+        before inserting; on a match the alert is skipped and a log message is
+        written. Dedup is mandatory with no opt-out, so callers needing a
+        repeating alert must pass a unique TriggerValue each time. Supports both
+        plain-text alerts and rich Adaptive Card payloads via the optional
+        -CardJson parameter; Title, Message, and Color remain required even when
+        a card is supplied, populating the audit trail and the plain-text
+        fallback. Returns $true if the alert was queued and $false if it was
+        skipped (dedup) or failed.
+
+    .PARAMETER SourceModule
+        The owning module (e.g., 'ServerOps', 'BatchOps').
+
+    .PARAMETER AlertCategory
+        Severity level: CRITICAL, WARNING, or INFO.
+
+    .PARAMETER Title
+        Alert card title. Supports Teams markdown.
+
+    .PARAMETER Message
+        Alert card body. Supports Teams markdown formatting.
+
+    .PARAMETER Color
+        Teams card accent color. Default: 'attention'. Options: default, dark,
+        light, accent, good, warning, attention.
+
+    .PARAMETER TriggerType
+        Dedup key part one: identifies the alert condition
+        (e.g., 'NETWORK_COPY_EXHAUSTED').
+
+    .PARAMETER TriggerValue
+        Dedup key part two: identifies the specific instance
+        (e.g., tracking_id, batch_id).
+
+    .PARAMETER CardJson
+        Optional Adaptive Card JSON payload for rich card rendering. When
+        supplied, written to Teams.AlertQueue.card_json; Title, Message, and
+        Color still populate the audit trail and plain-text fallback.
+    #>
+
     try {
         # Dedup check: has this alert already been successfully sent?
         $triggerTypeSafe = $TriggerType -replace "'", "''"
@@ -1038,11 +1003,11 @@ WHERE trigger_type = '$triggerTypeSafe'
             return $false
         }
 
-        # Queue the alert
+        # Queue the alert.
         $titleSafe = $Title -replace "'", "''"
         $messageSafe = $Message -replace "'", "''"
 
-        # Build INSERT — include card_json column only when supplied
+        # Build the INSERT, including the card_json column only when supplied.
         if ([string]::IsNullOrEmpty($CardJson)) {
             $insertQuery = @"
 INSERT INTO Teams.AlertQueue (
