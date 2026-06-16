@@ -680,21 +680,6 @@ $proc.Dispose()
     return $result
 }
 
-# GRACEFUL SHUTDOWN
-# ============================================================================
-
-# Register handler for process termination (NSSM stop signal)
-Register-EngineEvent -SourceIdentifier PowerShell.Exiting -Action {
-    $Script:ShutdownRequested = $true
-} | Out-Null
-
-# Also handle Ctrl+C for interactive testing
-[Console]::TreatControlCAsInput = $false
-$null = Register-ObjectEvent -InputObject ([Console]) -EventName CancelKeyPress -Action {
-    $Script:ShutdownRequested = $true
-    $Event.SourceEventArgs.Cancel = $true
-} -ErrorAction SilentlyContinue
-
 <# ============================================================================
    FUNCTIONS: MAIN ENGINE LOOP
    ----------------------------------------------------------------------------
@@ -1092,7 +1077,7 @@ VALUES ($drainQueueId, 'Orchestrator', 'WARNING', '$($wh.webhook_name)', '$alert
                     # FIRE_AND_FORGET: Launch and reset running_count immediately
                     # Queue processors drain the entire queue in one pass, so the
                     # trigger-set count is consumed by the launch decision itself.
-                    # Reset to 0 now — any new INSERTs during processing will
+                    # Reset to 0 now - any new INSERTs during processing will
                     # re-increment via the trigger and get picked up next heartbeat.
                     if ($taskId) {
                         Complete-TaskLog -TaskId $taskId -Status "LAUNCHED" -ExitCode 0
@@ -1160,6 +1145,20 @@ VALUES ($drainQueueId, 'Orchestrator', 'WARNING', '$($wh.webhook_name)', '$alert
    scripts. See xFACts-OrchestratorFunctions.ps1 for the callback signature.
    Prefix: (none)
    ============================================================================ #>
+
+# Arm graceful-shutdown handlers before the engine starts. Both set the
+# ShutdownRequested flag that the engine loop polls to exit cleanly.
+# NSSM stop signal arrives as the PowerShell.Exiting engine event.
+Register-EngineEvent -SourceIdentifier PowerShell.Exiting -Action {
+    $Script:ShutdownRequested = $true
+} | Out-Null
+
+# Ctrl+C handling for interactive testing.
+[Console]::TreatControlCAsInput = $false
+$null = Register-ObjectEvent -InputObject ([Console]) -EventName CancelKeyPress -Action {
+    $Script:ShutdownRequested = $true
+    $Event.SourceEventArgs.Cancel = $true
+} -ErrorAction SilentlyContinue
 
 # Ensure the log directory exists before the engine begins writing logs.
 if (-not (Test-Path $script:logDir)) { New-Item -ItemType Directory -Path $script:logDir -Force | Out-Null }
