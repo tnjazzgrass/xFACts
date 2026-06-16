@@ -371,12 +371,16 @@ The `IMPORTS` section contains dot-source statements and `Import-Module` calls. 
 ### 10.1 Rules
 
 - One import per statement. Chained imports are forbidden.
-- Import statements appear only in the IMPORTS section. An import elsewhere in the file is misplaced.
+- Import statements appear only in the IMPORTS section. A file-scope import elsewhere is misplaced.
 - Three forms are recognized:
   - Dot-source: `. "$PSScriptRoot\xFACts-OrchestratorFunctions.ps1"`
   - Import-Module by path: `Import-Module -Name "$PSScriptRoot\modules\xFACts-CCShared.psm1"`
   - Import-Module by name: `Import-Module SqlServer`
 - A file with no imports omits the IMPORTS banner entirely, along with its FILE ORGANIZATION entry.
+
+### 10.2 In-function imports
+
+An Import-Module or dot-source inside a function body is permitted only in the shared-library role; in all other roles it is misplaced.
 
 ---
 
