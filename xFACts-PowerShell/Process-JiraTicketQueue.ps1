@@ -1,66 +1,80 @@
 <#
 .SYNOPSIS
     xFACts - Jira Ticket Queue Processor
-    
-.DESCRIPTION
-    xFACts - Jira
-    Script: Process-JiraTicketQueue.ps1
-    Version: Tracked in dbo.System_Metadata (component: Jira)
 
-    Reads pending tickets from xFACts.Jira.TicketQueue, creates them in Jira via 
-    REST API, updates queue status, retrieves assignee, and handles email fallback 
+.DESCRIPTION
+    Reads pending tickets from xFACts.Jira.TicketQueue, creates them in Jira via the
+    REST API, updates queue status, retrieves the assignee, and handles email fallback
     on failure.
 
-    CHANGELOG
-    ---------
-    2026-03-11  Migrated to Initialize-XFActsScript shared infrastructure
-                Removed inline Write-Log, Get-MasterPassphrase, Get-JiraCredentials
-                Replaced credential retrieval with Get-ServiceCredentials
-                Removed $SqlServer/$SqlDatabase params from business functions
-                Converted Get-PendingTickets to shared Get-SqlData
-                Updated header to component-level versioning format
-    2026-02-06  SqlServer module compatibility and Negotiate auth fix
-                Replaced SqlDataAdapter with Invoke-Sqlcmd in Get-PendingTickets
-                Added Invoke-JiraAPI helper using HttpWebRequest
-    2026-02-01  Orchestrator v2 integration
-                Added -Execute safeguard, TaskId/ProcessId, SQLPS fallback
-                Master passphrase now from GlobalConfig (not hardcoded)
-                Relocated to E:\xFACts-PowerShell
-    2025-12-14  Initial implementation
-                Queue-based Jira REST API ticket creation
-                Migration from DBA to xFACts database
-
 .PARAMETER ServerInstance
-    SQL Server instance name (default: AVG-PROD-LSNR)
-    
+    SQL Server instance name (default: AVG-PROD-LSNR).
+
 .PARAMETER Database
-    Database name (default: xFACts)
-    
+    Database name (default: xFACts).
+
 .PARAMETER MaxRetries
-    Maximum retry attempts for failed tickets (default: 3)
-    
+    Maximum retry attempts for failed tickets (default: 3).
+
 .PARAMETER BatchSize
-    Maximum tickets to process per run (default: 50)
+    Maximum tickets to process per run (default: 50).
 
 .PARAMETER Execute
     Perform actual Jira API calls. Without this flag, runs in preview mode.
 
 .PARAMETER TaskId
-    Orchestrator TaskLog ID passed by the v2 engine at launch. Used for task 
+    Orchestrator TaskLog ID passed by the v2 engine at launch. Used for task
     completion callback. Default 0 (no callback when run manually).
 
 .PARAMETER ProcessId
-    Orchestrator ProcessRegistry ID passed by the v2 engine at launch. Used for 
+    Orchestrator ProcessRegistry ID passed by the v2 engine at launch. Used for
     task completion callback. Default 0 (no callback when run manually).
 
-================================================================================
-DEPLOYMENT REMINDERS
-================================================================================
-1. Deploy to E:\xFACts-PowerShell on FA-SQLDBB.
-2. Credentials retrieved via Get-ServiceCredentials (dbo.Credentials + GlobalConfig).
-3. xFACts-OrchestratorFunctions.ps1 must be in the same directory.
-================================================================================
+.COMPONENT
+    Jira
+
+.NOTES
+    File Name : Process-JiraTicketQueue.ps1
+    Location  : E:\xFACts-PowerShell
+
+    FILE ORGANIZATION
+    -----------------
+    CHANGELOG: CHANGE HISTORY
+    PARAMETERS: SCRIPT PARAMETERS
+    IMPORTS: SCRIPT DEPENDENCIES
+    INITIALIZATION: SCRIPT INITIALIZATION
+    VARIABLES: GLOBAL STATE
+    FUNCTIONS: QUEUE AND API
+    EXECUTION: SCRIPT EXECUTION
 #>
+
+<# ============================================================================
+   CHANGELOG: CHANGE HISTORY
+   ----------------------------------------------------------------------------
+   Date-driven change history for this script. Most-recent entry first.
+   Prefix: (none)
+   ============================================================================ #>
+
+# 2026-03-11  Migrated to Initialize-XFActsScript shared infrastructure.
+#             Removed inline Write-Log, Get-MasterPassphrase, Get-JiraCredentials.
+#             Replaced credential retrieval with Get-ServiceCredentials.
+#             Removed $SqlServer/$SqlDatabase params from business functions.
+#             Converted Get-PendingTickets to shared Get-SqlData.
+# 2026-02-06  SqlServer module compatibility and Negotiate auth fix.
+#             Replaced SqlDataAdapter with Invoke-Sqlcmd in Get-PendingTickets.
+#             Added Invoke-JiraAPI helper using HttpWebRequest.
+# 2026-02-01  Orchestrator v2 integration. Added -Execute safeguard, TaskId/ProcessId,
+#             SQLPS fallback. Master passphrase now from GlobalConfig (not hardcoded).
+#             Relocated to E:\xFACts-PowerShell.
+# 2025-12-14  Initial implementation. Queue-based Jira REST API ticket creation,
+#             migration from DBA to xFACts database.
+
+<# ============================================================================
+   PARAMETERS: SCRIPT PARAMETERS
+   ----------------------------------------------------------------------------
+   The [CmdletBinding()] attribute and param() block declaring script-level parameters.
+   Prefix: (none)
+   ============================================================================ #>
 
 [CmdletBinding()]
 param(
@@ -73,11 +87,22 @@ param(
     [int]$ProcessId = 0
 )
 
-# ============================================================================
-# STANDARD INITIALIZATION
-# ============================================================================
+<# ============================================================================
+   IMPORTS: SCRIPT DEPENDENCIES
+   ----------------------------------------------------------------------------
+   Dot-sources the platform shared orchestrator functions consumed by this script.
+   Prefix: (none)
+   ============================================================================ #>
 
 . "$PSScriptRoot\xFACts-OrchestratorFunctions.ps1"
+
+<# ============================================================================
+   INITIALIZATION: SCRIPT INITIALIZATION
+   ----------------------------------------------------------------------------
+   One-time setup that must run at file scope: shared-script initialization and the
+   TLS protocol required for the Jira API.
+   Prefix: (none)
+   ============================================================================ #>
 
 Initialize-XFActsScript -ScriptName 'Process-JiraTicketQueue' `
     -ServerInstance $ServerInstance -Database $Database -Execute:$Execute
@@ -85,20 +110,33 @@ Initialize-XFActsScript -ScriptName 'Process-JiraTicketQueue' `
 # Force TLS 1.2 for Jira API
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-# Email settings for fallback
+<# ============================================================================
+   VARIABLES: GLOBAL STATE
+   ----------------------------------------------------------------------------
+   Script-scope state used during execution.
+   Prefix: (none)
+   ============================================================================ #>
+
+# Database Mail profile used for the email fallback path.
 $DatabaseMailProfile = "ALERT!"
 
-# ============================================================================
-# FUNCTIONS
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: QUEUE AND API
+   ----------------------------------------------------------------------------
+   Queue retrieval, Jira REST API access, ticket creation, queue-status updates,
+   email fallback, and API request logging.
+   Prefix: (none)
+   ============================================================================ #>
 
+# Retrieves pending tickets from Jira.TicketQueue that are eligible for processing.
 function Get-PendingTickets {
     param(
         [int]$MaxRetries,
         [int]$BatchSize
     )
-    
-    $sqlQuery = "SELECT TOP $BatchSize
+
+    $sqlQuery = @"
+SELECT TOP (@BatchSize)
     QueueID,
     SourceModule,
     ProjectKey,
@@ -123,42 +161,41 @@ function Get-PendingTickets {
     RetryCount
 FROM Jira.TicketQueue
 WHERE TicketStatus = 'Pending'
-  AND (RetryCount < $MaxRetries OR RetryCount IS NULL)
-ORDER BY RequestedDate ASC"
+  AND (RetryCount < @MaxRetries OR RetryCount IS NULL)
+ORDER BY RequestedDate ASC
+"@
 
     try {
-        return Get-SqlData -Query $sqlQuery
+        return Get-SqlData -Query $sqlQuery -Parameters @{
+            BatchSize = $BatchSize
+            MaxRetries = $MaxRetries
+        }
     } catch {
         Write-Log "Failed to query pending tickets: $($_.Exception.Message)" "ERROR"
         throw
     }
 }
 
+# Makes an HTTP request to Jira via HttpWebRequest to bypass Negotiate auth.
 function Invoke-JiraAPI {
-    <#
-    .SYNOPSIS
-        Makes HTTP requests to Jira using HttpWebRequest to bypass Negotiate auth.
-        Invoke-RestMethod/Invoke-WebRequest fail when Jira returns WWW-Authenticate: Negotiate
-        because PowerShell attempts Windows integrated auth instead of using the Basic header.
-    #>
     param(
         [string]$Uri,
         [string]$Method = "GET",
         [hashtable]$Headers,
         [string]$Body = $null
     )
-    
+
     $request = [System.Net.HttpWebRequest]::Create($Uri)
     $request.Method = $Method
     $request.PreAuthenticate = $true
     $request.ContentType = "application/json; charset=utf-8"
     $request.Accept = "application/json"
-    
+
     foreach ($key in $Headers.Keys) {
         if ($key -eq 'Content-Type') { continue }
         $request.Headers.Add($key, $Headers[$key])
     }
-    
+
     if ($Body) {
         $bodyBytes = [System.Text.Encoding]::UTF8.GetBytes($Body)
         $request.ContentLength = $bodyBytes.Length
@@ -166,7 +203,7 @@ function Invoke-JiraAPI {
         $stream.Write($bodyBytes, 0, $bodyBytes.Length)
         $stream.Close()
     }
-    
+
     try {
         $response = $request.GetResponse()
         $reader = New-Object System.IO.StreamReader($response.GetResponseStream())
@@ -174,7 +211,7 @@ function Invoke-JiraAPI {
         $reader.Close()
         $statusCode = [int]$response.StatusCode
         $response.Close()
-        
+
         return @{
             Success = $true
             StatusCode = $statusCode
@@ -192,7 +229,7 @@ function Invoke-JiraAPI {
                 $reader.Close()
             } catch { }
         }
-        
+
         return @{
             Success = $false
             StatusCode = $statusCode
@@ -202,19 +239,20 @@ function Invoke-JiraAPI {
     }
 }
 
+# Creates a Jira issue via REST API from a queued ticket row and returns the result.
 function New-JiraTicket {
     param(
         [hashtable]$Credentials,
         [System.Data.DataRow]$Ticket
     )
-    
+
     $base64Auth = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("$($Credentials.JiraUser):$($Credentials.JiraPassword)"))
-    
+
     $headers = @{
         'Authorization' = "Basic $base64Auth"
         'Content-Type'  = 'application/json'
     }
-    
+
     # Build the basic ticket payload
     $ticketBody = @{
         fields = @{
@@ -225,17 +263,17 @@ function New-JiraTicket {
             priority = @{ name = $Ticket.TicketPriority }
         }
     }
-    
+
     # Add optional assignee
     if (-not [string]::IsNullOrEmpty($Ticket.Assignee)) {
         $ticketBody.fields.assignee = @{ name = $Ticket.Assignee }
     }
-    
+
     # Add optional due date
     if ($Ticket.DueDate -ne [DBNull]::Value) {
         $ticketBody.fields.duedate = $Ticket.DueDate.ToString("yyyy-MM-dd")
     }
-    
+
     # Add cascading field if specified
     if (-not [string]::IsNullOrEmpty($Ticket.CascadingField_ID)) {
         $ticketBody.fields[$Ticket.CascadingField_ID] = @{
@@ -247,7 +285,7 @@ function New-JiraTicket {
             }
         }
     }
-    
+
     # Add custom fields if specified
     if (-not [string]::IsNullOrEmpty($Ticket.CustomField_ID)) {
         $ticketBody.fields[$Ticket.CustomField_ID] = $Ticket.CustomField_Value
@@ -258,16 +296,16 @@ function New-JiraTicket {
     if (-not [string]::IsNullOrEmpty($Ticket.CustomField3_ID)) {
         $ticketBody.fields[$Ticket.CustomField3_ID] = $Ticket.CustomField3_Value
     }
-    
+
     $jsonBody = $ticketBody | ConvertTo-Json -Depth 10
-    
+
  $createResult = Invoke-JiraAPI -Uri "$($Credentials.JiraURL)/rest/api/2/issue" `
         -Method POST -Headers $headers -Body $jsonBody
-    
+
     if ($createResult.Success) {
         $responseData = $createResult.Content | ConvertFrom-Json
         $ticketKey = $responseData.key
-        
+
         # Try to get the assignee from the created ticket
         $assignee = $null
         $detailResult = Invoke-JiraAPI -Uri "$($Credentials.JiraURL)/rest/api/2/issue/$ticketKey" `
@@ -278,7 +316,7 @@ function New-JiraTicket {
                 $assignee = $detailData.fields.assignee.displayName
             }
         }
-        
+
         return @{
             Success = $true
             StatusCode = $createResult.StatusCode
@@ -296,6 +334,7 @@ function New-JiraTicket {
     }
 }
 
+# Updates a Jira.TicketQueue row with processing status, ticket key, and retry count.
 function Update-QueueStatus {
     param(
         [int]$QueueID,
@@ -305,48 +344,41 @@ function Update-QueueStatus {
         [string]$ResponseMessage = $null,
         [int]$RetryCount = 0
     )
-    
-    $ticketKeyValue = if ($TicketKey) { "'$TicketKey'" } else { "NULL" }
-    $responseValue = if ($ResponseMessage) { "'$($ResponseMessage -replace "'", "''")'" } else { "NULL" }
-    
+
     $sqlQuery = @"
 UPDATE Jira.TicketQueue
-SET TicketStatus = '$Status',
-    TicketKey = $ticketKeyValue,
-    StatusCode = $StatusCode,
-    ResponseMessage = $responseValue,
+SET TicketStatus = @Status,
+    TicketKey = @TicketKey,
+    StatusCode = @StatusCode,
+    ResponseMessage = @ResponseMessage,
     ProcessedDate = GETDATE(),
-    RetryCount = $RetryCount,
+    RetryCount = @RetryCount,
     LastRetryDate = GETDATE()
-WHERE QueueID = $QueueID
+WHERE QueueID = @QueueID
 "@
-    
-    try {
-        $connectionString = "Server=$($script:XFActsServerInstance);Database=$($script:XFActsDatabase);Integrated Security=True;Application Name=$($script:XFActsAppName)"
-        $connection = New-Object System.Data.SqlClient.SqlConnection($connectionString)
-        $connection.Open()
-        
-        $command = $connection.CreateCommand()
-        $command.CommandText = $sqlQuery
-        $command.ExecuteNonQuery() | Out-Null
-        
-        $connection.Close()
-    } catch {
-        Write-Log "Failed to update queue status: $($_.Exception.Message)" "WARN"
+
+    $null = Invoke-SqlNonQuery -Query $sqlQuery -Parameters @{
+        Status = $Status
+        TicketKey = $TicketKey
+        StatusCode = $StatusCode
+        ResponseMessage = $ResponseMessage
+        RetryCount = $RetryCount
+        QueueID = $QueueID
     }
 }
 
+# Sends a database-mail fallback notification when Jira ticket creation fails.
 function Send-EmailFallback {
     param(
         [object]$Ticket,
         [string]$ErrorMessage
     )
-    
+
     if ([string]::IsNullOrEmpty($Ticket.EmailRecipients)) {
         Write-Log "No email recipients configured for QueueID $($Ticket.QueueID)" "WARN"
         return $false
     }
-    
+
     $subject = "Jira Ticket Creation Failed: $($Ticket.Summary)"
     $body = @"
 A Jira ticket could not be created automatically.
@@ -362,37 +394,36 @@ $($Ticket.TicketDescription)
 
 Please create this ticket manually.
 "@
-    
+
     $sqlQuery = @"
 EXEC msdb.dbo.sp_send_dbmail
-    @profile_name = '$DatabaseMailProfile',
-    @recipients = '$($Ticket.EmailRecipients)',
+    @profile_name = @ProfileName,
+    @recipients = @Recipients,
     @subject = @Subject,
     @body = @Body
 "@
-    
+
     try {
-        $connectionString = "Server=$($script:XFActsServerInstance);Database=$($script:XFActsDatabase);Integrated Security=True;Application Name=$($script:XFActsAppName)"
-        $connection = New-Object System.Data.SqlClient.SqlConnection($connectionString)
-        $connection.Open()
-        
-        $command = $connection.CreateCommand()
-        $command.CommandText = $sqlQuery
-        $command.Parameters.AddWithValue("@Subject", $subject) | Out-Null
-        $command.Parameters.AddWithValue("@Body", $body) | Out-Null
-        
-        $command.ExecuteNonQuery() | Out-Null
-        $connection.Close()
-        
-        Write-Log "Email fallback sent for QueueID $($Ticket.QueueID)" "SUCCESS"
-        return $true
-        
+        $sent = Invoke-SqlNonQuery -Query $sqlQuery -Parameters @{
+            ProfileName = $DatabaseMailProfile
+            Recipients = $Ticket.EmailRecipients
+            Subject = $subject
+            Body = $body
+        }
+        if ($sent) {
+            Write-Log "Email fallback sent for QueueID $($Ticket.QueueID)" "SUCCESS"
+            return $true
+        }
+        else {
+            return $false
+        }
     } catch {
         Write-Log "Failed to send email fallback for QueueID $($Ticket.QueueID): $($_.Exception.Message)" "ERROR"
         return $false
     }
 }
 
+# Records the Jira API request outcome in Jira.RequestLog for audit and dedup.
 function Write-LogAPIRequest {
     param(
         [int]$QueueID,
@@ -406,7 +437,7 @@ function Write-LogAPIRequest {
         [string]$ResponseMessage,
         [string]$Assignee = $null
     )
-    
+
     $sqlQuery = @"
 INSERT INTO Jira.RequestLog (
     SourceModule,
@@ -439,41 +470,44 @@ VALUES (
     @Assignee
 );
 "@
-    
+
     try {
-        $connectionString = "Server=$($script:XFActsServerInstance);Database=$($script:XFActsDatabase);Integrated Security=True;Application Name=$($script:XFActsAppName)"
-        $connection = New-Object System.Data.SqlClient.SqlConnection($connectionString)
-        $connection.Open()
-        
-        $command = $connection.CreateCommand()
-        $command.CommandText = $sqlQuery
-        $command.Parameters.AddWithValue("@SourceModule", $(if ($SourceModule) { $SourceModule } else { "Unknown" })) | Out-Null
-        $command.Parameters.AddWithValue("@TriggerType", $(if ($TriggerType) { $TriggerType } else { "UNKNOWN" })) | Out-Null
-        $command.Parameters.AddWithValue("@ProjectKey", $(if ($ProjectKey) { $ProjectKey } else { [System.DBNull]::Value })) | Out-Null
-        $command.Parameters.AddWithValue("@Summary", $(if ($Summary) { $Summary } else { [System.DBNull]::Value })) | Out-Null
-        $command.Parameters.AddWithValue("@TriggerValue", $(if ($TriggerValue) { $TriggerValue } else { [System.DBNull]::Value })) | Out-Null
-        $command.Parameters.AddWithValue("@TicketKey", $(if ($TicketKey) { $TicketKey } else { [System.DBNull]::Value })) | Out-Null
-        $command.Parameters.AddWithValue("@StatusCode", $StatusCode) | Out-Null
-        $command.Parameters.AddWithValue("@ResponseMessage", $(if ($ResponseMessage) { $ResponseMessage } else { [System.DBNull]::Value })) | Out-Null
-        $command.Parameters.AddWithValue("@Assignee", $(if ($Assignee) { $Assignee } else { [System.DBNull]::Value })) | Out-Null
-        
-        $command.ExecuteNonQuery() | Out-Null
-        $connection.Close()
-        
+        $null = Invoke-SqlNonQuery -Query $sqlQuery -Parameters @{
+            SourceModule = $(if ($SourceModule) { $SourceModule } else { "Unknown" })
+            TriggerType = $(if ($TriggerType) { $TriggerType } else { "UNKNOWN" })
+            ProjectKey = $ProjectKey
+            Summary = $Summary
+            TriggerValue = $TriggerValue
+            TicketKey = $TicketKey
+            StatusCode = $StatusCode
+            ResponseMessage = $ResponseMessage
+            Assignee = $Assignee
+        }
     } catch {
         Write-Log "Failed to write to Jira.RequestLog: $($_.Exception.Message)" "WARN"
     }
 }
 
-# ============================================================================
-# MAIN EXECUTION
-# ============================================================================
+<# ============================================================================
+   EXECUTION: SCRIPT EXECUTION
+   ----------------------------------------------------------------------------
+   Processes the pending-ticket batch: creates each ticket in Jira, updates queue
+   status, logs the outcome, falls back to email on failure, and reports completion
+   to the orchestrator.
+   Prefix: (none)
+   ============================================================================ #>
 
+# Process exit code; set non-zero on fatal error.
 $exitCode = 0
+# Capture start time for duration reporting.
 $scriptStart = Get-Date
+# Count of tickets processed this run.
 $processedCount = 0
+# Count of tickets successfully created in Jira.
 $successCount = 0
+# Count of tickets that failed creation.
 $failureCount = 0
+# Count of email-fallback notifications sent.
 $emailCount = 0
 
 try {
@@ -485,15 +519,15 @@ try {
     Write-Log "Max Retries: $MaxRetries" "INFO"
     Write-Log "Batch Size: $BatchSize" "INFO"
     Write-Log "" "INFO"
-    
+
     # Preview mode check
     if (-not $Execute) {
         Write-Log "PREVIEW MODE - No Jira API calls will be made. Run with -Execute to create tickets." "WARN"
-        
+
         # Still show what would be processed
         Write-Log "Checking for pending tickets..." "INFO"
         $tickets = Get-PendingTickets -MaxRetries $MaxRetries -BatchSize $BatchSize
-        
+
         $ticketList = @($tickets)
         if ($tickets -eq $null -or $ticketList.Count -eq 0) {
             Write-Log "No pending tickets found" "INFO"
@@ -504,8 +538,8 @@ try {
                 Write-Log "  [PREVIEW] QueueID $($ticket.QueueID) [$($ticket.SourceModule)]: $($ticket.Summary)" "INFO"
             }
         }
-        
-        Write-Host "Processed: 0, Created: 0, Failed: 0, Emails: 0"
+
+        Write-Console "Processed: 0, Created: 0, Failed: 0, Emails: 0"
         if ($TaskId -gt 0) {
             Complete-OrchestratorTask -ServerInstance $ServerInstance -Database $Database `
                 -TaskId $TaskId -ProcessId $ProcessId `
@@ -514,19 +548,19 @@ try {
         }
         exit 0
     }
-    
+
     # Get Jira credentials via shared credential retrieval
     Write-Log "Retrieving Jira credentials..." "INFO"
     $credentials = Get-ServiceCredentials -ServiceName 'Jira'
-    
+
     Write-Log "Checking for pending tickets..." "INFO"
     $tickets = Get-PendingTickets -MaxRetries $MaxRetries -BatchSize $BatchSize
-    
+
     $ticketList = @($tickets)
     if ($tickets -eq $null -or $ticketList.Count -eq 0) {
         Write-Log "No pending tickets found" "INFO"
         Write-Log "========================================" "INFO"
-        Write-Host "Processed: 0, Created: 0, Failed: 0, Emails: 0"
+        Write-Console "Processed: 0, Created: 0, Failed: 0, Emails: 0"
         if ($TaskId -gt 0) {
             Complete-OrchestratorTask -ServerInstance $ServerInstance -Database $Database `
                 -TaskId $TaskId -ProcessId $ProcessId `
@@ -535,85 +569,85 @@ try {
         }
         exit 0
     }
-    
+
     Write-Log "Found $($ticketList.Count) pending ticket(s) to process" "INFO"
     Write-Log "" "INFO"
-    
+
     foreach ($ticket in $ticketList) {
         $processedCount++
         Write-Log "Processing QueueID $($ticket.QueueID) [$($ticket.SourceModule)]: $($ticket.Summary)" "INFO"
-        
+
         $result = New-JiraTicket -Credentials $credentials -Ticket $ticket
-        
+
         if ($result.Success) {
             $responseData = $result.ResponseBody | ConvertFrom-Json
             $ticketKey = $responseData.key
-            
+
             Write-Log "  SUCCESS - Ticket created: $ticketKey" "SUCCESS"
-            
+
             if ($result.Assignee) {
                 Write-Log "  Assigned to: $($result.Assignee)" "INFO"
             } else {
                 Write-Log "  No assignee set" "WARN"
             }
-            
+
             Update-QueueStatus `
                 -QueueID $ticket.QueueID -Status 'Success' -TicketKey $ticketKey `
                 -StatusCode $result.StatusCode -ResponseMessage $result.ResponseBody `
                 -RetryCount $ticket.RetryCount
-            
+
             Write-LogAPIRequest `
                 -QueueID $ticket.QueueID -SourceModule $ticket.SourceModule `
                 -TriggerType $ticket.TriggerType -TriggerValue $ticket.TriggerValue `
                 -ProjectKey $ticket.ProjectKey -Summary $ticket.Summary `
                 -TicketKey $ticketKey -StatusCode $result.StatusCode `
                 -ResponseMessage "Success" -Assignee $result.Assignee
-            
+
             $successCount++
-            
+
         } else {
             Write-Log "  FAILED - Status Code: $($result.StatusCode)" "ERROR"
             Write-Log "  Error: $($result.ResponseBody)" "ERROR"
-            
+
             $newRetryCount = $ticket.RetryCount + 1
-            
+
             if ($newRetryCount -ge $MaxRetries) {
                 Write-Log "  Max retries reached ($MaxRetries), sending email fallback" "WARN"
-                
+
                 $emailSent = Send-EmailFallback `
                     -Ticket $ticket -ErrorMessage $result.ResponseBody
-                
+
                 $finalStatus = if ($emailSent) { 'EmailSent' } else { 'Failed' }
-                
+
                 Update-QueueStatus `
                     -QueueID $ticket.QueueID -Status $finalStatus `
                     -StatusCode $result.StatusCode -ResponseMessage $result.ResponseBody `
                     -RetryCount $newRetryCount
-                
+
                 if ($emailSent) { $emailCount++ }
-                
+
             } else {
                 Write-Log "  Will retry (attempt $newRetryCount of $MaxRetries)" "WARN"
-                
+
                 Update-QueueStatus `
                     -QueueID $ticket.QueueID -Status 'Failed' `
                     -StatusCode $result.StatusCode -ResponseMessage $result.ResponseBody `
                     -RetryCount $newRetryCount
             }
-            
+
             Write-LogAPIRequest `
                 -QueueID $ticket.QueueID -SourceModule $ticket.SourceModule `
                 -TriggerType $ticket.TriggerType -TriggerValue $ticket.TriggerValue `
                 -ProjectKey $ticket.ProjectKey -Summary $ticket.Summary `
                 -TicketKey $null -StatusCode $result.StatusCode `
                 -ResponseMessage $result.ResponseBody -Assignee $null
-            
+
             $failureCount++
         }
-        
+
         Write-Log "" "INFO"
     }
-    
+
     Write-Log "========================================" "INFO"
     Write-Log "Processing Complete" "INFO"
     Write-Log "  Tickets Processed: $processedCount" "INFO"
@@ -621,18 +655,18 @@ try {
     Write-Log "  Failed: $failureCount" $(if ($failureCount -gt 0) { "WARN" } else { "INFO" })
     Write-Log "  Emails Sent: $emailCount" "INFO"
     Write-Log "========================================" "INFO"
-    
+
     # Output summary for orchestrator
-    Write-Host "Processed: $processedCount, Created: $successCount, Failed: $failureCount, Emails: $emailCount"
-    
+    Write-Console "Processed: $processedCount, Created: $successCount, Failed: $failureCount, Emails: $emailCount"
+
     if ($failureCount -gt 0) {
         $exitCode = 1
     }
-    
+
 } catch {
     Write-Log "CRITICAL ERROR: $($_.Exception.Message)" "ERROR"
     Write-Log "Stack Trace: $($_.ScriptStackTrace)" "ERROR"
-    Write-Host "ERROR: $($_.Exception.Message)"
+    Write-Console "ERROR: $($_.Exception.Message)"
     $exitCode = 1
 }
 
