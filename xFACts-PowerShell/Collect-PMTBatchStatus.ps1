@@ -3,57 +3,31 @@
     xFACts - Payment Batch Status Collection
 
 .DESCRIPTION
-    xFACts - BatchOps
-    Script: Collect-PMTBatchStatus.ps1
-    Version: Tracked in dbo.System_Metadata (component: BatchOps)
+    Monitors Debt Manager Payment batch lifecycle from creation through terminal
+    state. Collects new batches, updates status for in-flight batches, and tracks
+    log activity for stall detection. Covers all payment batch types (Manual,
+    Import, Reversal, Reapply, Balance Adjustment, Virtual, etc.).
 
-    Monitors Debt Manager Payment batch lifecycle from creation through
-    terminal state. Collects new batches, updates status for in-flight batches,
-    tracks log activity for stall detection. Covers all payment batch types
-    (Manual, Import, Reversal, Reapply, Balance Adjustment, Virtual, etc.).
-
-    Follows the xFACts collect/evaluate pattern:
-    - Reads from configurable AG replica (PRIMARY or SECONDARY) for DM queries
-    - Writes to xFACts via the AG listener for all BatchOps.* table updates
-    - AG-aware: automatically detects current PRIMARY/SECONDARY roles
-    - Supports preview mode for safe testing
-
-    CHANGELOG
-    ---------
-    2026-04-28  Standardized Teams alerting via Send-TeamsAlert shared function
-                Converted all 4 alert checks from direct INSERT to Send-TeamsAlert
-                Inline Teams.RequestLog dedup queries removed (handled by shared function)
-                Jira branches and routing bitmask logic unchanged
-    2026-03-11  Migrated to Initialize-XFActsScript shared infrastructure
-                Removed inline Write-Log, Get-xFACtsData, Invoke-xFACtsWrite
-                Renamed $xFACtsServer/$xFACtsDB to $ServerInstance/$Database
-                Updated header to component-level versioning format
-    2026-02-17  PARTIAL non-terminal fix
-                PARTIAL (5) removed from terminal state detection
-                Recovery detection resets completed fields and alert_count
-    2026-02-13  Terminal failure alerting
-                IMPORTFAILED, FAILED, PARTIAL, REVERSALFAILED conditions
-                Per-condition routing via GlobalConfig with RequestLog dedup
-    2026-02-11  Initial implementation
-                Payment batch lifecycle tracking (all batch types)
-                AG-aware replica detection, log-based stall detection
-                Hard delete detection, preview mode, Orchestrator v2 integration
+    Follows the xFACts collect/evaluate pattern: reads from a configurable AG
+    replica for DM queries, writes to xFACts via the AG listener for all
+    BatchOps.* table updates, detects current PRIMARY/SECONDARY roles
+    automatically, and supports preview mode for safe testing.
 
 .PARAMETER ServerInstance
-    SQL Server instance hosting xFACts database (default: AVG-PROD-LSNR)
+    SQL Server instance hosting xFACts database (default: AVG-PROD-LSNR).
 
 .PARAMETER Database
-    xFACts database name (default: xFACts)
+    xFACts database name (default: xFACts).
 
 .PARAMETER SourceDB
-    Source database for Debt Manager data (default: crs5_oltp)
+    Source database for Debt Manager data (default: crs5_oltp).
 
 .PARAMETER Execute
     Perform writes. Without this flag, runs in preview/dry-run mode.
 
 .PARAMETER ForceSourceServer
-    Override the GlobalConfig replica setting and connect to specific server for reads.
-    Useful for testing or when AG detection fails.
+    Override the GlobalConfig replica setting and connect to a specific server for
+    reads. Useful for testing or when AG detection fails.
 
 .PARAMETER TaskId
     Orchestrator TaskLog ID passed by the v2 engine at launch. Used for task
@@ -63,21 +37,53 @@
     Orchestrator ProcessRegistry ID passed by the v2 engine at launch. Used for
     task completion callback. Default 0 (no callback when run manually).
 
-================================================================================
-DEPLOYMENT REMINDERS
-================================================================================
-1. This is deployed in an Availability Group - ensure this script is placed
-   on both servers in the appropriate folder.
-2. The service account running this script needs:
-   - Read access to crs5_oltp on both DM-PROD-DB and DM-PROD-REP
-   - Read/Write access to xFACts database
-3. Required GlobalConfig entries:
-   - Shared.AGName (default: DMPRODAG)
-   - Shared.SourceReplica (PRIMARY or SECONDARY, default: SECONDARY)
-   - BatchOps.pmt_alerting_enabled (default: 0)
-   - BatchOps.pmt_lookback_days (default: 7)
-================================================================================
+.COMPONENT
+    BatchOps
+
+.NOTES
+    File Name : Collect-PMTBatchStatus.ps1
+    Location  : E:\xFACts-PowerShell
+
+    FILE ORGANIZATION
+    -----------------
+    CHANGELOG: CHANGE HISTORY
+    PARAMETERS: SCRIPT PARAMETERS
+    IMPORTS: SCRIPT DEPENDENCIES
+    INITIALIZATION: SCRIPT INITIALIZATION
+    VARIABLES: GLOBAL STATE
+    FUNCTIONS: SOURCE AND CONFIGURATION
+    FUNCTIONS: COLLECTION STEPS
+    EXECUTION: SCRIPT EXECUTION
 #>
+
+<# ============================================================================
+   CHANGELOG: CHANGE HISTORY
+   ----------------------------------------------------------------------------
+   Date-driven change history for this collector. Most-recent entry first.
+   Prefix: (none)
+   ============================================================================ #>
+
+# 2026-04-28  Standardized Teams alerting via Send-TeamsAlert shared function.
+#             Converted all 4 alert checks from direct INSERT to Send-TeamsAlert.
+#             Inline Teams.RequestLog dedup queries removed (handled by shared function).
+#             Jira branches and routing bitmask logic unchanged.
+# 2026-03-11  Migrated to Initialize-XFActsScript shared infrastructure.
+#             Removed inline Write-Log, Get-xFACtsData, Invoke-xFACtsWrite.
+#             Renamed $xFACtsServer/$xFACtsDB to $ServerInstance/$Database.
+# 2026-02-17  PARTIAL non-terminal fix: PARTIAL (5) removed from terminal state
+#             detection. Recovery detection resets completed fields and alert_count.
+# 2026-02-13  Terminal failure alerting: IMPORTFAILED, FAILED, PARTIAL, REVERSALFAILED
+#             conditions. Per-condition routing via GlobalConfig with RequestLog dedup.
+# 2026-02-11  Initial implementation. Payment batch lifecycle tracking (all batch types),
+#             AG-aware replica detection, log-based stall detection, hard delete detection,
+#             preview mode, Orchestrator v2 integration.
+
+<# ============================================================================
+   PARAMETERS: SCRIPT PARAMETERS
+   ----------------------------------------------------------------------------
+   The [CmdletBinding()] attribute and param() block declaring script-level parameters.
+   Prefix: (none)
+   ============================================================================ #>
 
 [CmdletBinding()]
 param(
@@ -90,55 +96,79 @@ param(
     [int]$ProcessId = 0
 )
 
-# ============================================================================
-# STANDARD INITIALIZATION
-# ============================================================================
+<# ============================================================================
+   IMPORTS: SCRIPT DEPENDENCIES
+   ----------------------------------------------------------------------------
+   Dot-sources the platform shared orchestrator functions consumed by this script.
+   Prefix: (none)
+   ============================================================================ #>
 
 . "$PSScriptRoot\xFACts-OrchestratorFunctions.ps1"
+
+<# ============================================================================
+   INITIALIZATION: SCRIPT INITIALIZATION
+   ----------------------------------------------------------------------------
+   One-time setup that must run at file scope before other content executes.
+   Prefix: (none)
+   ============================================================================ #>
 
 Initialize-XFActsScript -ScriptName 'Collect-PMTBatchStatus' `
     -ServerInstance $ServerInstance -Database $Database -Execute:$Execute
 
-# ============================================================================
-# GLOBAL VARIABLES
-# ============================================================================
+<# ============================================================================
+   VARIABLES: GLOBAL STATE
+   ----------------------------------------------------------------------------
+   Mutable script-scope state populated during configuration and execution.
+   Prefix: bat
+   ============================================================================ #>
 
-$Script:AGPrimary = $null
-$Script:AGSecondary = $null
-$Script:ReadServer = $null
-$Script:WriteServer = $null
-$Script:Config = @{}
+# Resolved AG PRIMARY replica server name.
+$script:AGPrimary = $null
 
-# ============================================================================
-# FUNCTIONS
-# ============================================================================
+# Resolved AG SECONDARY replica server name.
+$script:AGSecondary = $null
 
-function Get-SourceData {
+# Server the script reads DM source data from (PRIMARY or SECONDARY per config).
+$script:ReadServer = $null
+
+# Server the script writes xFACts updates to (the AG listener).
+$script:WriteServer = $null
+
+# Loaded GlobalConfig settings and PMT thresholds.
+$script:Config = @{}
+
+<# ============================================================================
+   FUNCTIONS: SOURCE AND CONFIGURATION
+   ----------------------------------------------------------------------------
+   Source-data access, AG replica role detection, and configuration loading.
+   Prefix: bat
+   ============================================================================ #>
+
+# Executes a query against the source database on the configured AG replica.
+function Get-bat_PMT_SourceData {
     param(
         [string]$Query,
         [int]$Timeout = 60
     )
 
-    if (-not $Script:ReadServer) {
+    if (-not $script:ReadServer) {
         Write-Log "ReadServer not configured - cannot query source" "ERROR"
         return $null
     }
 
     try {
-        Invoke-Sqlcmd -ServerInstance $Script:ReadServer -Database $SourceDB -Query $Query -QueryTimeout $Timeout -ApplicationName $script:XFActsAppName -ErrorAction Stop -SuppressProviderContextWarning -TrustServerCertificate
+        Invoke-Sqlcmd -ServerInstance $script:ReadServer -Database $SourceDB -Query $Query -QueryTimeout $Timeout -ApplicationName $script:XFActsAppName -ErrorAction Stop -SuppressProviderContextWarning -TrustServerCertificate
     }
     catch {
-        Write-Log "Source query failed on $($Script:ReadServer): $($_.Exception.Message)" "ERROR"
+        Write-Log "Source query failed on $($script:ReadServer): $($_.Exception.Message)" "ERROR"
         return $null
     }
 }
 
-# ============================================================================
-# CONFIGURATION FUNCTIONS
-# ============================================================================
-
-function Get-AGReplicaRoles {
-    $agName = $Script:Config.AGName
+# Queries the AG to resolve current PRIMARY and SECONDARY replica server names.
+function Get-bat_PMT_AGReplicaRoles {
+    param()
+    $agName = $script:Config.AGName
 
     if (-not $agName) {
         Write-Log "AGName not configured - cannot query replica states" "ERROR"
@@ -181,7 +211,9 @@ function Get-AGReplicaRoles {
     return $roles
 }
 
-function Initialize-Configuration {
+# Loads GlobalConfig settings, resolves AG replica roles, and sets read/write servers.
+function Initialize-bat_PMT_Configuration {
+    param()
     Write-Log "Loading configuration..." "INFO"
 
     # Load GlobalConfig settings
@@ -195,7 +227,7 @@ function Initialize-Configuration {
     $configResults = Get-SqlData -Query $configQuery
 
     # Set defaults
-    $Script:Config = @{
+    $script:Config = @{
         AGName                      = "DMPRODAG"
         SourceReplica               = "SECONDARY"
         PMT_AlertingEnabled         = $false
@@ -207,97 +239,96 @@ function Initialize-Configuration {
         PMT_Alert_ReversalFailed    = 3
     }
 
-    # Override with GlobalConfig values — track source for diagnostics
-    $Script:ConfigSource = @{}
+    # Override with GlobalConfig values - track source for diagnostics
+    $script:ConfigSource = @{}
     if ($configResults) {
         foreach ($row in $configResults) {
             switch ($row.setting_name) {
-                "AGName"                                { $Script:Config.AGName = $row.setting_value; $Script:ConfigSource.AGName = 'GlobalConfig' }
-                "SourceReplica"                         { $Script:Config.SourceReplica = $row.setting_value; $Script:ConfigSource.SourceReplica = 'GlobalConfig' }
-                "pmt_alerting_enabled"                  { $Script:Config.PMT_AlertingEnabled = [bool][int]$row.setting_value; $Script:ConfigSource.PMT_AlertingEnabled = 'GlobalConfig' }
-                "pmt_lookback_days"                     { $Script:Config.PMT_LookbackDays = [int]$row.setting_value; $Script:ConfigSource.PMT_LookbackDays = 'GlobalConfig' }
-                "pmt_alert_import_failed_routing"       { $Script:Config.PMT_Alert_ImportFailed = [int]$row.setting_value; $Script:ConfigSource.PMT_Alert_ImportFailed = 'GlobalConfig' }
-                "pmt_alert_failed_routing"              { $Script:Config.PMT_Alert_Failed = [int]$row.setting_value; $Script:ConfigSource.PMT_Alert_Failed = 'GlobalConfig' }
-                "pmt_alert_partial_routing"             { $Script:Config.PMT_Alert_Partial = [int]$row.setting_value; $Script:ConfigSource.PMT_Alert_Partial = 'GlobalConfig' }
-                "pmt_alert_reversal_failed_routing"     { $Script:Config.PMT_Alert_ReversalFailed = [int]$row.setting_value; $Script:ConfigSource.PMT_Alert_ReversalFailed = 'GlobalConfig' }
+                "AGName"                                { $script:Config.AGName = $row.setting_value; $script:ConfigSource.AGName = 'GlobalConfig' }
+                "SourceReplica"                         { $script:Config.SourceReplica = $row.setting_value; $script:ConfigSource.SourceReplica = 'GlobalConfig' }
+                "pmt_alerting_enabled"                  { $script:Config.PMT_AlertingEnabled = [bool][int]$row.setting_value; $script:ConfigSource.PMT_AlertingEnabled = 'GlobalConfig' }
+                "pmt_lookback_days"                     { $script:Config.PMT_LookbackDays = [int]$row.setting_value; $script:ConfigSource.PMT_LookbackDays = 'GlobalConfig' }
+                "pmt_alert_import_failed_routing"       { $script:Config.PMT_Alert_ImportFailed = [int]$row.setting_value; $script:ConfigSource.PMT_Alert_ImportFailed = 'GlobalConfig' }
+                "pmt_alert_failed_routing"              { $script:Config.PMT_Alert_Failed = [int]$row.setting_value; $script:ConfigSource.PMT_Alert_Failed = 'GlobalConfig' }
+                "pmt_alert_partial_routing"             { $script:Config.PMT_Alert_Partial = [int]$row.setting_value; $script:ConfigSource.PMT_Alert_Partial = 'GlobalConfig' }
+                "pmt_alert_reversal_failed_routing"     { $script:Config.PMT_Alert_ReversalFailed = [int]$row.setting_value; $script:ConfigSource.PMT_Alert_ReversalFailed = 'GlobalConfig' }
             }
         }
     }
 
     # Tag any settings not loaded from GlobalConfig as defaults
-    foreach ($key in @($Script:Config.Keys)) {
-        if (-not $Script:ConfigSource.ContainsKey($key)) {
-            $Script:ConfigSource[$key] = 'default'
+    foreach ($key in @($script:Config.Keys)) {
+        if (-not $script:ConfigSource.ContainsKey($key)) {
+            $script:ConfigSource[$key] = 'default'
         }
     }
 
-    $gcCount = ($Script:ConfigSource.Values | Where-Object { $_ -eq 'GlobalConfig' }).Count
-    $dfCount = ($Script:ConfigSource.Values | Where-Object { $_ -eq 'default' }).Count
+    $gcCount = ($script:ConfigSource.Values | Where-Object { $_ -eq 'GlobalConfig' }).Count
+    $dfCount = ($script:ConfigSource.Values | Where-Object { $_ -eq 'default' }).Count
     Write-Log "  Config loaded: $gcCount from GlobalConfig, $dfCount from script defaults" "INFO"
 
-    Write-Log "  AGName: $($Script:Config.AGName) ($($Script:ConfigSource.AGName))" "INFO"
-    Write-Log "  SourceReplica: $($Script:Config.SourceReplica) ($($Script:ConfigSource.SourceReplica))" "INFO"
-    Write-Log "  PMT_AlertingEnabled: $($Script:Config.PMT_AlertingEnabled) ($($Script:ConfigSource.PMT_AlertingEnabled))" "INFO"
-    Write-Log "  PMT_LookbackDays: $($Script:Config.PMT_LookbackDays) ($($Script:ConfigSource.PMT_LookbackDays))" "INFO"
-    Write-Log "  PMT_Alert_ImportFailed: $($Script:Config.PMT_Alert_ImportFailed) ($($Script:ConfigSource.PMT_Alert_ImportFailed))" "INFO"
-    Write-Log "  PMT_Alert_Failed: $($Script:Config.PMT_Alert_Failed) ($($Script:ConfigSource.PMT_Alert_Failed))" "INFO"
-    Write-Log "  PMT_Alert_Partial: $($Script:Config.PMT_Alert_Partial) ($($Script:ConfigSource.PMT_Alert_Partial))" "INFO"
-    Write-Log "  PMT_Alert_ReversalFailed: $($Script:Config.PMT_Alert_ReversalFailed) ($($Script:ConfigSource.PMT_Alert_ReversalFailed))" "INFO"
+    Write-Log "  AGName: $($script:Config.AGName) ($($script:ConfigSource.AGName))" "INFO"
+    Write-Log "  SourceReplica: $($script:Config.SourceReplica) ($($script:ConfigSource.SourceReplica))" "INFO"
+    Write-Log "  PMT_AlertingEnabled: $($script:Config.PMT_AlertingEnabled) ($($script:ConfigSource.PMT_AlertingEnabled))" "INFO"
+    Write-Log "  PMT_LookbackDays: $($script:Config.PMT_LookbackDays) ($($script:ConfigSource.PMT_LookbackDays))" "INFO"
+    Write-Log "  PMT_Alert_ImportFailed: $($script:Config.PMT_Alert_ImportFailed) ($($script:ConfigSource.PMT_Alert_ImportFailed))" "INFO"
+    Write-Log "  PMT_Alert_Failed: $($script:Config.PMT_Alert_Failed) ($($script:ConfigSource.PMT_Alert_Failed))" "INFO"
+    Write-Log "  PMT_Alert_Partial: $($script:Config.PMT_Alert_Partial) ($($script:ConfigSource.PMT_Alert_Partial))" "INFO"
+    Write-Log "  PMT_Alert_ReversalFailed: $($script:Config.PMT_Alert_ReversalFailed) ($($script:ConfigSource.PMT_Alert_ReversalFailed))" "INFO"
 
     # Set write server (always the listener)
-    $Script:WriteServer = $ServerInstance
+    $script:WriteServer = $ServerInstance
 
     # Determine read server
     if ($ForceSourceServer) {
-        $Script:ReadServer = $ForceSourceServer
-        Write-Log "  ReadServer: $($Script:ReadServer) (forced via parameter)" "WARN"
+        $script:ReadServer = $ForceSourceServer
+        Write-Log "  ReadServer: $($script:ReadServer) (forced via parameter)" "WARN"
     }
     else {
         Write-Log "Detecting AG replica roles..." "INFO"
-        $agRoles = Get-AGReplicaRoles
+        $agRoles = Get-bat_PMT_AGReplicaRoles
 
         if (-not $agRoles) {
             Write-Log "AG detection failed - cannot determine read server" "ERROR"
             return $false
         }
 
-        $Script:AGPrimary = $agRoles.PRIMARY
-        $Script:AGSecondary = $agRoles.SECONDARY
+        $script:AGPrimary = $agRoles.PRIMARY
+        $script:AGSecondary = $agRoles.SECONDARY
 
-        Write-Log "  AG PRIMARY: $($Script:AGPrimary)" "INFO"
-        Write-Log "  AG SECONDARY: $($Script:AGSecondary)" "INFO"
+        Write-Log "  AG PRIMARY: $($script:AGPrimary)" "INFO"
+        Write-Log "  AG SECONDARY: $($script:AGSecondary)" "INFO"
 
-        if ($Script:Config.SourceReplica -eq "PRIMARY") {
-            $Script:ReadServer = $Script:AGPrimary
+        if ($script:Config.SourceReplica -eq "PRIMARY") {
+            $script:ReadServer = $script:AGPrimary
         }
         else {
-            $Script:ReadServer = $Script:AGSecondary
+            $script:ReadServer = $script:AGSecondary
         }
 
-        if (-not $Script:ReadServer) {
+        if (-not $script:ReadServer) {
             Write-Log "Could not determine ReadServer from AG roles" "ERROR"
             return $false
         }
 
-        Write-Log "  ReadServer: $($Script:ReadServer) (from GlobalConfig: $($Script:Config.SourceReplica))" "SUCCESS"
+        Write-Log "  ReadServer: $($script:ReadServer) (from GlobalConfig: $($script:Config.SourceReplica))" "SUCCESS"
     }
 
-    Write-Log "  WriteServer: $($Script:WriteServer)" "INFO"
+    Write-Log "  WriteServer: $($script:WriteServer)" "INFO"
 
     return $true
 }
 
-# ============================================================================
-# STEP FUNCTIONS
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: COLLECTION STEPS
+   ----------------------------------------------------------------------------
+   The collect, update, alert-evaluation, and status-update steps executed against
+   tracked PMT batches.
+   Prefix: bat
+   ============================================================================ #>
 
-function Step-CollectNewBatches {
-    <#
-    .SYNOPSIS
-        Discovers new PMT batches in DM not yet tracked in xFACts and inserts them.
-        Collects ALL batch types. Does not include log table data - that is
-        handled in the update pass.
-    #>
+# Discovers new PMT batches (all types) in DM not yet tracked in xFACts and inserts them.
+function Step-bat_PMT_CollectNewBatches {
     param([bool]$PreviewOnly = $true)
 
     Write-Log "Step: Collect New Batches" "STEP"
@@ -315,7 +346,7 @@ function Step-CollectNewBatches {
         }
 
         # Query DM for all batches within lookback window
-        $lookbackDays = $Script:Config.PMT_LookbackDays
+        $lookbackDays = $script:Config.PMT_LookbackDays
 
         $sourceQuery = @"
             SELECT
@@ -353,7 +384,7 @@ function Step-CollectNewBatches {
             WHERE cpb.cnsmr_pymnt_btch_crt_dttm >= DATEADD(DAY, -$lookbackDays, GETDATE())
 "@
 
-        $sourceBatches = Get-SourceData -Query $sourceQuery
+        $sourceBatches = Get-bat_PMT_SourceData -Query $sourceQuery
 
         if (-not $sourceBatches) {
             Write-Log "  No source batches returned (or query failed)" "WARN"
@@ -493,14 +524,8 @@ function Step-CollectNewBatches {
     }
 }
 
-function Step-UpdateIncompleteBatches {
-    <#
-    .SYNOPSIS
-        Updates all incomplete batches in the tracking table with current DM state.
-        Queries DM for batch status, metrics, and log activity per batch.
-        Updates stall detection counters and detects terminal states.
-        Detects hard deletes (batches removed from DM).
-    #>
+# Updates all incomplete tracked batches with current DM state and detects hard deletes.
+function Step-bat_PMT_UpdateIncompleteBatches {
     param([bool]$PreviewOnly = $true)
 
     Write-Log "Step: Update Incomplete Batches" "STEP"
@@ -559,7 +584,7 @@ function Step-UpdateIncompleteBatches {
                 WHERE cpb.cnsmr_pymnt_btch_id = $batchId
 "@
 
-            $batchState = Get-SourceData -Query $batchQuery
+            $batchState = Get-bat_PMT_SourceData -Query $batchQuery
 
             # Hard delete detection: batch no longer exists in DM
             if (-not $batchState) {
@@ -599,7 +624,7 @@ function Step-UpdateIncompleteBatches {
                 WHERE cnsmr_pymnt_btch_id = $batchId
 "@
 
-            $logData = Get-SourceData -Query $logQuery
+            $logData = Get-bat_PMT_SourceData -Query $logQuery
 
             # Extract values
             $batchStatusCd = $batchState.cnsmr_pymnt_btch_stts_cd
@@ -643,7 +668,7 @@ function Step-UpdateIncompleteBatches {
                     WHERE cnsmr_pymnt_btch_id = $batchId
 "@
 
-                $journalData = Get-SourceData -Query $journalQuery
+                $journalData = Get-bat_PMT_SourceData -Query $journalQuery
 
                 if ($journalData) {
                     $newJournalPosted = if ($journalData.posted_count -is [DBNull]) { 0 } else { $journalData.posted_count }
@@ -794,20 +819,8 @@ function Step-UpdateIncompleteBatches {
     }
 }
 
-function Step-EvaluateAlerts {
-    <#
-    .SYNOPSIS
-        Evaluates terminal failure alert conditions on tracked PMT batches.
-        Routes alerts to Jira and/or Teams based on per-condition GlobalConfig routing.
-        Master switch: pmt_alerting_enabled must be 1 for alerts to fire.
-        Each condition uses RequestLog dedup to prevent duplicate alerts.
-
-        Phase 3b-1 conditions (terminal failures only):
-        CHECK 1: IMPORTFAILED (status 11) - fire once per batch
-        CHECK 2: FAILED (status 6) - fire once per batch
-        CHECK 3: PARTIAL (status 5) - fire once per batch
-        CHECK 4: REVERSALFAILED (status 27) - fire once per batch
-    #>
+# Evaluates the PMT terminal-failure alert conditions and routes alerts to Jira and/or Teams.
+function Step-bat_PMT_EvaluateAlerts {
     param([bool]$PreviewOnly = $true)
 
     Write-Log "Step: Evaluate Alert Conditions" "STEP"
@@ -815,7 +828,7 @@ function Step-EvaluateAlerts {
     $alertsDetected = 0
     $alertsFired = 0
 
-    # ── Jira ticket constants (hardcoded per xFACts convention) ──
+    # Jira ticket constants (hardcoded per xFACts convention)
     $jiraProjectKey = 'SD'
     $jiraIssueType = 'Issue'
     $jiraPriority = 'Highest'
@@ -829,21 +842,20 @@ function Step-EvaluateAlerts {
     $jiraEmailRecipients = 'applications@frost-arnett.com'
 
     # Due date: today if weekday, Monday if weekend
-    $dayOfWeek = [int](Get-Date).DayOfWeek  # 0=Sun, 1=Mon ... 6=Sat
+    # 0=Sun, 1=Mon ... 6=Sat
+    $dayOfWeek = [int](Get-Date).DayOfWeek
     if ($dayOfWeek -eq 0) { $jiraDueDate = (Get-Date).AddDays(1).ToString("yyyy-MM-dd") }
     elseif ($dayOfWeek -eq 6) { $jiraDueDate = (Get-Date).AddDays(2).ToString("yyyy-MM-dd") }
     else { $jiraDueDate = (Get-Date).ToString("yyyy-MM-dd") }
 
     try {
-        if (-not $Script:Config.PMT_AlertingEnabled) {
+        if (-not $script:Config.PMT_AlertingEnabled) {
             Write-Log "  Alerting is DISABLED (pmt_alerting_enabled = 0)" "INFO"
         }
 
-        # ══════════════════════════════════════════════════════════════════
         # CHECK 1: Import Failed (batch_status_code = 11)
         # Terminal failure - one alert per batch
-        # ══════════════════════════════════════════════════════════════════
-        $routing = $Script:Config.PMT_Alert_ImportFailed
+        $routing = $script:Config.PMT_Alert_ImportFailed
 
         $importFailedQuery = @"
             SELECT batch_id, batch_name, external_name, batch_type,
@@ -862,7 +874,7 @@ function Step-EvaluateAlerts {
                 $batchName = if ($batch.batch_name -isnot [DBNull]) { $batch.batch_name } else { "batch $batchId" }
                 Write-Log "  ALERT: Import failure detected - batch $batchId ($batchName)" "WARN"
 
-                if ($Script:Config.PMT_AlertingEnabled -and -not $PreviewOnly -and $routing -gt 0) {
+                if ($script:Config.PMT_AlertingEnabled -and -not $PreviewOnly -and $routing -gt 0) {
                     $externalName = if ($batch.external_name -isnot [DBNull]) { $batch.external_name } else { 'N/A' }
                     $pymntCount = if ($batch.payment_count -isnot [DBNull]) { $batch.payment_count } else { 0 }
                     $triggerType = 'PMT_ImportFailed'
@@ -873,7 +885,7 @@ function Step-EvaluateAlerts {
                     # cnsmr_pymnt_btch_log contains actionable error messages
                     $errorSection = "Check Debt Manager batch log for error details."
 
-                    # ── Jira ticket (routing 2 or 3) ──
+                    # Jira ticket (routing 2 or 3)
                     if ($routing -band 2) {
                         $jiraDedup = Get-SqlData -Query @"
                             SELECT TOP 1 1 AS ticket_exists
@@ -900,30 +912,44 @@ Action: Review the failed import in Debt Manager and re-import if appropriate.
 
 Detection Date: $detectionTime
 "@
-                            $jiraSummarySafe = $jiraSummary -replace "'", "''"
-                            $jiraDescSafe = $jiraDesc -replace "'", "''"
-
-                            $queueTicketQuery = @"
+                            Invoke-SqlNonQuery -Query @"
                                 EXEC Jira.sp_QueueTicket
-                                    @SourceModule = 'BatchOps',
-                                    @ProjectKey = '$jiraProjectKey',
-                                    @Summary = N'$jiraSummarySafe',
-                                    @Description = N'$jiraDescSafe',
-                                    @IssueType = '$jiraIssueType',
-                                    @Priority = '$jiraPriority',
-                                    @EmailRecipients = '$jiraEmailRecipients',
-                                    @CascadingField_ID = '$jiraCascadingFieldId',
-                                    @CascadingField_ParentValue = '$jiraCascadingParent',
-                                    @CascadingField_ChildValue = '$jiraCascadingChild',
-                                    @CustomField_ID = '$jiraCustomField1Id',
-                                    @CustomField_Value = '$jiraCustomField1Value',
-                                    @CustomField2_ID = '$jiraCustomField2Id',
-                                    @CustomField2_Value = '$jiraCustomField2Value',
-                                    @DueDate = '$jiraDueDate',
-                                    @TriggerType = '$triggerType',
-                                    @TriggerValue = '$triggerValue'
-"@
-                            Invoke-SqlNonQuery -Query $queueTicketQuery | Out-Null
+                                    @SourceModule = @SourceModule,
+                                    @ProjectKey = @ProjectKey,
+                                    @Summary = @Summary,
+                                    @Description = @Description,
+                                    @IssueType = @IssueType,
+                                    @Priority = @Priority,
+                                    @EmailRecipients = @EmailRecipients,
+                                    @CascadingField_ID = @CascadingField_ID,
+                                    @CascadingField_ParentValue = @CascadingField_ParentValue,
+                                    @CascadingField_ChildValue = @CascadingField_ChildValue,
+                                    @CustomField_ID = @CustomField_ID,
+                                    @CustomField_Value = @CustomField_Value,
+                                    @CustomField2_ID = @CustomField2_ID,
+                                    @CustomField2_Value = @CustomField2_Value,
+                                    @DueDate = @DueDate,
+                                    @TriggerType = @TriggerType,
+                                    @TriggerValue = @TriggerValue
+"@ -Parameters @{
+                                    SourceModule = 'BatchOps'
+                                    ProjectKey = $jiraProjectKey
+                                    Summary = $jiraSummary
+                                    Description = $jiraDesc
+                                    IssueType = $jiraIssueType
+                                    Priority = $jiraPriority
+                                    EmailRecipients = $jiraEmailRecipients
+                                    CascadingField_ID = $jiraCascadingFieldId
+                                    CascadingField_ParentValue = $jiraCascadingParent
+                                    CascadingField_ChildValue = $jiraCascadingChild
+                                    CustomField_ID = $jiraCustomField1Id
+                                    CustomField_Value = $jiraCustomField1Value
+                                    CustomField2_ID = $jiraCustomField2Id
+                                    CustomField2_Value = $jiraCustomField2Value
+                                    DueDate = $jiraDueDate
+                                    TriggerType = $triggerType
+                                    TriggerValue = $triggerValue
+                            } | Out-Null
                             Write-Log "    Jira ticket queued for batch $batchId" "SUCCESS"
                         }
                         else {
@@ -931,7 +957,7 @@ Detection Date: $detectionTime
                         }
                     }
 
-                    # ── Teams alert (routing 1 or 3) ──
+                    # Teams alert (routing 1 or 3)
                     if ($routing -band 1) {
                         $teamsTitle = "{{FIRE}} Payment Batch Import Failed: $batchId"
                         $teamsMessage = @"
@@ -952,7 +978,7 @@ Action: Review the failed import in Debt Manager and re-import if appropriate.
                             -TriggerType $triggerType -TriggerValue $triggerValue | Out-Null
                     }
 
-                    # ── Increment alert_count ──
+                    # Increment alert_count
                     Invoke-SqlNonQuery -Query @"
                         UPDATE BatchOps.PMT_BatchTracking
                         SET alert_count = alert_count + 1
@@ -964,12 +990,9 @@ Action: Review the failed import in Debt Manager and re-import if appropriate.
             }
         }
 
-
-        # ══════════════════════════════════════════════════════════════════
         # CHECK 2: Failed (batch_status_code = 6)
         # Terminal failure - one alert per batch
-        # ══════════════════════════════════════════════════════════════════
-        $routing = $Script:Config.PMT_Alert_Failed
+        $routing = $script:Config.PMT_Alert_Failed
 
         $failedQuery = @"
             SELECT batch_id, batch_name, batch_type, external_name,
@@ -990,7 +1013,7 @@ Action: Review the failed import in Debt Manager and re-import if appropriate.
                 $batchName = if ($batch.batch_name -isnot [DBNull]) { $batch.batch_name } else { "batch $batchId" }
                 Write-Log "  ALERT: Batch failure detected - batch $batchId ($batchName)" "WARN"
 
-                if ($Script:Config.PMT_AlertingEnabled -and -not $PreviewOnly -and $routing -gt 0) {
+                if ($script:Config.PMT_AlertingEnabled -and -not $PreviewOnly -and $routing -gt 0) {
                     $batchType = if ($batch.batch_type -isnot [DBNull]) { $batch.batch_type } else { 'Unknown' }
                     $externalName = if ($batch.external_name -isnot [DBNull]) { $batch.external_name } else { 'N/A' }
                     $pymntCount = if ($batch.payment_count -isnot [DBNull]) { $batch.payment_count } else { 0 }
@@ -1002,7 +1025,7 @@ Action: Review the failed import in Debt Manager and re-import if appropriate.
                     $triggerValue = "$batchId"
                     $detectionTime = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
 
-                    # ── Jira ticket (routing 2 or 3) ──
+                    # Jira ticket (routing 2 or 3)
                     if ($routing -band 2) {
                         $jiraDedup = Get-SqlData -Query @"
                             SELECT TOP 1 1 AS ticket_exists
@@ -1029,30 +1052,44 @@ Action: Review the failed batch in Debt Manager and determine corrective action.
 
 Detection Date: $detectionTime
 "@
-                            $jiraSummarySafe = $jiraSummary -replace "'", "''"
-                            $jiraDescSafe = $jiraDesc -replace "'", "''"
-
-                            $queueTicketQuery = @"
+                            Invoke-SqlNonQuery -Query @"
                                 EXEC Jira.sp_QueueTicket
-                                    @SourceModule = 'BatchOps',
-                                    @ProjectKey = '$jiraProjectKey',
-                                    @Summary = N'$jiraSummarySafe',
-                                    @Description = N'$jiraDescSafe',
-                                    @IssueType = '$jiraIssueType',
-                                    @Priority = '$jiraPriority',
-                                    @EmailRecipients = '$jiraEmailRecipients',
-                                    @CascadingField_ID = '$jiraCascadingFieldId',
-                                    @CascadingField_ParentValue = '$jiraCascadingParent',
-                                    @CascadingField_ChildValue = '$jiraCascadingChild',
-                                    @CustomField_ID = '$jiraCustomField1Id',
-                                    @CustomField_Value = '$jiraCustomField1Value',
-                                    @CustomField2_ID = '$jiraCustomField2Id',
-                                    @CustomField2_Value = '$jiraCustomField2Value',
-                                    @DueDate = '$jiraDueDate',
-                                    @TriggerType = '$triggerType',
-                                    @TriggerValue = '$triggerValue'
-"@
-                            Invoke-SqlNonQuery -Query $queueTicketQuery | Out-Null
+                                    @SourceModule = @SourceModule,
+                                    @ProjectKey = @ProjectKey,
+                                    @Summary = @Summary,
+                                    @Description = @Description,
+                                    @IssueType = @IssueType,
+                                    @Priority = @Priority,
+                                    @EmailRecipients = @EmailRecipients,
+                                    @CascadingField_ID = @CascadingField_ID,
+                                    @CascadingField_ParentValue = @CascadingField_ParentValue,
+                                    @CascadingField_ChildValue = @CascadingField_ChildValue,
+                                    @CustomField_ID = @CustomField_ID,
+                                    @CustomField_Value = @CustomField_Value,
+                                    @CustomField2_ID = @CustomField2_ID,
+                                    @CustomField2_Value = @CustomField2_Value,
+                                    @DueDate = @DueDate,
+                                    @TriggerType = @TriggerType,
+                                    @TriggerValue = @TriggerValue
+"@ -Parameters @{
+                                    SourceModule = 'BatchOps'
+                                    ProjectKey = $jiraProjectKey
+                                    Summary = $jiraSummary
+                                    Description = $jiraDesc
+                                    IssueType = $jiraIssueType
+                                    Priority = $jiraPriority
+                                    EmailRecipients = $jiraEmailRecipients
+                                    CascadingField_ID = $jiraCascadingFieldId
+                                    CascadingField_ParentValue = $jiraCascadingParent
+                                    CascadingField_ChildValue = $jiraCascadingChild
+                                    CustomField_ID = $jiraCustomField1Id
+                                    CustomField_Value = $jiraCustomField1Value
+                                    CustomField2_ID = $jiraCustomField2Id
+                                    CustomField2_Value = $jiraCustomField2Value
+                                    DueDate = $jiraDueDate
+                                    TriggerType = $triggerType
+                                    TriggerValue = $triggerValue
+                            } | Out-Null
                             Write-Log "    Jira ticket queued for batch $batchId" "SUCCESS"
                         }
                         else {
@@ -1060,7 +1097,7 @@ Detection Date: $detectionTime
                         }
                     }
 
-                    # ── Teams alert (routing 1 or 3) ──
+                    # Teams alert (routing 1 or 3)
                     if ($routing -band 1) {
                         $teamsTitle = "{{FIRE}} Payment Batch Failed: $batchId"
                         $teamsMessage = @"
@@ -1082,7 +1119,7 @@ Action: Review the failed batch in Debt Manager and determine corrective action.
                             -TriggerType $triggerType -TriggerValue $triggerValue | Out-Null
                     }
 
-                    # ── Increment alert_count ──
+                    # Increment alert_count
                     Invoke-SqlNonQuery -Query @"
                         UPDATE BatchOps.PMT_BatchTracking
                         SET alert_count = alert_count + 1
@@ -1094,12 +1131,9 @@ Action: Review the failed batch in Debt Manager and determine corrective action.
             }
         }
 
-
-        # ══════════════════════════════════════════════════════════════════
         # CHECK 3: Partial (batch_status_code = 5)
         # Some payments posted, some failed - one alert per batch
-        # ══════════════════════════════════════════════════════════════════
-        $routing = $Script:Config.PMT_Alert_Partial
+        $routing = $script:Config.PMT_Alert_Partial
 
         $partialQuery = @"
             SELECT batch_id, batch_name, batch_type, external_name,
@@ -1120,7 +1154,7 @@ Action: Review the failed batch in Debt Manager and determine corrective action.
                 $batchName = if ($batch.batch_name -isnot [DBNull]) { $batch.batch_name } else { "batch $batchId" }
                 Write-Log "  ALERT: Partial failure detected - batch $batchId ($batchName)" "WARN"
 
-                if ($Script:Config.PMT_AlertingEnabled -and -not $PreviewOnly -and $routing -gt 0) {
+                if ($script:Config.PMT_AlertingEnabled -and -not $PreviewOnly -and $routing -gt 0) {
                     $batchType = if ($batch.batch_type -isnot [DBNull]) { $batch.batch_type } else { 'Unknown' }
                     $externalName = if ($batch.external_name -isnot [DBNull]) { $batch.external_name } else { 'N/A' }
                     $pymntCount = if ($batch.payment_count -isnot [DBNull]) { $batch.payment_count } else { 0 }
@@ -1133,7 +1167,7 @@ Action: Review the failed batch in Debt Manager and determine corrective action.
                     $triggerValue = "$batchId"
                     $detectionTime = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
 
-                    # ── Jira ticket (routing 2 or 3) ──
+                    # Jira ticket (routing 2 or 3)
                     if ($routing -band 2) {
                         $jiraDedup = Get-SqlData -Query @"
                             SELECT TOP 1 1 AS ticket_exists
@@ -1161,30 +1195,44 @@ Some payments failed to post. Manual intervention required to review failed paym
 
 Detection Date: $detectionTime
 "@
-                            $jiraSummarySafe = $jiraSummary -replace "'", "''"
-                            $jiraDescSafe = $jiraDesc -replace "'", "''"
-
-                            $queueTicketQuery = @"
+                            Invoke-SqlNonQuery -Query @"
                                 EXEC Jira.sp_QueueTicket
-                                    @SourceModule = 'BatchOps',
-                                    @ProjectKey = '$jiraProjectKey',
-                                    @Summary = N'$jiraSummarySafe',
-                                    @Description = N'$jiraDescSafe',
-                                    @IssueType = '$jiraIssueType',
-                                    @Priority = '$jiraPriority',
-                                    @EmailRecipients = '$jiraEmailRecipients',
-                                    @CascadingField_ID = '$jiraCascadingFieldId',
-                                    @CascadingField_ParentValue = '$jiraCascadingParent',
-                                    @CascadingField_ChildValue = '$jiraCascadingChild',
-                                    @CustomField_ID = '$jiraCustomField1Id',
-                                    @CustomField_Value = '$jiraCustomField1Value',
-                                    @CustomField2_ID = '$jiraCustomField2Id',
-                                    @CustomField2_Value = '$jiraCustomField2Value',
-                                    @DueDate = '$jiraDueDate',
-                                    @TriggerType = '$triggerType',
-                                    @TriggerValue = '$triggerValue'
-"@
-                            Invoke-SqlNonQuery -Query $queueTicketQuery | Out-Null
+                                    @SourceModule = @SourceModule,
+                                    @ProjectKey = @ProjectKey,
+                                    @Summary = @Summary,
+                                    @Description = @Description,
+                                    @IssueType = @IssueType,
+                                    @Priority = @Priority,
+                                    @EmailRecipients = @EmailRecipients,
+                                    @CascadingField_ID = @CascadingField_ID,
+                                    @CascadingField_ParentValue = @CascadingField_ParentValue,
+                                    @CascadingField_ChildValue = @CascadingField_ChildValue,
+                                    @CustomField_ID = @CustomField_ID,
+                                    @CustomField_Value = @CustomField_Value,
+                                    @CustomField2_ID = @CustomField2_ID,
+                                    @CustomField2_Value = @CustomField2_Value,
+                                    @DueDate = @DueDate,
+                                    @TriggerType = @TriggerType,
+                                    @TriggerValue = @TriggerValue
+"@ -Parameters @{
+                                    SourceModule = 'BatchOps'
+                                    ProjectKey = $jiraProjectKey
+                                    Summary = $jiraSummary
+                                    Description = $jiraDesc
+                                    IssueType = $jiraIssueType
+                                    Priority = $jiraPriority
+                                    EmailRecipients = $jiraEmailRecipients
+                                    CascadingField_ID = $jiraCascadingFieldId
+                                    CascadingField_ParentValue = $jiraCascadingParent
+                                    CascadingField_ChildValue = $jiraCascadingChild
+                                    CustomField_ID = $jiraCustomField1Id
+                                    CustomField_Value = $jiraCustomField1Value
+                                    CustomField2_ID = $jiraCustomField2Id
+                                    CustomField2_Value = $jiraCustomField2Value
+                                    DueDate = $jiraDueDate
+                                    TriggerType = $triggerType
+                                    TriggerValue = $triggerValue
+                            } | Out-Null
                             Write-Log "    Jira ticket queued for batch $batchId" "SUCCESS"
                         }
                         else {
@@ -1192,7 +1240,7 @@ Detection Date: $detectionTime
                         }
                     }
 
-                    # ── Teams alert (routing 1 or 3) ──
+                    # Teams alert (routing 1 or 3)
                     if ($routing -band 1) {
                         $teamsTitle = "{{WARN}} Payment Batch Partial Failure: $batchId"
                         $teamsMessage = @"
@@ -1215,7 +1263,7 @@ Some payments failed to post. Manual intervention required.
                             -TriggerType $triggerType -TriggerValue $triggerValue | Out-Null
                     }
 
-                    # ── Increment alert_count ──
+                    # Increment alert_count
                     Invoke-SqlNonQuery -Query @"
                         UPDATE BatchOps.PMT_BatchTracking
                         SET alert_count = alert_count + 1
@@ -1227,12 +1275,9 @@ Some payments failed to post. Manual intervention required.
             }
         }
 
-
-        # ══════════════════════════════════════════════════════════════════
         # CHECK 4: Reversal Failed (batch_status_code = 27)
         # Terminal failure - one alert per batch
-        # ══════════════════════════════════════════════════════════════════
-        $routing = $Script:Config.PMT_Alert_ReversalFailed
+        $routing = $script:Config.PMT_Alert_ReversalFailed
 
         $reversalFailedQuery = @"
             SELECT batch_id, batch_name, batch_type, external_name,
@@ -1253,7 +1298,7 @@ Some payments failed to post. Manual intervention required.
                 $batchName = if ($batch.batch_name -isnot [DBNull]) { $batch.batch_name } else { "batch $batchId" }
                 Write-Log "  ALERT: Reversal failure detected - batch $batchId ($batchName)" "WARN"
 
-                if ($Script:Config.PMT_AlertingEnabled -and -not $PreviewOnly -and $routing -gt 0) {
+                if ($script:Config.PMT_AlertingEnabled -and -not $PreviewOnly -and $routing -gt 0) {
                     $batchType = if ($batch.batch_type -isnot [DBNull]) { $batch.batch_type } else { 'Unknown' }
                     $externalName = if ($batch.external_name -isnot [DBNull]) { $batch.external_name } else { 'N/A' }
                     $pymntCount = if ($batch.payment_count -isnot [DBNull]) { $batch.payment_count } else { 0 }
@@ -1265,7 +1310,7 @@ Some payments failed to post. Manual intervention required.
                     $triggerValue = "$batchId"
                     $detectionTime = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
 
-                    # ── Jira ticket (routing 2 or 3) ──
+                    # Jira ticket (routing 2 or 3)
                     if ($routing -band 2) {
                         $jiraDedup = Get-SqlData -Query @"
                             SELECT TOP 1 1 AS ticket_exists
@@ -1292,30 +1337,44 @@ A payment batch reversal has failed. Manual intervention required to review the 
 
 Detection Date: $detectionTime
 "@
-                            $jiraSummarySafe = $jiraSummary -replace "'", "''"
-                            $jiraDescSafe = $jiraDesc -replace "'", "''"
-
-                            $queueTicketQuery = @"
+                            Invoke-SqlNonQuery -Query @"
                                 EXEC Jira.sp_QueueTicket
-                                    @SourceModule = 'BatchOps',
-                                    @ProjectKey = '$jiraProjectKey',
-                                    @Summary = N'$jiraSummarySafe',
-                                    @Description = N'$jiraDescSafe',
-                                    @IssueType = '$jiraIssueType',
-                                    @Priority = '$jiraPriority',
-                                    @EmailRecipients = '$jiraEmailRecipients',
-                                    @CascadingField_ID = '$jiraCascadingFieldId',
-                                    @CascadingField_ParentValue = '$jiraCascadingParent',
-                                    @CascadingField_ChildValue = '$jiraCascadingChild',
-                                    @CustomField_ID = '$jiraCustomField1Id',
-                                    @CustomField_Value = '$jiraCustomField1Value',
-                                    @CustomField2_ID = '$jiraCustomField2Id',
-                                    @CustomField2_Value = '$jiraCustomField2Value',
-                                    @DueDate = '$jiraDueDate',
-                                    @TriggerType = '$triggerType',
-                                    @TriggerValue = '$triggerValue'
-"@
-                            Invoke-SqlNonQuery -Query $queueTicketQuery | Out-Null
+                                    @SourceModule = @SourceModule,
+                                    @ProjectKey = @ProjectKey,
+                                    @Summary = @Summary,
+                                    @Description = @Description,
+                                    @IssueType = @IssueType,
+                                    @Priority = @Priority,
+                                    @EmailRecipients = @EmailRecipients,
+                                    @CascadingField_ID = @CascadingField_ID,
+                                    @CascadingField_ParentValue = @CascadingField_ParentValue,
+                                    @CascadingField_ChildValue = @CascadingField_ChildValue,
+                                    @CustomField_ID = @CustomField_ID,
+                                    @CustomField_Value = @CustomField_Value,
+                                    @CustomField2_ID = @CustomField2_ID,
+                                    @CustomField2_Value = @CustomField2_Value,
+                                    @DueDate = @DueDate,
+                                    @TriggerType = @TriggerType,
+                                    @TriggerValue = @TriggerValue
+"@ -Parameters @{
+                                    SourceModule = 'BatchOps'
+                                    ProjectKey = $jiraProjectKey
+                                    Summary = $jiraSummary
+                                    Description = $jiraDesc
+                                    IssueType = $jiraIssueType
+                                    Priority = $jiraPriority
+                                    EmailRecipients = $jiraEmailRecipients
+                                    CascadingField_ID = $jiraCascadingFieldId
+                                    CascadingField_ParentValue = $jiraCascadingParent
+                                    CascadingField_ChildValue = $jiraCascadingChild
+                                    CustomField_ID = $jiraCustomField1Id
+                                    CustomField_Value = $jiraCustomField1Value
+                                    CustomField2_ID = $jiraCustomField2Id
+                                    CustomField2_Value = $jiraCustomField2Value
+                                    DueDate = $jiraDueDate
+                                    TriggerType = $triggerType
+                                    TriggerValue = $triggerValue
+                            } | Out-Null
                             Write-Log "    Jira ticket queued for batch $batchId" "SUCCESS"
                         }
                         else {
@@ -1323,7 +1382,7 @@ Detection Date: $detectionTime
                         }
                     }
 
-                    # ── Teams alert (routing 1 or 3) ──
+                    # Teams alert (routing 1 or 3)
                     if ($routing -band 1) {
                         $teamsTitle = "{{FIRE}} Payment Batch Reversal Failed: $batchId"
                         $teamsMessage = @"
@@ -1345,7 +1404,7 @@ A payment batch reversal has failed. Manual intervention required.
                             -TriggerType $triggerType -TriggerValue $triggerValue | Out-Null
                     }
 
-                    # ── Increment alert_count ──
+                    # Increment alert_count
                     Invoke-SqlNonQuery -Query @"
                         UPDATE BatchOps.PMT_BatchTracking
                         SET alert_count = alert_count + 1
@@ -1357,8 +1416,7 @@ A payment batch reversal has failed. Manual intervention required.
             }
         }
 
-
-        # ── Summary ──
+        # Summary
         Write-Log "  Alerts detected: $alertsDetected, Alerts fired: $alertsFired" "INFO"
         return @{ Detected = $alertsDetected; Fired = $alertsFired }
     }
@@ -1368,11 +1426,8 @@ A payment batch reversal has failed. Manual intervention required.
     }
 }
 
-function Step-UpdateStatus {
-    <#
-    .SYNOPSIS
-        Updates BatchOps.Status with execution results
-    #>
+# Updates BatchOps.Status with the run outcome and duration.
+function Step-bat_PMT_UpdateStatus {
     param(
         [bool]$PreviewOnly = $true,
         [string]$Status = "SUCCESS",
@@ -1401,17 +1456,23 @@ function Step-UpdateStatus {
     }
 }
 
-# ============================================================================
-# MAIN EXECUTION
-# ============================================================================
+<# ============================================================================
+   EXECUTION: SCRIPT EXECUTION
+   ----------------------------------------------------------------------------
+   Orchestrates the collect/update/alert pipeline, records run status in
+   BatchOps.Status, prints an operator summary, and reports completion to the
+   orchestrator.
+   Prefix: (none)
+   ============================================================================ #>
 
+# Capture start time for duration reporting.
 $scriptStart = Get-Date
 
-Write-Host ""
-Write-Host "================================================================" -ForegroundColor Cyan
-Write-Host "  xFACts PMT Batch Status Collection v1.2.0" -ForegroundColor Cyan
-Write-Host "================================================================" -ForegroundColor Cyan
-Write-Host ""
+Write-Console ''
+Write-Console "================================================================" Cyan
+Write-Console "  xFACts PMT Batch Status Collection" Cyan
+Write-Console "================================================================" Cyan
+Write-Console ''
 
 if ($Execute) {
     Write-Log "Mode: EXECUTE (changes will be applied)" "WARN"
@@ -1420,10 +1481,10 @@ else {
     Write-Log "Mode: PREVIEW (no changes will be made)" "INFO"
 }
 
-Write-Host ""
+Write-Console ''
 
 # Initialize configuration and server connections
-if (-not (Initialize-Configuration)) {
+if (-not (Initialize-bat_PMT_Configuration)) {
     Write-Log "Configuration initialization failed - exiting" "ERROR"
 
     if ($TaskId -gt 0) {
@@ -1437,9 +1498,11 @@ if (-not (Initialize-Configuration)) {
     exit 1
 }
 
-Write-Host ""
+Write-Console ''
 
+# Preview mode unless -Execute was supplied.
 $previewOnly = -not $Execute
+# Accumulates per-step result objects for the summary.
 $stepResults = @{}
 
 # Mark as RUNNING
@@ -1452,70 +1515,74 @@ if (-not $previewOnly) {
 "@ | Out-Null
 }
 
-Write-Host "----------------------------------------------------------------" -ForegroundColor DarkGray
-Write-Host "  Executing Steps" -ForegroundColor DarkGray
-Write-Host "----------------------------------------------------------------" -ForegroundColor DarkGray
-Write-Host ""
+Write-Console "----------------------------------------------------------------" DarkGray
+Write-Console "  Executing Steps" DarkGray
+Write-Console "----------------------------------------------------------------" DarkGray
+Write-Console ''
 
 # Step 1: Collect new batches from DM
-$stepResults.Collect = Step-CollectNewBatches -PreviewOnly $previewOnly
+$stepResults.Collect = Step-bat_PMT_CollectNewBatches -PreviewOnly $previewOnly
 
 # Step 2: Update all incomplete batches
-$stepResults.Update = Step-UpdateIncompleteBatches -PreviewOnly $previewOnly
+$stepResults.Update = Step-bat_PMT_UpdateIncompleteBatches -PreviewOnly $previewOnly
 
 # Step 3: Evaluate alert conditions
-$stepResults.Alerts = Step-EvaluateAlerts -PreviewOnly $previewOnly
+$stepResults.Alerts = Step-bat_PMT_EvaluateAlerts -PreviewOnly $previewOnly
 
 # ============================================================================
 # SUMMARY
 # ============================================================================
 
+# Capture end time for duration reporting.
 $scriptEnd = Get-Date
+# Total elapsed wall-clock time.
 $scriptDuration = $scriptEnd - $scriptStart
+# Elapsed time in milliseconds for status reporting.
 $totalMs = [int]$scriptDuration.TotalMilliseconds
 
+# Overall run status; flips to FAILED if any step errored.
 $finalStatus = "SUCCESS"
 if ($stepResults.Collect.Error -or $stepResults.Update.Error -or $stepResults.Alerts.Error) {
     $finalStatus = "FAILED"
 }
 
-Write-Host ""
-Write-Host "================================================================" -ForegroundColor Cyan
-Write-Host "  Execution Summary" -ForegroundColor Cyan
-Write-Host "================================================================" -ForegroundColor Cyan
-Write-Host ""
-Write-Host "  Read Server:  $($Script:ReadServer)"
-Write-Host "  Write Server: $($Script:WriteServer)"
-Write-Host ""
-Write-Host "  Results:"
-Write-Host "    New Batches:       $($stepResults.Collect.NewBatches)"
-Write-Host "    Batches Updated:   $($stepResults.Update.Updated)"
-Write-Host "    Batches Completed: $($stepResults.Update.Completed)"
-Write-Host "    Hard Deleted:      $($stepResults.Update.Deleted)"
-Write-Host "    Alerts Detected:   $($stepResults.Alerts.Detected)"
-Write-Host "    Alerts Fired:      $($stepResults.Alerts.Fired)"
-Write-Host ""
-Write-Host "  Duration: $totalMs ms"
-Write-Host ""
+Write-Console ''
+Write-Console "================================================================" Cyan
+Write-Console "  Execution Summary" Cyan
+Write-Console "================================================================" Cyan
+Write-Console ''
+Write-Console "  Read Server:  $($script:ReadServer)"
+Write-Console "  Write Server: $($script:WriteServer)"
+Write-Console ''
+Write-Console "  Results:"
+Write-Console "    New Batches:       $($stepResults.Collect.NewBatches)"
+Write-Console "    Batches Updated:   $($stepResults.Update.Updated)"
+Write-Console "    Batches Completed: $($stepResults.Update.Completed)"
+Write-Console "    Hard Deleted:      $($stepResults.Update.Deleted)"
+Write-Console "    Alerts Detected:   $($stepResults.Alerts.Detected)"
+Write-Console "    Alerts Fired:      $($stepResults.Alerts.Fired)"
+Write-Console ''
+Write-Console "  Duration: $totalMs ms"
+Write-Console ''
 
 if (-not $Execute) {
-    Write-Host "  *** PREVIEW MODE - No changes were made ***" -ForegroundColor Yellow
-    Write-Host "  Run with -Execute to perform actual updates" -ForegroundColor Yellow
-    Write-Host ""
+    Write-Console "  *** PREVIEW MODE - No changes were made ***" Yellow
+    Write-Console "  Run with -Execute to perform actual updates" Yellow
+    Write-Console ''
 }
 
 # Update Status table
-Step-UpdateStatus -PreviewOnly $previewOnly -Status $finalStatus -DurationMs $totalMs
+Step-bat_PMT_UpdateStatus -PreviewOnly $previewOnly -Status $finalStatus -DurationMs $totalMs
 
-Write-Host "================================================================" -ForegroundColor Cyan
-Write-Host "  PMT Batch Status Collection Complete" -ForegroundColor Cyan
-Write-Host "================================================================" -ForegroundColor Cyan
-Write-Host ""
+Write-Console "================================================================" Cyan
+Write-Console "  PMT Batch Status Collection Complete" Cyan
+Write-Console "================================================================" Cyan
+Write-Console ''
 
 # Orchestrator callback
 if ($TaskId -gt 0) {
-    $gcCount = ($Script:ConfigSource.Values | Where-Object { $_ -eq 'GlobalConfig' }).Count
-    $dfCount = ($Script:ConfigSource.Values | Where-Object { $_ -eq 'default' }).Count
+    $gcCount = ($script:ConfigSource.Values | Where-Object { $_ -eq 'GlobalConfig' }).Count
+    $dfCount = ($script:ConfigSource.Values | Where-Object { $_ -eq 'default' }).Count
     $outputSummary = "New:$($stepResults.Collect.NewBatches) Updated:$($stepResults.Update.Updated) Completed:$($stepResults.Update.Completed) Deleted:$($stepResults.Update.Deleted) Alerts:$($stepResults.Alerts.Fired) Config:$gcCount/GC,$dfCount/Def"
     Complete-OrchestratorTask -ServerInstance $ServerInstance -Database $Database `
         -TaskId $TaskId -ProcessId $ProcessId `
