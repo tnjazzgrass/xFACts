@@ -3,103 +3,41 @@
     xFACts - DM Shell Consumer Purge
 
 .DESCRIPTION
-    xFACts - DmOps.ShellPurge
-    Script: Execute-DmShellPurge.ps1
-    Version: Tracked in dbo.System_Metadata (component: DmOps.ShellPurge)
-
     Purges orphaned consumer records ("shells") from crs5_oltp. A shell is a
-    consumer with no remaining cnsmr_accnt records — typically created by account
+    consumer with no remaining cnsmr_accnt records, typically created by account
     archiving or consumer merge operations. Targets consumers in the WFAPURGE
-    workgroup (populated nightly by a DM scheduled job).
-
-    Pre-flight exclusions remove consumers that still have data in tables not
-    safely deletable in isolation: cnsmr_pymnt_jrnl, dcmnt_rqst,
-    agnt_crdtbl_actvty, bnkrptcy, schdld_pymnt_smmry, agnt_crdt, and
-    consumers with unresolved cross-consumer suspense references. These
-    consumers are skipped rather than partially deleted.
-
-    Resolved suspense transactions with cross-consumer payment journal references
-    (caused by consumer merges) are handled by NULLing the historical FK link
-    before deleting the suspense chain. Unresolved cross-consumer suspense
-    triggers exclusion.
-
-    Delete sequence derived from sys.foreign_keys chain analysis against the
-    cnsmr terminal table, with dynamic UDEF discovery and xFACts chunked
-    delete/update infrastructure.
-
-    Schedule-aware: reads DmOps.ShellPurge_Schedule to determine execution
-    mode per hour (blocked/full/reduced). Checks schedule between batches.
-    Emergency abort via GlobalConfig shell_purge_abort flag.
-
-    Preview vs Execute: when the -Execute switch is omitted, the script
-    runs in PREVIEW mode and performs no writes anywhere — no row inserts
-    into ShellPurge_BatchLog/BatchDetail/ConsumerLog/ConsumerExceptionLog,
-    no DELETE/UPDATE against crs5_oltp tables. Exclusion validation still
-    runs its SELECT queries to identify newly-excepted consumers for
-    accurate preview reporting, but no exception writes occur.
-
-    Full audit trail (execute mode only):
-        ShellPurge_BatchLog              - batch summary
-        ShellPurge_BatchDetail           - per-table operation detail
-        ShellPurge_ConsumerLog           - every consumer purged
-        ShellPurge_ConsumerExceptionLog  - every consumer excepted by validation
-
-    CHANGELOG
-    ---------
-    2026-04-27  Aligned with shared infrastructure preview-mode contract.
-                Logging functions (New-BatchLogEntry, Update-BatchLogEntry,
-                Write-BatchDetail, Write-ConsumerLog) and the runtime
-                exception-log INSERT now early-return when
-                $script:XFActsExecute is false — preview runs are
-                console-only with zero database writes. Step-Delete /
-                Step-JoinDelete / Step-Update wrappers refactored to read
-                $script:XFActsExecute directly instead of the local
-                $previewOnly variable, matching the DmConsumerArchive
-                pattern. Renamed ShellPurge_ExclusionLog ->
-                ShellPurge_ConsumerExceptionLog (column exclusion_reason ->
-                exception_reason) for consistency with
-                Archive_ConsumerExceptionLog.
-    2026-03-30  Phase 2 redesigned from sys.foreign_keys chain analysis.
-                98→101 steps, 34 new FK-required tables, FK ordering corrected.
-                Added Invoke-TargetUpdate/Invoke-TableUpdate/Step-Update for
-                UPDATE operations (suspense merge reference cleanup).
-                Removed exclude_suspense GlobalConfig toggle — all exclusions
-                managed uniformly in the exclusion checks array.
-                Added agnt_crdt exclusion check.
-                Refined sspns_trnsctn_cnsmr_idntfr exclusion to only catch
-                unresolved cross-consumer suspense (resolved handled by UPDATE).
-    2026-03-24  Initial implementation
+    workgroup (populated nightly by a DM scheduled job). Pre-flight exclusions
+    skip consumers that still have data in tables not safely deletable in
+    isolation. The delete sequence is derived from sys.foreign_keys chain
+    analysis against the cnsmr terminal table, with dynamic UDEF discovery and
+    the shared DmOps chunked delete/update engine. Schedule-aware and
+    preview/execute aware: without -Execute the script performs no writes.
 
 .PARAMETER ServerInstance
-    SQL Server instance hosting xFACts database (default: AVG-PROD-LSNR)
+    SQL Server instance hosting xFACts database (default: AVG-PROD-LSNR).
 
 .PARAMETER Database
-    xFACts database name (default: xFACts)
+    xFACts database name (default: xFACts).
 
 .PARAMETER TargetInstance
-    SQL Server instance hosting crs5_oltp to purge from.
-    Default: reads from GlobalConfig DmOps.ShellPurge.target_instance.
-    Override for testing against non-production environments.
+    SQL Server instance hosting crs5_oltp to purge from. Default reads from
+    GlobalConfig DmOps.ShellPurge.target_instance. Override for testing.
 
 .PARAMETER BatchSize
-    Number of consumers per batch. Default: reads from GlobalConfig
-    based on schedule mode. Override with -BatchSize for testing.
-    When specified, overrides schedule-driven batch sizing.
+    Number of consumers per batch. Default reads from GlobalConfig based on
+    schedule mode. When specified, overrides schedule-driven batch sizing.
 
 .PARAMETER ChunkSize
-    Maximum rows per DELETE/UPDATE operation. Larger tables are processed
-    in chunks of this size to prevent lock escalation and blocking.
-    Default: 5000.
+    Maximum rows per DELETE/UPDATE operation. Larger tables are processed in
+    chunks of this size to prevent lock escalation and blocking. Default 5000.
 
 .PARAMETER Execute
-    Switch. Without this switch the script runs in PREVIEW mode — counts
-    rows and emits console + log file output, but performs NO writes
-    anywhere (no audit table inserts, no crs5_oltp DELETE/UPDATE).
-    With -Execute, all operations run normally.
+    Switch. Without it the script runs in PREVIEW mode: counts rows and emits
+    console and log output but performs no writes. With -Execute, all
+    operations run normally.
 
 .PARAMETER SingleBatch
-    Run one batch only, then exit. Bypasses the batch loop and schedule
-    re-check. Useful for testing and manual execution.
+    Run one batch only, then exit. Bypasses the batch loop and schedule recheck.
 
 .PARAMETER TaskId
     Orchestrator TaskLog ID. Default 0 (manual execution).
@@ -107,42 +45,58 @@
 .PARAMETER ProcessId
     Orchestrator ProcessRegistry ID. Default 0 (manual execution).
 
-================================================================================
-DEPLOYMENT REMINDERS
-================================================================================
-1. Deploy to E:\xFACts-PowerShell on FA-SQLDBB.
-2. xFACts-OrchestratorFunctions.ps1 must be in the same directory.
-3. GlobalConfig entries required:
-   - DmOps.ShellPurge.target_instance (server hosting crs5_oltp)
-   - DmOps.ShellPurge.batch_size (consumers per batch, full mode)
-   - DmOps.ShellPurge.batch_size_reduced (consumers per batch, reduced mode)
-   - DmOps.ShellPurge.chunk_size (rows per delete chunk, default 5000)
-   - DmOps.ShellPurge.shell_purge_abort (emergency shutoff, 0=normal, 1=stop)
-   - DmOps.ShellPurge.alerting_enabled (1=on, 0=suppress alerts)
-4. ServerRegistry.dmops_shell_purge_enabled must be 1 on the target server.
-5. DmOps.ShellPurge_Schedule must have 7 rows with hourly mode values.
-6. The WFAPURGE workgroup must exist in crs5_oltp.dbo.wrkgrp.
-7. The service account needs DELETE and UPDATE permission on crs5_oltp tables.
-================================================================================
+.COMPONENT
+    DmOps
 
-================================================================================
-NOTES ON EXCLUSIONS DEFINED IN STEP 3D
-================================================================================
-cnsmr_pymnt_jrnl - TBD              
-dcmnt_rqst - These are currently handled nightly by BIDATA and the current build time is minimal. OK to orphan these rows for now.                  
-agnt_crdtbl_actvty - TBD         
-agnt_crdtbl_actvty_via_smmry - TBD  
-agnt_crdt - TBD
-bnkrptcy - per Allison Latsch 10/28/2026:   
-            If there are no accounts attached to them, I would say you're good to remove. If new accounts come in for that consumer, 
-            resulting in a new consumer number, the nice thing is those will batch again and whatever bankruptcy info was in that purged consumer,
-            will likely re-populate in the new one. AND if a client ever questioned a bankruptcy return on a purged consumer, 
-            we have resources where we can do one-off searches to find that info                       
-schdld_pymnt_smmry - TBD          
-sspns_unresolved_cross_consumer - TBD
-================================================================================
+.NOTES
+    File Name : Execute-DmShellPurge.ps1
+    Location  : E:\xFACts-PowerShell
 
+    FILE ORGANIZATION
+    -----------------
+    CHANGELOG: CHANGE HISTORY
+    PARAMETERS: SCRIPT PARAMETERS
+    IMPORTS: SCRIPT DEPENDENCIES
+    INITIALIZATION: SCRIPT INITIALIZATION
+    CONSTANTS: AUDIT TARGETS
+    VARIABLES: SCRIPT-LEVEL STATE
+    FUNCTIONS: SCHEDULE AND CONTROL
+    FUNCTIONS: BATCH LOGGING
+    EXECUTION: SCRIPT EXECUTION
 #>
+
+<# ============================================================================
+   CHANGELOG: CHANGE HISTORY
+   ----------------------------------------------------------------------------
+   Dated change history for this script. Most recent first.
+   Prefix: (none)
+   ============================================================================ #>
+
+# 2026-06-16  Migrated the connection, SQL primitive, operation wrapper, and step
+#             wrapper functions to the shared xFACts-DmOpsFunctions.ps1 engine,
+#             dot-sourced in IMPORTS. Renamed the surviving consumer-specific
+#             functions and script-level state to the dmo_Shell convention, set
+#             $script:dmo_BatchDetailTable for the shared audit writer, and
+#             conformed the file to the Control Center PowerShell format spec.
+# 2026-04-27  Aligned with shared infrastructure preview-mode contract. Logging
+#             functions and the runtime exception-log INSERT now early-return when
+#             $script:XFActsExecute is false; preview runs are console-only with
+#             zero database writes. Step wrappers read $script:XFActsExecute
+#             directly. Renamed ShellPurge_ExclusionLog to
+#             ShellPurge_ConsumerExceptionLog for consistency with Archive.
+# 2026-03-30  Phase 2 redesigned from sys.foreign_keys chain analysis.
+#             Total: 101 steps, 34 new FK-required tables, FK ordering corrected
+#             Added UPDATE operation path for suspense merge reference cleanup.
+#             Removed the exclude_suspense toggle; all exclusions managed uniformly.
+# 2026-03-24  Initial implementation.
+
+<# ============================================================================
+   PARAMETERS: SCRIPT PARAMETERS
+   ----------------------------------------------------------------------------
+   The [CmdletBinding()] attribute and param() block declaring the script-level
+   parameters that drive target selection, batch sizing, and execute mode.
+   Prefix: (none)
+   ============================================================================ #>
 
 [CmdletBinding()]
 param(
@@ -157,273 +111,104 @@ param(
     [int]$ProcessId = 0
 )
 
-# ============================================================================
-# STANDARD INITIALIZATION
-# ============================================================================
+<# ============================================================================
+   IMPORTS: SCRIPT DEPENDENCIES
+   ----------------------------------------------------------------------------
+   Dot-sources the shared orchestrator helpers and the DmOps shared
+   consumer-deletion engine used throughout the script.
+   Prefix: (none)
+   ============================================================================ #>
 
 . "$PSScriptRoot\xFACts-OrchestratorFunctions.ps1"
+. "$PSScriptRoot\xFACts-DmOpsFunctions.ps1"
+
+<# ============================================================================
+   INITIALIZATION: SCRIPT INITIALIZATION
+   ----------------------------------------------------------------------------
+   Establishes the platform script context (logging, execute flag, database
+   connection settings) before any script-level state is declared.
+   Prefix: (none)
+   ============================================================================ #>
 
 Initialize-XFActsScript -ScriptName 'Execute-DmShellPurge' `
     -ServerInstance $ServerInstance -Database $Database -Execute:$Execute
 
-# ============================================================================
-# SCRIPT-LEVEL STATE
-# ============================================================================
+<# ============================================================================
+   CONSTANTS: AUDIT TARGETS
+   ----------------------------------------------------------------------------
+   Fixed identifiers consumed by the shared audit writer. The detail table name
+   is read by Write-dmo_BatchDetail in the shared engine.
+   Prefix: dmo
+   ============================================================================ #>
 
-$Script:TargetServer = $null
-$Script:TargetConnection = $null  # Persistent SqlConnection to crs5_oltp
-$Script:BatchChunkSize = 5000
-$Script:BatchSizeFull = 1000
-$Script:BatchSizeReduced = 100
-$Script:ScheduleMode = $null       # 'Full', 'Reduced', 'Manual', or 'Blocked'
-$Script:CurrentBatchId = $null     # ShellPurge_BatchLog.batch_id for current batch
-$Script:ManualBatchSize = $false   # True if -BatchSize parameter was specified
-$Script:AlertingEnabled = $false   # Teams alerting on/off (from GlobalConfig)
-$Script:PurgeWorkgroupId = $null   # Resolved wrkgrp_id for WFAPURGE (cached across batches)
-$Script:ExclusionsLoaded = $false  # Whether exclusion log has been loaded into target temp table
+# Audit detail table the shared Write-dmo_BatchDetail writes to.
+$script:dmo_BatchDetailTable = 'DmOps.ShellPurge_BatchDetail'
 
-# Per-batch counters (reset each batch)
-$Script:TotalDeleted = 0
-$Script:TablesProcessed = 0
-$Script:TablesSkipped = 0
-$Script:TablesFailed = 0
-$Script:BatchConsumerIds = @()
-$Script:BatchConsumerData = @()    # Full consumer data for ConsumerLog
+<# ============================================================================
+   VARIABLES: SCRIPT-LEVEL STATE
+   ----------------------------------------------------------------------------
+   Mutable runtime state: the target connection and resolved settings, the
+   current batch identifier and per-batch counters, and the session-level
+   rollups. Reset or accumulated as the batch loop runs.
+   Prefix: dmo
+   ============================================================================ #>
 
-# Session-level counters
-$Script:TotalBatchesRun = 0
-$Script:TotalBatchesFailed = 0
-$Script:SessionTotalDeleted = 0
-$Script:SessionTotalConsumers = 0
+# Resolved crs5_oltp target server name.
+$script:dmo_TargetServer = $null
+# Persistent SqlConnection to the crs5_oltp target instance.
+$script:dmo_TargetConnection = $null
+# Rows per DELETE/UPDATE chunk (overridable via -ChunkSize or GlobalConfig).
+$script:dmo_BatchChunkSize = 5000
+# Consumers per batch in Full mode (from GlobalConfig).
+$script:dmo_BatchSizeFull = 1000
+# Consumers per batch in Reduced mode (from GlobalConfig).
+$script:dmo_BatchSizeReduced = 100
+# Current schedule mode: 'Full', 'Reduced', 'Manual', or 'Blocked'.
+$script:dmo_ScheduleMode = $null
+# ShellPurge_BatchLog.batch_id for the current batch.
+$script:dmo_CurrentBatchId = $null
+# Start timestamp of the current batch.
+$script:dmo_BatchStartTime = $null
+# True when -BatchSize was supplied (forces Manual sizing).
+$script:dmo_ManualBatchSize = $false
+# Teams alerting on/off (from GlobalConfig).
+$script:dmo_AlertingEnabled = $false
+# Resolved wrkgrp_id for WFAPURGE (cached across batches).
+$script:dmo_PurgeWorkgroupId = $null
+# Whether the exclusion log has been loaded into the target temp table.
+$script:dmo_ExclusionsLoaded = $false
+# Running row-delete count for the current batch.
+$script:dmo_TotalDeleted = 0
+# Tables successfully processed this batch.
+$script:dmo_TablesProcessed = 0
+# Tables skipped this batch.
+$script:dmo_TablesSkipped = 0
+# Tables that failed this batch.
+$script:dmo_TablesFailed = 0
+# Consumer ids selected for the current batch.
+$script:dmo_BatchConsumerIds = @()
+# Full consumer data for the current batch ConsumerLog write.
+$script:dmo_BatchConsumerData = @()
+# Total batches run this session.
+$script:dmo_TotalBatchesRun = 0
+# Total batches that failed this session.
+$script:dmo_TotalBatchesFailed = 0
+# Session rollup of rows deleted.
+$script:dmo_SessionTotalDeleted = 0
+# Session rollup of consumers purged.
+$script:dmo_SessionTotalConsumers = 0
+<# ============================================================================
+   FUNCTIONS: SCHEDULE AND CONTROL
+   ----------------------------------------------------------------------------
+   Schedule-mode lookup and emergency-abort check, both reading their state
+   from DmOps GlobalConfig and the ShellPurge_Schedule table.
+   Prefix: dmo
+   ============================================================================ #>
 
-# ============================================================================
-# PERSISTENT CONNECTION FUNCTIONS
-# ============================================================================
+# Returns the integer schedule mode for the current day-hour from ShellPurge_Schedule.
+function Get-dmo_ShellScheduleMode {
+    param()
 
-function Open-TargetConnection {
-    try {
-        $connString = "Server=$($Script:TargetServer);Database=crs5_oltp;Integrated Security=True;Application Name=$($script:XFActsAppName);Connect Timeout=30"
-        $Script:TargetConnection = New-Object System.Data.SqlClient.SqlConnection($connString)
-        $Script:TargetConnection.Open()
-        Write-Log "  Persistent connection opened to $($Script:TargetServer)/crs5_oltp" "SUCCESS"
-        return $true
-    }
-    catch {
-        Write-Log "Failed to open connection to $($Script:TargetServer): $($_.Exception.Message)" "ERROR"
-        return $false
-    }
-}
-
-function Close-TargetConnection {
-    if ($Script:TargetConnection -and $Script:TargetConnection.State -eq 'Open') {
-        $Script:TargetConnection.Close()
-        $Script:TargetConnection.Dispose()
-        $Script:TargetConnection = $null
-        Write-Log "  Persistent connection closed" "INFO"
-    }
-}
-
-function Invoke-TargetQuery {
-    param(
-        [Parameter(Mandatory)]
-        [string]$Query,
-        [int]$Timeout = 300
-    )
-
-    $cmd = $Script:TargetConnection.CreateCommand()
-    $cmd.CommandText = $Query
-    $cmd.CommandTimeout = $Timeout
-
-    $adapter = New-Object System.Data.SqlClient.SqlDataAdapter($cmd)
-    $dataTable = New-Object System.Data.DataTable
-
-    try {
-        [void]$adapter.Fill($dataTable)
-        return ,$dataTable
-    }
-    catch {
-        throw $_
-    }
-    finally {
-        $cmd.Dispose()
-        $adapter.Dispose()
-    }
-}
-
-function Invoke-TargetDelete {
-    <#
-    .SYNOPSIS
-        Executes a DELETE against the target crs5_oltp with snapshot isolation,
-        deadlock retry, and chunked execution for production safety.
-    #>
-    param(
-        [Parameter(Mandatory)]
-        [string]$DeleteSQL,
-        [int]$Timeout = 600,
-        [int]$MaxRetries = 10,
-        [int]$RetryDelaySeconds = 5
-    )
-
-    $totalRowsDeleted = 0
-    $chunkNumber = 0
-
-    $chunkedSQL = $DeleteSQL -replace '(?i)^DELETE\s+(FROM\s+)', "DELETE TOP ($($Script:BatchChunkSize)) `$1"
-    $chunkedSQL = $chunkedSQL -replace '(?i)^DELETE\s+(\w+)\s+(FROM\s+)', "DELETE TOP ($($Script:BatchChunkSize)) `$1 `$2"
-
-    while ($true) {
-        $chunkNumber++
-        $retryCount = 0
-        $chunkDeleted = -1
-
-        while ($retryCount -lt $MaxRetries) {
-            $cmd = $Script:TargetConnection.CreateCommand()
-            $cmd.CommandTimeout = $Timeout
-
-            try {
-                $cmd.CommandText = @"
-SET DEADLOCK_PRIORITY LOW;
-SET TRANSACTION ISOLATION LEVEL SNAPSHOT;
-$chunkedSQL
-SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
-"@
-                $chunkDeleted = $cmd.ExecuteNonQuery()
-                break
-            }
-            catch {
-                $errNum = 0
-                $innerEx = $_.Exception
-                while ($innerEx.InnerException) { $innerEx = $innerEx.InnerException }
-                if ($innerEx -is [System.Data.SqlClient.SqlException]) {
-                    $errNum = $innerEx.Number
-                }
-
-                if ($errNum -in @(1204, 1205, 1222, 3960)) {
-                    $retryCount++
-                    if ($retryCount -ge $MaxRetries) {
-                        Write-Log "      Retry limit ($MaxRetries) exceeded on chunk $chunkNumber" "ERROR"
-                        throw $_
-                    }
-                    Write-Log "      Retryable error ($errNum), attempt $retryCount/$MaxRetries — waiting ${RetryDelaySeconds}s..." "WARN"
-                    Start-Sleep -Seconds $RetryDelaySeconds
-
-                    try {
-                        $resetCmd = $Script:TargetConnection.CreateCommand()
-                        $resetCmd.CommandText = "SET TRANSACTION ISOLATION LEVEL READ COMMITTED;"
-                        $resetCmd.ExecuteNonQuery() | Out-Null
-                        $resetCmd.Dispose()
-                    } catch { }
-                }
-                else {
-                    throw $_
-                }
-            }
-            finally {
-                $cmd.Dispose()
-            }
-        }
-
-        if ($chunkDeleted -le 0) { break }
-
-        $totalRowsDeleted += $chunkDeleted
-
-        if ($chunkDeleted -lt $Script:BatchChunkSize) { break }
-
-        Start-Sleep -Milliseconds 100
-    }
-
-    return $totalRowsDeleted
-}
-
-function Invoke-TargetUpdate {
-    <#
-    .SYNOPSIS
-        Executes an UPDATE against the target crs5_oltp with snapshot isolation,
-        deadlock retry, and chunked execution for production safety.
-        Mirrors Invoke-TargetDelete but for UPDATE operations (e.g., NULLing
-        FK references before deleting parent records).
-    #>
-    param(
-        [Parameter(Mandatory)]
-        [string]$UpdateSQL,
-        [int]$Timeout = 600,
-        [int]$MaxRetries = 10,
-        [int]$RetryDelaySeconds = 5
-    )
-
-    $totalRowsUpdated = 0
-    $chunkNumber = 0
-
-    $chunkedSQL = $UpdateSQL -replace '(?i)^UPDATE\s+', "UPDATE TOP ($($Script:BatchChunkSize)) "
-
-    while ($true) {
-        $chunkNumber++
-        $retryCount = 0
-        $chunkUpdated = -1
-
-        while ($retryCount -lt $MaxRetries) {
-            $cmd = $Script:TargetConnection.CreateCommand()
-            $cmd.CommandTimeout = $Timeout
-
-            try {
-                $cmd.CommandText = @"
-SET DEADLOCK_PRIORITY LOW;
-SET TRANSACTION ISOLATION LEVEL SNAPSHOT;
-$chunkedSQL
-SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
-"@
-                $chunkUpdated = $cmd.ExecuteNonQuery()
-                break
-            }
-            catch {
-                $errNum = 0
-                $innerEx = $_.Exception
-                while ($innerEx.InnerException) { $innerEx = $innerEx.InnerException }
-                if ($innerEx -is [System.Data.SqlClient.SqlException]) {
-                    $errNum = $innerEx.Number
-                }
-
-                if ($errNum -in @(1204, 1205, 1222, 3960)) {
-                    $retryCount++
-                    if ($retryCount -ge $MaxRetries) {
-                        Write-Log "      Retry limit ($MaxRetries) exceeded on chunk $chunkNumber" "ERROR"
-                        throw $_
-                    }
-                    Write-Log "      Retryable error ($errNum), attempt $retryCount/$MaxRetries — waiting ${RetryDelaySeconds}s..." "WARN"
-                    Start-Sleep -Seconds $RetryDelaySeconds
-
-                    try {
-                        $resetCmd = $Script:TargetConnection.CreateCommand()
-                        $resetCmd.CommandText = "SET TRANSACTION ISOLATION LEVEL READ COMMITTED;"
-                        $resetCmd.ExecuteNonQuery() | Out-Null
-                        $resetCmd.Dispose()
-                    } catch { }
-                }
-                else {
-                    throw $_
-                }
-            }
-            finally {
-                $cmd.Dispose()
-            }
-        }
-
-        if ($chunkUpdated -le 0) { break }
-
-        $totalRowsUpdated += $chunkUpdated
-
-        if ($chunkUpdated -lt $Script:BatchChunkSize) { break }
-
-        Start-Sleep -Milliseconds 100
-    }
-
-    return $totalRowsUpdated
-}
-
-# ============================================================================
-# SCHEDULE & CONTROL FUNCTIONS
-# ============================================================================
-
-function Get-ShellPurgeScheduleMode {
     $currentHour = (Get-Date).Hour
     $hrCol = "hr{0:D2}" -f $currentHour
 
@@ -436,16 +221,19 @@ function Get-ShellPurgeScheduleMode {
         if ($result) {
             return [int]$result.schedule_mode
         }
-        Write-Log "  No schedule row found for today — treating as blocked" "WARN"
+        Write-Log "  No schedule row found for today - treating as blocked" "WARN"
         return 0
     }
     catch {
-        Write-Log "  Failed to read schedule: $($_.Exception.Message) — treating as blocked" "WARN"
+        Write-Log "  Failed to read schedule: $($_.Exception.Message) - treating as blocked" "WARN"
         return 0
     }
 }
 
-function Test-ShellPurgeAbort {
+# Returns $true when the GlobalConfig shell_purge_abort emergency flag is set.
+function Test-dmo_ShellAbort {
+    param()
+
     try {
         $result = Get-SqlData -Query @"
             SELECT setting_value FROM dbo.GlobalConfig
@@ -458,20 +246,22 @@ function Test-ShellPurgeAbort {
         return $false
     }
     catch {
-        Write-Log "  Failed to check abort flag — proceeding cautiously" "WARN"
+        Write-Log "  Failed to check abort flag - proceeding cautiously" "WARN"
         return $false
     }
 }
 
-# ============================================================================
-# BATCH LOGGING FUNCTIONS
-# ============================================================================
-# All functions below early-return in preview mode ($script:XFActsExecute eq
-# $false) and emit a single console line describing what they would have
-# written. No database writes occur in preview mode.
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: BATCH LOGGING
+   ----------------------------------------------------------------------------
+   Batch-log lifecycle and consumer-log writers. Each early-returns in preview
+   mode ($script:XFActsExecute false) and emits a single console line describing
+   the write it would have made. No database writes occur in preview mode.
+   Prefix: dmo
+   ============================================================================ #>
 
-function New-BatchLogEntry {
+# Creates the ShellPurge_BatchLog row for a new batch and captures its batch_id.
+function New-dmo_ShellBatchLogEntry {
     param(
         [string]$ScheduleMode,
         [int]$BatchSizeUsed
@@ -489,46 +279,47 @@ function New-BatchLogEntry {
             OUTPUT INSERTED.batch_id
             VALUES ('$ScheduleMode', $BatchSizeUsed, 'Running', SUSER_SNAME())
 "@
-        $Script:CurrentBatchId = [long]$result.batch_id
-        Write-Log "  Batch log created: batch_id = $($Script:CurrentBatchId)" "INFO"
+        $script:dmo_CurrentBatchId = [long]$result.batch_id
+        Write-Log "  Batch log created: batch_id = $($script:dmo_CurrentBatchId)" "INFO"
     }
     catch {
         Write-Log "  Failed to create batch log: $($_.Exception.Message)" "WARN"
-        $Script:CurrentBatchId = $null
+        $script:dmo_CurrentBatchId = $null
     }
 }
 
-function Update-BatchLogEntry {
+# Finalizes the current ShellPurge_BatchLog row with counts, duration, and status.
+function Update-dmo_ShellBatchLogEntry {
     param(
         [string]$Status,
         [string]$ErrorMessage = $null
     )
 
     if (-not $script:XFActsExecute) {
-        Write-Log "  [Preview] Would finalize ShellPurge_BatchLog (status=$Status consumer_count=$($Script:BatchConsumerIds.Count) rows=$($Script:TotalDeleted))" "INFO"
+        Write-Log "  [Preview] Would finalize ShellPurge_BatchLog (status=$Status consumer_count=$($script:dmo_BatchConsumerIds.Count) rows=$($script:dmo_TotalDeleted))" "INFO"
         return
     }
 
-    if (-not $Script:CurrentBatchId) { return }
+    if (-not $script:dmo_CurrentBatchId) { return }
 
     $escapedError = if ($ErrorMessage) { $ErrorMessage.Replace("'", "''").Substring(0, [Math]::Min($ErrorMessage.Length, 2000)) } else { $null }
     $errorClause = if ($escapedError) { "'$escapedError'" } else { "NULL" }
 
-    $durationMs = [int]((Get-Date) - $Script:BatchStartTime).TotalMilliseconds
+    $durationMs = [int]((Get-Date) - $script:dmo_BatchStartTime).TotalMilliseconds
 
     try {
         Invoke-SqlNonQuery -Query @"
             UPDATE DmOps.ShellPurge_BatchLog
             SET batch_end_dttm = GETDATE(),
-                consumer_count = $($Script:BatchConsumerIds.Count),
-                total_rows_deleted = $($Script:TotalDeleted),
-                tables_processed = $($Script:TablesProcessed),
-                tables_skipped = $($Script:TablesSkipped),
-                tables_failed = $($Script:TablesFailed),
+                consumer_count = $($script:dmo_BatchConsumerIds.Count),
+                total_rows_deleted = $($script:dmo_TotalDeleted),
+                tables_processed = $($script:dmo_TablesProcessed),
+                tables_skipped = $($script:dmo_TablesSkipped),
+                tables_failed = $($script:dmo_TablesFailed),
                 duration_ms = $durationMs,
                 status = '$Status',
                 error_message = $errorClause
-            WHERE batch_id = $($Script:CurrentBatchId)
+            WHERE batch_id = $($script:dmo_CurrentBatchId)
 "@ -Timeout 30 | Out-Null
     }
     catch {
@@ -536,52 +327,24 @@ function Update-BatchLogEntry {
     }
 }
 
-function Write-BatchDetail {
-    param(
-        [string]$DeleteOrder,
-        [string]$TableName,
-        [string]$PassDescription,
-        [long]$RowsAffected,
-        [int]$DurationMs,
-        [string]$Status,
-        [string]$ErrorMessage = $null
-    )
+# Bulk-inserts ShellPurge_ConsumerLog rows for every consumer purged in the batch.
+function Write-dmo_ShellConsumerLog {
+    param()
 
-    if (-not $script:XFActsExecute) { return }
-    if (-not $Script:CurrentBatchId) { return }
-
-    $escapedPass = if ($PassDescription) { "'$($PassDescription.Replace("'", "''"))'" } else { "NULL" }
-    $escapedError = if ($ErrorMessage) { "'$($ErrorMessage.Replace("'", "''").Substring(0, [Math]::Min($ErrorMessage.Length, 2000)))'" } else { "NULL" }
-    $durationClause = if ($DurationMs -ge 0) { "$DurationMs" } else { "NULL" }
-
-    try {
-        Invoke-SqlNonQuery -Query @"
-            INSERT INTO DmOps.ShellPurge_BatchDetail
-                (batch_id, delete_order, table_name, pass_description, rows_affected, duration_ms, status, error_message)
-            VALUES
-                ($($Script:CurrentBatchId), '$DeleteOrder', '$TableName', $escapedPass, $RowsAffected, $durationClause, '$Status', $escapedError)
-"@ -Timeout 30 | Out-Null
-    }
-    catch {
-        Write-Log "  Failed to write batch detail: $($_.Exception.Message)" "WARN"
-    }
-}
-
-function Write-ConsumerLog {
     if (-not $script:XFActsExecute) {
-        if ($Script:BatchConsumerData.Count -gt 0) {
-            Write-Log "  [Preview] Would write $($Script:BatchConsumerData.Count) ShellPurge_ConsumerLog rows" "INFO"
+        if ($script:dmo_BatchConsumerData.Count -gt 0) {
+            Write-Log "  [Preview] Would write $($script:dmo_BatchConsumerData.Count) ShellPurge_ConsumerLog rows" "INFO"
         }
         return
     }
 
-    if (-not $Script:CurrentBatchId -or $Script:BatchConsumerData.Count -eq 0) { return }
+    if (-not $script:dmo_CurrentBatchId -or $script:dmo_BatchConsumerData.Count -eq 0) { return }
 
     try {
-        for ($i = 0; $i -lt $Script:BatchConsumerData.Count; $i += 900) {
-            $batch = $Script:BatchConsumerData[$i..[Math]::Min($i + 899, $Script:BatchConsumerData.Count - 1)]
+        for ($i = 0; $i -lt $script:dmo_BatchConsumerData.Count; $i += 900) {
+            $batch = $script:dmo_BatchConsumerData[$i..[Math]::Min($i + 899, $script:dmo_BatchConsumerData.Count - 1)]
             $valuesClause = ($batch | ForEach-Object {
-                "($($Script:CurrentBatchId), $($_.cnsmr_id), '$($_.cnsmr_idntfr_agncy_id)')"
+                "($($script:dmo_CurrentBatchId), $($_.cnsmr_id), '$($_.cnsmr_idntfr_agncy_id)')"
             }) -join ",`n                "
 
             Invoke-SqlNonQuery -Query @"
@@ -592,308 +355,39 @@ function Write-ConsumerLog {
 "@ -Timeout 120 | Out-Null
         }
 
-        Write-Log "  Consumer log: $($Script:BatchConsumerData.Count) records written" "SUCCESS"
+        Write-Log "  Consumer log: $($script:dmo_BatchConsumerData.Count) records written" "SUCCESS"
     }
     catch {
         Write-Log "  Failed to write consumer log: $($_.Exception.Message)" "WARN"
     }
 }
 
-# ============================================================================
-# DELETE SEQUENCE FUNCTIONS
-# ============================================================================
-
-function Invoke-TableDelete {
-    <#
-    .SYNOPSIS
-        Executes a single table deletion with logging and error handling.
-        In preview mode, counts rows. In execute mode, deletes with chunking.
-        Returns $true on success, $false on failure.
-    #>
-    param(
-        [Parameter(Mandatory)]
-        $Order,
-        [Parameter(Mandatory)]
-        [string]$TableName,
-        [Parameter(Mandatory)]
-        [string]$WhereClause,
-        [string]$PassDescription = "",
-        [bool]$PreviewOnly = $true
-    )
-
-    $passLabel = if ($PassDescription) { " ($PassDescription)" } else { "" }
-    $fullTable = "crs5_oltp.dbo.$TableName"
-
-    if ($PreviewOnly) {
-        try {
-            $countResult = Invoke-TargetQuery -Query "SELECT COUNT(*) AS row_count FROM $fullTable WHERE $WhereClause" -Timeout 300
-            $previewCount = [long]$countResult.Rows[0].row_count
-            if ($previewCount -eq 0) {
-                Write-Log "  [$Order] $TableName$passLabel — no rows, skipping" "DEBUG"
-                $Script:TablesSkipped++
-                Write-BatchDetail -DeleteOrder "$Order" -TableName $TableName -PassDescription $PassDescription `
-                    -RowsAffected 0 -DurationMs 0 -Status 'Skipped'
-            } else {
-                Write-Log "  [$Order] $TableName$passLabel — would delete $previewCount rows" "INFO"
-                $Script:TotalDeleted += $previewCount
-                $Script:TablesProcessed++
-                Write-BatchDetail -DeleteOrder "$Order" -TableName $TableName -PassDescription $PassDescription `
-                    -RowsAffected $previewCount -DurationMs 0 -Status 'Success'
-            }
-            return $true
-        }
-        catch {
-            Write-Log "  [$Order] $TableName$passLabel — count failed: $($_.Exception.Message)" "WARN"
-            $Script:TablesFailed++
-            Write-BatchDetail -DeleteOrder "$Order" -TableName $TableName -PassDescription $PassDescription `
-                -RowsAffected 0 -DurationMs 0 -Status 'Failed' -ErrorMessage $_.Exception.Message
-            return $false
-        }
-    }
-    else {
-        $deleteSQL = "DELETE FROM $fullTable WHERE $WhereClause"
-        $deleteStart = Get-Date
-
-        try {
-            $rowsDeleted = Invoke-TargetDelete -DeleteSQL $deleteSQL
-            $durationMs = [int]((Get-Date) - $deleteStart).TotalMilliseconds
-            if ($rowsDeleted -eq 0) {
-                Write-Log "  [$Order] $TableName$passLabel — no rows, skipping" "DEBUG"
-                $Script:TablesSkipped++
-                Write-BatchDetail -DeleteOrder "$Order" -TableName $TableName -PassDescription $PassDescription `
-                    -RowsAffected 0 -DurationMs $durationMs -Status 'Skipped'
-            } else {
-                Write-Log "  [$Order] $TableName$passLabel — deleted $rowsDeleted rows (${durationMs}ms)" "SUCCESS"
-                $Script:TotalDeleted += $rowsDeleted
-                $Script:TablesProcessed++
-                Write-BatchDetail -DeleteOrder "$Order" -TableName $TableName -PassDescription $PassDescription `
-                    -RowsAffected $rowsDeleted -DurationMs $durationMs -Status 'Success'
-            }
-            return $true
-        }
-        catch {
-            $durationMs = [int]((Get-Date) - $deleteStart).TotalMilliseconds
-            Write-Log "  [$Order] $TableName$passLabel — FAILED (${durationMs}ms): $($_.Exception.Message)" "ERROR"
-            $Script:TablesFailed++
-            Write-BatchDetail -DeleteOrder "$Order" -TableName $TableName -PassDescription $PassDescription `
-                -RowsAffected 0 -DurationMs $durationMs -Status 'Failed' -ErrorMessage $_.Exception.Message
-            return $false
-        }
-    }
-}
-
-function Invoke-JoinTableDelete {
-    <#
-    .SYNOPSIS
-        Same as Invoke-TableDelete but for DELETE with JOIN syntax (alias required).
-        Returns $true on success, $false on failure.
-    #>
-    param(
-        [Parameter(Mandatory)]
-        $Order,
-        [Parameter(Mandatory)]
-        [string]$TableName,
-        [Parameter(Mandatory)]
-        [string]$DeleteStatement,
-        [string]$CountQuery,
-        [string]$PassDescription = "",
-        [bool]$PreviewOnly = $true
-    )
-
-    $passLabel = if ($PassDescription) { " ($PassDescription)" } else { "" }
-
-    if ($PreviewOnly) {
-        try {
-            $countResult = Invoke-TargetQuery -Query $CountQuery -Timeout 300
-            $previewCount = [long]$countResult.Rows[0].row_count
-            if ($previewCount -eq 0) {
-                Write-Log "  [$Order] $TableName$passLabel — no rows, skipping" "DEBUG"
-                $Script:TablesSkipped++
-                Write-BatchDetail -DeleteOrder "$Order" -TableName $TableName -PassDescription $PassDescription `
-                    -RowsAffected 0 -DurationMs 0 -Status 'Skipped'
-            } else {
-                Write-Log "  [$Order] $TableName$passLabel — would delete $previewCount rows" "INFO"
-                $Script:TotalDeleted += $previewCount
-                $Script:TablesProcessed++
-                Write-BatchDetail -DeleteOrder "$Order" -TableName $TableName -PassDescription $PassDescription `
-                    -RowsAffected $previewCount -DurationMs 0 -Status 'Success'
-            }
-            return $true
-        }
-        catch {
-            Write-Log "  [$Order] $TableName$passLabel — count failed: $($_.Exception.Message)" "WARN"
-            $Script:TablesFailed++
-            Write-BatchDetail -DeleteOrder "$Order" -TableName $TableName -PassDescription $PassDescription `
-                -RowsAffected 0 -DurationMs 0 -Status 'Failed' -ErrorMessage $_.Exception.Message
-            return $false
-        }
-    }
-    else {
-        $deleteStart = Get-Date
-        try {
-            $rowsDeleted = Invoke-TargetDelete -DeleteSQL $DeleteStatement
-            $durationMs = [int]((Get-Date) - $deleteStart).TotalMilliseconds
-            if ($rowsDeleted -eq 0) {
-                Write-Log "  [$Order] $TableName$passLabel — no rows, skipping" "DEBUG"
-                $Script:TablesSkipped++
-                Write-BatchDetail -DeleteOrder "$Order" -TableName $TableName -PassDescription $PassDescription `
-                    -RowsAffected 0 -DurationMs $durationMs -Status 'Skipped'
-            } else {
-                Write-Log "  [$Order] $TableName$passLabel — deleted $rowsDeleted rows (${durationMs}ms)" "SUCCESS"
-                $Script:TotalDeleted += $rowsDeleted
-                $Script:TablesProcessed++
-                Write-BatchDetail -DeleteOrder "$Order" -TableName $TableName -PassDescription $PassDescription `
-                    -RowsAffected $rowsDeleted -DurationMs $durationMs -Status 'Success'
-            }
-            return $true
-        }
-        catch {
-            $durationMs = [int]((Get-Date) - $deleteStart).TotalMilliseconds
-            Write-Log "  [$Order] $TableName$passLabel — FAILED (${durationMs}ms): $($_.Exception.Message)" "ERROR"
-            $Script:TablesFailed++
-            Write-BatchDetail -DeleteOrder "$Order" -TableName $TableName -PassDescription $PassDescription `
-                -RowsAffected 0 -DurationMs $durationMs -Status 'Failed' -ErrorMessage $_.Exception.Message
-            return $false
-        }
-    }
-}
-
-function Invoke-TableUpdate {
-    <#
-    .SYNOPSIS
-        Executes a single table UPDATE with logging and error handling.
-        In preview mode, counts rows. In execute mode, updates with chunking.
-        Used for severing FK references before deleting parent records
-        (e.g., NULLing resolved suspense references on merged consumers).
-        Returns $true on success, $false on failure.
-    #>
-    param(
-        [Parameter(Mandatory)]
-        $Order,
-        [Parameter(Mandatory)]
-        [string]$TableName,
-        [Parameter(Mandatory)]
-        [string]$UpdateStatement,
-        [string]$CountQuery,
-        [string]$PassDescription = "",
-        [bool]$PreviewOnly = $true
-    )
-
-    $passLabel = if ($PassDescription) { " ($PassDescription)" } else { "" }
-
-    if ($PreviewOnly) {
-        try {
-            $countResult = Invoke-TargetQuery -Query $CountQuery -Timeout 300
-            $previewCount = [long]$countResult.Rows[0].row_count
-            if ($previewCount -eq 0) {
-                Write-Log "  [$Order] $TableName$passLabel — no rows, skipping" "DEBUG"
-                $Script:TablesSkipped++
-                Write-BatchDetail -DeleteOrder "$Order" -TableName $TableName -PassDescription $PassDescription `
-                    -RowsAffected 0 -DurationMs 0 -Status 'Skipped'
-            } else {
-                Write-Log "  [$Order] $TableName$passLabel — would update $previewCount rows" "INFO"
-                $Script:TablesProcessed++
-                Write-BatchDetail -DeleteOrder "$Order" -TableName $TableName -PassDescription $PassDescription `
-                    -RowsAffected $previewCount -DurationMs 0 -Status 'Success'
-            }
-            return $true
-        }
-        catch {
-            Write-Log "  [$Order] $TableName$passLabel — count failed: $($_.Exception.Message)" "WARN"
-            $Script:TablesFailed++
-            Write-BatchDetail -DeleteOrder "$Order" -TableName $TableName -PassDescription $PassDescription `
-                -RowsAffected 0 -DurationMs 0 -Status 'Failed' -ErrorMessage $_.Exception.Message
-            return $false
-        }
-    }
-    else {
-        $updateStart = Get-Date
-        try {
-            $rowsUpdated = Invoke-TargetUpdate -UpdateSQL $UpdateStatement
-            $durationMs = [int]((Get-Date) - $updateStart).TotalMilliseconds
-            if ($rowsUpdated -eq 0) {
-                Write-Log "  [$Order] $TableName$passLabel — no rows, skipping" "DEBUG"
-                $Script:TablesSkipped++
-                Write-BatchDetail -DeleteOrder "$Order" -TableName $TableName -PassDescription $PassDescription `
-                    -RowsAffected 0 -DurationMs $durationMs -Status 'Skipped'
-            } else {
-                Write-Log "  [$Order] $TableName$passLabel — updated $rowsUpdated rows (${durationMs}ms)" "SUCCESS"
-                $Script:TablesProcessed++
-                Write-BatchDetail -DeleteOrder "$Order" -TableName $TableName -PassDescription $PassDescription `
-                    -RowsAffected $rowsUpdated -DurationMs $durationMs -Status 'Success'
-            }
-            return $true
-        }
-        catch {
-            $durationMs = [int]((Get-Date) - $updateStart).TotalMilliseconds
-            Write-Log "  [$Order] $TableName$passLabel — FAILED (${durationMs}ms): $($_.Exception.Message)" "ERROR"
-            $Script:TablesFailed++
-            Write-BatchDetail -DeleteOrder "$Order" -TableName $TableName -PassDescription $PassDescription `
-                -RowsAffected 0 -DurationMs $durationMs -Status 'Failed' -ErrorMessage $_.Exception.Message
-            return $false
-        }
-    }
-}
-
-# ============================================================================
-# STEP WRAPPERS (set $Script:StopProcessing on failure)
-# ============================================================================
-
-function Step-Delete {
-    param([hashtable]$Params)
-    if ($Script:StopProcessing) { return }
-    $ok = Invoke-TableDelete @Params -PreviewOnly (-not $script:XFActsExecute)
-    if (-not $ok) {
-        Write-Log "  STOPPING — cannot safely continue after failure at order $($Params.Order)" "ERROR"
-        $Script:StopProcessing = $true
-    }
-}
-
-function Step-JoinDelete {
-    param([hashtable]$Params)
-    if ($Script:StopProcessing) { return }
-    $ok = Invoke-JoinTableDelete @Params -PreviewOnly (-not $script:XFActsExecute)
-    if (-not $ok) {
-        Write-Log "  STOPPING — cannot safely continue after failure at order $($Params.Order)" "ERROR"
-        $Script:StopProcessing = $true
-    }
-}
-
-function Step-Update {
-    param([hashtable]$Params)
-    if ($Script:StopProcessing) { return }
-    $ok = Invoke-TableUpdate @Params -PreviewOnly (-not $script:XFActsExecute)
-    if (-not $ok) {
-        Write-Log "  STOPPING — cannot safely continue after failure at order $($Params.Order)" "ERROR"
-        $Script:StopProcessing = $true
-    }
-}
-
-# ============================================================================
-# MAIN EXECUTION
-# ============================================================================
+<# ============================================================================
+   EXECUTION: SCRIPT EXECUTION
+   ----------------------------------------------------------------------------
+   The batch loop: resolve schedule and target, select consumers, run the
+   FK-ordered delete sequence via the shared engine, finalize the batch log,
+   and emit the session summary.
+   Prefix: (none)
+   ============================================================================ #>
 
 $scriptStart = Get-Date
 
-Write-Host ""
-Write-Host "================================================================" -ForegroundColor Cyan
-Write-Host "  xFACts DM Shell Purge — Consumer-Level" -ForegroundColor Cyan
-Write-Host "================================================================" -ForegroundColor Cyan
-Write-Host ""
+Write-ConsoleBanner "xFACts DM Shell Purge - Consumer-Level"
 
-# ============================================================================
-# STEP 1: Load Configuration & Pre-Flight Checks
-# ============================================================================
+# -- STEP 1: Load Configuration & Pre-Flight Checks --
 
 Write-Log "--- Step 1: Configuration ---"
 
-# ── Abort flag check (overrides everything) ──
-if (Test-ShellPurgeAbort) {
-    Write-Log "Shell purge abort flag is set — exiting immediately" "WARN"
+# -- Abort flag check (overrides everything) --
+
+if (Test-dmo_ShellAbort) {
+    Write-Log "Shell purge abort flag is set - exiting immediately" "WARN"
     exit 0
 }
 
-# ── Target instance ──
+# -- Target instance --
+
 if ([string]::IsNullOrEmpty($TargetInstance)) {
     $configResult = Get-SqlData -Query @"
         SELECT setting_value FROM dbo.GlobalConfig
@@ -901,29 +395,31 @@ if ([string]::IsNullOrEmpty($TargetInstance)) {
           AND setting_name = 'target_instance' AND is_active = 1
 "@
     if ($configResult) {
-        $Script:TargetServer = $configResult.setting_value
+        $script:dmo_TargetServer = $configResult.setting_value
     } else {
         Write-Log "No target_instance configured in GlobalConfig (DmOps.ShellPurge)" "ERROR"
         exit 1
     }
 } else {
-    $Script:TargetServer = $TargetInstance
+    $script:dmo_TargetServer = $TargetInstance
 }
 
-# ── ServerRegistry enable check (skip if manual target override) ──
+# -- ServerRegistry enable check (skip if manual target override) --
+
 if ([string]::IsNullOrEmpty($TargetInstance)) {
     $enabledResult = Get-SqlData -Query @"
         SELECT dmops_shell_purge_enabled
         FROM dbo.ServerRegistry
-        WHERE server_name = '$($Script:TargetServer)'
+        WHERE server_name = '$($script:dmo_TargetServer)'
 "@
     if (-not $enabledResult -or $enabledResult.dmops_shell_purge_enabled -ne 1) {
-        Write-Log "Shell purge is disabled on $($Script:TargetServer) (ServerRegistry.dmops_shell_purge_enabled)" "WARN"
+        Write-Log "Shell purge is disabled on $($script:dmo_TargetServer) (ServerRegistry.dmops_shell_purge_enabled)" "WARN"
         exit 0
     }
 }
 
-# ── GlobalConfig settings ──
+# -- GlobalConfig settings --
+
 $configResults = Get-SqlData -Query @"
     SELECT setting_name, setting_value FROM dbo.GlobalConfig
     WHERE module_name = 'DmOps' AND category = 'ShellPurge' AND is_active = 1
@@ -936,60 +432,60 @@ if ($configResults) {
     }
 }
 
-if ($configMap.ContainsKey('batch_size'))         { $Script:BatchSizeFull = [int]$configMap['batch_size'] }
-if ($configMap.ContainsKey('batch_size_reduced')) { $Script:BatchSizeReduced = [int]$configMap['batch_size_reduced'] }
-if ($configMap.ContainsKey('chunk_size'))         { $Script:BatchChunkSize = [int]$configMap['chunk_size'] }
-if ($configMap.ContainsKey('alerting_enabled'))   { $Script:AlertingEnabled = $configMap['alerting_enabled'] -eq '1' }
+if ($configMap.ContainsKey('batch_size'))         { $script:dmo_BatchSizeFull = [int]$configMap['batch_size'] }
+if ($configMap.ContainsKey('batch_size_reduced')) { $script:dmo_BatchSizeReduced = [int]$configMap['batch_size_reduced'] }
+if ($configMap.ContainsKey('chunk_size'))         { $script:dmo_BatchChunkSize = [int]$configMap['chunk_size'] }
+if ($configMap.ContainsKey('alerting_enabled'))   { $script:dmo_AlertingEnabled = $configMap['alerting_enabled'] -eq '1' }
 
-# ── ChunkSize parameter override ──
-if ($ChunkSize -gt 0) { $Script:BatchChunkSize = $ChunkSize }
+# -- ChunkSize parameter override --
 
-# ── BatchSize parameter override (Manual mode) ──
+if ($ChunkSize -gt 0) { $script:dmo_BatchChunkSize = $ChunkSize }
+
+# -- BatchSize parameter override (Manual mode) --
+
 if ($BatchSize -gt 0) {
-    $Script:ManualBatchSize = $true
-    $Script:ScheduleMode = 'Manual'
+    $script:dmo_ManualBatchSize = $true
+    $script:dmo_ScheduleMode = 'Manual'
     $activeBatchSize = $BatchSize
     Write-Log "  Manual batch size override: $BatchSize" "INFO"
 } else {
     # Determine batch size from schedule
-    $scheduleValue = Get-ShellPurgeScheduleMode
+    $scheduleValue = Get-dmo_ShellScheduleMode
     switch ($scheduleValue) {
         0 {
-            $Script:ScheduleMode = 'Blocked'
-            Write-Log "  Schedule: BLOCKED for current hour — exiting" "WARN"
+            $script:dmo_ScheduleMode = 'Blocked'
+            Write-Log "  Schedule: BLOCKED for current hour - exiting" "WARN"
             exit 0
         }
         1 {
-            $Script:ScheduleMode = 'Full'
-            $activeBatchSize = $Script:BatchSizeFull
+            $script:dmo_ScheduleMode = 'Full'
+            $activeBatchSize = $script:dmo_BatchSizeFull
         }
         2 {
-            $Script:ScheduleMode = 'Reduced'
-            $activeBatchSize = $Script:BatchSizeReduced
+            $script:dmo_ScheduleMode = 'Reduced'
+            $activeBatchSize = $script:dmo_BatchSizeReduced
         }
         default {
-            Write-Log "  Schedule: unexpected value ($scheduleValue) — treating as blocked" "WARN"
+            Write-Log "  Schedule: unexpected value ($scheduleValue) - treating as blocked" "WARN"
             exit 0
         }
     }
 }
 
-Write-Log "  Target Instance  : $($Script:TargetServer)"
+Write-Log "  Target Instance  : $($script:dmo_TargetServer)"
 Write-Log "  xFACts Instance  : $ServerInstance"
-Write-Log "  Schedule Mode    : $($Script:ScheduleMode)"
+Write-Log "  Schedule Mode    : $($script:dmo_ScheduleMode)"
 Write-Log "  Batch Size       : $activeBatchSize consumers"
-Write-Log "  Chunk Size       : $($Script:BatchChunkSize) rows per delete"
-Write-Log "  Alerting         : $(if ($Script:AlertingEnabled) { 'Enabled' } else { 'Disabled' })"
+Write-Log "  Chunk Size       : $($script:dmo_BatchChunkSize) rows per delete"
+Write-Log "  Alerting         : $(if ($script:dmo_AlertingEnabled) { 'Enabled' } else { 'Disabled' })"
 Write-Log "  Loop Mode        : $(if ($SingleBatch) { 'Single batch' } else { 'Continuous' })"
 Write-Log ""
 
-# ============================================================================
-# STEP 2: Open Persistent Connection
-# ============================================================================
+# -- STEP 2: Open Persistent Connection --
 
 Write-Log "--- Step 2: Open Connection ---"
 
-if (-not (Open-TargetConnection)) {
+if (-not (Open-dmo_TargetConnection)) {
     if ($TaskId -gt 0) {
         $totalMs = [int]((Get-Date) - $scriptStart).TotalMilliseconds
         Complete-OrchestratorTask -TaskId $TaskId -ProcessId $ProcessId `
@@ -1001,61 +497,54 @@ if (-not (Open-TargetConnection)) {
 
 Write-Log ""
 
-# ============================================================================
-# BATCH LOOP
-# ============================================================================
+# -- BATCH LOOP --
 
 $continueProcessing = $true
 
 while ($continueProcessing) {
 
-# ── Reset per-batch counters ──
-$Script:TotalDeleted = 0
-$Script:TablesProcessed = 0
-$Script:TablesSkipped = 0
-$Script:TablesFailed = 0
-$Script:BatchConsumerIds = @()
-$Script:BatchConsumerData = @()
-$Script:StopProcessing = $false
-$Script:BatchStartTime = Get-Date
+# -- Reset per-batch counters --
 
-$Script:TotalBatchesRun++
+$script:dmo_TotalDeleted = 0
+$script:dmo_TablesProcessed = 0
+$script:dmo_TablesSkipped = 0
+$script:dmo_TablesFailed = 0
+$script:dmo_BatchConsumerIds = @()
+$script:dmo_BatchConsumerData = @()
+$script:dmo_StopProcessing = $false
+$script:dmo_BatchStartTime = Get-Date
 
-Write-Host ""
-Write-Host "────────────────────────────────────────────────────────────────" -ForegroundColor DarkCyan
-Write-Host "  Batch #$($Script:TotalBatchesRun) — $($Script:ScheduleMode) mode ($activeBatchSize consumers)" -ForegroundColor DarkCyan
-Write-Host "────────────────────────────────────────────────────────────────" -ForegroundColor DarkCyan
-Write-Host ""
+$script:dmo_TotalBatchesRun++
 
-# ============================================================================
-# STEP 3: Select Shell Consumers
-# ============================================================================
+Write-ConsoleBanner "  Batch #$($script:dmo_TotalBatchesRun) - $($script:dmo_ScheduleMode) mode ($activeBatchSize consumers)" 'DarkCyan' '-'
+
+# -- STEP 3: Select Shell Consumers --
 
 Write-Log "--- Step 3: Select Shell Consumers ---"
 
-# Step 3a: Resolve WFAPURGE workgroup ID (first batch only — reuse on subsequent batches)
-if (-not $Script:PurgeWorkgroupId) {
+# Step 3a: Resolve WFAPURGE workgroup ID (first batch only - reuse on subsequent batches)
+if (-not $script:dmo_PurgeWorkgroupId) {
     try {
-        $wrkgrpResult = Invoke-TargetQuery -Query "SELECT wrkgrp_id FROM crs5_oltp.dbo.wrkgrp WHERE wrkgrp_shrt_nm = 'WFAPURGE'"
+        $wrkgrpResult = Invoke-dmo_TargetQuery -Query "SELECT wrkgrp_id FROM crs5_oltp.dbo.wrkgrp WHERE wrkgrp_shrt_nm = 'WFAPURGE'"
         if ($wrkgrpResult.Rows.Count -eq 0) {
-            Write-Log "WFAPURGE workgroup not found in crs5_oltp — exiting" "ERROR"
-            Close-TargetConnection
+            Write-Log "WFAPURGE workgroup not found in crs5_oltp - exiting" "ERROR"
+            Close-dmo_TargetConnection
             exit 1
         }
-        $Script:PurgeWorkgroupId = [long]$wrkgrpResult.Rows[0].wrkgrp_id
-        Write-Log "  WFAPURGE workgroup resolved: wrkgrp_id = $($Script:PurgeWorkgroupId)" "INFO"
+        $script:dmo_PurgeWorkgroupId = [long]$wrkgrpResult.Rows[0].wrkgrp_id
+        Write-Log "  WFAPURGE workgroup resolved: wrkgrp_id = $($script:dmo_PurgeWorkgroupId)" "INFO"
     }
     catch {
         Write-Log "Failed to resolve WFAPURGE workgroup: $($_.Exception.Message)" "ERROR"
-        Close-TargetConnection
+        Close-dmo_TargetConnection
         exit 1
     }
 }
 
 # Step 3b: Load exception log into temp table on target connection (first batch only)
-if (-not $Script:ExclusionsLoaded) {
+if (-not $script:dmo_ExclusionsLoaded) {
     try {
-        $exclCreateCmd = $Script:TargetConnection.CreateCommand()
+        $exclCreateCmd = $script:dmo_TargetConnection.CreateCommand()
         $exclCreateCmd.CommandText = "IF OBJECT_ID('tempdb..#shell_exclusions') IS NOT NULL DROP TABLE #shell_exclusions; CREATE TABLE #shell_exclusions (cnsmr_id BIGINT PRIMARY KEY);"
         $exclCreateCmd.CommandTimeout = 30
         $exclCreateCmd.ExecuteNonQuery() | Out-Null
@@ -1069,7 +558,7 @@ if (-not $Script:ExclusionsLoaded) {
             for ($i = 0; $i -lt $exclIds.Count; $i += 900) {
                 $batch = $exclIds[$i..[Math]::Min($i + 899, $exclIds.Count - 1)]
                 $valuesClause = ($batch | ForEach-Object { "($_)" }) -join ','
-                $insertCmd = $Script:TargetConnection.CreateCommand()
+                $insertCmd = $script:dmo_TargetConnection.CreateCommand()
                 $insertCmd.CommandText = "INSERT INTO #shell_exclusions (cnsmr_id) VALUES $valuesClause"
                 $insertCmd.CommandTimeout = 60
                 $insertCmd.ExecuteNonQuery() | Out-Null
@@ -1078,11 +567,11 @@ if (-not $Script:ExclusionsLoaded) {
         }
 
         Write-Log "  Exception log loaded: $exclCount consumers" "INFO"
-        $Script:ExclusionsLoaded = $true
+        $script:dmo_ExclusionsLoaded = $true
     }
     catch {
         Write-Log "Failed to load exception log: $($_.Exception.Message)" "ERROR"
-        Close-TargetConnection
+        Close-dmo_TargetConnection
         exit 1
     }
 }
@@ -1094,28 +583,28 @@ $batchQuery = @"
     SELECT TOP ($activeBatchSize) c.cnsmr_id, c.cnsmr_idntfr_agncy_id
     FROM crs5_oltp.dbo.cnsmr c
     LEFT JOIN crs5_oltp.dbo.cnsmr_accnt ca ON ca.cnsmr_id = c.cnsmr_id
-    WHERE c.wrkgrp_id = $($Script:PurgeWorkgroupId)
+    WHERE c.wrkgrp_id = $($script:dmo_PurgeWorkgroupId)
       AND ca.cnsmr_id IS NULL
       AND NOT EXISTS (SELECT 1 FROM #shell_exclusions e WHERE e.cnsmr_id = c.cnsmr_id)
 "@
 
 try {
-    $batchResult = Invoke-TargetQuery -Query $batchQuery
+    $batchResult = Invoke-dmo_TargetQuery -Query $batchQuery
 }
 catch {
     Write-Log "Failed to select batch: $($_.Exception.Message)" "ERROR"
-    Close-TargetConnection
+    Close-dmo_TargetConnection
     exit 1
 }
 
 if ($batchResult.Rows.Count -eq 0) {
-    Write-Log "No eligible shell consumers found — work complete" "INFO"
-    if ($Script:AlertingEnabled) {
-        $remainingResult = Invoke-TargetQuery -Query @"
+    Write-Log "No eligible shell consumers found - work complete" "INFO"
+    if ($script:dmo_AlertingEnabled) {
+        $remainingResult = Invoke-dmo_TargetQuery -Query @"
 SELECT COUNT(*) AS Remaining
 FROM crs5_oltp.dbo.cnsmr c
 LEFT JOIN crs5_oltp.dbo.cnsmr_accnt ca ON ca.cnsmr_id = c.cnsmr_id
-WHERE c.wrkgrp_id = $($Script:PurgeWorkgroupId) AND ca.cnsmr_id IS NULL
+WHERE c.wrkgrp_id = $($script:dmo_PurgeWorkgroupId) AND ca.cnsmr_id IS NULL
 "@
         $remainingCount = if ($remainingResult.Rows.Count -gt 0) { [int]$remainingResult.Rows[0].Remaining } else { 0 }
 
@@ -1126,22 +615,22 @@ WHERE c.wrkgrp_id = $($Script:PurgeWorkgroupId) AND ca.cnsmr_id IS NULL
         $durationFriendly = "{0}h {1}m" -f [int]$sessionDuration.TotalHours, $sessionDuration.Minutes
         $alertDate = (Get-Date).ToString("MM/dd/yyyy")
         $alertMsg = @"
-**Target:** $($Script:TargetServer)
+**Target:** $($script:dmo_TargetServer)
 **Exit reason:** Queue exhausted
 
-**Shells purged this run:** $('{0:N0}' -f $Script:SessionTotalConsumers)
+**Shells purged this run:** $('{0:N0}' -f $script:dmo_SessionTotalConsumers)
 **Shells remaining:** $('{0:N0}' -f $remainingCount)
 **Designated exceptions (skipped):** $('{0:N0}' -f $exceptionsCount)
 
-**Batches run:** $($Script:TotalBatchesRun)
-**Batches failed:** $($Script:TotalBatchesFailed)
+**Batches run:** $($script:dmo_TotalBatchesRun)
+**Batches failed:** $($script:dmo_TotalBatchesFailed)
 **Run duration:** $durationFriendly
 "@
         Send-TeamsAlert -SourceModule 'DmOps' -AlertCategory 'INFO' `
             -Title "Shell Purge Complete - Queue Exhausted - $alertDate {{CHECK}}" `
             -Message $alertMsg -Color 'good' `
             -TriggerType 'shell_purge_complete_exhausted' `
-            -TriggerValue "$alertDate-$($Script:TotalBatchesRun)" | Out-Null
+            -TriggerValue "$alertDate-$($script:dmo_TotalBatchesRun)" | Out-Null
     }
     $continueProcessing = $false
     break
@@ -1162,7 +651,7 @@ $exclusionChecks = @(
 try {
     # Load batch into temp table for exclusion checks
     $createCheckSQL = "IF OBJECT_ID('tempdb..#shell_exclusion_check') IS NOT NULL DROP TABLE #shell_exclusion_check; CREATE TABLE #shell_exclusion_check (cnsmr_id BIGINT PRIMARY KEY, cnsmr_idntfr_agncy_id VARCHAR(50));"
-    $cmd = $Script:TargetConnection.CreateCommand()
+    $cmd = $script:dmo_TargetConnection.CreateCommand()
     $cmd.CommandText = $createCheckSQL
     $cmd.CommandTimeout = 30
     $cmd.ExecuteNonQuery() | Out-Null
@@ -1174,18 +663,18 @@ try {
         $valuesClause = ($batchResult.Rows[$i..$endIdx] | ForEach-Object {
             "($([long]$_.cnsmr_id), '$([string]$_.cnsmr_idntfr_agncy_id)')"
         }) -join ','
-        $insertCmd = $Script:TargetConnection.CreateCommand()
+        $insertCmd = $script:dmo_TargetConnection.CreateCommand()
         $insertCmd.CommandText = "INSERT INTO #shell_exclusion_check (cnsmr_id, cnsmr_idntfr_agncy_id) VALUES $valuesClause"
         $insertCmd.CommandTimeout = 30
         $insertCmd.ExecuteNonQuery() | Out-Null
         $insertCmd.Dispose()
     }
 
-    # Run each exclusion check — log and remove any new discoveries
+    # Run each exclusion check - log and remove any new discoveries
     $newExclusions = New-Object System.Collections.Generic.List[long]
 
     foreach ($excl in $exclusionChecks) {
-        $exclResult = Invoke-TargetQuery -Query $excl.SQL
+        $exclResult = Invoke-dmo_TargetQuery -Query $excl.SQL
         if ($exclResult.Rows.Count -gt 0) {
             Write-Log "    New exception: $($exclResult.Rows.Count) consumers have $($excl.Name) data" "WARN"
             foreach ($exclRow in $exclResult.Rows) {
@@ -1195,7 +684,7 @@ try {
                     $newExclusions.Add($exclCnsmrId)
                 }
                 # Log to ConsumerExceptionLog (xFACts DB via platform wrapper).
-                # Skipped in preview mode — exception identification still runs above
+                # Skipped in preview mode - exception identification still runs above
                 # for accurate reporting, but no audit writes occur.
                 if ($script:XFActsExecute) {
                     Invoke-SqlNonQuery -Query @"
@@ -1206,10 +695,10 @@ try {
                 }
 
                 # Also add to #shell_exclusions on target so subsequent batches skip this consumer.
-                # This is session-private temp-table state — safe to do in preview mode and
+                # This is session-private temp-table state - safe to do in preview mode and
                 # required so subsequent count queries reflect the post-validation batch composition.
                 try {
-                    $addExclCmd = $Script:TargetConnection.CreateCommand()
+                    $addExclCmd = $script:dmo_TargetConnection.CreateCommand()
                     $addExclCmd.CommandText = "IF NOT EXISTS (SELECT 1 FROM #shell_exclusions WHERE cnsmr_id = $exclCnsmrId) INSERT INTO #shell_exclusions (cnsmr_id) VALUES ($exclCnsmrId)"
                     $addExclCmd.CommandTimeout = 10
                     $addExclCmd.ExecuteNonQuery() | Out-Null
@@ -1229,41 +718,41 @@ try {
 }
 catch {
     Write-Log "Failed during exception validation: $($_.Exception.Message)" "WARN"
-    # Non-fatal — proceed with the batch as selected, exclusions are a safety net
+    # Non-fatal - proceed with the batch as selected, exclusions are a safety net
 }
 
 # Build final consumer lists (excluding any newly discovered exceptions)
-$Script:BatchConsumerIds = New-Object System.Collections.Generic.List[long]
-$Script:BatchConsumerData = New-Object System.Collections.Generic.List[PSObject]
+$script:dmo_BatchConsumerIds = New-Object System.Collections.Generic.List[long]
+$script:dmo_BatchConsumerData = New-Object System.Collections.Generic.List[PSObject]
 
 foreach ($row in $batchResult.Rows) {
     $cid = [long]$row.cnsmr_id
     if ($newExclusions.Contains($cid)) { continue }
-    $Script:BatchConsumerIds.Add($cid)
-    $Script:BatchConsumerData.Add([PSCustomObject]@{
+    $script:dmo_BatchConsumerIds.Add($cid)
+    $script:dmo_BatchConsumerData.Add([PSCustomObject]@{
         cnsmr_id              = $cid
         cnsmr_idntfr_agncy_id = [string]$row.cnsmr_idntfr_agncy_id
     })
 }
 
-if ($Script:BatchConsumerIds.Count -eq 0) {
-    Write-Log "All batch candidates were excepted — retrying next batch" "WARN"
+if ($script:dmo_BatchConsumerIds.Count -eq 0) {
+    Write-Log "All batch candidates were excepted - retrying next batch" "WARN"
     continue
 }
 
 $totalSelectMs = [int]((Get-Date) - $selectStart).TotalMilliseconds
-Write-Log "  Selected $($Script:BatchConsumerIds.Count) shell consumers (${totalSelectMs}ms)" "INFO"
+Write-Log "  Selected $($script:dmo_BatchConsumerIds.Count) shell consumers (${totalSelectMs}ms)" "INFO"
 Write-Log ""
 
-# ── Create batch log entry ──
-New-BatchLogEntry -ScheduleMode $Script:ScheduleMode -BatchSizeUsed $activeBatchSize
+# -- Create batch log entry --
 
-# ── Write consumer log ──
-Write-ConsumerLog
+New-dmo_ShellBatchLogEntry -ScheduleMode $script:dmo_ScheduleMode -BatchSizeUsed $activeBatchSize
 
-# ============================================================================
-# STEP 4: Create Temp Tables
-# ============================================================================
+# -- Write consumer log --
+
+Write-dmo_ShellConsumerLog
+
+# -- STEP 4: Create Temp Tables --
 
 Write-Log "--- Step 4: Load Batch ID Temp Tables ---"
 
@@ -1273,32 +762,33 @@ $createTableSQL = @"
 "@
 
 try {
-    $cmd = $Script:TargetConnection.CreateCommand()
+    $cmd = $script:dmo_TargetConnection.CreateCommand()
     $cmd.CommandText = $createTableSQL
     $cmd.CommandTimeout = 30
     $cmd.ExecuteNonQuery() | Out-Null
     $cmd.Dispose()
 
-    for ($i = 0; $i -lt $Script:BatchConsumerIds.Count; $i += 900) {
-        $batch = $Script:BatchConsumerIds[$i..[Math]::Min($i + 899, $Script:BatchConsumerIds.Count - 1)]
+    for ($i = 0; $i -lt $script:dmo_BatchConsumerIds.Count; $i += 900) {
+        $batch = $script:dmo_BatchConsumerIds[$i..[Math]::Min($i + 899, $script:dmo_BatchConsumerIds.Count - 1)]
         $valuesClause = ($batch | ForEach-Object { "($_)" }) -join ','
-        $insertCmd = $Script:TargetConnection.CreateCommand()
+        $insertCmd = $script:dmo_TargetConnection.CreateCommand()
         $insertCmd.CommandText = "INSERT INTO #shell_batch_consumers (cnsmr_id) VALUES $valuesClause"
         $insertCmd.CommandTimeout = 30
         $insertCmd.ExecuteNonQuery() | Out-Null
         $insertCmd.Dispose()
     }
 
-    Write-Log "  Temp table loaded: $($Script:BatchConsumerIds.Count) consumers" "SUCCESS"
+    Write-Log "  Temp table loaded: $($script:dmo_BatchConsumerIds.Count) consumers" "SUCCESS"
 }
 catch {
     Write-Log "Failed to create temp tables: $($_.Exception.Message)" "ERROR"
-    Update-BatchLogEntry -Status 'Failed' -ErrorMessage "Temp table creation failed: $($_.Exception.Message)"
-    Close-TargetConnection
+    Update-dmo_ShellBatchLogEntry -Status 'Failed' -ErrorMessage "Temp table creation failed: $($_.Exception.Message)"
+    Close-dmo_TargetConnection
     exit 1
 }
 
-# ── Pre-materialize intermediate ID tables ──
+# -- Pre-materialize intermediate ID tables --
+
 $materializeSQL = @"
     IF OBJECT_ID('tempdb..#shell_pymnt_instrmnt_ids') IS NOT NULL DROP TABLE #shell_pymnt_instrmnt_ids;
     SELECT cnsmr_pymnt_instrmnt_id INTO #shell_pymnt_instrmnt_ids
@@ -1339,7 +829,7 @@ $materializeSQL = @"
 "@
 
 try {
-    $cmd = $Script:TargetConnection.CreateCommand()
+    $cmd = $script:dmo_TargetConnection.CreateCommand()
     $cmd.CommandText = $materializeSQL
     $cmd.CommandTimeout = 120
     $adapter = New-Object System.Data.SqlClient.SqlDataAdapter($cmd)
@@ -1363,21 +853,19 @@ try {
 }
 catch {
     Write-Log "Failed to create intermediate temp tables: $($_.Exception.Message)" "ERROR"
-    Update-BatchLogEntry -Status 'Failed' -ErrorMessage "Intermediate temp table creation failed: $($_.Exception.Message)"
-    Close-TargetConnection
+    Update-dmo_ShellBatchLogEntry -Status 'Failed' -ErrorMessage "Intermediate temp table creation failed: $($_.Exception.Message)"
+    Close-dmo_TargetConnection
     exit 1
 }
 
 Write-Log ""
 
-# ============================================================================
-# STEP 5: Execute Consumer-Level Deletions
-# ============================================================================
+# -- STEP 5: Execute Consumer-Level Deletions --
 
 Write-Log "--- Step 5: Execute Consumer-Level Deletions ---"
 Write-Log ""
 
-$Script:StopProcessing = $false
+$script:dmo_StopProcessing = $false
 
 $wCnsmr       = "cnsmr_id IN (SELECT cnsmr_id FROM #shell_batch_consumers)"
 $wCntctLog    = "cnsmr_cntct_trnsctn_log_id IN (SELECT cnsmr_cntct_trnsctn_log_id FROM #shell_cntct_trnsctn_ids)"
@@ -1386,11 +874,12 @@ $wJrnl        = "cnsmr_pymnt_jrnl_id IN (SELECT cnsmr_pymnt_jrnl_id FROM #shell_
 $wSmmry       = "schdld_pymnt_smmry_id IN (SELECT schdld_pymnt_smmry_id FROM #shell_smmry_ids)"
 $wArLog       = "cnsmr_accnt_ar_log_id IN (SELECT cnsmr_accnt_ar_log_id FROM #shell_ar_log_ids)"
 
-# ── Phase 1: Consumer-Level UDEF Tables (Dynamic Discovery) ──
+# -- Phase 1: Consumer-Level UDEF Tables (Dynamic Discovery) --
+
 Write-Log "  Phase 1: Consumer-Level UDEF Tables (dynamic)" "INFO"
 
 try {
-    $udefCnsmrResult = Invoke-TargetQuery -Query @"
+    $udefCnsmrResult = Invoke-dmo_TargetQuery -Query @"
         SELECT t.name AS table_name
         FROM sys.tables t
         INNER JOIN sys.columns c ON t.object_id = c.object_id
@@ -1406,162 +895,181 @@ try {
 }
 catch {
     Write-Log "  Failed to discover UDEF tables: $($_.Exception.Message)" "ERROR"
-    $Script:StopProcessing = $true
+    $script:dmo_StopProcessing = $true
 }
 
-if (-not $Script:StopProcessing) {
+if (-not $script:dmo_StopProcessing) {
     $udefOrder = 0
     foreach ($udefTable in $udefCnsmrTables) {
         $udefOrder++
-        Step-Delete @{Order="U$udefOrder"; TableName=$udefTable; WhereClause=$wCnsmr}
+        Step-dmo_Delete @{Order="U$udefOrder"; TableName=$udefTable; WhereClause=$wCnsmr}
     }
 }
 
 Write-Log ""
 
-# ── Phase 2: Consumer-Level Tables (FK-ordered, all gaps filled) ──
+# -- Phase 2: Consumer-Level Tables (FK-ordered, all gaps filled) --
+
 # Redesigned from sys.foreign_keys chain analysis against cnsmr terminal table.
 # 101 steps: 34 new FK-required tables, FK ordering corrected, 3 exclusion-controlled chains.
 # Tables marked [NEW] were not in the previous sequence.
-# Tables marked [EXCL] are exclusion-controlled — currently no-ops while exclusions are active.
+# Tables marked [EXCL] are exclusion-controlled - currently no-ops while exclusions are active.
 Write-Log "  Phase 2: Consumer-Level Tables" "INFO"
 
-# ── Simple direct cnsmr_id tables (no FK children, no ordering concerns) ──
-Step-Delete @{Order=1; TableName='asst'; WhereClause=$wCnsmr}
-Step-Delete @{Order=2; TableName='attrny'; WhereClause=$wCnsmr}
-Step-Delete @{Order=3; TableName='cnsmr_addrss'; WhereClause=$wCnsmr}
-Step-Delete @{Order=4; TableName='cnsmr_Cmmnt'; WhereClause=$wCnsmr}
-Step-Delete @{Order=5; TableName='cnsmr_crdt'; WhereClause=$wCnsmr}
-Step-Delete @{Order=6; TableName='cnsmr_fee_spprss_cnfg'; WhereClause=$wCnsmr}
-Step-Delete @{Order=7; TableName='cnsmr_Fnncl'; WhereClause=$wCnsmr}
-Step-Delete @{Order=8; TableName='cnsmr_rndm_nmbr'; WhereClause=$wCnsmr}
-Step-Delete @{Order=9; TableName='cnsmr_Rvw_rqst'; WhereClause=$wCnsmr}
-Step-Delete @{Order=10; TableName='cnsmr_Tag'; WhereClause=$wCnsmr}
-Step-Delete @{Order=11; TableName='cnsmr_Wrk_actn'; WhereClause=$wCnsmr}
-Step-Delete @{Order=12; TableName='decsd'; WhereClause=$wCnsmr}
-Step-Delete @{Order=13; TableName='dfrrd_cnsmr'; WhereClause=$wCnsmr}
-Step-Delete @{Order=14; TableName='emplyr'; WhereClause=$wCnsmr}
-Step-Delete @{Order=15; TableName='ivr_call_log'; WhereClause=$wCnsmr}
-Step-Delete @{Order=16; TableName='job_skptrc_cnsmr'; WhereClause=$wCnsmr}
-Step-Delete @{Order=17; TableName='job_skptrc_instnc_log'; WhereClause=$wCnsmr}
-Step-Delete @{Order=18; TableName='strtgy_log'; WhereClause=$wCnsmr}
-Step-Delete @{Order=19; TableName='usr_rmndr'; WhereClause="usr_rmndr_cnsmr_id IN (SELECT cnsmr_id FROM #shell_batch_consumers)"}
-Step-Delete @{Order=20; TableName='cnsmr_accnt_spplmntl_info'; WhereClause=$wCnsmr}
-Step-Delete @{Order=21; TableName='cb_rpt_assctd_cnsmr_data'; WhereClause=$wCnsmr}
-Step-Delete @{Order=22; TableName='cb_rpt_base_data'; WhereClause=$wCnsmr}
-Step-Delete @{Order=23; TableName='cb_rpt_emplyr_data'; WhereClause=$wCnsmr}
-Step-Delete @{Order=24; TableName='cb_rpt_rqst_dtl'; WhereClause=$wCnsmr}
-Step-Delete @{Order=25; TableName='job_file'; WhereClause=$wCnsmr}
-Step-Delete @{Order=26; TableName='cnsmr_accnt_ownrs'; WhereClause=$wCnsmr}
+# -- Simple direct cnsmr_id tables (no FK children, no ordering concerns) --
 
-# ── bal_rdctn_plan chain (FK: stpdwn → plan → cnsmr) ──
-Step-Delete @{Order=27; TableName='bal_rdctn_plan_stpdwn'; WhereClause="bal_rdctn_plan_id IN (SELECT bal_rdctn_plan_id FROM crs5_oltp.dbo.bal_rdctn_plan WHERE $wCnsmr)"}
-Step-Delete @{Order=28; TableName='bal_rdctn_plan'; WhereClause=$wCnsmr}
+Step-dmo_Delete @{Order=1; TableName='asst'; WhereClause=$wCnsmr}
+Step-dmo_Delete @{Order=2; TableName='attrny'; WhereClause=$wCnsmr}
+Step-dmo_Delete @{Order=3; TableName='cnsmr_addrss'; WhereClause=$wCnsmr}
+Step-dmo_Delete @{Order=4; TableName='cnsmr_Cmmnt'; WhereClause=$wCnsmr}
+Step-dmo_Delete @{Order=5; TableName='cnsmr_crdt'; WhereClause=$wCnsmr}
+Step-dmo_Delete @{Order=6; TableName='cnsmr_fee_spprss_cnfg'; WhereClause=$wCnsmr}
+Step-dmo_Delete @{Order=7; TableName='cnsmr_Fnncl'; WhereClause=$wCnsmr}
+Step-dmo_Delete @{Order=8; TableName='cnsmr_rndm_nmbr'; WhereClause=$wCnsmr}
+Step-dmo_Delete @{Order=9; TableName='cnsmr_Rvw_rqst'; WhereClause=$wCnsmr}
+Step-dmo_Delete @{Order=10; TableName='cnsmr_Tag'; WhereClause=$wCnsmr}
+Step-dmo_Delete @{Order=11; TableName='cnsmr_Wrk_actn'; WhereClause=$wCnsmr}
+Step-dmo_Delete @{Order=12; TableName='decsd'; WhereClause=$wCnsmr}
+Step-dmo_Delete @{Order=13; TableName='dfrrd_cnsmr'; WhereClause=$wCnsmr}
+Step-dmo_Delete @{Order=14; TableName='emplyr'; WhereClause=$wCnsmr}
+Step-dmo_Delete @{Order=15; TableName='ivr_call_log'; WhereClause=$wCnsmr}
+Step-dmo_Delete @{Order=16; TableName='job_skptrc_cnsmr'; WhereClause=$wCnsmr}
+Step-dmo_Delete @{Order=17; TableName='job_skptrc_instnc_log'; WhereClause=$wCnsmr}
+Step-dmo_Delete @{Order=18; TableName='strtgy_log'; WhereClause=$wCnsmr}
+Step-dmo_Delete @{Order=19; TableName='usr_rmndr'; WhereClause="usr_rmndr_cnsmr_id IN (SELECT cnsmr_id FROM #shell_batch_consumers)"}
+Step-dmo_Delete @{Order=20; TableName='cnsmr_accnt_spplmntl_info'; WhereClause=$wCnsmr}
+Step-dmo_Delete @{Order=21; TableName='cb_rpt_assctd_cnsmr_data'; WhereClause=$wCnsmr}
+Step-dmo_Delete @{Order=22; TableName='cb_rpt_base_data'; WhereClause=$wCnsmr}
+Step-dmo_Delete @{Order=23; TableName='cb_rpt_emplyr_data'; WhereClause=$wCnsmr}
+Step-dmo_Delete @{Order=24; TableName='cb_rpt_rqst_dtl'; WhereClause=$wCnsmr}
+Step-dmo_Delete @{Order=25; TableName='job_file'; WhereClause=$wCnsmr}
+Step-dmo_Delete @{Order=26; TableName='cnsmr_accnt_ownrs'; WhereClause=$wCnsmr}
 
-# ── ca_case chain (FK: children → ca_case → cnsmr) ──
-Step-Delete @{Order=29; TableName='ca_case_accnt_assctn'; WhereClause="ca_case_id IN (SELECT ca_case_id FROM crs5_oltp.dbo.ca_case WHERE $wCnsmr)"}
-Step-Delete @{Order=30; TableName='ca_case_ar_log_assctn'; WhereClause="ca_case_id IN (SELECT ca_case_id FROM crs5_oltp.dbo.ca_case WHERE $wCnsmr)"}
-Step-Delete @{Order=31; TableName='ca_case_bal_wrk_actn'; WhereClause="ca_case_id IN (SELECT ca_case_id FROM crs5_oltp.dbo.ca_case WHERE $wCnsmr)"}
-Step-Delete @{Order=32; TableName='ca_case_cntct_wrk_actn'; WhereClause="ca_case_id IN (SELECT ca_case_id FROM crs5_oltp.dbo.ca_case WHERE $wCnsmr)"}
-Step-Delete @{Order=33; TableName='ca_case_lck_wrk_actn'; WhereClause="ca_case_id IN (SELECT ca_case_id FROM crs5_oltp.dbo.ca_case WHERE $wCnsmr)"}
-Step-Delete @{Order=34; TableName='ca_case_strtgy_log'; WhereClause="ca_case_id IN (SELECT ca_case_id FROM crs5_oltp.dbo.ca_case WHERE $wCnsmr)"}
-Step-Delete @{Order=35; TableName='ca_case_tag'; WhereClause="ca_case_id IN (SELECT ca_case_id FROM crs5_oltp.dbo.ca_case WHERE $wCnsmr)"}
-Step-Delete @{Order=36; TableName='dfrrd_ca_case'; WhereClause="ca_case_id IN (SELECT ca_case_id FROM crs5_oltp.dbo.ca_case WHERE $wCnsmr)"}
-Step-Delete @{Order=37; TableName='wrk_lst_case_cache'; WhereClause="ca_case_id IN (SELECT ca_case_id FROM crs5_oltp.dbo.ca_case WHERE $wCnsmr)"}
-Step-Delete @{Order=38; TableName='wrkgrp_scan_lst_case_cache'; WhereClause="ca_case_id IN (SELECT ca_case_id FROM crs5_oltp.dbo.ca_case WHERE $wCnsmr)"}
-Step-Delete @{Order=39; TableName='ca_case'; WhereClause=$wCnsmr}
+# -- bal_rdctn_plan chain (FK: stpdwn -> plan -> cnsmr) --
 
-# ── cmpgn chain (FK: dialer_trnsctn_log → cmpgn_trnsctn_log → cnsmr, cmpgn_cache → cnsmr_Phn) ──
-Step-Delete @{Order=40; TableName='dialer_trnsctn_log'; WhereClause="cmpgn_trnsctn_log_id IN (SELECT cmpgn_trnsctn_log_id FROM crs5_oltp.dbo.cmpgn_trnsctn_log WHERE $wCnsmr)"}
-Step-Delete @{Order=41; TableName='cmpgn_trnsctn_log'; WhereClause=$wCnsmr}
-Step-Delete @{Order=42; TableName='cmpgn_cache'; WhereClause=$wCnsmr}
-Step-Delete @{Order=43; TableName='cnsmr_Phn'; WhereClause=$wCnsmr}
+Step-dmo_Delete @{Order=27; TableName='bal_rdctn_plan_stpdwn'; WhereClause="bal_rdctn_plan_id IN (SELECT bal_rdctn_plan_id FROM crs5_oltp.dbo.bal_rdctn_plan WHERE $wCnsmr)"}
+Step-dmo_Delete @{Order=28; TableName='bal_rdctn_plan'; WhereClause=$wCnsmr}
 
-# ── cnsmr_accnt_ar_log chain — contact log children BEFORE ar_log ──
-Step-Delete @{Order=44; TableName='cnsmr_cntct_addrs_log'; WhereClause=$wCntctLog; PassDescription='via cntct_trnsctn_log'}
-Step-Delete @{Order=45; TableName='cnsmr_cntct_phn_log'; WhereClause=$wCntctLog; PassDescription='via cntct_trnsctn_log'}
-Step-Delete @{Order=46; TableName='cnsmr_cntct_email_log'; WhereClause=$wCntctLog; PassDescription='via cntct_trnsctn_log'}
-Step-Delete @{Order=47; TableName='cnsmr_cntct_trnsctn_log'; WhereClause=$wCnsmr}
-Step-Delete @{Order=48; TableName='cnsmr_task_itm_cnsmr_accnt_ar_log_assctn'; WhereClause=$wArLog}
+# -- ca_case chain (FK: children -> ca_case -> cnsmr) --
 
-# ── agnt_crdtbl_actvty chain via ar_log — must clear before cnsmr_accnt_ar_log ──
-Step-JoinDelete @{
+Step-dmo_Delete @{Order=29; TableName='ca_case_accnt_assctn'; WhereClause="ca_case_id IN (SELECT ca_case_id FROM crs5_oltp.dbo.ca_case WHERE $wCnsmr)"}
+Step-dmo_Delete @{Order=30; TableName='ca_case_ar_log_assctn'; WhereClause="ca_case_id IN (SELECT ca_case_id FROM crs5_oltp.dbo.ca_case WHERE $wCnsmr)"}
+Step-dmo_Delete @{Order=31; TableName='ca_case_bal_wrk_actn'; WhereClause="ca_case_id IN (SELECT ca_case_id FROM crs5_oltp.dbo.ca_case WHERE $wCnsmr)"}
+Step-dmo_Delete @{Order=32; TableName='ca_case_cntct_wrk_actn'; WhereClause="ca_case_id IN (SELECT ca_case_id FROM crs5_oltp.dbo.ca_case WHERE $wCnsmr)"}
+Step-dmo_Delete @{Order=33; TableName='ca_case_lck_wrk_actn'; WhereClause="ca_case_id IN (SELECT ca_case_id FROM crs5_oltp.dbo.ca_case WHERE $wCnsmr)"}
+Step-dmo_Delete @{Order=34; TableName='ca_case_strtgy_log'; WhereClause="ca_case_id IN (SELECT ca_case_id FROM crs5_oltp.dbo.ca_case WHERE $wCnsmr)"}
+Step-dmo_Delete @{Order=35; TableName='ca_case_tag'; WhereClause="ca_case_id IN (SELECT ca_case_id FROM crs5_oltp.dbo.ca_case WHERE $wCnsmr)"}
+Step-dmo_Delete @{Order=36; TableName='dfrrd_ca_case'; WhereClause="ca_case_id IN (SELECT ca_case_id FROM crs5_oltp.dbo.ca_case WHERE $wCnsmr)"}
+Step-dmo_Delete @{Order=37; TableName='wrk_lst_case_cache'; WhereClause="ca_case_id IN (SELECT ca_case_id FROM crs5_oltp.dbo.ca_case WHERE $wCnsmr)"}
+Step-dmo_Delete @{Order=38; TableName='wrkgrp_scan_lst_case_cache'; WhereClause="ca_case_id IN (SELECT ca_case_id FROM crs5_oltp.dbo.ca_case WHERE $wCnsmr)"}
+Step-dmo_Delete @{Order=39; TableName='ca_case'; WhereClause=$wCnsmr}
+
+# -- cmpgn chain (FK: dialer_trnsctn_log -> cmpgn_trnsctn_log -> cnsmr, cmpgn_cache -> cnsmr_Phn) --
+
+Step-dmo_Delete @{Order=40; TableName='dialer_trnsctn_log'; WhereClause="cmpgn_trnsctn_log_id IN (SELECT cmpgn_trnsctn_log_id FROM crs5_oltp.dbo.cmpgn_trnsctn_log WHERE $wCnsmr)"}
+Step-dmo_Delete @{Order=41; TableName='cmpgn_trnsctn_log'; WhereClause=$wCnsmr}
+Step-dmo_Delete @{Order=42; TableName='cmpgn_cache'; WhereClause=$wCnsmr}
+Step-dmo_Delete @{Order=43; TableName='cnsmr_Phn'; WhereClause=$wCnsmr}
+
+# -- cnsmr_accnt_ar_log chain - contact log children BEFORE ar_log --
+
+Step-dmo_Delete @{Order=44; TableName='cnsmr_cntct_addrs_log'; WhereClause=$wCntctLog; PassDescription='via cntct_trnsctn_log'}
+Step-dmo_Delete @{Order=45; TableName='cnsmr_cntct_phn_log'; WhereClause=$wCntctLog; PassDescription='via cntct_trnsctn_log'}
+Step-dmo_Delete @{Order=46; TableName='cnsmr_cntct_email_log'; WhereClause=$wCntctLog; PassDescription='via cntct_trnsctn_log'}
+Step-dmo_Delete @{Order=47; TableName='cnsmr_cntct_trnsctn_log'; WhereClause=$wCnsmr}
+Step-dmo_Delete @{Order=48; TableName='cnsmr_task_itm_cnsmr_accnt_ar_log_assctn'; WhereClause=$wArLog}
+
+# -- agnt_crdtbl_actvty chain via ar_log - must clear before cnsmr_accnt_ar_log --
+
+Step-dmo_JoinDelete @{
     Order = 49; TableName = 'agnt_crdtbl_actvty_spprssn'
     DeleteStatement = "DELETE acas FROM crs5_oltp.dbo.agnt_crdtbl_actvty_spprssn acas JOIN crs5_oltp.dbo.agnt_crdtbl_actvty aca ON acas.agnt_crdtbl_actvty_id = aca.agnt_crdtbl_actvty_id WHERE aca.cnsmr_accnt_ar_log_id IN (SELECT cnsmr_accnt_ar_log_id FROM #shell_ar_log_ids)"
     CountQuery = "SELECT COUNT(*) AS row_count FROM crs5_oltp.dbo.agnt_crdtbl_actvty_spprssn acas JOIN crs5_oltp.dbo.agnt_crdtbl_actvty aca ON acas.agnt_crdtbl_actvty_id = aca.agnt_crdtbl_actvty_id WHERE aca.cnsmr_accnt_ar_log_id IN (SELECT cnsmr_accnt_ar_log_id FROM #shell_ar_log_ids)"
     PassDescription = 'Pass 1: via ar_log'
 }
 
-Step-JoinDelete @{
+Step-dmo_JoinDelete @{
     Order = 50; TableName = 'agnt_crdtbl_actvty_crdt_assctn'
     DeleteStatement = "DELETE acac FROM crs5_oltp.dbo.agnt_crdtbl_actvty_crdt_assctn acac JOIN crs5_oltp.dbo.agnt_crdtbl_actvty aca ON acac.agnt_crdtbl_actvty_id = aca.agnt_crdtbl_actvty_id WHERE aca.cnsmr_accnt_ar_log_id IN (SELECT cnsmr_accnt_ar_log_id FROM #shell_ar_log_ids)"
     CountQuery = "SELECT COUNT(*) AS row_count FROM crs5_oltp.dbo.agnt_crdtbl_actvty_crdt_assctn acac JOIN crs5_oltp.dbo.agnt_crdtbl_actvty aca ON acac.agnt_crdtbl_actvty_id = aca.agnt_crdtbl_actvty_id WHERE aca.cnsmr_accnt_ar_log_id IN (SELECT cnsmr_accnt_ar_log_id FROM #shell_ar_log_ids)"
     PassDescription = 'Pass 1: via ar_log'
 }
 
-Step-JoinDelete @{
+Step-dmo_JoinDelete @{
     Order = 51; TableName = 'agnt_crdtbl_actvty'
     DeleteStatement = "DELETE FROM crs5_oltp.dbo.agnt_crdtbl_actvty WHERE cnsmr_accnt_ar_log_id IN (SELECT cnsmr_accnt_ar_log_id FROM #shell_ar_log_ids)"
     CountQuery = "SELECT COUNT(*) AS row_count FROM crs5_oltp.dbo.agnt_crdtbl_actvty WHERE cnsmr_accnt_ar_log_id IN (SELECT cnsmr_accnt_ar_log_id FROM #shell_ar_log_ids)"
     PassDescription = 'Pass 1: via ar_log'
 }
 
-Step-Delete @{Order=52; TableName='crdtr_srvc_evnt'; WhereClause=$wCnsmr; PassDescription='before ar_log (FK dependency)'}
-Step-Delete @{Order=53; TableName='cnsmr_accnt_ar_log'; WhereClause=$wArLog}
+Step-dmo_Delete @{Order=52; TableName='crdtr_srvc_evnt'; WhereClause=$wCnsmr; PassDescription='before ar_log (FK dependency)'}
+Step-dmo_Delete @{Order=53; TableName='cnsmr_accnt_ar_log'; WhereClause=$wArLog}
 
-# ── cnsmr_task_itm (must come after ar_log association at 48) ──
-Step-Delete @{Order=54; TableName='cnsmr_task_itm'; WhereClause=$wCnsmr}
+# -- cnsmr_task_itm (must come after ar_log association at 48) --
 
-# ── invc_crrctn chain (FK: dtl children → parent → cnsmr) ──
-Step-Delete @{Order=55; TableName='invc_crrctn_dtl_stgng'; WhereClause="invc_crrctn_trnsctn_stgng_id IN (SELECT invc_crrctn_trnsctn_stgng_id FROM crs5_oltp.dbo.invc_crrctn_trnsctn_stgng WHERE $wCnsmr)"}
-Step-Delete @{Order=56; TableName='invc_crrctn_trnsctn_stgng'; WhereClause=$wCnsmr}
-Step-Delete @{Order=57; TableName='invc_crrctn_dtl'; WhereClause="invc_crrctn_trnsctn_id IN (SELECT invc_crrctn_trnsctn_id FROM crs5_oltp.dbo.invc_crrctn_trnsctn WHERE $wCnsmr)"}
-Step-Delete @{Order=58; TableName='invc_crrctn_trnsctn'; WhereClause=$wCnsmr}
+Step-dmo_Delete @{Order=54; TableName='cnsmr_task_itm'; WhereClause=$wCnsmr}
 
-# ── jdgmnt chain (FK: jdgmnt_addtnl_info → jdgmnt → cnsmr) ──
-Step-Delete @{Order=59; TableName='jdgmnt_addtnl_info'; WhereClause="jdgmnt_id IN (SELECT jdgmnt_id FROM crs5_oltp.dbo.jdgmnt WHERE $wCnsmr)"}
-Step-Delete @{Order=60; TableName='jdgmnt'; WhereClause=$wCnsmr}
+# -- invc_crrctn chain (FK: dtl children -> parent -> cnsmr) --
 
-# ── Rltd_Prsn chain (FK: rltd_prsn_tag → Rltd_Prsn → cnsmr) ──
-Step-Delete @{Order=61; TableName='rltd_prsn_tag'; WhereClause="rltd_prsn_id IN (SELECT rltd_prsn_id FROM crs5_oltp.dbo.Rltd_Prsn WHERE $wCnsmr)"}
-Step-Delete @{Order=62; TableName='Rltd_Prsn'; WhereClause=$wCnsmr}
+Step-dmo_Delete @{Order=55; TableName='invc_crrctn_dtl_stgng'; WhereClause="invc_crrctn_trnsctn_stgng_id IN (SELECT invc_crrctn_trnsctn_stgng_id FROM crs5_oltp.dbo.invc_crrctn_trnsctn_stgng WHERE $wCnsmr)"}
+Step-dmo_Delete @{Order=56; TableName='invc_crrctn_trnsctn_stgng'; WhereClause=$wCnsmr}
+Step-dmo_Delete @{Order=57; TableName='invc_crrctn_dtl'; WhereClause="invc_crrctn_trnsctn_id IN (SELECT invc_crrctn_trnsctn_id FROM crs5_oltp.dbo.invc_crrctn_trnsctn WHERE $wCnsmr)"}
+Step-dmo_Delete @{Order=58; TableName='invc_crrctn_trnsctn'; WhereClause=$wCnsmr}
 
-# ── cnsmr_chck_rqst chain (FK: children → cnsmr_chck_rqst → cnsmr) ──
-Step-Delete @{Order=63; TableName='cnsmr_accnt_bckt_chck_rqst'; WhereClause="cnsmr_chck_rqst_id IN (SELECT cnsmr_chck_rqst_id FROM crs5_oltp.dbo.cnsmr_chck_rqst WHERE $wCnsmr)"}
-Step-Delete @{Order=64; TableName='cnsmr_chck_btch_log'; WhereClause="cnsmr_chck_rqst_id IN (SELECT cnsmr_chck_rqst_id FROM crs5_oltp.dbo.cnsmr_chck_rqst WHERE $wCnsmr)"}
-Step-Delete @{Order=65; TableName='cnsmr_chck_rqst'; WhereClause=$wCnsmr}
+# -- jdgmnt chain (FK: jdgmnt_addtnl_info -> jdgmnt -> cnsmr) --
 
-# ── notice_rqst (must come before schdld_pymnt_instnc which has FK to notice_rqst) ──
-Step-Delete @{Order=66; TableName='notice_rqst'; WhereClause=$wCnsmr}
+Step-dmo_Delete @{Order=59; TableName='jdgmnt_addtnl_info'; WhereClause="jdgmnt_id IN (SELECT jdgmnt_id FROM crs5_oltp.dbo.jdgmnt WHERE $wCnsmr)"}
+Step-dmo_Delete @{Order=60; TableName='jdgmnt'; WhereClause=$wCnsmr}
 
-# ── sttlmnt_offr chain — must come before cnsmr_pymnt_instrmnt AND schdld_pymnt_smmry ──
-Step-Delete @{Order=67; TableName='sttlmnt_offr_accnt_assctn'; WhereClause="sttlmnt_offr_id IN (SELECT sttlmnt_offr_id FROM crs5_oltp.dbo.sttlmnt_offr WHERE $wCnsmr)"}
-Step-Delete @{Order=68; TableName='sttlmnt_offr_systm_dtl'; WhereClause="sttlmnt_offr_id IN (SELECT sttlmnt_offr_id FROM crs5_oltp.dbo.sttlmnt_offr WHERE $wCnsmr)"}
-Step-Delete @{Order=69; TableName='sttlmnt_offr'; WhereClause=$wCnsmr}
+# -- Rltd_Prsn chain (FK: rltd_prsn_tag -> Rltd_Prsn -> cnsmr) --
 
-# ── epp chain (FK: children → epp_pymnt_typ_cnfg → cnsmr_pymnt_instrmnt) ──
-Step-Delete @{Order=70; TableName='epp_cmmnctn_log'; WhereClause="epp_pymnt_typ_cnfg_id IN (SELECT epp_pymnt_typ_cnfg_id FROM crs5_oltp.dbo.epp_pymnt_typ_cnfg WHERE $wInstrmnt)"}
-Step-Delete @{Order=71; TableName='epp_vrfctn_rspns'; WhereClause="epp_pymnt_typ_cnfg_id IN (SELECT epp_pymnt_typ_cnfg_id FROM crs5_oltp.dbo.epp_pymnt_typ_cnfg WHERE $wInstrmnt)"}
-Step-Delete @{Order=72; TableName='epp_pymnt_typ_cnfg'; WhereClause=$wInstrmnt}
-Step-Delete @{Order=73; TableName='epp_pymnt_rspns'; WhereClause=$wCnsmr}
+Step-dmo_Delete @{Order=61; TableName='rltd_prsn_tag'; WhereClause="rltd_prsn_id IN (SELECT rltd_prsn_id FROM crs5_oltp.dbo.Rltd_Prsn WHERE $wCnsmr)"}
+Step-dmo_Delete @{Order=62; TableName='Rltd_Prsn'; WhereClause=$wCnsmr}
 
-# ── cpm_pm_assctn (FK to both cnsmr_pymnt_instrmnt AND cnsmr_pymnt_mthd) ──
-Step-Delete @{Order=74; TableName='cpm_pm_assctn'; WhereClause=$wInstrmnt}
+# -- cnsmr_chck_rqst chain (FK: children -> cnsmr_chck_rqst -> cnsmr) --
 
-# ── Scheduled payment children (before schdld_pymnt_instnc) ──
-Step-Delete @{Order=75; TableName='pymnt_schdl_notice_rqst_assctn'; WhereClause="schdld_pymnt_instnc_id IN (SELECT schdld_pymnt_instnc_id FROM crs5_oltp.dbo.schdld_pymnt_instnc WHERE $wSmmry)"}
-Step-Delete @{Order=76; TableName='schdld_pymnt_cnsmr_accnt_assctn'; WhereClause=$wSmmry; PassDescription='via smmry'}
+Step-dmo_Delete @{Order=63; TableName='cnsmr_accnt_bckt_chck_rqst'; WhereClause="cnsmr_chck_rqst_id IN (SELECT cnsmr_chck_rqst_id FROM crs5_oltp.dbo.cnsmr_chck_rqst WHERE $wCnsmr)"}
+Step-dmo_Delete @{Order=64; TableName='cnsmr_chck_btch_log'; WhereClause="cnsmr_chck_rqst_id IN (SELECT cnsmr_chck_rqst_id FROM crs5_oltp.dbo.cnsmr_chck_rqst WHERE $wCnsmr)"}
+Step-dmo_Delete @{Order=65; TableName='cnsmr_chck_rqst'; WhereClause=$wCnsmr}
 
-# ── Agent credit chain [EXCL] — must clear before cnsmr_pymnt_jrnl ──
+# -- notice_rqst (must come before schdld_pymnt_instnc which has FK to notice_rqst) --
+
+Step-dmo_Delete @{Order=66; TableName='notice_rqst'; WhereClause=$wCnsmr}
+
+# -- sttlmnt_offr chain - must come before cnsmr_pymnt_instrmnt AND schdld_pymnt_smmry --
+
+Step-dmo_Delete @{Order=67; TableName='sttlmnt_offr_accnt_assctn'; WhereClause="sttlmnt_offr_id IN (SELECT sttlmnt_offr_id FROM crs5_oltp.dbo.sttlmnt_offr WHERE $wCnsmr)"}
+Step-dmo_Delete @{Order=68; TableName='sttlmnt_offr_systm_dtl'; WhereClause="sttlmnt_offr_id IN (SELECT sttlmnt_offr_id FROM crs5_oltp.dbo.sttlmnt_offr WHERE $wCnsmr)"}
+Step-dmo_Delete @{Order=69; TableName='sttlmnt_offr'; WhereClause=$wCnsmr}
+
+# -- epp chain (FK: children -> epp_pymnt_typ_cnfg -> cnsmr_pymnt_instrmnt) --
+
+Step-dmo_Delete @{Order=70; TableName='epp_cmmnctn_log'; WhereClause="epp_pymnt_typ_cnfg_id IN (SELECT epp_pymnt_typ_cnfg_id FROM crs5_oltp.dbo.epp_pymnt_typ_cnfg WHERE $wInstrmnt)"}
+Step-dmo_Delete @{Order=71; TableName='epp_vrfctn_rspns'; WhereClause="epp_pymnt_typ_cnfg_id IN (SELECT epp_pymnt_typ_cnfg_id FROM crs5_oltp.dbo.epp_pymnt_typ_cnfg WHERE $wInstrmnt)"}
+Step-dmo_Delete @{Order=72; TableName='epp_pymnt_typ_cnfg'; WhereClause=$wInstrmnt}
+Step-dmo_Delete @{Order=73; TableName='epp_pymnt_rspns'; WhereClause=$wCnsmr}
+
+# -- cpm_pm_assctn (FK to both cnsmr_pymnt_instrmnt AND cnsmr_pymnt_mthd) --
+
+Step-dmo_Delete @{Order=74; TableName='cpm_pm_assctn'; WhereClause=$wInstrmnt}
+
+# -- Scheduled payment children (before schdld_pymnt_instnc) --
+
+Step-dmo_Delete @{Order=75; TableName='pymnt_schdl_notice_rqst_assctn'; WhereClause="schdld_pymnt_instnc_id IN (SELECT schdld_pymnt_instnc_id FROM crs5_oltp.dbo.schdld_pymnt_instnc WHERE $wSmmry)"}
+Step-dmo_Delete @{Order=76; TableName='schdld_pymnt_cnsmr_accnt_assctn'; WhereClause=$wSmmry; PassDescription='via smmry'}
+
+# -- Agent credit chain [EXCL] - must clear before cnsmr_pymnt_jrnl --
+
 # agnt_crdt has FK on cnsmr_pymnt_jrnl_id
-Step-Delete @{Order=77; TableName='agnt_crdt_spprssn'; WhereClause="agnt_crdt_id IN (SELECT agnt_crdt_id FROM crs5_oltp.dbo.agnt_crdt WHERE $wJrnl)"; PassDescription='[EXCL] via pymnt_jrnl'}
-Step-Delete @{Order=78; TableName='agnt_crdtbl_actvty_crdt_assctn'; WhereClause="agnt_crdt_id IN (SELECT agnt_crdt_id FROM crs5_oltp.dbo.agnt_crdt WHERE $wJrnl)"; PassDescription='[EXCL] Pass 1: via pymnt_jrnl'}
-Step-Delete @{Order=79; TableName='agnt_crdt'; WhereClause=$wJrnl; PassDescription='[EXCL] via pymnt_jrnl'}
+Step-dmo_Delete @{Order=77; TableName='agnt_crdt_spprssn'; WhereClause="agnt_crdt_id IN (SELECT agnt_crdt_id FROM crs5_oltp.dbo.agnt_crdt WHERE $wJrnl)"; PassDescription='[EXCL] via pymnt_jrnl'}
+Step-dmo_Delete @{Order=78; TableName='agnt_crdtbl_actvty_crdt_assctn'; WhereClause="agnt_crdt_id IN (SELECT agnt_crdt_id FROM crs5_oltp.dbo.agnt_crdt WHERE $wJrnl)"; PassDescription='[EXCL] Pass 1: via pymnt_jrnl'}
+Step-dmo_Delete @{Order=79; TableName='agnt_crdt'; WhereClause=$wJrnl; PassDescription='[EXCL] via pymnt_jrnl'}
 
-# ── Payment journal children (must clear before cnsmr_pymnt_jrnl) ──
-Step-Delete @{Order=80; TableName='cnsmr_chck_trnsctn'; WhereClause=$wJrnl; PassDescription='via pymnt_jrnl'}
+# -- Payment journal children (must clear before cnsmr_pymnt_jrnl) --
 
-Step-JoinDelete @{
+Step-dmo_Delete @{Order=80; TableName='cnsmr_chck_trnsctn'; WhereClause=$wJrnl; PassDescription='via pymnt_jrnl'}
+
+Step-dmo_JoinDelete @{
     Order = 81; TableName = 'cpj_rvrsl_assctn'
     DeleteStatement = "DELETE FROM crs5_oltp.dbo.cpj_rvrsl_assctn WHERE cnsmr_pymnt_jrnl_id IN (SELECT cnsmr_pymnt_jrnl_id FROM #shell_pymnt_jrnl_ids)"
     CountQuery = "SELECT COUNT(*) AS row_count FROM crs5_oltp.dbo.cpj_rvrsl_assctn WHERE cnsmr_pymnt_jrnl_id IN (SELECT cnsmr_pymnt_jrnl_id FROM #shell_pymnt_jrnl_ids)"
@@ -1569,176 +1077,192 @@ Step-JoinDelete @{
 }
 
 # cnsmr_pymnt_jrnl_schdld_pymnt_instnc: FK to BOTH cnsmr_pymnt_jrnl AND schdld_pymnt_instnc
-Step-JoinDelete @{
+Step-dmo_JoinDelete @{
     Order = 82; TableName = 'cnsmr_pymnt_jrnl_schdld_pymnt_instnc'
     DeleteStatement = "DELETE FROM crs5_oltp.dbo.cnsmr_pymnt_jrnl_schdld_pymnt_instnc WHERE cnsmr_pymnt_jrnl_id IN (SELECT cnsmr_pymnt_jrnl_id FROM #shell_pymnt_jrnl_ids)"
     CountQuery = "SELECT COUNT(*) AS row_count FROM crs5_oltp.dbo.cnsmr_pymnt_jrnl_schdld_pymnt_instnc WHERE cnsmr_pymnt_jrnl_id IN (SELECT cnsmr_pymnt_jrnl_id FROM #shell_pymnt_jrnl_ids)"
     PassDescription = 'Pass 1: via pymnt_jrnl'
 }
 
-Step-JoinDelete @{
+Step-dmo_JoinDelete @{
     Order = 83; TableName = 'cnsmr_pymnt_jrnl_schdld_pymnt_instnc'
     DeleteStatement = "DELETE FROM crs5_oltp.dbo.cnsmr_pymnt_jrnl_schdld_pymnt_instnc WHERE schdld_pymnt_instnc_id IN (SELECT schdld_pymnt_instnc_id FROM crs5_oltp.dbo.schdld_pymnt_instnc WHERE schdld_pymnt_smmry_id IN (SELECT schdld_pymnt_smmry_id FROM #shell_smmry_ids))"
     CountQuery = "SELECT COUNT(*) AS row_count FROM crs5_oltp.dbo.cnsmr_pymnt_jrnl_schdld_pymnt_instnc WHERE schdld_pymnt_instnc_id IN (SELECT schdld_pymnt_instnc_id FROM crs5_oltp.dbo.schdld_pymnt_instnc WHERE schdld_pymnt_smmry_id IN (SELECT schdld_pymnt_smmry_id FROM #shell_smmry_ids))"
     PassDescription = 'Pass 2: via smmry'
 }
 
-# ── cnsmr_pymnt_jrnl — all children now cleared ──
-Step-Delete @{Order=84; TableName='cnsmr_pymnt_jrnl'; WhereClause=$wCnsmr}
+# -- cnsmr_pymnt_jrnl - all children now cleared --
 
-# ── schdld_pymnt_instnc — cnsmr_pymnt_jrnl_schdld_pymnt_instnc cleared above ──
-Step-Delete @{Order=85; TableName='schdld_pymnt_instnc'; WhereClause=$wSmmry; PassDescription='via smmry'}
+Step-dmo_Delete @{Order=84; TableName='cnsmr_pymnt_jrnl'; WhereClause=$wCnsmr}
 
-# ── Suspense: NULL resolved cross-consumer payment journal references ──
+# -- schdld_pymnt_instnc - cnsmr_pymnt_jrnl_schdld_pymnt_instnc cleared above --
+
+Step-dmo_Delete @{Order=85; TableName='schdld_pymnt_instnc'; WhereClause=$wSmmry; PassDescription='via smmry'}
+
+# -- Suspense: NULL resolved cross-consumer payment journal references --
+
 # When consumer A merges into consumer B, the payment journal moves to B but the
 # sspns_cnsmr_imprt_trnsctn stays on A. The FK reference from B's cnsmr_pymnt_jrnl
 # back to A's suspense record is a historical breadcrumb. For resolved suspense
 # (status 3=RESOLVED, 5=RESOLVED_AS_REFUND, 7=RESOLVED_AS_ESCHEAT, 10=MULTI_RESOLVED),
 # we NULL the reference to allow deletion. Unresolved cross-consumer suspense is
 # caught by the exclusion check and never reaches this point.
-Step-Update @{
+Step-dmo_Update @{
     Order = 86; TableName = 'cnsmr_pymnt_jrnl'
     UpdateStatement = "UPDATE cpj SET cpj.sspns_cnsmr_imprt_trnsctn_id = NULL FROM crs5_oltp.dbo.cnsmr_pymnt_jrnl cpj WHERE cpj.sspns_cnsmr_imprt_trnsctn_id IN (SELECT sci.sspns_cnsmr_imprt_trnsctn_id FROM crs5_oltp.dbo.sspns_cnsmr_imprt_trnsctn sci INNER JOIN crs5_oltp.dbo.sspns_trnsctn_cnsmr_idntfr stci ON sci.sspns_trnsctn_cnsmr_idntfr_id = stci.sspns_trnsctn_cnsmr_idntfr_id WHERE stci.cnsmr_id IN (SELECT cnsmr_id FROM #shell_batch_consumers) AND sci.sspns_trnsctn_stts_cd IN (3, 5, 7, 10))"
     CountQuery = "SELECT COUNT(*) AS row_count FROM crs5_oltp.dbo.cnsmr_pymnt_jrnl cpj WHERE cpj.sspns_cnsmr_imprt_trnsctn_id IN (SELECT sci.sspns_cnsmr_imprt_trnsctn_id FROM crs5_oltp.dbo.sspns_cnsmr_imprt_trnsctn sci INNER JOIN crs5_oltp.dbo.sspns_trnsctn_cnsmr_idntfr stci ON sci.sspns_trnsctn_cnsmr_idntfr_id = stci.sspns_trnsctn_cnsmr_idntfr_id WHERE stci.cnsmr_id IN (SELECT cnsmr_id FROM #shell_batch_consumers) AND sci.sspns_trnsctn_stts_cd IN (3, 5, 7, 10))"
     PassDescription = 'NULL resolved suspense refs on merged consumers'
 }
 
-# ── Suspense chain — must come after cnsmr_pymnt_jrnl (which has FK to sspns_cnsmr_imprt_trnsctn) ──
-# Pass 1: via payment instrument
-Step-Delete @{Order=87; TableName='sspns_cnsmr_trnsctn_log'; WhereClause="sspns_cnsmr_imprt_trnsctn_id IN (SELECT sspns_cnsmr_imprt_trnsctn_id FROM crs5_oltp.dbo.sspns_cnsmr_imprt_trnsctn WHERE $wInstrmnt)"; PassDescription='Pass 1: via pymnt_instrmnt'}
+# -- Suspense chain - must come after cnsmr_pymnt_jrnl (which has FK to sspns_cnsmr_imprt_trnsctn) --
 
-Step-JoinDelete @{
+# Pass 1: via payment instrument
+Step-dmo_Delete @{Order=87; TableName='sspns_cnsmr_trnsctn_log'; WhereClause="sspns_cnsmr_imprt_trnsctn_id IN (SELECT sspns_cnsmr_imprt_trnsctn_id FROM crs5_oltp.dbo.sspns_cnsmr_imprt_trnsctn WHERE $wInstrmnt)"; PassDescription='Pass 1: via pymnt_instrmnt'}
+
+Step-dmo_JoinDelete @{
     Order = 88; TableName = 'sspns_cnsmr_imprt_trnsctn'
     DeleteStatement = "DELETE FROM crs5_oltp.dbo.sspns_cnsmr_imprt_trnsctn WHERE cnsmr_pymnt_instrmnt_id IN (SELECT cnsmr_pymnt_instrmnt_id FROM #shell_pymnt_instrmnt_ids)"
     CountQuery = "SELECT COUNT(*) AS row_count FROM crs5_oltp.dbo.sspns_cnsmr_imprt_trnsctn WHERE cnsmr_pymnt_instrmnt_id IN (SELECT cnsmr_pymnt_instrmnt_id FROM #shell_pymnt_instrmnt_ids)"
     PassDescription = 'Pass 1: via pymnt_instrmnt'
 }
 
-# Pass 2: via sspns_trnsctn_cnsmr_idntfr — catches rows with NULL cnsmr_pymnt_instrmnt_id
-Step-Delete @{Order=89; TableName='sspns_cnsmr_trnsctn_log'; WhereClause="sspns_cnsmr_imprt_trnsctn_id IN (SELECT sci.sspns_cnsmr_imprt_trnsctn_id FROM crs5_oltp.dbo.sspns_cnsmr_imprt_trnsctn sci INNER JOIN crs5_oltp.dbo.sspns_trnsctn_cnsmr_idntfr stci ON sci.sspns_trnsctn_cnsmr_idntfr_id = stci.sspns_trnsctn_cnsmr_idntfr_id WHERE stci.cnsmr_id IN (SELECT cnsmr_id FROM #shell_batch_consumers))"; PassDescription='Pass 2: via sspns_trnsctn_cnsmr_idntfr'}
+# Pass 2: via sspns_trnsctn_cnsmr_idntfr - catches rows with NULL cnsmr_pymnt_instrmnt_id
+Step-dmo_Delete @{Order=89; TableName='sspns_cnsmr_trnsctn_log'; WhereClause="sspns_cnsmr_imprt_trnsctn_id IN (SELECT sci.sspns_cnsmr_imprt_trnsctn_id FROM crs5_oltp.dbo.sspns_cnsmr_imprt_trnsctn sci INNER JOIN crs5_oltp.dbo.sspns_trnsctn_cnsmr_idntfr stci ON sci.sspns_trnsctn_cnsmr_idntfr_id = stci.sspns_trnsctn_cnsmr_idntfr_id WHERE stci.cnsmr_id IN (SELECT cnsmr_id FROM #shell_batch_consumers))"; PassDescription='Pass 2: via sspns_trnsctn_cnsmr_idntfr'}
 
-Step-Delete @{Order=90; TableName='sspns_cnsmr_imprt_trnsctn'; WhereClause="sspns_trnsctn_cnsmr_idntfr_id IN (SELECT sspns_trnsctn_cnsmr_idntfr_id FROM crs5_oltp.dbo.sspns_trnsctn_cnsmr_idntfr WHERE $wCnsmr)"; PassDescription='Pass 2: via sspns_trnsctn_cnsmr_idntfr'}
+Step-dmo_Delete @{Order=90; TableName='sspns_cnsmr_imprt_trnsctn'; WhereClause="sspns_trnsctn_cnsmr_idntfr_id IN (SELECT sspns_trnsctn_cnsmr_idntfr_id FROM crs5_oltp.dbo.sspns_trnsctn_cnsmr_idntfr WHERE $wCnsmr)"; PassDescription='Pass 2: via sspns_trnsctn_cnsmr_idntfr'}
 
-# ── Agent creditable activity chain [EXCL] — Pass 2: via direct cnsmr_id ──
-Step-JoinDelete @{
+# -- Agent creditable activity chain [EXCL] - Pass 2: via direct cnsmr_id --
+
+Step-dmo_JoinDelete @{
     Order = 91; TableName = 'agnt_crdtbl_actvty_spprssn'
     DeleteStatement = "DELETE acas FROM crs5_oltp.dbo.agnt_crdtbl_actvty_spprssn acas JOIN crs5_oltp.dbo.agnt_crdtbl_actvty aca ON acas.agnt_crdtbl_actvty_id = aca.agnt_crdtbl_actvty_id WHERE aca.cnsmr_id IN (SELECT cnsmr_id FROM #shell_batch_consumers)"
     CountQuery = "SELECT COUNT(*) AS row_count FROM crs5_oltp.dbo.agnt_crdtbl_actvty_spprssn acas JOIN crs5_oltp.dbo.agnt_crdtbl_actvty aca ON acas.agnt_crdtbl_actvty_id = aca.agnt_crdtbl_actvty_id WHERE aca.cnsmr_id IN (SELECT cnsmr_id FROM #shell_batch_consumers)"
     PassDescription = '[EXCL] Pass 2: via direct cnsmr_id'
 }
 
-Step-JoinDelete @{
+Step-dmo_JoinDelete @{
     Order = 92; TableName = 'agnt_crdtbl_actvty_crdt_assctn'
     DeleteStatement = "DELETE acac FROM crs5_oltp.dbo.agnt_crdtbl_actvty_crdt_assctn acac JOIN crs5_oltp.dbo.agnt_crdtbl_actvty aca ON acac.agnt_crdtbl_actvty_id = aca.agnt_crdtbl_actvty_id WHERE aca.cnsmr_id IN (SELECT cnsmr_id FROM #shell_batch_consumers)"
     CountQuery = "SELECT COUNT(*) AS row_count FROM crs5_oltp.dbo.agnt_crdtbl_actvty_crdt_assctn acac JOIN crs5_oltp.dbo.agnt_crdtbl_actvty aca ON acac.agnt_crdtbl_actvty_id = aca.agnt_crdtbl_actvty_id WHERE aca.cnsmr_id IN (SELECT cnsmr_id FROM #shell_batch_consumers)"
     PassDescription = '[EXCL] Pass 2: via direct cnsmr_id'
 }
 
-Step-Delete @{Order=93; TableName='agnt_crdtbl_actvty'; WhereClause=$wCnsmr; PassDescription='[EXCL] Pass 2: via direct cnsmr_id'}
+Step-dmo_Delete @{Order=93; TableName='agnt_crdtbl_actvty'; WhereClause=$wCnsmr; PassDescription='[EXCL] Pass 2: via direct cnsmr_id'}
 
-# ── cnsmr_pymnt_instrmnt (now safe — ALL FK children cleared above) ──
-Step-Delete @{Order=94; TableName='cnsmr_pymnt_instrmnt'; WhereClause=$wCnsmr; PassDescription='Pass 1: direct'}
+# -- cnsmr_pymnt_instrmnt (now safe - ALL FK children cleared above) --
 
-Step-JoinDelete @{
+Step-dmo_Delete @{Order=94; TableName='cnsmr_pymnt_instrmnt'; WhereClause=$wCnsmr; PassDescription='Pass 1: direct'}
+
+Step-dmo_JoinDelete @{
     Order = 95; TableName = 'cnsmr_pymnt_instrmnt'
     DeleteStatement = "DELETE FROM crs5_oltp.dbo.cnsmr_pymnt_instrmnt WHERE cnsmr_pymnt_instrmnt_id IN (SELECT cnsmr_pymnt_instrmnt_id FROM crs5_oltp.dbo.cnsmr_pymnt_jrnl WHERE cnsmr_id IN (SELECT cnsmr_id FROM #shell_batch_consumers))"
     CountQuery = "SELECT COUNT(*) AS row_count FROM crs5_oltp.dbo.cnsmr_pymnt_instrmnt WHERE cnsmr_pymnt_instrmnt_id IN (SELECT cnsmr_pymnt_instrmnt_id FROM crs5_oltp.dbo.cnsmr_pymnt_jrnl WHERE cnsmr_id IN (SELECT cnsmr_id FROM #shell_batch_consumers))"
     PassDescription = 'Pass 2: via pymnt_jrnl'
 }
 
-# ── cnsmr_pymnt_mthd (now safe — cpm_pm_assctn cleared at 74) ──
-Step-Delete @{Order=96; TableName='cnsmr_pymnt_mthd'; WhereClause=$wCnsmr}
+# -- cnsmr_pymnt_mthd (now safe - cpm_pm_assctn cleared at 74) --
 
-# ── sspns_trnsctn_cnsmr_idntfr (now safe — all suspense children cleared) ──
-Step-Delete @{Order=97; TableName='sspns_trnsctn_cnsmr_idntfr'; WhereClause=$wCnsmr}
+Step-dmo_Delete @{Order=96; TableName='cnsmr_pymnt_mthd'; WhereClause=$wCnsmr}
 
-# ── Agent credit chain Pass 2: via schdld_pymnt_smmry ──
-# agnt_crdt.cnsmr_pymnt_schdl_id FK to schdld_pymnt_smmry — must clear before smmry delete
-Step-Delete @{Order=98; TableName='agnt_crdt_spprssn'; WhereClause="agnt_crdt_id IN (SELECT agnt_crdt_id FROM crs5_oltp.dbo.agnt_crdt WHERE cnsmr_pymnt_schdl_id IN (SELECT schdld_pymnt_smmry_id FROM #shell_smmry_ids))"; PassDescription='[EXCL] Pass 2: via smmry'}
-Step-Delete @{Order=99; TableName='agnt_crdtbl_actvty_crdt_assctn'; WhereClause="agnt_crdt_id IN (SELECT agnt_crdt_id FROM crs5_oltp.dbo.agnt_crdt WHERE cnsmr_pymnt_schdl_id IN (SELECT schdld_pymnt_smmry_id FROM #shell_smmry_ids))"; PassDescription='[EXCL] Pass 2: via smmry'}
-Step-Delete @{Order=100; TableName='agnt_crdt'; WhereClause="cnsmr_pymnt_schdl_id IN (SELECT schdld_pymnt_smmry_id FROM #shell_smmry_ids)"; PassDescription='[EXCL] Pass 2: via smmry'}
+# -- sspns_trnsctn_cnsmr_idntfr (now safe - all suspense children cleared) --
 
-# ── agnt_crdtbl_actvty chain Pass 3: via schdld_pymnt_smmry ──
+Step-dmo_Delete @{Order=97; TableName='sspns_trnsctn_cnsmr_idntfr'; WhereClause=$wCnsmr}
+
+# -- Agent credit chain Pass 2: via schdld_pymnt_smmry --
+
+# agnt_crdt.cnsmr_pymnt_schdl_id FK to schdld_pymnt_smmry - must clear before smmry delete
+Step-dmo_Delete @{Order=98; TableName='agnt_crdt_spprssn'; WhereClause="agnt_crdt_id IN (SELECT agnt_crdt_id FROM crs5_oltp.dbo.agnt_crdt WHERE cnsmr_pymnt_schdl_id IN (SELECT schdld_pymnt_smmry_id FROM #shell_smmry_ids))"; PassDescription='[EXCL] Pass 2: via smmry'}
+Step-dmo_Delete @{Order=99; TableName='agnt_crdtbl_actvty_crdt_assctn'; WhereClause="agnt_crdt_id IN (SELECT agnt_crdt_id FROM crs5_oltp.dbo.agnt_crdt WHERE cnsmr_pymnt_schdl_id IN (SELECT schdld_pymnt_smmry_id FROM #shell_smmry_ids))"; PassDescription='[EXCL] Pass 2: via smmry'}
+Step-dmo_Delete @{Order=100; TableName='agnt_crdt'; WhereClause="cnsmr_pymnt_schdl_id IN (SELECT schdld_pymnt_smmry_id FROM #shell_smmry_ids)"; PassDescription='[EXCL] Pass 2: via smmry'}
+
+# -- agnt_crdtbl_actvty chain Pass 3: via schdld_pymnt_smmry --
+
 # agnt_crdtbl_actvty.cnsmr_pymnt_schdl_id FK to schdld_pymnt_smmry
-Step-JoinDelete @{
+Step-dmo_JoinDelete @{
     Order = 101; TableName = 'agnt_crdtbl_actvty_spprssn'
     DeleteStatement = "DELETE acas FROM crs5_oltp.dbo.agnt_crdtbl_actvty_spprssn acas JOIN crs5_oltp.dbo.agnt_crdtbl_actvty aca ON acas.agnt_crdtbl_actvty_id = aca.agnt_crdtbl_actvty_id WHERE aca.cnsmr_pymnt_schdl_id IN (SELECT schdld_pymnt_smmry_id FROM #shell_smmry_ids)"
     CountQuery = "SELECT COUNT(*) AS row_count FROM crs5_oltp.dbo.agnt_crdtbl_actvty_spprssn acas JOIN crs5_oltp.dbo.agnt_crdtbl_actvty aca ON acas.agnt_crdtbl_actvty_id = aca.agnt_crdtbl_actvty_id WHERE aca.cnsmr_pymnt_schdl_id IN (SELECT schdld_pymnt_smmry_id FROM #shell_smmry_ids)"
     PassDescription = '[EXCL] Pass 3: via smmry'
 }
 
-Step-JoinDelete @{
+Step-dmo_JoinDelete @{
     Order = 102; TableName = 'agnt_crdtbl_actvty_crdt_assctn'
     DeleteStatement = "DELETE acac FROM crs5_oltp.dbo.agnt_crdtbl_actvty_crdt_assctn acac JOIN crs5_oltp.dbo.agnt_crdtbl_actvty aca ON acac.agnt_crdtbl_actvty_id = aca.agnt_crdtbl_actvty_id WHERE aca.cnsmr_pymnt_schdl_id IN (SELECT schdld_pymnt_smmry_id FROM #shell_smmry_ids)"
     CountQuery = "SELECT COUNT(*) AS row_count FROM crs5_oltp.dbo.agnt_crdtbl_actvty_crdt_assctn acac JOIN crs5_oltp.dbo.agnt_crdtbl_actvty aca ON acac.agnt_crdtbl_actvty_id = aca.agnt_crdtbl_actvty_id WHERE aca.cnsmr_pymnt_schdl_id IN (SELECT schdld_pymnt_smmry_id FROM #shell_smmry_ids)"
     PassDescription = '[EXCL] Pass 3: via smmry'
 }
 
-Step-Delete @{Order=103; TableName='agnt_crdtbl_actvty'; WhereClause="cnsmr_pymnt_schdl_id IN (SELECT schdld_pymnt_smmry_id FROM #shell_smmry_ids)"; PassDescription='[EXCL] Pass 3: via smmry'}
+Step-dmo_Delete @{Order=103; TableName='agnt_crdtbl_actvty'; WhereClause="cnsmr_pymnt_schdl_id IN (SELECT schdld_pymnt_smmry_id FROM #shell_smmry_ids)"; PassDescription='[EXCL] Pass 3: via smmry'}
 
-# ── schdld_pymnt_smmry (now safe — all children cleared above) ──
-Step-Delete @{Order=104; TableName='schdld_pymnt_smmry'; WhereClause=$wSmmry}
+# -- schdld_pymnt_smmry (now safe - all children cleared above) --
 
-# ── Bankruptcy chain [EXCL] ──
-Step-Delete @{Order=105; TableName='bnkrptcy_addtnl_info'; WhereClause="bnkrptcy_id IN (SELECT bnkrptcy_id FROM crs5_oltp.dbo.bnkrptcy WHERE $wCnsmr)"; PassDescription='[EXCL]'}
-Step-Delete @{Order=106; TableName='bnkrptcy_pttnr'; WhereClause="bnkrptcy_id IN (SELECT bnkrptcy_id FROM crs5_oltp.dbo.bnkrptcy WHERE $wCnsmr)"; PassDescription='[EXCL]'}
-Step-Delete @{Order=107; TableName='bnkrptcy_trustee'; WhereClause="bnkrptcy_id IN (SELECT bnkrptcy_id FROM crs5_oltp.dbo.bnkrptcy WHERE $wCnsmr)"; PassDescription='[EXCL]'}
-Step-Delete @{Order=108; TableName='bnkrptcy'; WhereClause=$wCnsmr; PassDescription='[EXCL]'}
+Step-dmo_Delete @{Order=104; TableName='schdld_pymnt_smmry'; WhereClause=$wSmmry}
 
-# ── hc_payer_plan (direct cnsmr FK, no encntr dependency for shells) ──
-Step-Delete @{Order=109; TableName='hc_payer_plan'; WhereClause=$wCnsmr}
+# -- Bankruptcy chain [EXCL] --
 
-# ── TERMINAL: cnsmr record itself ──
-Step-Delete @{Order=110; TableName='cnsmr'; WhereClause=$wCnsmr}
+Step-dmo_Delete @{Order=105; TableName='bnkrptcy_addtnl_info'; WhereClause="bnkrptcy_id IN (SELECT bnkrptcy_id FROM crs5_oltp.dbo.bnkrptcy WHERE $wCnsmr)"; PassDescription='[EXCL]'}
+Step-dmo_Delete @{Order=106; TableName='bnkrptcy_pttnr'; WhereClause="bnkrptcy_id IN (SELECT bnkrptcy_id FROM crs5_oltp.dbo.bnkrptcy WHERE $wCnsmr)"; PassDescription='[EXCL]'}
+Step-dmo_Delete @{Order=107; TableName='bnkrptcy_trustee'; WhereClause="bnkrptcy_id IN (SELECT bnkrptcy_id FROM crs5_oltp.dbo.bnkrptcy WHERE $wCnsmr)"; PassDescription='[EXCL]'}
+Step-dmo_Delete @{Order=108; TableName='bnkrptcy'; WhereClause=$wCnsmr; PassDescription='[EXCL]'}
+
+# -- hc_payer_plan (direct cnsmr FK, no encntr dependency for shells) --
+
+Step-dmo_Delete @{Order=109; TableName='hc_payer_plan'; WhereClause=$wCnsmr}
+
+# -- TERMINAL: cnsmr record itself --
+
+Step-dmo_Delete @{Order=110; TableName='cnsmr'; WhereClause=$wCnsmr}
 Write-Log ""
 Write-Log "  Consumer-level deletion sequence complete" "SUCCESS"
 
-# ── Finalize batch log ──
-$batchStatus = if ($Script:TablesFailed -gt 0) { "Failed" } else { "Success" }
-$batchError = if ($Script:TablesFailed -gt 0) { "One or more tables failed during delete sequence" } else { $null }
-Update-BatchLogEntry -Status $batchStatus -ErrorMessage $batchError
+# -- Finalize batch log --
 
-# ── Update session counters ──
-$Script:SessionTotalDeleted += $Script:TotalDeleted
-$Script:SessionTotalConsumers += $Script:BatchConsumerIds.Count
-if ($batchStatus -eq 'Failed') { $Script:TotalBatchesFailed++ }
+$batchStatus = if ($script:dmo_TablesFailed -gt 0) { "Failed" } else { "Success" }
+$batchError = if ($script:dmo_TablesFailed -gt 0) { "One or more tables failed during delete sequence" } else { $null }
+Update-dmo_ShellBatchLogEntry -Status $batchStatus -ErrorMessage $batchError
 
-# ── Batch summary ──
-$batchDuration = (Get-Date) - $Script:BatchStartTime
-Write-Log "  Batch #$($Script:TotalBatchesRun): $($Script:BatchConsumerIds.Count) consumers, $($Script:TotalDeleted) rows, $([math]::Round($batchDuration.TotalSeconds, 1))s — $batchStatus" "INFO"
+# -- Update session counters --
 
-# ── Queue Teams alert on failure ──
-if ($batchStatus -eq 'Failed' -and $Script:AlertingEnabled) {
+$script:dmo_SessionTotalDeleted += $script:dmo_TotalDeleted
+$script:dmo_SessionTotalConsumers += $script:dmo_BatchConsumerIds.Count
+if ($batchStatus -eq 'Failed') { $script:dmo_TotalBatchesFailed++ }
+
+# -- Batch summary --
+
+$batchDuration = (Get-Date) - $script:dmo_BatchStartTime
+Write-Log "  Batch #$($script:dmo_TotalBatchesRun): $($script:dmo_BatchConsumerIds.Count) consumers, $($script:dmo_TotalDeleted) rows, $([math]::Round($batchDuration.TotalSeconds, 1))s - $batchStatus" "INFO"
+
+# -- Queue Teams alert on failure --
+
+if ($batchStatus -eq 'Failed' -and $script:dmo_AlertingEnabled) {
     Send-TeamsAlert -SourceModule 'DmOps' -AlertCategory 'WARNING' `
-        -Title '{{WARN}} Shell purge batch failed — will retry next cycle' `
-        -Message "**Batch:** #$($Script:TotalBatchesRun) (batch_id: $($Script:CurrentBatchId))`n**Target:** $($Script:TargetServer)`n**Tables Failed:** $($Script:TablesFailed)`n**Consumers in batch:** $($Script:BatchConsumerIds.Count)`n`nThese consumers remain in shell state and will be re-selected on the next run. No action needed unless failures persist.`n`nCheck ShellPurge_BatchDetail for batch_id $($Script:CurrentBatchId) for delete-step details." `
+        -Title '{{WARN}} Shell purge batch failed - will retry next cycle' `
+        -Message "**Batch:** #$($script:dmo_TotalBatchesRun) (batch_id: $($script:dmo_CurrentBatchId))`n**Target:** $($script:dmo_TargetServer)`n**Tables Failed:** $($script:dmo_TablesFailed)`n**Consumers in batch:** $($script:dmo_BatchConsumerIds.Count)`n`nThese consumers remain in shell state and will be re-selected on the next run. No action needed unless failures persist.`n`nCheck ShellPurge_BatchDetail for batch_id $($script:dmo_CurrentBatchId) for delete-step details." `
         -TriggerType 'Shell Purge Batch Failed' `
-        -TriggerValue "$($Script:CurrentBatchId)" | Out-Null
+        -TriggerValue "$($script:dmo_CurrentBatchId)" | Out-Null
 }
 elseif ($batchStatus -eq 'Failed') {
-    Write-Log "  Teams alert suppressed — alerting_enabled is off" "INFO"
+    Write-Log "  Teams alert suppressed - alerting_enabled is off" "INFO"
 }
 
-# ============================================================================
-# BATCH LOOP CONTINUATION CHECK
-# ============================================================================
+# -- BATCH LOOP CONTINUATION CHECK --
 
 if ($SingleBatch) {
-    Write-Log "  Single batch mode — exiting loop" "INFO"
+    Write-Log "  Single batch mode - exiting loop" "INFO"
     $continueProcessing = $false
 }
 elseif ($batchStatus -eq 'Failed') {
-    Write-Log "  Batch failed — stopping further processing" "ERROR"
+    Write-Log "  Batch failed - stopping further processing" "ERROR"
     $continueProcessing = $false
 }
-elseif (Test-ShellPurgeAbort) {
-    Write-Log "  Shell purge abort flag detected — stopping after batch completion" "WARN"
-    if ($Script:AlertingEnabled) {
-        $remainingResult = Invoke-TargetQuery -Query @"
+elseif (Test-dmo_ShellAbort) {
+    Write-Log "  Shell purge abort flag detected - stopping after batch completion" "WARN"
+    if ($script:dmo_AlertingEnabled) {
+        $remainingResult = Invoke-dmo_TargetQuery -Query @"
 SELECT COUNT(*) AS Remaining
 FROM crs5_oltp.dbo.cnsmr c
 LEFT JOIN crs5_oltp.dbo.cnsmr_accnt ca ON ca.cnsmr_id = c.cnsmr_id
-WHERE c.wrkgrp_id = $($Script:PurgeWorkgroupId) AND ca.cnsmr_id IS NULL
+WHERE c.wrkgrp_id = $($script:dmo_PurgeWorkgroupId) AND ca.cnsmr_id IS NULL
 "@
         $remainingCount = if ($remainingResult.Rows.Count -gt 0) { [int]$remainingResult.Rows[0].Remaining } else { 0 }
 
@@ -1749,35 +1273,35 @@ WHERE c.wrkgrp_id = $($Script:PurgeWorkgroupId) AND ca.cnsmr_id IS NULL
         $durationFriendly = "{0}h {1}m" -f [int]$sessionDuration.TotalHours, $sessionDuration.Minutes
         $alertDate = (Get-Date).ToString("MM/dd/yyyy")
         $alertMsg = @"
-**Target:** $($Script:TargetServer)
+**Target:** $($script:dmo_TargetServer)
 **Exit reason:** shell_purge_abort flag set in GlobalConfig
 
-**Shells purged this run:** $('{0:N0}' -f $Script:SessionTotalConsumers)
+**Shells purged this run:** $('{0:N0}' -f $script:dmo_SessionTotalConsumers)
 **Shells remaining:** $('{0:N0}' -f $remainingCount)
 **Designated exceptions (skipped):** $('{0:N0}' -f $exceptionsCount)
 
-**Batches run:** $($Script:TotalBatchesRun)
-**Batches failed:** $($Script:TotalBatchesFailed)
+**Batches run:** $($script:dmo_TotalBatchesRun)
+**Batches failed:** $($script:dmo_TotalBatchesFailed)
 **Run duration:** $durationFriendly
 "@
         Send-TeamsAlert -SourceModule 'DmOps' -AlertCategory 'WARNING' `
             -Title "Shell Purge Stopped - Abort Flag Set - $alertDate {{WARN}}" `
             -Message $alertMsg -Color 'warning' `
             -TriggerType 'shell_purge_aborted' `
-            -TriggerValue "$alertDate-$($Script:TotalBatchesRun)" | Out-Null
+            -TriggerValue "$alertDate-$($script:dmo_TotalBatchesRun)" | Out-Null
     }
     $continueProcessing = $false
 }
 else {
-    $nextScheduleValue = Get-ShellPurgeScheduleMode
+    $nextScheduleValue = Get-dmo_ShellScheduleMode
     if ($nextScheduleValue -eq 0) {
-        Write-Log "  Schedule: now in BLOCKED window — stopping" "INFO"
-        if ($Script:AlertingEnabled) {
-        $remainingResult = Invoke-TargetQuery -Query @"
+        Write-Log "  Schedule: now in BLOCKED window - stopping" "INFO"
+        if ($script:dmo_AlertingEnabled) {
+        $remainingResult = Invoke-dmo_TargetQuery -Query @"
 SELECT COUNT(*) AS Remaining
 FROM crs5_oltp.dbo.cnsmr c
 LEFT JOIN crs5_oltp.dbo.cnsmr_accnt ca ON ca.cnsmr_id = c.cnsmr_id
-WHERE c.wrkgrp_id = $($Script:PurgeWorkgroupId) AND ca.cnsmr_id IS NULL
+WHERE c.wrkgrp_id = $($script:dmo_PurgeWorkgroupId) AND ca.cnsmr_id IS NULL
 "@
         $remainingCount = if ($remainingResult.Rows.Count -gt 0) { [int]$remainingResult.Rows[0].Remaining } else { 0 }
 
@@ -1788,22 +1312,22 @@ WHERE c.wrkgrp_id = $($Script:PurgeWorkgroupId) AND ca.cnsmr_id IS NULL
             $durationFriendly = "{0}h {1}m" -f [int]$sessionDuration.TotalHours, $sessionDuration.Minutes
             $alertDate = (Get-Date).ToString("MM/dd/yyyy")
             $alertMsg = @"
-**Target:** $($Script:TargetServer)
+**Target:** $($script:dmo_TargetServer)
 **Exit reason:** Schedule transitioned to BLOCKED
 
-**Shells purged this run:** $('{0:N0}' -f $Script:SessionTotalConsumers)
+**Shells purged this run:** $('{0:N0}' -f $script:dmo_SessionTotalConsumers)
 **Shells remaining:** $('{0:N0}' -f $remainingCount)
 **Designated exceptions (skipped):** $('{0:N0}' -f $exceptionsCount)
 
-**Batches run:** $($Script:TotalBatchesRun)
-**Batches failed:** $($Script:TotalBatchesFailed)
+**Batches run:** $($script:dmo_TotalBatchesRun)
+**Batches failed:** $($script:dmo_TotalBatchesFailed)
 **Run duration:** $durationFriendly
 "@
             Send-TeamsAlert -SourceModule 'DmOps' -AlertCategory 'INFO' `
                 -Title "Shell Purge Complete - Scheduled Cutoff - $alertDate {{CHECK}}" `
                 -Message $alertMsg -Color 'good' `
                 -TriggerType 'shell_purge_complete_schedule' `
-                -TriggerValue "$alertDate-$($Script:TotalBatchesRun)" | Out-Null
+                -TriggerValue "$alertDate-$($script:dmo_TotalBatchesRun)" | Out-Null
         }
         $continueProcessing = $false
     }
@@ -1815,16 +1339,16 @@ WHERE c.wrkgrp_id = $($Script:PurgeWorkgroupId) AND ca.cnsmr_id IS NULL
               AND setting_name IN ('batch_size', 'batch_size_reduced') AND is_active = 1
 "@
         foreach ($cfg in $refreshConfig) {
-            if ($cfg.setting_name -eq 'batch_size')         { $Script:BatchSizeFull = [int]$cfg.setting_value }
-            if ($cfg.setting_name -eq 'batch_size_reduced') { $Script:BatchSizeReduced = [int]$cfg.setting_value }
+            if ($cfg.setting_name -eq 'batch_size')         { $script:dmo_BatchSizeFull = [int]$cfg.setting_value }
+            if ($cfg.setting_name -eq 'batch_size_reduced') { $script:dmo_BatchSizeReduced = [int]$cfg.setting_value }
         }
 
         $newMode = if ($nextScheduleValue -eq 1) { 'Full' } else { 'Reduced' }
-        $newBatchSize = if ($nextScheduleValue -eq 1) { $Script:BatchSizeFull } else { $Script:BatchSizeReduced }
+        $newBatchSize = if ($nextScheduleValue -eq 1) { $script:dmo_BatchSizeFull } else { $script:dmo_BatchSizeReduced }
 
-        if ($newMode -ne $Script:ScheduleMode -or $newBatchSize -ne $activeBatchSize) {
-            Write-Log "  Schedule/config update: $($Script:ScheduleMode) ($activeBatchSize) → $newMode ($newBatchSize)" "INFO"
-            $Script:ScheduleMode = $newMode
+        if ($newMode -ne $script:dmo_ScheduleMode -or $newBatchSize -ne $activeBatchSize) {
+            Write-Log "  Schedule/config update: $($script:dmo_ScheduleMode) ($activeBatchSize) -> $newMode ($newBatchSize)" "INFO"
+            $script:dmo_ScheduleMode = $newMode
             $activeBatchSize = $newBatchSize
         }
 
@@ -1832,53 +1356,45 @@ WHERE c.wrkgrp_id = $($Script:PurgeWorkgroupId) AND ca.cnsmr_id IS NULL
     }
 }
 
-}  # end while ($continueProcessing)
+}
 
-# ============================================================================
-# CLEANUP
-# ============================================================================
+# -- CLEANUP --
 
-Close-TargetConnection
+Close-dmo_TargetConnection
 
-# ============================================================================
-# SESSION SUMMARY
-# ============================================================================
+# -- SESSION SUMMARY --
 
 $scriptEnd = Get-Date
 $scriptDuration = $scriptEnd - $scriptStart
 $totalMs = [int]$scriptDuration.TotalMilliseconds
 
-Write-Host ""
-Write-Host "================================================================" -ForegroundColor Cyan
-Write-Host "  Session Summary" -ForegroundColor Cyan
-Write-Host "================================================================" -ForegroundColor Cyan
-Write-Host ""
+Write-ConsoleBanner "Session Summary"
 Write-Log "  Mode            : $(if (-not $script:XFActsExecute) { 'PREVIEW' } else { 'EXECUTE' })"
-Write-Log "  Target          : $($Script:TargetServer)"
-Write-Log "  Batches Run     : $($Script:TotalBatchesRun)"
-Write-Log "  Batches Failed  : $($Script:TotalBatchesFailed)"
-Write-Log "  Total Consumers : $($Script:SessionTotalConsumers)"
+Write-Log "  Target          : $($script:dmo_TargetServer)"
+Write-Log "  Batches Run     : $($script:dmo_TotalBatchesRun)"
+Write-Log "  Batches Failed  : $($script:dmo_TotalBatchesFailed)"
+Write-Log "  Total Consumers : $($script:dmo_SessionTotalConsumers)"
 if (-not $script:XFActsExecute) {
-    Write-Log "  Rows to Delete  : $($Script:SessionTotalDeleted)"
+    Write-Log "  Rows to Delete  : $($script:dmo_SessionTotalDeleted)"
 } else {
-    Write-Log "  Rows Deleted    : $($Script:SessionTotalDeleted)"
+    Write-Log "  Rows Deleted    : $($script:dmo_SessionTotalDeleted)"
 }
 Write-Log "  Duration        : $([math]::Round($scriptDuration.TotalSeconds, 1))s"
-Write-Host ""
+Write-Console
 
 if (-not $script:XFActsExecute) {
-    Write-Host "  *** PREVIEW MODE — No changes were made ***" -ForegroundColor Yellow
-    Write-Host "  Run with -Execute to perform actual deletions" -ForegroundColor Yellow
-    Write-Host ""
+    Write-Console "  *** PREVIEW MODE - No changes were made ***" 'Yellow'
+    Write-Console "  Run with -Execute to perform actual deletions" 'Yellow'
+    Write-Console
 }
 
 # Orchestrator callback
 if ($TaskId -gt 0) {
-    $finalStatus = if ($Script:TotalBatchesFailed -gt 0) { "FAILED" } else { "SUCCESS" }
-    $outputSummary = "Batches:$($Script:TotalBatchesRun) Failed:$($Script:TotalBatchesFailed) Consumers:$($Script:SessionTotalConsumers) Deleted:$($Script:SessionTotalDeleted)"
+    $finalStatus = if ($script:dmo_TotalBatchesFailed -gt 0) { "FAILED" } else { "SUCCESS" }
+    $outputSummary = "Batches:$($script:dmo_TotalBatchesRun) Failed:$($script:dmo_TotalBatchesFailed) Consumers:$($script:dmo_SessionTotalConsumers) Deleted:$($script:dmo_SessionTotalDeleted)"
     Complete-OrchestratorTask -TaskId $TaskId -ProcessId $ProcessId `
         -Status $finalStatus -DurationMs $totalMs `
         -Output $outputSummary
 }
 
-if ($Script:TotalBatchesFailed -gt 0) { exit 1 } else { exit 0 }
+if ($script:dmo_TotalBatchesFailed -gt 0) { exit 1 } else { exit 0 }
