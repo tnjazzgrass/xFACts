@@ -226,6 +226,7 @@ $LandingPageChromeCarveout = @(
    Prefix: (none)
    ============================================================================ #>
 
+# Drift code to human-readable description map for Add-DriftCode.
 $DriftDescriptions = [ordered]@{
     # Page shell codes (attached to HTML_FILE)
     'MALFORMED_DOCTYPE'                 = "The HTML document does not open with <!DOCTYPE html> on its own line in the required form."
@@ -5903,10 +5904,10 @@ foreach ($fileRec in $psFiles) {
     $script:CurrentFile         = $name
     $script:CurrentFullPath     = $fullPath
 
-    Write-Host "  Parsing $name ..." -NoNewline
+    Write-Console "  Parsing $name ..." -NoNewline
     $parsed = Invoke-HtmlPsParse -FilePath $fullPath
     if ($null -eq $parsed) {
-        Write-Host " FAILED" -ForegroundColor Red
+        Write-Console " FAILED" 'Red'
         continue
     }
 
@@ -5915,17 +5916,17 @@ foreach ($fileRec in $psFiles) {
     try {
         $emissions = @(Get-HtmlEmissions -Ast $parsed.Ast)
     } catch {
-        Write-Host " WALK FAILED" -ForegroundColor Red
+        Write-Console " WALK FAILED" 'Red'
         Write-Log ("Emission discovery failed for {0}: {1}" -f $name, $_.Exception.Message) 'WARN'
         continue
     }
 
     if ($emissions.Count -eq 0) {
-        Write-Host " no HTML found, skipped" -ForegroundColor DarkGray
+        Write-Console " no HTML found, skipped" 'DarkGray'
         continue
     }
 
-    Write-Host (" {0} emission(s) found" -f $emissions.Count) -ForegroundColor Green
+    Write-Console (" {0} emission(s) found" -f $emissions.Count) 'Green'
 
     # File classification drives shell validation gating and scope. Registry
     # id, zone, and object_type all come from the one combined map. A file
@@ -6008,7 +6009,7 @@ foreach ($fileRec in $psFiles) {
         }
     }
     $rowsAfterWalk = $script:rows.Count
-    Write-Host ("    -> {0} construct rows" -f ($rowsAfterWalk - $rowsBeforeWalk)) -ForegroundColor DarkCyan
+    Write-Console ("    -> {0} construct rows" -f ($rowsAfterWalk - $rowsBeforeWalk)) 'DarkCyan'
 
     # Duplicate ID check
     Invoke-DuplicateIdCheck -FileName $name
