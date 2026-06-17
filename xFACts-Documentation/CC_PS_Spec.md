@@ -176,22 +176,24 @@ Two forms, no others:
 
 ## 6. File roles
 
-The file role determines which section types are allowed and which structural rules apply. Role is determined by file extension, filename pattern, and directory.
+The file role determines which section types are allowed and which structural rules apply. Role is derived from the file's dbo.Object_Registry classification (§6.1).
 
 Separately, files carry classification attributes (zone, scope, scope_tier) from dbo.Object_Registry that govern resolution and documentation treatment — see §6.3.
 
 ### 6.1 Role detection
 
+Role is derived from the file's dbo.Object_Registry `object_type`, `scope`, and `scope_tier`, evaluated in this order:
+
 | Role | Detection rule |
 |---|---|
-| `cc-bootstrap` | `.ps1`, filename is `Start-ControlCenter.ps1` (the Control Center server composition root). Checked before the standalone fallback. |
-| `page-route` | `.ps1`, path is `xFACts-ControlCenter\scripts\routes\<Name>.ps1` with no `-API` suffix. |
-| `api-route` | `.ps1`, path is `xFACts-ControlCenter\scripts\routes\<Name>-API.ps1`. |
-| `module` | `.psm1`, path is `xFACts-ControlCenter\scripts\modules\<Name>.psm1`. |
-| `standalone` | `.ps1`, path is `xFACts-PowerShell\<Name>.ps1` where `<Name>` does NOT start with `xFACts-`. |
-| `shared-library` | `.ps1`, path is `xFACts-PowerShell\xFACts-<Name>.ps1`. |
+| `cc-bootstrap` | `scope_tier` is `BOOTSTRAP`. Evaluated first. |
+| `module` | `object_type` is `Module`. |
+| `api-route` | `object_type` is `API`. |
+| `page-route` | `object_type` is `Route`. |
+| `shared-library` | `object_type` is `Script` and `scope` is `SHARED`. |
+| `standalone` | `object_type` is `Script` and `scope` is not `SHARED`. |
 
-Files at other paths or with other extensions are out of scope for this spec — including any `.ps1` file in `xFACts-ControlCenter\scripts\` other than `Start-ControlCenter.ps1` (which is the `cc-bootstrap` role). `.psd1` data files such as `server.psd1` are out of scope.
+A file with no active Object_Registry row, or with an unrecognized `object_type`, resolves to role `<undefined>` and is skipped for role-specific section checks (`FILE_NOT_REGISTERED` still fires; see §17). `.psd1` data files such as `server.psd1` are out of scope.
 
 ### 6.2 Role file structure
 
@@ -241,7 +243,7 @@ Files are classified by three dbo.Object_Registry attributes, independent of rol
 
 - zone — cc, docs, standalone, or exempt. References resolve only within the same zone.
 - scope — LOCAL or SHARED.
-- scope_tier — PLATFORM or SCOPED for SHARED function-bearing files; otherwise NULL. Determines docblock treatment (§8.3 / §8.4).
+- scope_tier — PLATFORM or SCOPED for SHARED function-bearing files; BOOTSTRAP for the Control Center composition root; otherwise NULL. PLATFORM and SCOPED determine docblock treatment (§8.3 / §8.4); BOOTSTRAP designates the cc-bootstrap role (§6.1).
 
 ---
 
@@ -621,6 +623,7 @@ The populator emits a drift code on every spec violation. Each code maps to a si
 | `MISPLACED_NONE_PREFIX` | An identifier-bearing section (CONSTANTS, VARIABLES, FUNCTIONS) declares `Prefix: (none)` in a file whose component has a registered (non-NULL) `cc_prefix`. The section's identifiers carry the file's registered prefix, so the banner must declare that prefix rather than `(none)`. | §5.2 |
 | `PREFIX_MISSING` | Top-level identifier in a prefixable section does not begin with the file's registered prefix. | §5.3 |
 | `PREFIX_MISMATCH` | Top-level identifier does not begin with the section's declared prefix. | §5.3 |
+| `FILE_NOT_REGISTERED` | A scanned `.ps1`/`.psm1` file has no active `Object_Registry` row; its zone and scope stamp as `<undefined>`. | §6.3 |
 | `MALFORMED_CHANGELOG_ENTRY` | CHANGELOG entry does not begin with `# YYYY-MM-DD  `. | §7.2 |
 | `MALFORMED_CHANGELOG_DATE` | CHANGELOG entry date is not in ISO YYYY-MM-DD format. | §7.2 |
 | `CHANGELOG_ORDER_VIOLATION` | CHANGELOG entries appear out of most-recent-first order. | §7.2 |
