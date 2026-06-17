@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-06-16 05:42:39
+Generated: 2026-06-17 05:10:47
 
 ## Module Registry
 
@@ -139,6 +139,7 @@ Generated: 2026-06-16 05:42:39
 | DmOps | dmops.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\dmops.html | DM Operations narrative documentation page |
 | DmOps | Execute-DmConsumerArchive.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Execute-DmConsumerArchive.ps1 | Unified consumer-level archive execution — TC_ARCH-driven batch deletion of consumers and all linked accounts/transactions from crs5_oltp, with mid-batch BIDATA P-to-C migration |
 | DmOps | Execute-DmShellPurge.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Execute-DmShellPurge.ps1 | Consumer shell purge execution — removes orphaned consumer records with no remaining accounts from crs5_oltp |
+| DmOps | xFACts-DmOpsFunctions.ps1 | PowerShell | Script | E:\xFACts-PowerShell\xFACts-DmOpsFunctions.ps1 | Shared function library for the DmOps consumer-deletion scripts. Centralizes persistent-connection management, chunked snapshot-isolation DELETE and UPDATE primitives, per-table operation wrappers with the preview/execute split, and the stop-on-failure step wrappers that both scripts share. |
 | DmOps | DmOperations-API.ps1 | WebAsset | API | E:\xFACts-ControlCenter\scripts\routes\DmOperations-API.ps1 | DM Operations CC API endpoints |
 | DmOps | dm-operations.css | WebAsset | CSS | E:\xFACts-ControlCenter\public\css\dm-operations.css | DM Operations CC styles |
 | DmOps | dm-operations.js | WebAsset | JavaScript | E:\xFACts-ControlCenter\public\js\dm-operations.js | DM Operations CC client-side logic |
