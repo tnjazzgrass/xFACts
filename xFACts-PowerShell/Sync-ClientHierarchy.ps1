@@ -3,10 +3,6 @@
     xFACts - Client Hierarchy Synchronization
 
 .DESCRIPTION
-    xFACts - Engine.SharedInfrastructure
-    Script: Sync-ClientHierarchy.ps1
-    Version: Tracked in dbo.System_Metadata (component: Engine.SharedInfrastructure)
-
     Rebuilds dbo.ClientHierarchy from crs5_oltp creditor and creditor group
     tables using a recursive CTE to resolve the full group hierarchy in a
     single pass. Uses MERGE to insert new creditors, update changed metadata,
@@ -20,10 +16,6 @@
     Standalone creditors (crdtr_grp_id = 1) and those with unresolvable
     group chains self-reference: their parent and top parent fields point
     to themselves.
-
-    CHANGELOG
-    ---------
-    2026-04-16  Initial implementation
 
 .PARAMETER ServerInstance
     SQL Server instance hosting xFACts database (default: AVG-PROD-LSNR)
@@ -42,16 +34,40 @@
     Orchestrator ProcessRegistry ID passed by the engine at launch. Used for
     task completion callback. Default 0 (no callback when run manually).
 
-================================================================================
-DEPLOYMENT REMINDERS
-================================================================================
-1. Deploy to E:\xFACts-PowerShell on FA-SQLDBB.
-2. xFACts-OrchestratorFunctions.ps1 must be in the same directory.
-3. The service account running this script needs:
-   - Read access to crs5_oltp on AVG-PROD-LSNR (crdtr, crdtr_grp tables)
-   - Read/Write access to xFACts database (dbo.ClientHierarchy)
-================================================================================
+.COMPONENT
+    Engine.SharedInfrastructure
+
+.NOTES
+    File Name : Sync-ClientHierarchy.ps1
+    Location  : E:\xFACts-PowerShell
+
+    FILE ORGANIZATION
+    -----------------
+    CHANGELOG: CHANGE HISTORY
+    PARAMETERS: SCRIPT PARAMETERS
+    IMPORTS: SCRIPT DEPENDENCIES
+    INITIALIZATION: SCRIPT INITIALIZATION
+    CONSTANTS: MERGE QUERY
+    EXECUTION: SCRIPT EXECUTION
 #>
+
+<# ============================================================================
+   CHANGELOG: CHANGE HISTORY
+   ----------------------------------------------------------------------------
+   Date-stamped change history. Each entry is one ISO date line followed by an
+   indented description. Entries appear most-recent first.
+   Prefix: (none)
+   ============================================================================ #>
+
+# 2026-04-16  Initial implementation
+
+<# ============================================================================
+   PARAMETERS: SCRIPT PARAMETERS
+   ----------------------------------------------------------------------------
+   Connection targets, the execute guard, and the orchestrator callback IDs
+   passed by the engine.
+   Prefix: (none)
+   ============================================================================ #>
 
 [CmdletBinding()]
 param(
@@ -62,38 +78,41 @@ param(
     [int]$ProcessId = 0
 )
 
-# ============================================================================
-# STANDARD INITIALIZATION
-# ============================================================================
+<# ============================================================================
+   IMPORTS: SCRIPT DEPENDENCIES
+   ----------------------------------------------------------------------------
+   Dot-sourced shared infrastructure: orchestrator helpers providing logging,
+   the orchestrator task callback, and standardized initialization.
+   Prefix: (none)
+   ============================================================================ #>
 
 . "$PSScriptRoot\xFACts-OrchestratorFunctions.ps1"
+
+<# ============================================================================
+   INITIALIZATION: SCRIPT INITIALIZATION
+   ----------------------------------------------------------------------------
+   One-time setup of shared infrastructure, logging, and application identity.
+   Prefix: (none)
+   ============================================================================ #>
 
 Initialize-XFActsScript -ScriptName 'Sync-ClientHierarchy' `
     -ServerInstance $ServerInstance -Database $Database -Execute:$Execute
 
-# ============================================================================
-# MAIN
-# ============================================================================
+<# ============================================================================
+   CONSTANTS: MERGE QUERY
+   ----------------------------------------------------------------------------
+   The recursive-CTE-plus-MERGE statement that rebuilds dbo.ClientHierarchy
+   from the crs5_oltp creditor and creditor-group tables. Returns one row per
+   MERGE action via OUTPUT $action.
+   Prefix: (none)
+   ============================================================================ #>
 
-$scriptStart = Get-Date
-
-Write-Log ""
-Write-Log "================================================================"
-Write-Log "  Client Hierarchy Synchronization"
-Write-Log "================================================================"
-Write-Log ""
-
-# ----------------------------------------------------------------------------
-# Step 1: Build hierarchy via recursive CTE and MERGE into ClientHierarchy
-# ----------------------------------------------------------------------------
-
-Write-Log "Building creditor hierarchy from crs5_oltp..."
-
+# Recursive CTE plus MERGE that rebuilds dbo.ClientHierarchy from crs5_oltp.
 $mergeQuery = @"
 ;WITH GroupHierarchy AS (
     -- Anchor: top-level groups (no parent, or parent is Group 1)
     -- Walks ALL groups regardless of soft-delete status to capture the real hierarchy
-    SELECT 
+    SELECT
         crdtr_grp_id,
         crdtr_grp_shrt_nm,
         crdtr_grp_nm,
@@ -105,11 +124,11 @@ $mergeQuery = @"
     FROM crs5_oltp.dbo.crdtr_grp
     WHERE (crdtr_grp_prnt_id IS NULL OR crdtr_grp_prnt_id = 1)
       AND crdtr_grp_id <> 1
-    
+
     UNION ALL
-    
+
     -- Recursive: walk down the group tree
-    SELECT 
+    SELECT
         cg.crdtr_grp_id,
         cg.crdtr_grp_shrt_nm,
         cg.crdtr_grp_nm,
@@ -123,7 +142,7 @@ $mergeQuery = @"
 ),
 SourceData AS (
     -- Group 1 = standalone (self-reference). NULL = unresolved group (self-reference as safety net).
-    SELECT 
+    SELECT
         cr.crdtr_id           AS creditor_id,
         cr.crdtr_shrt_nm      AS creditor_key,
         cr.crdtr_nm           AS creditor_name,
@@ -197,6 +216,27 @@ WHEN NOT MATCHED BY SOURCE THEN DELETE
 OUTPUT `$action;
 "@
 
+<# ============================================================================
+   EXECUTION: SCRIPT EXECUTION
+   ----------------------------------------------------------------------------
+   Runs the MERGE to rebuild the hierarchy, stamps unchanged rows, gathers
+   final counts, logs a summary, and fires the orchestrator completion
+   callback.
+   Prefix: (none)
+   ============================================================================ #>
+
+$scriptStart = Get-Date
+
+Write-Log ""
+Write-Log "================================================================"
+Write-Log "  Client Hierarchy Synchronization"
+Write-Log "================================================================"
+Write-Log ""
+
+# -- Step 1: Build hierarchy via recursive CTE and MERGE into ClientHierarchy --
+
+Write-Log "Building creditor hierarchy from crs5_oltp..."
+
 if ($Execute) {
     try {
         $mergeResults = Invoke-Sqlcmd -ServerInstance $ServerInstance -Database $Database `
@@ -209,11 +249,11 @@ if ($Execute) {
         $updated  = ($mergeResults | Where-Object { $_.'$action' -eq 'UPDATE' } | Measure-Object).Count
         $deleted  = ($mergeResults | Where-Object { $_.'$action' -eq 'DELETE' } | Measure-Object).Count
 
-        Write-Log "MERGE complete — Inserted: $inserted, Updated: $updated, Deleted: $deleted" "SUCCESS"
+        Write-Log "MERGE complete - Inserted: $inserted, Updated: $updated, Deleted: $deleted" "SUCCESS"
     }
     catch {
         Write-Log "MERGE failed: $($_.Exception.Message)" "ERROR"
-        
+
         $scriptDuration = [int]((Get-Date) - $scriptStart).TotalMilliseconds
         if ($TaskId -gt 0) {
             Complete-OrchestratorTask -ServerInstance $ServerInstance -Database $Database `
@@ -231,9 +271,7 @@ else {
     $deleted = 0
 }
 
-# ----------------------------------------------------------------------------
-# Step 2: Update last_refreshed_dttm for unchanged rows
-# ----------------------------------------------------------------------------
+# -- Step 2: Update last_refreshed_dttm for unchanged rows --
 
 # Rows that matched but had no changes were not touched by MERGE.
 # Stamp them so last_refreshed_dttm reflects this sync cycle ran.
@@ -259,9 +297,7 @@ WHERE last_refreshed_dttm < DATEADD(MINUTE, -5, GETDATE());
     }
 }
 
-# ----------------------------------------------------------------------------
-# Step 3: Summary
-# ----------------------------------------------------------------------------
+# -- Step 3: Summary --
 
 $scriptEnd = Get-Date
 $duration = $scriptEnd - $scriptStart
@@ -270,15 +306,16 @@ $totalDurationMs = [int]$duration.TotalMilliseconds
 # Get final counts
 $finalCounts = $null
 try {
+    $countsQuery = @"
+SELECT
+    COUNT(*)                                                        AS total_creditors,
+    ISNULL(SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END), 0)      AS active_creditors,
+    COUNT(DISTINCT top_parent_id)                                   AS top_parent_groups,
+    ISNULL(SUM(CASE WHEN is_active = 1 AND parent_group_is_active = 0 THEN 1 ELSE 0 END), 0) AS active_in_inactive_group
+FROM dbo.ClientHierarchy;
+"@
     $finalCounts = Invoke-Sqlcmd -ServerInstance $ServerInstance -Database $Database `
-        -Query "
-            SELECT 
-                COUNT(*)                                                        AS total_creditors,
-                ISNULL(SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END), 0)      AS active_creditors,
-                COUNT(DISTINCT top_parent_id)                                   AS top_parent_groups,
-                ISNULL(SUM(CASE WHEN is_active = 1 AND parent_group_is_active = 0 THEN 1 ELSE 0 END), 0) AS active_in_inactive_group
-            FROM dbo.ClientHierarchy;
-        " `
+        -Query $countsQuery `
         -ApplicationName "xFACts Sync-ClientHierarchy" `
         -QueryTimeout 30 -ErrorAction Stop -TrustServerCertificate
 }
@@ -310,9 +347,8 @@ Write-Log "  Synchronization Complete"
 Write-Log "================================================================"
 Write-Log ""
 
-# ----------------------------------------
-# Orchestrator Callback
-# ----------------------------------------
+# -- Orchestrator Callback --
+
 if ($TaskId -gt 0) {
     $outputSummary = "Ins:$inserted Upd:$updated Del:$deleted"
     if ($finalCounts) {
