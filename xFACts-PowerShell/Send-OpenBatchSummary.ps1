@@ -3,54 +3,28 @@
     xFACts - Pre-Maintenance Processing Summary
 
 .DESCRIPTION
-    xFACts - BatchOps
-    Script: Send-OpenBatchSummary.ps1
-    Version: Tracked in dbo.System_Metadata (component: BatchOps)
+    Generates a summary of all active Debt Manager processing and sends a formatted
+    Adaptive Card notification to Teams before the nightly maintenance window.
+    Replaces sp_DM_OpenBatchCheck with expanded scope and richer card formatting.
 
-    Generates a summary of all active Debt Manager processing and sends
-    a formatted Adaptive Card notification to Teams before the nightly
-    maintenance window. Replaces sp_DM_OpenBatchCheck with expanded scope
-    and richer card formatting.
-    
-    Key behaviors:
-    - Reads from AG secondary replica via GlobalConfig setting
-    - Queries open New Business batches with status details
-    - Sectioned Adaptive Card with active NB and PMT sections, expansion points for BDL/Notices
-    - Inserts via shared Send-TeamsAlert function with card_json payload
-    - Card color based on overall severity (green=clear, yellow=warning)
-    - Dedup keyed by date+hour (one alert per hour even if invoked manually)
-
-    CHANGELOG
-    ---------
-    2026-04-28  Standardized Teams alerting via Send-TeamsAlert shared function
-                Converted direct INSERT to Send-TeamsAlert with -CardJson parameter
-                trigger_value changed from yyyy-MM-dd to yyyy-MM-dd-HH for future
-                schedule flexibility (orchestrator schedule still controls cadence)
-                Card severity logic and color mapping preserved
-    2026-03-11  Migrated to Initialize-XFActsScript shared infrastructure
-                Removed inline Write-Log, Get-xFACtsData, Invoke-xFACtsNonQuery
-                Updated header to component-level versioning format
-    2026-02-13  Payment batch section implemented
-                Live DM query for in-flight PMT batches
-                Replaces placeholder with active monitoring
-    2026-02-06  Initial implementation
-                Replaces BatchOps.sp_DM_OpenBatchCheck
-                AG-aware secondary replica reads via GlobalConfig
-                Sectioned Adaptive Card with expansion points
-                Direct INSERT into Teams.AlertQueue with card_json
-                Standard v2 orchestrator integration
+    Key behaviors: reads from the AG secondary replica via GlobalConfig; queries open
+    New Business and Payment batches with status details; renders a sectioned Adaptive
+    Card (with expansion points for BDL and Notices); inserts via the shared
+    Send-TeamsAlert function with a card_json payload; colors the card by overall
+    severity (green=clear, yellow=warning); and dedups by date+hour so only one alert
+    fires per hour even if invoked manually.
 
 .PARAMETER ServerInstance
-    SQL Server instance name for xFACts database (default: AVG-PROD-LSNR)
+    SQL Server instance name for xFACts database (default: AVG-PROD-LSNR).
 
 .PARAMETER Database
-    Database name (default: xFACts)
+    Database name (default: xFACts).
 
 .PARAMETER SourceDB
-    Source database for Debt Manager data (default: crs5_oltp)
+    Source database for Debt Manager data (default: crs5_oltp).
 
 .PARAMETER ForceSourceServer
-    Override the GlobalConfig replica setting and connect to specific server for reads.
+    Override the GlobalConfig replica setting and connect to a specific server for reads.
 
 .PARAMETER Execute
     Perform writes. Without this flag, runs in preview/dry-run mode.
@@ -63,112 +37,163 @@
     Orchestrator ProcessRegistry ID passed by the v2 engine at launch. Used for
     task completion callback. Default 0 (no callback when run manually).
 
-================================================================================
-DEPLOYMENT REMINDERS
-================================================================================
-1. Deploy to E:\xFACts-PowerShell on FA-SQLDBB.
-2. xFACts-OrchestratorFunctions.ps1 must be in the same directory.
-3. Register in Orchestrator.ProcessRegistry with scheduled_time = 19:00:00.
-4. Requires WebhookSubscription entry for BatchOps/INFO (and WARNING) routing.
-5. Ensure GlobalConfig has AGName and SourceReplica settings (Core module).
-================================================================================
+.COMPONENT
+    BatchOps
+
+.NOTES
+    File Name : Send-OpenBatchSummary.ps1
+    Location  : E:\xFACts-PowerShell
+
+    FILE ORGANIZATION
+    -----------------
+    CHANGELOG: CHANGE HISTORY
+    PARAMETERS: SCRIPT PARAMETERS
+    IMPORTS: SCRIPT DEPENDENCIES
+    INITIALIZATION: SCRIPT INITIALIZATION
+    VARIABLES: GLOBAL STATE
+    FUNCTIONS: SOURCE AND CONFIGURATION
+    FUNCTIONS: PROCESSING CHECKS
+    FUNCTIONS: ADAPTIVE CARD
+    EXECUTION: SCRIPT EXECUTION
 #>
+
+<# ============================================================================
+   CHANGELOG: CHANGE HISTORY
+   ----------------------------------------------------------------------------
+   Date-driven change history for this script. Most-recent entry first.
+   Prefix: (none)
+   ============================================================================ #>
+
+# 2026-04-28  Standardized Teams alerting via Send-TeamsAlert shared function.
+#             Converted direct INSERT to Send-TeamsAlert with -CardJson parameter.
+#             trigger_value changed from yyyy-MM-dd to yyyy-MM-dd-HH for future schedule
+#             flexibility (orchestrator schedule still controls cadence). Card severity
+#             logic and color mapping preserved.
+# 2026-03-11  Migrated to Initialize-XFActsScript shared infrastructure.
+#             Removed inline Write-Log, Get-xFACtsData, Invoke-xFACtsNonQuery.
+# 2026-02-13  Payment batch section implemented. Live DM query for in-flight PMT batches,
+#             replacing the placeholder with active monitoring.
+# 2026-02-06  Initial implementation. Replaces BatchOps.sp_DM_OpenBatchCheck. AG-aware
+#             secondary replica reads via GlobalConfig, sectioned Adaptive Card with
+#             expansion points, direct INSERT into Teams.AlertQueue with card_json,
+#             standard v2 orchestrator integration.
+
+<# ============================================================================
+   PARAMETERS: SCRIPT PARAMETERS
+   ----------------------------------------------------------------------------
+   The [CmdletBinding()] attribute and param() block declaring script-level parameters.
+   Prefix: (none)
+   ============================================================================ #>
 
 [CmdletBinding()]
 param(
     [string]$ServerInstance = "AVG-PROD-LSNR",
     [string]$Database = "xFACts",
     [string]$SourceDB = "crs5_oltp",
-    [string]$ForceSourceServer = "",
+    [string]$ForceSourceServer = $null,
     [switch]$Execute,
     [long]$TaskId = 0,
     [int]$ProcessId = 0
 )
 
-# ============================================================================
-# STANDARD INITIALIZATION
-# ============================================================================
+<# ============================================================================
+   IMPORTS: SCRIPT DEPENDENCIES
+   ----------------------------------------------------------------------------
+   Dot-sources the platform shared orchestrator functions consumed by this script.
+   Prefix: (none)
+   ============================================================================ #>
 
 . "$PSScriptRoot\xFACts-OrchestratorFunctions.ps1"
+
+<# ============================================================================
+   INITIALIZATION: SCRIPT INITIALIZATION
+   ----------------------------------------------------------------------------
+   One-time setup that must run at file scope before other content executes.
+   Prefix: (none)
+   ============================================================================ #>
 
 Initialize-XFActsScript -ScriptName 'Send-OpenBatchSummary' `
     -ServerInstance $ServerInstance -Database $Database -Execute:$Execute
 
-# ============================================================================
-# SCRIPT-LEVEL STATE
-# ============================================================================
+<# ============================================================================
+   VARIABLES: GLOBAL STATE
+   ----------------------------------------------------------------------------
+   Mutable script-scope state populated during configuration and execution.
+   Prefix: bat
+   ============================================================================ #>
 
-$Script:ReadServer = $null
-$Script:WriteServer = $null
-$Script:Config = @{
+# Server the script reads DM source data from (the AG secondary replica per config).
+$script:ReadServer = $null
+
+# Server the script writes xFACts updates to (the AG listener).
+$script:WriteServer = $null
+
+# GlobalConfig settings with AG name and source replica defaults.
+$script:Config = @{
     AGName = "DMPRODAG"
     SourceReplica = "SECONDARY"
 }
 
-# ============================================================================
-# FUNCTIONS
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: SOURCE AND CONFIGURATION
+   ----------------------------------------------------------------------------
+   Source-data access, AG replica role detection, and configuration loading.
+   Prefix: bat
+   ============================================================================ #>
 
-function Get-SourceData {
-    <#
-    .SYNOPSIS
-        Execute a query against the source database (crs5_oltp) on the configured replica
-    #>
+# Executes a query against the source database (crs5_oltp) on the configured replica.
+function Get-bat_OBS_SourceData {
     param(
         [string]$Query,
         [int]$Timeout = 300
     )
-    if (-not $Script:ReadServer) {
+    if (-not $script:ReadServer) {
         Write-Log "ReadServer not configured - cannot query source" "ERROR"
         return $null
     }
     try {
-        Invoke-Sqlcmd -ServerInstance $Script:ReadServer -Database $SourceDB -Query $Query -QueryTimeout $Timeout -ApplicationName $script:XFActsAppName -ErrorAction Stop -TrustServerCertificate
+        Invoke-Sqlcmd -ServerInstance $script:ReadServer -Database $SourceDB -Query $Query -QueryTimeout $Timeout -ApplicationName $script:XFActsAppName -ErrorAction Stop -TrustServerCertificate
     }
     catch {
-        Write-Log "Source query failed on $($Script:ReadServer): $($_.Exception.Message)" "ERROR"
+        Write-Log "Source query failed on $($script:ReadServer): $($_.Exception.Message)" "ERROR"
         return $null
     }
 }
 
-function Get-AGReplicaRoles {
-    <#
-    .SYNOPSIS
-        Queries the Availability Group to determine current PRIMARY and SECONDARY servers
-    .RETURNS
-        Hashtable with 'PRIMARY' and 'SECONDARY' keys containing server names
-    #>
-    $agName = $Script:Config.AGName
-    
+# Queries the AG to resolve current PRIMARY and SECONDARY replica server names.
+function Get-bat_OBS_AGReplicaRoles {
+    param()
+    $agName = $script:Config.AGName
+
     if (-not $agName) {
         Write-Log "AGName not configured - cannot query replica states" "ERROR"
         return $null
     }
-    
+
     $query = @"
-        SELECT 
+        SELECT
             ar.replica_server_name,
             ars.role_desc
         FROM sys.dm_hadr_availability_replica_states ars
-        INNER JOIN sys.availability_replicas ar 
+        INNER JOIN sys.availability_replicas ar
             ON ars.replica_id = ar.replica_id
         INNER JOIN sys.availability_groups ag
             ON ar.group_id = ag.group_id
         WHERE ag.name = '$agName'
 "@
-    
+
     $results = Get-SqlData -Query $query
-    
+
     if (-not $results) {
         Write-Log "Failed to query AG replica states" "ERROR"
         return $null
     }
-    
+
     $roles = @{
         PRIMARY = $null
         SECONDARY = $null
     }
-    
+
     foreach ($row in $results) {
         if ($row.role_desc -eq 'PRIMARY') {
             $roles.PRIMARY = $row.replica_server_name
@@ -177,23 +202,19 @@ function Get-AGReplicaRoles {
             $roles.SECONDARY = $row.replica_server_name
         }
     }
-    
+
     return $roles
 }
 
-function Initialize-Configuration {
-    <#
-    .SYNOPSIS
-        Loads GlobalConfig settings and determines server connections
-    .RETURNS
-        $true if successful, $false otherwise
-    #>
-    
+# Loads GlobalConfig settings and determines server connections.
+function Initialize-bat_OBS_Configuration {
+    param()
+
     Write-Log "Loading configuration..." "INFO"
-    
+
     # Set write server first (needed for GlobalConfig query)
-    $Script:WriteServer = $ServerInstance
-    
+    $script:WriteServer = $ServerInstance
+
     # Load GlobalConfig settings
     $configQuery = @"
         SELECT module_name, setting_name, setting_value
@@ -201,90 +222,78 @@ function Initialize-Configuration {
         WHERE module_name IN ('Core', 'Shared', 'dbo')
           AND is_active = 1
 "@
-    
+
     $configResults = Get-SqlData -Query $configQuery
-    
+
     # Override defaults with GlobalConfig values
     if ($configResults) {
         foreach ($row in $configResults) {
             switch ($row.setting_name) {
-                "AGName"         { $Script:Config.AGName = $row.setting_value }
-                "SourceReplica"  { $Script:Config.SourceReplica = $row.setting_value }
+                "AGName"         { $script:Config.AGName = $row.setting_value }
+                "SourceReplica"  { $script:Config.SourceReplica = $row.setting_value }
             }
         }
     }
-    
-    Write-Log "  AGName: $($Script:Config.AGName)" "INFO"
-    Write-Log "  SourceReplica: $($Script:Config.SourceReplica)" "INFO"
-    
+
+    Write-Log "  AGName: $($script:Config.AGName)" "INFO"
+    Write-Log "  SourceReplica: $($script:Config.SourceReplica)" "INFO"
+
     # Determine read server
     if ($ForceSourceServer) {
-        $Script:ReadServer = $ForceSourceServer
-        Write-Log "  ReadServer: $($Script:ReadServer) (forced via parameter)" "WARN"
+        $script:ReadServer = $ForceSourceServer
+        Write-Log "  ReadServer: $($script:ReadServer) (forced via parameter)" "WARN"
         Write-Log "  AG detection skipped due to ForceSourceServer" "WARN"
     }
     else {
         Write-Log "Detecting AG replica roles..." "INFO"
-        $agRoles = Get-AGReplicaRoles
-        
+        $agRoles = Get-bat_OBS_AGReplicaRoles
+
         if (-not $agRoles) {
             Write-Log "AG detection failed - cannot determine read server" "ERROR"
             return $false
         }
-        
+
         Write-Log "  AG PRIMARY: $($agRoles.PRIMARY)" "INFO"
         Write-Log "  AG SECONDARY: $($agRoles.SECONDARY)" "INFO"
-        
-        if ($Script:Config.SourceReplica -eq "PRIMARY") {
-            $Script:ReadServer = $agRoles.PRIMARY
+
+        if ($script:Config.SourceReplica -eq "PRIMARY") {
+            $script:ReadServer = $agRoles.PRIMARY
         }
         else {
-            $Script:ReadServer = $agRoles.SECONDARY
+            $script:ReadServer = $agRoles.SECONDARY
         }
-        
-        if (-not $Script:ReadServer) {
+
+        if (-not $script:ReadServer) {
             Write-Log "Could not determine ReadServer from AG roles" "ERROR"
             return $false
         }
-        
-        Write-Log "  ReadServer: $($Script:ReadServer) (from GlobalConfig: $($Script:Config.SourceReplica))" "SUCCESS"
+
+        Write-Log "  ReadServer: $($script:ReadServer) (from GlobalConfig: $($script:Config.SourceReplica))" "SUCCESS"
     }
-    
-    Write-Log "  WriteServer: $($Script:WriteServer)" "INFO"
-    
+
+    Write-Log "  WriteServer: $($script:WriteServer)" "INFO"
+
     return $true
 }
 
-# ============================================================================
-# CHECK FUNCTIONS
-# Each returns a consistent object: BatchType, Count, Details (array), HasIssues
-# Adding a new check = writing one function and calling it in Main
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: PROCESSING CHECKS
+   ----------------------------------------------------------------------------
+   Per-area checks for active Debt Manager processing: New Business, Payments, and
+   placeholders for BDL imports and Notice processing.
+   Prefix: bat
+   ============================================================================ #>
 
-function Get-OpenNBBatches {
-    <#
-    .SYNOPSIS
-        Checks for New Business batches actively in-flight.
-        Terminal/safe states are excluded; anything remaining is potentially
-        impacted by a maintenance restart.
-    .DESCRIPTION
-        Terminal states (safe for maintenance):
-        - Batch status 5 (DELETED)
-        - Merge status 3 (POST_RELEASE_MERGE_COMPLETE)
-        - Merge status 1 (NONE) with batch status 8 (RELEASED) — released but no merge needed
-        
-        Warning states (processing with errors, not actively in-flight but noteworthy):
-        - Merge status 6 (POST_RELEASE_PRTL_MRGD_WTH_ERS)
-        - Merge status 8 (POST_RELEASE_MERGE_CMPLT_WTH_ERS)
-        - Merge status 10 (POST_RELEASE_PARTIAL_MERGED)
-    #>
-    
+# Checks for New Business batches actively in-flight at maintenance time.
+function Get-bat_OBS_OpenNBBatches {
+    param()
+
     Write-Log "Checking New Business batches..." "INFO"
-    
-    # Terminal/safe merge statuses — batches at these states are done or not actively processing
+
+    # Terminal/safe merge statuses - batches at these states are done or not actively processing
     # 1 = NONE, 3 = MERGE_COMPLETE, 6 = PRTL_MRGD_WTH_ERS, 8 = MERGE_CMPLT_WTH_ERS, 10 = PARTIAL_MERGED
     $query = @"
-        SELECT 
+        SELECT
             nbb.new_bsnss_btch_id,
             nbb.new_bsnss_btch_shrt_nm,
             nbb.new_bsnss_btch_stts_cd,
@@ -293,9 +302,9 @@ function Get-OpenNBBatches {
             COALESCE(rnbb.cnsmr_mrg_lnk_stts_dscrptn_txt, rsts.new_bsnss_btch_stts_dscrptn_txt) AS display_status,
             nbb.new_bsnss_btch_crt_dt
         FROM dbo.new_bsnss_btch nbb
-        LEFT JOIN dbo.ref_cnsmr_mrg_lnk_stts_cd rnbb 
+        LEFT JOIN dbo.ref_cnsmr_mrg_lnk_stts_cd rnbb
             ON nbb.cnsmr_mrg_lnk_stts_cd = rnbb.cnsmr_mrg_lnk_stts_cd
-        INNER JOIN dbo.Ref_new_bsnss_btch_stts_cd rsts 
+        INNER JOIN dbo.Ref_new_bsnss_btch_stts_cd rsts
             ON nbb.new_bsnss_btch_stts_cd = rsts.new_bsnss_btch_stts_cd
         WHERE CAST(nbb.new_bsnss_btch_crt_dt AS DATE) >= DATEADD(DAY, -7, GETDATE())
           AND nbb.new_bsnss_btch_stts_cd <> 5                                    -- Not DELETED
@@ -303,16 +312,16 @@ function Get-OpenNBBatches {
                OR nbb.cnsmr_mrg_lnk_stts_cd IS NULL)                             -- NULL = pre-merge, still in-flight
         ORDER BY nbb.new_bsnss_btch_crt_dt DESC
 "@
-    
-    $results = Get-SourceData -Query $query
-    
+
+    $results = Get-bat_OBS_SourceData -Query $query
+
     $details = @()
     $count = 0
-    
+
     if ($results) {
         $results = @($results)
         $count = $results.Count
-        
+
         foreach ($row in $results) {
             $details += [PSCustomObject]@{
                 BatchId   = $row.new_bsnss_btch_id
@@ -322,9 +331,9 @@ function Get-OpenNBBatches {
             }
         }
     }
-    
+
     Write-Log "  Found $count open NB batch(es)" $(if ($count -gt 0) { "WARN" } else { "SUCCESS" })
-    
+
     return [PSCustomObject]@{
         BatchType = "New Business"
         Count     = $count
@@ -333,19 +342,14 @@ function Get-OpenNBBatches {
     }
 }
 
-function Get-OpenPMTBatches {
-    <#
-    .SYNOPSIS
-        Checks for Payment batches actively in-flight.
-        Terminal states and idle states (ACTIVE, ACTIVEWITHSUSPENSE) are excluded;
-        anything remaining is actively processing and potentially impacted by
-        a maintenance restart.
-    #>
-    
+# Checks for Payment batches actively in-flight at maintenance time.
+function Get-bat_OBS_OpenPMTBatches {
+    param()
+
     Write-Log "Checking Payment batches..." "INFO"
-    
+
     $query = @"
-        SELECT 
+        SELECT
             cpb.cnsmr_pymnt_btch_id,
             cpb.cnsmr_pymnt_btch_nm,
             rpbs.pymnt_btch_stts_val_txt AS batch_status,
@@ -373,16 +377,16 @@ function Get-OpenPMTBatches {
           )
         ORDER BY cpb.cnsmr_pymnt_btch_crt_dttm DESC
 "@
-    
-    $results = Get-SourceData -Query $query
-    
+
+    $results = Get-bat_OBS_SourceData -Query $query
+
     $details = @()
     $count = 0
-    
+
     if ($results) {
         $results = @($results)
         $count = $results.Count
-        
+
         foreach ($row in $results) {
             $details += [PSCustomObject]@{
                 BatchId   = $row.cnsmr_pymnt_btch_id
@@ -392,9 +396,9 @@ function Get-OpenPMTBatches {
             }
         }
     }
-    
+
     Write-Log "  Found $count open PMT batch(es)" $(if ($count -gt 0) { "WARN" } else { "SUCCESS" })
-    
+
     return [PSCustomObject]@{
         BatchType = "Payments"
         Count     = $count
@@ -403,13 +407,10 @@ function Get-OpenPMTBatches {
     }
 }
 
-function Get-OpenBDLImports {
-    <#
-    .SYNOPSIS
-        Placeholder for BDL import checks. Returns empty result.
-        Will be implemented when BDL monitoring is built.
-    #>
-    
+# Placeholder for BDL import checks; returns an empty result until implemented.
+function Get-bat_OBS_OpenBDLImports {
+    param()
+
     return [PSCustomObject]@{
         BatchType   = "Bulk Data Loader"
         Count       = 0
@@ -419,13 +420,10 @@ function Get-OpenBDLImports {
     }
 }
 
-function Get-ActiveNoticeProcessing {
-    <#
-    .SYNOPSIS
-        Placeholder for Notice processing checks. Returns empty result.
-        Requires investigation into dcmnt_rqst and related tables.
-    #>
-    
+# Placeholder for Notice processing checks; returns an empty result until implemented.
+function Get-bat_OBS_ActiveNoticeProcessing {
+    param()
+
     return [PSCustomObject]@{
         BatchType   = "Notice Processing"
         Count       = 0
@@ -435,39 +433,28 @@ function Get-ActiveNoticeProcessing {
     }
 }
 
-# ============================================================================
-# CARD BUILDING
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: ADAPTIVE CARD
+   ----------------------------------------------------------------------------
+   Construction of the Adaptive Card: per-section elements and the full card JSON
+   payload sent to Teams.
+   Prefix: bat
+   ============================================================================ #>
 
-function Build-SectionElements {
-    <#
-    .SYNOPSIS
-        Builds Adaptive Card elements for one processing section.
-        Returns flat array of elements to add directly to the card body.
-    .DESCRIPTION
-        Uses separator lines for visual section breaks with state-driven
-        colored text for at-a-glance visibility:
-        - warning (yellow text) = active items in progress
-        - good (green text)     = checked, nothing in progress
-        - default + subtle      = not yet monitored
-        
-        All text within a section (header, details, timestamps) uses the
-        same state color for cohesive visual grouping.
-    .PARAMETER CheckResult
-        Result object from a Get-Open* check function
-    #>
+# Builds the Adaptive Card elements for one processing section.
+function New-bat_OBS_SectionElements {
     param(
         [PSCustomObject]$CheckResult
     )
-    
+
     $elements = @()
     $sectionLabel = $CheckResult.BatchType.ToUpper()
-    
-    # ----------------------------------------
-    # Determine state color and summary text
-    # ----------------------------------------
+
+    # -- Determine state color and summary text --
+
     if ($CheckResult.NotMonitored) {
-        $stateColor = $null          # default text, no color override
+        # default text, no color override
+        $stateColor = $null
         $summaryText = "Not yet monitored"
         $summarySubtle = $true
         $headerSubtle = $false
@@ -484,10 +471,9 @@ function Build-SectionElements {
         $summarySubtle = $false
         $headerSubtle = $false
     }
-    
-    # ----------------------------------------
-    # Section header row with separator line
-    # ----------------------------------------
+
+    # -- Section header row with separator line --
+
     $headerRow = @{
         type = "ColumnSet"
         separator = $true
@@ -519,30 +505,29 @@ function Build-SectionElements {
             }
         )
     }
-    
+
     # Apply state color to header text
     if ($stateColor) {
         $headerRow.columns[0].items[0].color = $stateColor
         $headerRow.columns[1].items[0].color = $stateColor
     }
-    
+
     # Apply subtle to summary if needed (not-monitored)
     if ($summarySubtle) {
         $headerRow.columns[1].items[0].isSubtle = $true
     }
-    
+
     $elements += $headerRow
-    
-    # ----------------------------------------
-    # Detail rows for active batches (all text in state color)
-    # ----------------------------------------
+
+    # -- Detail rows for active batches (all text in state color) --
+
     if ($CheckResult.Count -gt 0 -and $CheckResult.Details) {
         $firstRow = $true
         foreach ($batch in $CheckResult.Details) {
             $createdDisplay = if ($batch.Created) {
                 ([datetime]$batch.Created).ToString("M/d/yyyy h:mm tt")
             } else { "N/A" }
-            
+
             $detailRow = @{
                 type = "ColumnSet"
                 columns = @(
@@ -590,33 +575,26 @@ function Build-SectionElements {
                 )
                 spacing = $(if ($firstRow) { "small" } else { "none" })
             }
-            
+
             $elements += $detailRow
             $firstRow = $false
         }
     }
-    
+
     return $elements
 }
 
-function Build-AdaptiveCard {
-    <#
-    .SYNOPSIS
-        Builds an Adaptive Card JSON payload for the pre-maintenance processing summary
-    .PARAMETER CheckResults
-        Array of result objects from all Get-Open* check functions
-    .PARAMETER CardColor
-        Overall card severity color: good, warning, or attention
-    #>
+# Builds the Adaptive Card JSON payload for the pre-maintenance processing summary.
+function New-bat_OBS_AdaptiveCard {
     param(
         [array]$CheckResults,
         [string]$CardColor
     )
-    
+
     $dateDisplay = Get-Date -Format "MMMM dd, yyyy - h:mm tt"
-    
+
     $bodyItems = @()
-    
+
     # Header container with severity color
     $bodyItems += @{
         type = "Container"
@@ -639,19 +617,19 @@ function Build-AdaptiveCard {
             }
         )
     }
-    
-    # Section elements — each check gets separator line, colored header, and detail rows
+
+    # Section elements - each check gets separator line, colored header, and detail rows
     foreach ($result in $CheckResults) {
-        $sectionElements = Build-SectionElements -CheckResult $result
+        $sectionElements = New-bat_OBS_SectionElements -CheckResult $result
         foreach ($element in $sectionElements) {
             $bodyItems += $element
         }
     }
-    
+
     # Overall status message
     $totalActive = ($CheckResults | Where-Object { -not $_.NotMonitored } | Measure-Object -Property Count -Sum).Sum
     $monitoredTypes = @($CheckResults | Where-Object { -not $_.NotMonitored }).Count
-    
+
     if ($totalActive -eq 0) {
         $bodyItems += @{
             type = "TextBlock"
@@ -672,7 +650,7 @@ function Build-AdaptiveCard {
             separator = $true
         }
     }
-    
+
     # Footer
     $bodyItems += @{
         type = "ColumnSet"
@@ -707,7 +685,7 @@ function Build-AdaptiveCard {
         )
         spacing = "medium"
     }
-    
+
     # Assemble full card payload
     $card = @{
         type = "message"
@@ -723,28 +701,29 @@ function Build-AdaptiveCard {
             }
         )
     }
-    
+
     return ($card | ConvertTo-Json -Depth 20)
 }
 
-# ============================================================================
-# MAIN SCRIPT
-# ============================================================================
+<# ============================================================================
+   EXECUTION: SCRIPT EXECUTION
+   ----------------------------------------------------------------------------
+   Runs the processing checks, determines overall severity, builds and sends the
+   Adaptive Card, records run status in BatchOps.Status, and reports completion to
+   the orchestrator.
+   Prefix: (none)
+   ============================================================================ #>
 
-Write-Log "========================================"
-Write-Log "xFACts Pre-Maintenance Processing Summary"
-Write-Log "========================================"
-
+# Capture start time for duration reporting.
 $scriptStart = Get-Date
 
-# ----------------------------------------
-# Step 1: Initialize configuration and server connections
-# ----------------------------------------
-$initResult = Initialize-Configuration
+# -- Step 1: Initialize configuration and server connections --
+
+$initResult = Initialize-bat_OBS_Configuration
 
 if (-not $initResult) {
     Write-Log "Configuration initialization failed. Exiting." "ERROR"
-    
+
     if ($TaskId -gt 0) {
         $totalMs = [int]((New-TimeSpan -Start $scriptStart -End (Get-Date)).TotalMilliseconds)
         Complete-OrchestratorTask -ServerInstance $ServerInstance -Database $Database `
@@ -770,28 +749,27 @@ if ($Execute) {
     }
 }
 
-# ----------------------------------------
-# Step 2: Run all processing checks
-# ----------------------------------------
+# -- Step 2: Run all processing checks --
+
 Write-Log "Running processing checks..." "INFO"
 
+# Accumulates per-area check results for the card and severity logic.
 $checkResults = @()
 
-# New Business — active check
-$checkResults += Get-OpenNBBatches
+# New Business - active check
+$checkResults += Get-bat_OBS_OpenNBBatches
 
-# Payments — placeholder (future)
-$checkResults += Get-OpenPMTBatches
+# Payments - placeholder (future)
+$checkResults += Get-bat_OBS_OpenPMTBatches
 
-# BDL — placeholder (future)
-$checkResults += Get-OpenBDLImports
+# BDL - placeholder (future)
+$checkResults += Get-bat_OBS_OpenBDLImports
 
-# Notice Processing — placeholder (future)
-$checkResults += Get-ActiveNoticeProcessing
+# Notice Processing - placeholder (future)
+$checkResults += Get-bat_OBS_ActiveNoticeProcessing
 
-# ----------------------------------------
-# Step 3: Determine severity and card color
-# ----------------------------------------
+# -- Step 3: Determine severity and card color --
+
 $totalActive = ($checkResults | Where-Object { -not $_.NotMonitored } | Measure-Object -Property Count -Sum).Sum
 
 if ($totalActive -gt 0) {
@@ -805,21 +783,19 @@ else {
     Write-Log "  Overall: INFO - no active processing" "SUCCESS"
 }
 
-# ----------------------------------------
-# Step 4: Build Adaptive Card
-# ----------------------------------------
+# -- Step 4: Build Adaptive Card --
+
 Write-Log "Building Adaptive Card..." "INFO"
 
-$cardJson = Build-AdaptiveCard -CheckResults $checkResults -CardColor $cardColor
+$cardJson = New-bat_OBS_AdaptiveCard -CheckResults $checkResults -CardColor $cardColor
 
 if (-not $Execute) {
     Write-Log "[Preview] Card JSON:" "DEBUG"
     Write-Log $cardJson "DEBUG"
 }
 
-# ----------------------------------------
-# Step 5: Send Teams alert via shared function
-# ----------------------------------------
+# -- Step 5: Send Teams alert via shared function --
+
 if ($Execute) {
     Write-Log "Sending Teams alert..." "INFO"
 
@@ -850,10 +826,11 @@ else {
     Write-Log "[Preview] Would send Teams alert with card_json" "WARN"
 }
 
-# ----------------------------------------
-# Summary
-# ----------------------------------------
+# -- Summary --
+
+# Capture end time for duration reporting.
 $scriptEnd = Get-Date
+# Total elapsed wall-clock time.
 $scriptDuration = $scriptEnd - $scriptStart
 
 Write-Log "========================================"
@@ -867,9 +844,8 @@ Write-Log "  Card color: $cardColor"
 Write-Log "  Duration: $([int]$scriptDuration.TotalMilliseconds) ms"
 Write-Log "========================================"
 
-# ----------------------------------------
-# Update BatchOps.Status
-# ----------------------------------------
+# -- Update BatchOps.Status --
+
 if ($Execute) {
     try {
         $totalMs = [int]$scriptDuration.TotalMilliseconds
@@ -887,9 +863,8 @@ if ($Execute) {
     }
 }
 
-# ----------------------------------------
-# Orchestrator Callback
-# ----------------------------------------
+# -- Orchestrator Callback --
+
 if ($TaskId -gt 0) {
     $totalMs = [int]$scriptDuration.TotalMilliseconds
     $outputMsg = "NB: $($checkResults[0].Count) PMT: $($checkResults[1].Count) active. Severity: $alertCategory"
