@@ -369,7 +369,8 @@ function Get-SqlData {
         [string]$DatabaseName = $script:XFActsDatabase,
         [int]$Timeout = 300,
         [int]$MaxCharLength = 0,
-        [int]$MaxBinaryLength = 0
+        [int]$MaxBinaryLength = 0,
+        [hashtable]$Parameters = @{}
     )
 
     <#
@@ -408,8 +409,50 @@ function Get-SqlData {
         large binary blobs (Sterling b2bi compressed XML, etc.). When omitted,
         Invoke-Sqlcmd uses its default of 1024, which silently truncates larger
         blobs mid-stream. Always specify this for any VARBINARY(MAX) column.
+
+    .PARAMETER Parameters
+        Hashtable of SQL parameter values for parameterized queries. When
+        non-empty, the query runs through a System.Data.SqlClient.SqlCommand
+        and each hashtable entry binds as a typed @parameter (the key is
+        prefixed with @, $null becomes DBNull), so values are bound by the
+        driver instead of being concatenated into the query text. When omitted,
+        the query runs through Invoke-Sqlcmd with no parameter bindings. Note:
+        MaxCharLength and MaxBinaryLength apply only to the non-parameterized
+        path; the parameterized path honors Timeout via CommandTimeout.
     #>
 
+    # Parameterized path: bind values as real SqlCommand parameters.
+    if ($Parameters.Count -gt 0) {
+        $connStr = "Server=$Instance;Database=$DatabaseName;Integrated Security=True;TrustServerCertificate=True;Application Name=$($script:XFActsAppName)"
+        $connection = $null
+        try {
+            $connection = New-Object System.Data.SqlClient.SqlConnection($connStr)
+            $connection.Open()
+
+            $command = $connection.CreateCommand()
+            $command.CommandText = $Query
+            $command.CommandTimeout = $Timeout
+            foreach ($key in $Parameters.Keys) {
+                $value = $Parameters[$key]
+                if ($null -eq $value) { $value = [System.DBNull]::Value }
+                $command.Parameters.AddWithValue("@$key", $value) | Out-Null
+            }
+
+            $table = New-Object System.Data.DataTable
+            $adapter = New-Object System.Data.SqlClient.SqlDataAdapter($command)
+            $adapter.Fill($table) | Out-Null
+            return $table.Rows
+        }
+        catch {
+            Write-Log "SQL Query failed on ${Instance}/${DatabaseName}: $($_.Exception.Message)" "ERROR"
+            return $null
+        }
+        finally {
+            if ($connection -and $connection.State -eq 'Open') { $connection.Close() }
+        }
+    }
+
+    # Non-parameterized path: unchanged Invoke-Sqlcmd behavior.
     try {
         # Optional result-size limits, included only when explicitly requested.
         $optional = @{}
@@ -441,7 +484,8 @@ function Invoke-SqlNonQuery {
         [string]$DatabaseName = $script:XFActsDatabase,
         [int]$Timeout = 300,
         [int]$MaxCharLength = 0,
-        [int]$MaxBinaryLength = 0
+        [int]$MaxBinaryLength = 0,
+        [hashtable]$Parameters = @{}
     )
 
     <#
@@ -475,8 +519,49 @@ function Invoke-SqlNonQuery {
         Maximum byte length for VARBINARY columns. When greater than zero,
         passed to Invoke-Sqlcmd -MaxBinaryLength. Typically not needed for
         non-query operations but included for parity with Get-SqlData.
+
+    .PARAMETER Parameters
+        Hashtable of SQL parameter values for parameterized statements. When
+        non-empty, the statement runs through a System.Data.SqlClient.SqlCommand
+        and each hashtable entry binds as a typed @parameter (the key is
+        prefixed with @, $null becomes DBNull), so values are bound by the
+        driver instead of being concatenated into the statement text. When
+        omitted, the statement runs through Invoke-Sqlcmd with no parameter
+        bindings. Note: MaxCharLength and MaxBinaryLength apply only to the
+        non-parameterized path; the parameterized path honors Timeout via
+        CommandTimeout.
     #>
 
+    # Parameterized path: bind values as real SqlCommand parameters.
+    if ($Parameters.Count -gt 0) {
+        $connStr = "Server=$Instance;Database=$DatabaseName;Integrated Security=True;TrustServerCertificate=True;Application Name=$($script:XFActsAppName)"
+        $connection = $null
+        try {
+            $connection = New-Object System.Data.SqlClient.SqlConnection($connStr)
+            $connection.Open()
+
+            $command = $connection.CreateCommand()
+            $command.CommandText = $Query
+            $command.CommandTimeout = $Timeout
+            foreach ($key in $Parameters.Keys) {
+                $value = $Parameters[$key]
+                if ($null -eq $value) { $value = [System.DBNull]::Value }
+                $command.Parameters.AddWithValue("@$key", $value) | Out-Null
+            }
+
+            $command.ExecuteNonQuery() | Out-Null
+            return $true
+        }
+        catch {
+            Write-Log "SQL Execute failed on ${Instance}/${DatabaseName}: $($_.Exception.Message)" "ERROR"
+            return $false
+        }
+        finally {
+            if ($connection -and $connection.State -eq 'Open') { $connection.Close() }
+        }
+    }
+
+    # Non-parameterized path: unchanged Invoke-Sqlcmd behavior.
     try {
         # Optional result-size limits, included only when explicitly requested.
         $optional = @{}
