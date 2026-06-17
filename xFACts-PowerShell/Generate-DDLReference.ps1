@@ -15,12 +15,6 @@
     result sets (one per schema plus a metadata set). This script reads each
     result set using SqlDataReader and writes individual files.
 
-.NOTES
-    File Name      : Generate-DDLReference.ps1
-    Location       : E:\xFACts-PowerShell
-    Author         : Frost Arnett Applications Team
-    Version        : Tracked in dbo.System_Metadata (component: Engine.SharedInfrastructure)
-
 .PARAMETER ServerInstance
     SQL Server instance name for xFACts database (default: AVG-PROD-LSNR)
 
@@ -34,24 +28,54 @@
     Required to actually write files. Without this flag, runs in preview mode
     showing what would be generated without writing anything.
 
-================================================================================
-CHANGELOG
-================================================================================
-2026-03-12  doc-registry.json: Removed doc_is_hub column reference. isHub now
-            derived from doc_sort_order = 0 convention.
-2026-03-11  Consolidated dbo.sp_GenerateDDLReference SQL inline into this script.
-            Single file to maintain instead of proc + script. Proc can be dropped.
-            Added sortOrder field to all enrichment subqueries (designNotes,
-            statusValues, queries, relationshipNotes) across all object types.
-            Added doc-registry.json export from Component_Registry doc_* columns.
-            Groups by doc_page_id with nested sections for multi-component pages.
-2026-02-26  Initial implementation
-            Single SQL call with multiple result sets via SqlDataReader
-            Individual JSON file output per schema
-            Metadata file with generation timestamp
-            Preview mode by default
-================================================================================
+.COMPONENT
+    Documentation.Pipeline
+
+.NOTES
+    File Name : Generate-DDLReference.ps1
+    Location  : E:\xFACts-PowerShell
+
+    FILE ORGANIZATION
+    -----------------
+    CHANGELOG: CHANGE HISTORY
+    PARAMETERS: SCRIPT PARAMETERS
+    IMPORTS: SCRIPT DEPENDENCIES
+    INITIALIZATION: SCRIPT INITIALIZATION
+    CONSTANTS: SQL QUERIES
+    CONSTANTS: PATHS AND CONNECTION
+    VARIABLES: SCRIPT-SCOPE STATE
+    EXECUTION: SCRIPT EXECUTION
 #>
+
+<# ============================================================================
+   CHANGELOG: CHANGE HISTORY
+   ----------------------------------------------------------------------------
+   Date-stamped change history. Each entry is one ISO date line followed by an
+   indented description. Entries appear most-recent first.
+   Prefix: (none)
+   ============================================================================ #>
+
+# 2026-03-12  doc-registry.json: Removed doc_is_hub column reference. isHub now
+#             derived from doc_sort_order = 0 convention.
+# 2026-03-11  Consolidated dbo.sp_GenerateDDLReference SQL inline into this script.
+#             Single file to maintain instead of proc + script. Proc can be dropped.
+#             Added sortOrder field to all enrichment subqueries (designNotes,
+#             statusValues, queries, relationshipNotes) across all object types.
+#             Added doc-registry.json export from Component_Registry doc_* columns.
+#             Groups by doc_page_id with nested sections for multi-component pages.
+# 2026-02-26  Initial implementation
+#             Single SQL call with multiple result sets via SqlDataReader
+#             Individual JSON file output per schema
+#             Metadata file with generation timestamp
+#             Preview mode by default
+
+<# ============================================================================
+   PARAMETERS: SCRIPT PARAMETERS
+   ----------------------------------------------------------------------------
+   Connection targets, output directory, and the execute switch that gates
+   all file writes.
+   Prefix: (none)
+   ============================================================================ #>
 
 [CmdletBinding()]
 param(
@@ -61,62 +85,36 @@ param(
     [switch]$Execute
 )
 
-$LogFile = "$PSScriptRoot\Logs\Generate-DDLReference_$(Get-Date -Format 'yyyyMMdd').log"
+<# ============================================================================
+   IMPORTS: SCRIPT DEPENDENCIES
+   ----------------------------------------------------------------------------
+   Dot-sourced shared infrastructure: orchestrator helpers providing logging
+   and standardized script initialization.
+   Prefix: (none)
+   ============================================================================ #>
 
-# ========================================
-# FUNCTIONS
-# ========================================
+. "$PSScriptRoot\xFACts-OrchestratorFunctions.ps1"
 
-function Write-Log {
-    param([string]$Message, [string]$Level = "INFO")
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $logMessage = "[$timestamp] [$Level] $Message"
+<# ============================================================================
+   INITIALIZATION: SCRIPT INITIALIZATION
+   ----------------------------------------------------------------------------
+   One-time setup of shared infrastructure, logging, and application identity.
+   Prefix: (none)
+   ============================================================================ #>
 
-    $color = switch ($Level) {
-        "ERROR"   { "Red" }
-        "WARN"    { "Yellow" }
-        "SUCCESS" { "Green" }
-        "DEBUG"   { "DarkGray" }
-        default   { "White" }
-    }
-    Write-Host $logMessage -ForegroundColor $color
+Initialize-XFActsScript -ScriptName 'Generate-DDLReference' -Execute:$Execute
 
-    $logDir = Split-Path $LogFile -Parent
-    if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }
-    Add-Content -Path $LogFile -Value $logMessage -ErrorAction SilentlyContinue
-}
+<# ============================================================================
+   CONSTANTS: SQL QUERIES
+   ----------------------------------------------------------------------------
+   The inline catalog-extraction query. Discovers active schemas, extracts
+   structural metadata from system catalog views, enriches it with
+   Object_Metadata content, and returns one result set per schema plus a
+   trailing metadata set.
+   Prefix: (none)
+   ============================================================================ #>
 
-# ========================================
-# MAIN
-# ========================================
-
-Write-Log "=========================================="
-Write-Log "xFACts DDL Reference Generator"
-Write-Log "=========================================="
-Write-Log "Server: $ServerInstance"
-Write-Log "Database: $Database"
-Write-Log "Output: $OutputDirectory"
-Write-Log "Mode: $(if ($Execute) { 'EXECUTE' } else { 'PREVIEW' })"
-Write-Log "------------------------------------------"
-
-# Validate output directory
-if ($Execute) {
-    if (-not (Test-Path $OutputDirectory)) {
-        try {
-            New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
-            Write-Log "Created output directory: $OutputDirectory"
-        }
-        catch {
-            Write-Log "Failed to create output directory: $($_.Exception.Message)" "ERROR"
-            exit 1
-        }
-    }
-}
-
-# ========================================
-# DDL Reference SQL (inline - formerly dbo.sp_GenerateDDLReference)
-# ========================================
-
+# Catalog-extraction query producing one JSON result set per schema (formerly dbo.sp_GenerateDDLReference).
 $sqlQuery = @"
     SET NOCOUNT ON;
 
@@ -881,7 +879,7 @@ $sqlQuery = @"
         );
 
        -- -----------------------------------------------------------------
-        -- DDL TRIGGERS (from Object_Metadata only — database-level triggers
+        -- DDL TRIGGERS (from Object_Metadata only - database-level triggers
         -- not captured by the sys.triggers / sys.tables join above)
         -- -----------------------------------------------------------------
         DECLARE @ddlTriggersJson NVARCHAR(MAX) = '';
@@ -1003,12 +1001,62 @@ $sqlQuery = @"
     DROP TABLE #ActiveSchemas;
 "@
 
-# ========================================
-# Execute SQL and read multiple result sets
-# ========================================
+<# ============================================================================
+   CONSTANTS: PATHS AND CONNECTION
+   ----------------------------------------------------------------------------
+   ADO.NET connection string and the doc-registry output path. The connection
+   string carries the application-name identity for DMV and Extended Events
+   attribution.
+   Prefix: (none)
+   ============================================================================ #>
 
-$schemasWritten = @()
+# Connection string for the catalog and doc-registry queries, tagged with the script's application identity.
 $connectionString = "Server=$ServerInstance;Database=$Database;Integrated Security=True;TrustServerCertificate=True;Application Name=xFACts Generate-DDLReference"
+
+# Output path for the documentation page registry written after DDL generation.
+$docRegistryPath = Join-Path $OutputDirectory "doc-registry.json"
+
+<# ============================================================================
+   VARIABLES: SCRIPT-SCOPE STATE
+   ----------------------------------------------------------------------------
+   Mutable state accumulated during the result-set walk.
+   Prefix: (none)
+   ============================================================================ #>
+
+# Accumulates the names of schemas successfully written, for the closing summary.
+$schemasWritten = @()
+
+<# ============================================================================
+   EXECUTION: SCRIPT EXECUTION
+   ----------------------------------------------------------------------------
+   Validates the output directory, runs the catalog query and writes one JSON
+   file per schema, exports the documentation page registry, and prints the
+   run summary.
+   Prefix: (none)
+   ============================================================================ #>
+
+Write-Log "=========================================="
+Write-Log "xFACts DDL Reference Generator"
+Write-Log "=========================================="
+Write-Log "Server: $ServerInstance"
+Write-Log "Database: $Database"
+Write-Log "Output: $OutputDirectory"
+Write-Log "Mode: $(if ($Execute) { 'EXECUTE' } else { 'PREVIEW' })"
+Write-Log "------------------------------------------"
+
+# Validate output directory
+if ($Execute) {
+    if (-not (Test-Path $OutputDirectory)) {
+        try {
+            New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
+            Write-Log "Created output directory: $OutputDirectory"
+        }
+        catch {
+            Write-Log "Failed to create output directory: $($_.Exception.Message)" "ERROR"
+            exit 1
+        }
+    }
+}
 
 try {
     $connection = New-Object System.Data.SqlClient.SqlConnection($connectionString)
@@ -1098,13 +1146,9 @@ catch {
     exit 1
 }
 
-# ========================================
 # Doc Registry Export (doc-registry.json)
 # Queries Component_Registry for documentation page metadata.
 # Groups by doc_page_id, nests component sections for multi-component pages.
-# ========================================
-
-$docRegistryPath = Join-Path $OutputDirectory "doc-registry.json"
 
 Write-Log "------------------------------------------"
 Write-Log "Generating doc-registry.json..."
@@ -1208,12 +1252,8 @@ try {
 }
 catch {
     Write-Log "Doc registry export failed: $($_.Exception.Message)" "ERROR"
-    # Non-fatal — DDL generation already succeeded
+    # Non-fatal - DDL generation already succeeded
 }
-
-# ========================================
-# Summary
-# ========================================
 
 Write-Log "------------------------------------------"
 Write-Log "Schemas processed: $($schemasWritten.Count)"
