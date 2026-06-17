@@ -3322,13 +3322,13 @@ $script:sharedSourceFileByZone = @{}
 foreach ($file in $JsFiles) {
     $name = [System.IO.Path]::GetFileName($file)
 
-    Write-Host "  Parsing $name ..." -NoNewline
+    Write-Console "  Parsing $name ..." -NoNewline
     $parsed = Invoke-JsParse -FilePath $file
     if ($null -eq $parsed) {
-        Write-Host " FAILED" -ForegroundColor Red
+        Write-Console " FAILED" 'Red'
         continue
     }
-    Write-Host " ok" -ForegroundColor Green
+    Write-Console " ok" 'Green'
     $astCache[$file] = $parsed
 
     # Zone and scope come from Object_Registry. A file absent from the map
@@ -3690,7 +3690,7 @@ foreach ($file in $JsFiles) {
     # Walk the AST via the generic visitor
     $startCount = $script:rows.Count
     $scopeLabel = if ($script:CurrentFileIsShared) { 'SHARED' } else { 'LOCAL' }
-    Write-Host ("  Walking {0} ({1}, zone={2})..." -f $name, $scopeLabel, $script:CurrentFileZone) -ForegroundColor Cyan
+    Write-Console ("  Walking {0} ({1}, zone={2})..." -f $name, $scopeLabel, $script:CurrentFileZone) 'Cyan'
 
     try {
         Invoke-AstWalk -Node $parsed.Ast -Visitor 'Invoke-JsVisitor'
@@ -3716,7 +3716,7 @@ foreach ($file in $JsFiles) {
                 }
             }
         }
-        Write-Host ("    -> walk failed; FILE_HEADER + section banner rows kept, content rows discarded ({0} discarded)" -f $partialAdded) -ForegroundColor Yellow
+        Write-Console ("    -> walk failed; FILE_HEADER + section banner rows kept, content rows discarded ({0} discarded)" -f $partialAdded) 'Yellow'
         continue
     }
 
@@ -3942,7 +3942,7 @@ foreach ($file in $JsFiles) {
     }
 
     $delta = $script:rows.Count - $startCount
-    Write-Host ("    -> {0} rows" -f $delta) -ForegroundColor Green
+    Write-Console ("    -> {0} rows" -f $delta) 'Green'
 }
 
 # Vendored library anchor rows
