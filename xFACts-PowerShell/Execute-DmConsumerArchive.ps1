@@ -131,12 +131,9 @@
     FUNCTIONS: CONNECTION MANAGEMENT
     FUNCTIONS: STARTUP LOOKUPS
     FUNCTIONS: SCHEDULE AND CONTROL
-    FUNCTIONS: SQL PRIMITIVES
     FUNCTIONS: BIDATA MIGRATION
     FUNCTIONS: BATCH LOGGING
     FUNCTIONS: RUNTIME RE-VERIFICATION
-    FUNCTIONS: OPERATION WRAPPERS
-    FUNCTIONS: STEP WRAPPERS
     EXECUTION: SCRIPT EXECUTION
 #>
 
@@ -147,6 +144,19 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-06-16  Renamed the three consumer-specific audit writers to carry the
+#             Archive token: New-dmo_ArchiveBatchLogEntry,
+#             Update-dmo_ArchiveBatchLogEntry, and Write-dmo_ArchiveConsumerLog.
+#             Keeps Archive's local function names distinct from the parallel
+#             Shell-tokened writers in Execute-DmShellPurge.ps1 so the two
+#             consumers never collide in the same zone.
+#             Migrated the connection, SQL primitive, operation wrapper, and step
+#             wrapper functions to the shared xFACts-DmOpsFunctions.ps1 engine,
+#             dot-sourced in IMPORTS. Removed the local copies of those functions
+#             and the local Write-dmo_BatchDetail, which now lives in the shared
+#             engine and targets the table named in $script:dmo_BatchDetailTable
+#             (set here to DmOps.Archive_BatchDetail). Removed the now-empty SQL
+#             PRIMITIVES, OPERATION WRAPPERS, and STEP WRAPPERS sections.
 # 2026-04-26  Initial unified consumer archive implementation. Replaces
 #             account-level Execute-DmArchive.ps1 (moved to Reference/). Combines
 #             TC_ARCH-driven batch selection, runtime re-verification, account-level
@@ -181,11 +191,13 @@ param(
 <# ============================================================================
    IMPORTS: SCRIPT DEPENDENCIES
    ----------------------------------------------------------------------------
-   Dot-sources the shared orchestrator helpers used throughout the script.
+   Dot-sources the shared orchestrator helpers and the DmOps shared
+   consumer-deletion engine used throughout the script.
    Prefix: (none)
    ============================================================================ #>
 
 . "$PSScriptRoot\xFACts-OrchestratorFunctions.ps1"
+. "$PSScriptRoot\xFACts-DmOpsFunctions.ps1"
 
 Initialize-XFActsScript -ScriptName 'Execute-DmConsumerArchive' `
     -ServerInstance $ServerInstance -Database $Database -Execute:$Execute
@@ -252,6 +264,9 @@ $script:dmo_LastWorkgroupUsed       = $null
 # 'Full' | 'Reduced' | 'Manual' | 'Retry' | 'Blocked'
 $script:dmo_ScheduleMode            = $null
 
+# Audit detail table that the shared Write-dmo_BatchDetail writes to.
+$script:dmo_BatchDetailTable        = 'DmOps.Archive_BatchDetail'
+
 # Per-batch state (reset each batch)
 $script:dmo_CurrentBatchId          = $null
 # Start timestamp of the current batch.
@@ -303,35 +318,6 @@ $script:dmo_SessionTotalExceptions  = 0
    target and the BIDATA database.
    Prefix: dmo
    ============================================================================ #>
-
-# Opens the persistent SqlConnection to the crs5_oltp target instance.
-function Open-dmo_TargetConnection {
-    param()
-
-    try {
-        $connString = "Server=$($script:dmo_TargetServer);Database=crs5_oltp;Integrated Security=True;Application Name=$($script:XFActsAppName);Connect Timeout=30"
-        $script:dmo_TargetConnection = New-Object System.Data.SqlClient.SqlConnection($connString)
-        $script:dmo_TargetConnection.Open()
-        Write-Log "  Persistent connection opened to $($script:dmo_TargetServer)/crs5_oltp" "SUCCESS"
-        return $true
-    }
-    catch {
-        Write-Log "Failed to open connection to $($script:dmo_TargetServer): $($_.Exception.Message)" "ERROR"
-        return $false
-    }
-}
-
-# Closes the persistent crs5_oltp target connection if open.
-function Close-dmo_TargetConnection {
-    param()
-
-    if ($script:dmo_TargetConnection -and $script:dmo_TargetConnection.State -eq 'Open') {
-        $script:dmo_TargetConnection.Close()
-        $script:dmo_TargetConnection.Dispose()
-        $script:dmo_TargetConnection = $null
-        Write-Log "  Persistent connection closed" "INFO"
-    }
-}
 
 # Opens a SqlConnection to the BIDATA database for the P-to-C migration.
 function Open-dmo_BidataConnection {
@@ -685,201 +671,6 @@ function Test-dmo_BidataBuildInProgress {
 }
 
 <# ============================================================================
-   FUNCTIONS: SQL PRIMITIVES
-   ----------------------------------------------------------------------------
-   Low-level query, delete, and update primitives that run against the persistent
-   crs5_oltp connection with snapshot isolation, deadlock retry, and chunking.
-   Prefix: dmo
-   ============================================================================ #>
-
-# Runs a read query against the persistent crs5_oltp connection and returns a DataTable.
-function Invoke-dmo_TargetQuery {
-    param(
-        [Parameter(Mandatory)]
-        [string]$Query,
-        [int]$Timeout = 300
-    )
-
-    $cmd = $script:dmo_TargetConnection.CreateCommand()
-    $cmd.CommandText = $Query
-    $cmd.CommandTimeout = $Timeout
-
-    $adapter = New-Object System.Data.SqlClient.SqlDataAdapter($cmd)
-    $dataTable = New-Object System.Data.DataTable
-
-    try {
-        [void]$adapter.Fill($dataTable)
-        return ,$dataTable
-    }
-    catch {
-        throw $_
-    }
-    finally {
-        $cmd.Dispose()
-        $adapter.Dispose()
-    }
-}
-
-# Executes a chunked DELETE against crs5_oltp with snapshot isolation and deadlock retry.
-function Invoke-dmo_TargetDelete {
-    param(
-        [Parameter(Mandatory)]
-        [string]$DeleteSQL,
-        [int]$Timeout = 600,
-        [int]$MaxRetries = 10,
-        [int]$RetryDelaySeconds = 5
-    )
-
-    $totalRowsDeleted = 0
-    $chunkNumber = 0
-
-    $chunkedSQL = $DeleteSQL -replace '(?i)^DELETE\s+(FROM\s+)', "DELETE TOP ($($script:dmo_BatchChunkSize)) `$1"
-    $chunkedSQL = $chunkedSQL -replace '(?i)^DELETE\s+(\w+)\s+(FROM\s+)', "DELETE TOP ($($script:dmo_BatchChunkSize)) `$1 `$2"
-
-    while ($true) {
-        $chunkNumber++
-        $retryCount = 0
-        $chunkDeleted = -1
-
-        while ($retryCount -lt $MaxRetries) {
-            $cmd = $script:dmo_TargetConnection.CreateCommand()
-            $cmd.CommandTimeout = $Timeout
-
-            try {
-                $cmd.CommandText = @"
-SET DEADLOCK_PRIORITY LOW;
-SET TRANSACTION ISOLATION LEVEL SNAPSHOT;
-$chunkedSQL
-SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
-"@
-                $chunkDeleted = $cmd.ExecuteNonQuery()
-                break
-            }
-            catch {
-                $errNum = 0
-                $innerEx = $_.Exception
-                while ($innerEx.InnerException) { $innerEx = $innerEx.InnerException }
-                if ($innerEx -is [System.Data.SqlClient.SqlException]) {
-                    $errNum = $innerEx.Number
-                }
-
-                if ($errNum -in @(1204, 1205, 1222, 3960)) {
-                    $retryCount++
-                    if ($retryCount -ge $MaxRetries) {
-                        Write-Log "      Retry limit ($MaxRetries) exceeded on chunk $chunkNumber" "ERROR"
-                        throw $_
-                    }
-                    Write-Log "      Retryable error ($errNum), attempt $retryCount/$MaxRetries - waiting ${RetryDelaySeconds}s..." "WARN"
-                    Start-Sleep -Seconds $RetryDelaySeconds
-
-                    try {
-                        $resetCmd = $script:dmo_TargetConnection.CreateCommand()
-                        $resetCmd.CommandText = "SET TRANSACTION ISOLATION LEVEL READ COMMITTED;"
-                        $resetCmd.ExecuteNonQuery() | Out-Null
-                        $resetCmd.Dispose()
-                    } catch { }
-                }
-                else {
-                    throw $_
-                }
-            }
-            finally {
-                $cmd.Dispose()
-            }
-        }
-
-        if ($chunkDeleted -le 0) { break }
-
-        $totalRowsDeleted += $chunkDeleted
-
-        if ($chunkDeleted -lt $script:dmo_BatchChunkSize) { break }
-
-        Start-Sleep -Milliseconds 100
-    }
-
-    return $totalRowsDeleted
-}
-
-# Executes a chunked UPDATE against crs5_oltp with snapshot isolation and deadlock retry.
-function Invoke-dmo_TargetUpdate {
-    param(
-        [Parameter(Mandatory)]
-        [string]$UpdateSQL,
-        [int]$Timeout = 600,
-        [int]$MaxRetries = 10,
-        [int]$RetryDelaySeconds = 5
-    )
-
-    $totalRowsUpdated = 0
-    $chunkNumber = 0
-
-    $chunkedSQL = $UpdateSQL -replace '(?i)^UPDATE\s+', "UPDATE TOP ($($script:dmo_BatchChunkSize)) "
-
-    while ($true) {
-        $chunkNumber++
-        $retryCount = 0
-        $chunkUpdated = -1
-
-        while ($retryCount -lt $MaxRetries) {
-            $cmd = $script:dmo_TargetConnection.CreateCommand()
-            $cmd.CommandTimeout = $Timeout
-
-            try {
-                $cmd.CommandText = @"
-SET DEADLOCK_PRIORITY LOW;
-SET TRANSACTION ISOLATION LEVEL SNAPSHOT;
-$chunkedSQL
-SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
-"@
-                $chunkUpdated = $cmd.ExecuteNonQuery()
-                break
-            }
-            catch {
-                $errNum = 0
-                $innerEx = $_.Exception
-                while ($innerEx.InnerException) { $innerEx = $innerEx.InnerException }
-                if ($innerEx -is [System.Data.SqlClient.SqlException]) {
-                    $errNum = $innerEx.Number
-                }
-
-                if ($errNum -in @(1204, 1205, 1222, 3960)) {
-                    $retryCount++
-                    if ($retryCount -ge $MaxRetries) {
-                        Write-Log "      Retry limit ($MaxRetries) exceeded on chunk $chunkNumber" "ERROR"
-                        throw $_
-                    }
-                    Write-Log "      Retryable error ($errNum), attempt $retryCount/$MaxRetries - waiting ${RetryDelaySeconds}s..." "WARN"
-                    Start-Sleep -Seconds $RetryDelaySeconds
-
-                    try {
-                        $resetCmd = $script:dmo_TargetConnection.CreateCommand()
-                        $resetCmd.CommandText = "SET TRANSACTION ISOLATION LEVEL READ COMMITTED;"
-                        $resetCmd.ExecuteNonQuery() | Out-Null
-                        $resetCmd.Dispose()
-                    } catch { }
-                }
-                else {
-                    throw $_
-                }
-            }
-            finally {
-                $cmd.Dispose()
-            }
-        }
-
-        if ($chunkUpdated -le 0) { break }
-
-        $totalRowsUpdated += $chunkUpdated
-
-        if ($chunkUpdated -lt $script:dmo_BatchChunkSize) { break }
-
-        Start-Sleep -Milliseconds 100
-    }
-
-    return $totalRowsUpdated
-}
-
-<# ============================================================================
    FUNCTIONS: BIDATA MIGRATION
    ----------------------------------------------------------------------------
    Migrate the batchs rows from the BIDATA P tables to their C counterparts
@@ -967,7 +758,7 @@ function Invoke-dmo_BidataTableMigration {
    ============================================================================ #>
 
 # Creates the Archive_BatchLog row for a batch with final counts after selection and re-verification.
-function New-dmo_BatchLogEntry {
+function New-dmo_ArchiveBatchLogEntry {
     param(
         [string]$ScheduleMode,
         [int]$BatchSizeUsed,
@@ -1011,7 +802,7 @@ function New-dmo_BatchLogEntry {
 }
 
 # Updates the current Archive_BatchLog row with final status, error, and BIDATA status.
-function Update-dmo_BatchLogEntry {
+function Update-dmo_ArchiveBatchLogEntry {
     param(
         [string]$Status,
         [string]$ErrorMessage = $null,
@@ -1053,40 +844,8 @@ function Update-dmo_BatchLogEntry {
     }
 }
 
-# Inserts one Archive_BatchDetail row recording a single table/pass operation.
-function Write-dmo_BatchDetail {
-    param(
-        [string]$DeleteOrder,
-        [string]$TableName,
-        [string]$PassDescription,
-        [long]$RowsAffected,
-        [int]$DurationMs,
-        [string]$Status,
-        [string]$ErrorMessage = $null
-    )
-
-    if (-not $script:XFActsExecute) { return }
-    if (-not $script:dmo_CurrentBatchId) { return }
-
-    $escapedPass = if ($PassDescription) { "'$($PassDescription.Replace("'", "''"))'" } else { "NULL" }
-    $escapedError = if ($ErrorMessage) { "'$($ErrorMessage.Replace("'", "''").Substring(0, [Math]::Min($ErrorMessage.Length, 2000)))'" } else { "NULL" }
-    $durationClause = if ($DurationMs -ge 0) { "$DurationMs" } else { "NULL" }
-
-    try {
-        Invoke-SqlNonQuery -Query @"
-            INSERT INTO DmOps.Archive_BatchDetail
-                (batch_id, delete_order, table_name, pass_description, rows_affected, duration_ms, status, error_message)
-            VALUES
-                ($($script:dmo_CurrentBatchId), '$DeleteOrder', '$TableName', $escapedPass, $RowsAffected, $durationClause, '$Status', $escapedError)
-"@ -Timeout 30 | Out-Null
-    }
-    catch {
-        Write-Log "  Failed to write batch detail: $($_.Exception.Message)" "WARN"
-    }
-}
-
 # Bulk-inserts Archive_ConsumerLog rows for every consumer/account pair in the batch.
-function Write-dmo_ConsumerLog {
+function Write-dmo_ArchiveConsumerLog {
     param()
 
     if (-not $script:XFActsExecute) {
@@ -1329,271 +1088,6 @@ function Invoke-dmo_RuntimeReVerification {
         CandidateCount = $candidateCount
         ExceptionCount = $exceptionCount
         RemainingCount = $script:dmo_BatchConsumerIds.Count
-    }
-}
-
-<# ============================================================================
-   FUNCTIONS: OPERATION WRAPPERS
-   ----------------------------------------------------------------------------
-   Per-table delete and update operations with logging, error handling, and the
-   preview/execute split applied uniformly across the deletion sequence.
-   Prefix: dmo
-   ============================================================================ #>
-
-# Executes a single-table delete with counting in preview and chunked deletion in execute mode.
-function Invoke-dmo_TableDelete {
-    param(
-        [Parameter(Mandatory)]
-        $Order,
-        [Parameter(Mandatory)]
-        [string]$TableName,
-        [Parameter(Mandatory)]
-        [string]$WhereClause,
-        [string]$PassDescription = "",
-        [bool]$PreviewOnly = $true
-    )
-
-    $passLabel = if ($PassDescription) { " ($PassDescription)" } else { "" }
-    $fullTable = "crs5_oltp.dbo.$TableName"
-
-    if ($PreviewOnly) {
-        try {
-            $countResult = Invoke-dmo_TargetQuery -Query "SELECT COUNT(*) AS row_count FROM $fullTable WHERE $WhereClause" -Timeout 300
-            $previewCount = [long]$countResult.Rows[0].row_count
-            if ($previewCount -eq 0) {
-                Write-Log "  [$Order] $TableName$passLabel - no rows, skipping" "DEBUG"
-                $script:dmo_TablesSkipped++
-                Write-dmo_BatchDetail -DeleteOrder "$Order" -TableName $TableName -PassDescription $PassDescription `
-                    -RowsAffected 0 -DurationMs 0 -Status 'Skipped'
-            } else {
-                Write-Log "  [$Order] $TableName$passLabel - would delete $previewCount rows" "INFO"
-                $script:dmo_TotalDeleted += $previewCount
-                $script:dmo_TablesProcessed++
-                Write-dmo_BatchDetail -DeleteOrder "$Order" -TableName $TableName -PassDescription $PassDescription `
-                    -RowsAffected $previewCount -DurationMs 0 -Status 'Success'
-            }
-            return $true
-        }
-        catch {
-            Write-Log "  [$Order] $TableName$passLabel - count failed: $($_.Exception.Message)" "WARN"
-            $script:dmo_TablesFailed++
-            Write-dmo_BatchDetail -DeleteOrder "$Order" -TableName $TableName -PassDescription $PassDescription `
-                -RowsAffected 0 -DurationMs 0 -Status 'Failed' -ErrorMessage $_.Exception.Message
-            return $false
-        }
-    }
-    else {
-        $deleteSQL = "DELETE FROM $fullTable WHERE $WhereClause"
-        $deleteStart = Get-Date
-
-        try {
-            $rowsDeleted = Invoke-dmo_TargetDelete -DeleteSQL $deleteSQL
-            $durationMs = [int]((Get-Date) - $deleteStart).TotalMilliseconds
-            if ($rowsDeleted -eq 0) {
-                Write-Log "  [$Order] $TableName$passLabel - no rows, skipping" "DEBUG"
-                $script:dmo_TablesSkipped++
-                Write-dmo_BatchDetail -DeleteOrder "$Order" -TableName $TableName -PassDescription $PassDescription `
-                    -RowsAffected 0 -DurationMs $durationMs -Status 'Skipped'
-            } else {
-                Write-Log "  [$Order] $TableName$passLabel - deleted $rowsDeleted rows (${durationMs}ms)" "SUCCESS"
-                $script:dmo_TotalDeleted += $rowsDeleted
-                $script:dmo_TablesProcessed++
-                Write-dmo_BatchDetail -DeleteOrder "$Order" -TableName $TableName -PassDescription $PassDescription `
-                    -RowsAffected $rowsDeleted -DurationMs $durationMs -Status 'Success'
-            }
-            return $true
-        }
-        catch {
-            $durationMs = [int]((Get-Date) - $deleteStart).TotalMilliseconds
-            Write-Log "  [$Order] $TableName$passLabel - FAILED (${durationMs}ms): $($_.Exception.Message)" "ERROR"
-            $script:dmo_TablesFailed++
-            Write-dmo_BatchDetail -DeleteOrder "$Order" -TableName $TableName -PassDescription $PassDescription `
-                -RowsAffected 0 -DurationMs $durationMs -Status 'Failed' -ErrorMessage $_.Exception.Message
-            return $false
-        }
-    }
-}
-
-# Executes a DELETE-with-JOIN operation with counting in preview and chunked deletion in execute mode.
-function Invoke-dmo_JoinTableDelete {
-    param(
-        [Parameter(Mandatory)]
-        $Order,
-        [Parameter(Mandatory)]
-        [string]$TableName,
-        [Parameter(Mandatory)]
-        [string]$DeleteStatement,
-        [string]$CountQuery,
-        [string]$PassDescription = "",
-        [bool]$PreviewOnly = $true
-    )
-
-    $passLabel = if ($PassDescription) { " ($PassDescription)" } else { "" }
-
-    if ($PreviewOnly) {
-        try {
-            $countResult = Invoke-dmo_TargetQuery -Query $CountQuery -Timeout 300
-            $previewCount = [long]$countResult.Rows[0].row_count
-            if ($previewCount -eq 0) {
-                Write-Log "  [$Order] $TableName$passLabel - no rows, skipping" "DEBUG"
-                $script:dmo_TablesSkipped++
-                Write-dmo_BatchDetail -DeleteOrder "$Order" -TableName $TableName -PassDescription $PassDescription `
-                    -RowsAffected 0 -DurationMs 0 -Status 'Skipped'
-            } else {
-                Write-Log "  [$Order] $TableName$passLabel - would delete $previewCount rows" "INFO"
-                $script:dmo_TotalDeleted += $previewCount
-                $script:dmo_TablesProcessed++
-                Write-dmo_BatchDetail -DeleteOrder "$Order" -TableName $TableName -PassDescription $PassDescription `
-                    -RowsAffected $previewCount -DurationMs 0 -Status 'Success'
-            }
-            return $true
-        }
-        catch {
-            Write-Log "  [$Order] $TableName$passLabel - count failed: $($_.Exception.Message)" "WARN"
-            $script:dmo_TablesFailed++
-            Write-dmo_BatchDetail -DeleteOrder "$Order" -TableName $TableName -PassDescription $PassDescription `
-                -RowsAffected 0 -DurationMs 0 -Status 'Failed' -ErrorMessage $_.Exception.Message
-            return $false
-        }
-    }
-    else {
-        $deleteStart = Get-Date
-        try {
-            $rowsDeleted = Invoke-dmo_TargetDelete -DeleteSQL $DeleteStatement
-            $durationMs = [int]((Get-Date) - $deleteStart).TotalMilliseconds
-            if ($rowsDeleted -eq 0) {
-                Write-Log "  [$Order] $TableName$passLabel - no rows, skipping" "DEBUG"
-                $script:dmo_TablesSkipped++
-                Write-dmo_BatchDetail -DeleteOrder "$Order" -TableName $TableName -PassDescription $PassDescription `
-                    -RowsAffected 0 -DurationMs $durationMs -Status 'Skipped'
-            } else {
-                Write-Log "  [$Order] $TableName$passLabel - deleted $rowsDeleted rows (${durationMs}ms)" "SUCCESS"
-                $script:dmo_TotalDeleted += $rowsDeleted
-                $script:dmo_TablesProcessed++
-                Write-dmo_BatchDetail -DeleteOrder "$Order" -TableName $TableName -PassDescription $PassDescription `
-                    -RowsAffected $rowsDeleted -DurationMs $durationMs -Status 'Success'
-            }
-            return $true
-        }
-        catch {
-            $durationMs = [int]((Get-Date) - $deleteStart).TotalMilliseconds
-            Write-Log "  [$Order] $TableName$passLabel - FAILED (${durationMs}ms): $($_.Exception.Message)" "ERROR"
-            $script:dmo_TablesFailed++
-            Write-dmo_BatchDetail -DeleteOrder "$Order" -TableName $TableName -PassDescription $PassDescription `
-                -RowsAffected 0 -DurationMs $durationMs -Status 'Failed' -ErrorMessage $_.Exception.Message
-            return $false
-        }
-    }
-}
-
-# Executes a single-table update with counting in preview and chunked update in execute mode.
-function Invoke-dmo_TableUpdate {
-    param(
-        [Parameter(Mandatory)]
-        $Order,
-        [Parameter(Mandatory)]
-        [string]$TableName,
-        [Parameter(Mandatory)]
-        [string]$UpdateStatement,
-        [string]$CountQuery,
-        [string]$PassDescription = "",
-        [bool]$PreviewOnly = $true
-    )
-
-    $passLabel = if ($PassDescription) { " ($PassDescription)" } else { "" }
-
-    if ($PreviewOnly) {
-        try {
-            $countResult = Invoke-dmo_TargetQuery -Query $CountQuery -Timeout 300
-            $previewCount = [long]$countResult.Rows[0].row_count
-            if ($previewCount -eq 0) {
-                Write-Log "  [$Order] $TableName$passLabel - no rows, skipping" "DEBUG"
-                $script:dmo_TablesSkipped++
-                Write-dmo_BatchDetail -DeleteOrder "$Order" -TableName $TableName -PassDescription $PassDescription `
-                    -RowsAffected 0 -DurationMs 0 -Status 'Skipped'
-            } else {
-                Write-Log "  [$Order] $TableName$passLabel - would update $previewCount rows" "INFO"
-                $script:dmo_TablesProcessed++
-                Write-dmo_BatchDetail -DeleteOrder "$Order" -TableName $TableName -PassDescription $PassDescription `
-                    -RowsAffected $previewCount -DurationMs 0 -Status 'Success'
-            }
-            return $true
-        }
-        catch {
-            Write-Log "  [$Order] $TableName$passLabel - count failed: $($_.Exception.Message)" "WARN"
-            $script:dmo_TablesFailed++
-            Write-dmo_BatchDetail -DeleteOrder "$Order" -TableName $TableName -PassDescription $PassDescription `
-                -RowsAffected 0 -DurationMs 0 -Status 'Failed' -ErrorMessage $_.Exception.Message
-            return $false
-        }
-    }
-    else {
-        $updateStart = Get-Date
-        try {
-            $rowsUpdated = Invoke-dmo_TargetUpdate -UpdateSQL $UpdateStatement
-            $durationMs = [int]((Get-Date) - $updateStart).TotalMilliseconds
-            if ($rowsUpdated -eq 0) {
-                Write-Log "  [$Order] $TableName$passLabel - no rows, skipping" "DEBUG"
-                $script:dmo_TablesSkipped++
-                Write-dmo_BatchDetail -DeleteOrder "$Order" -TableName $TableName -PassDescription $PassDescription `
-                    -RowsAffected 0 -DurationMs $durationMs -Status 'Skipped'
-            } else {
-                Write-Log "  [$Order] $TableName$passLabel - updated $rowsUpdated rows (${durationMs}ms)" "SUCCESS"
-                $script:dmo_TablesProcessed++
-                Write-dmo_BatchDetail -DeleteOrder "$Order" -TableName $TableName -PassDescription $PassDescription `
-                    -RowsAffected $rowsUpdated -DurationMs $durationMs -Status 'Success'
-            }
-            return $true
-        }
-        catch {
-            $durationMs = [int]((Get-Date) - $updateStart).TotalMilliseconds
-            Write-Log "  [$Order] $TableName$passLabel - FAILED (${durationMs}ms): $($_.Exception.Message)" "ERROR"
-            $script:dmo_TablesFailed++
-            Write-dmo_BatchDetail -DeleteOrder "$Order" -TableName $TableName -PassDescription $PassDescription `
-                -RowsAffected 0 -DurationMs $durationMs -Status 'Failed' -ErrorMessage $_.Exception.Message
-            return $false
-        }
-    }
-}
-
-<# ============================================================================
-   FUNCTIONS: STEP WRAPPERS
-   ----------------------------------------------------------------------------
-   Thin wrappers over the operation functions that set the stop flag on failure
-   so the batch halts safely at the first error.
-   Prefix: dmo
-   ============================================================================ #>
-
-# Wraps Invoke-dmo_TableDelete, setting the stop flag on failure.
-function Step-dmo_Delete {
-    param([hashtable]$Params)
-    if ($script:dmo_StopProcessing) { return }
-    $ok = Invoke-dmo_TableDelete @Params -PreviewOnly (-not $script:XFActsExecute)
-    if (-not $ok) {
-        Write-Log "  STOPPING - cannot safely continue after failure at order $($Params.Order)" "ERROR"
-        $script:dmo_StopProcessing = $true
-    }
-}
-
-# Wraps Invoke-dmo_JoinTableDelete, setting the stop flag on failure.
-function Step-dmo_JoinDelete {
-    param([hashtable]$Params)
-    if ($script:dmo_StopProcessing) { return }
-    $ok = Invoke-dmo_JoinTableDelete @Params -PreviewOnly (-not $script:XFActsExecute)
-    if (-not $ok) {
-        Write-Log "  STOPPING - cannot safely continue after failure at order $($Params.Order)" "ERROR"
-        $script:dmo_StopProcessing = $true
-    }
-}
-
-# Wraps Invoke-dmo_TableUpdate, setting the stop flag on failure.
-function Step-dmo_Update {
-    param([hashtable]$Params)
-    if ($script:dmo_StopProcessing) { return }
-    $ok = Invoke-dmo_TableUpdate @Params -PreviewOnly (-not $script:XFActsExecute)
-    if (-not $ok) {
-        Write-Log "  STOPPING - cannot safely continue after failure at order $($Params.Order)" "ERROR"
-        $script:dmo_StopProcessing = $true
     }
 }
 
@@ -1844,7 +1338,7 @@ if ($failedBatchId) {
         Write-Log "  Could not read source_workgroup for failed batch $failedBatchId -- retry will record NULL workgroup" "WARN"
     }
 
-    Write-ConsoleBanner "RETRY Batch #$($script:dmo_TotalBatchesRun) — retrying failed batch_id $failedBatchId" 'Yellow' '-'
+    Write-ConsoleBanner "RETRY Batch #$($script:dmo_TotalBatchesRun) - retrying failed batch_id $failedBatchId" 'Yellow' '-'
 
     Write-Log "--- Step 3: Load Batch from ConsumerLog (retry of batch_id $failedBatchId) ---"
 
@@ -2026,11 +1520,11 @@ if ($script:dmo_RetryOfBatchId -eq 0) {
 
         # Create BatchLog row to record the all-excepted batch for audit (execute mode only)
         $batchSizeUsed = $reVerifyResult.CandidateCount
-        New-dmo_BatchLogEntry -ScheduleMode $script:dmo_ScheduleMode -BatchSizeUsed $batchSizeUsed `
+        New-dmo_ArchiveBatchLogEntry -ScheduleMode $script:dmo_ScheduleMode -BatchSizeUsed $batchSizeUsed `
             -ExceptionCount $reVerifyResult.ExceptionCount -RetryOfBatchId 0 `
             -SourceWorkgroup $script:dmo_BatchWorkgroup
         Write-dmo_ExceptionLog
-        Update-dmo_BatchLogEntry -Status 'Success' -BidataStatus 'Skipped'
+        Update-dmo_ArchiveBatchLogEntry -Status 'Success' -BidataStatus 'Skipped'
 
         $script:dmo_SessionTotalExceptions += $reVerifyResult.ExceptionCount
 
@@ -2167,12 +1661,12 @@ $useBatchSize = if ($script:dmo_RetryOfBatchId -gt 0) {
     $script:dmo_BatchConsumerIds.Count + $script:dmo_BatchExceptions.Count
 }
 $useExceptionCount = $script:dmo_BatchExceptions.Count
-New-dmo_BatchLogEntry -ScheduleMode $useScheduleMode -BatchSizeUsed $useBatchSize `
+New-dmo_ArchiveBatchLogEntry -ScheduleMode $useScheduleMode -BatchSizeUsed $useBatchSize `
     -ExceptionCount $useExceptionCount -RetryOfBatchId $script:dmo_RetryOfBatchId `
     -SourceWorkgroup $script:dmo_BatchWorkgroup
 
 # Write consumer log and exception log (execute mode only - both functions guard internally)
-Write-dmo_ConsumerLog
+Write-dmo_ArchiveConsumerLog
 Write-dmo_ExceptionLog
 
 # Pre-materialize account-level intermediate ID tables
@@ -2242,7 +1736,7 @@ if ($script:dmo_BatchAccountIds.Count -gt 0) {
     }
     catch {
         Write-Log "Failed to create account-level temp tables: $($_.Exception.Message)" "ERROR"
-        Update-dmo_BatchLogEntry -Status 'Failed' -ErrorMessage "Account-level temp table creation failed: $($_.Exception.Message)"
+        Update-dmo_ArchiveBatchLogEntry -Status 'Failed' -ErrorMessage "Account-level temp table creation failed: $($_.Exception.Message)"
         Close-dmo_BidataConnection
         Close-dmo_TargetConnection
         exit 1
@@ -3121,7 +2615,7 @@ $batchStatus = if ($script:dmo_TablesFailed -gt 0) { "Failed" }
 $batchError = if ($script:dmo_TablesFailed -gt 0) { "One or more tables failed during delete sequence" }
               elseif ($script:dmo_BidataStatus -eq 'Failed') { "BIDATA P-to-C migration failed" }
               else { $null }
-Update-dmo_BatchLogEntry -Status $batchStatus -ErrorMessage $batchError -BidataStatus $script:dmo_BidataStatus
+Update-dmo_ArchiveBatchLogEntry -Status $batchStatus -ErrorMessage $batchError -BidataStatus $script:dmo_BidataStatus
 
 # Update session counters
 $script:dmo_SessionTotalDeleted += $script:dmo_TotalDeleted
@@ -3228,7 +2722,7 @@ Write-Log "  Duration         : $([math]::Round($scriptDuration.TotalSeconds, 1)
 Write-Console
 
 if (-not $script:XFActsExecute) {
-    Write-Console "  *** PREVIEW MODE — No changes were made ***" 'Yellow'
+    Write-Console "  *** PREVIEW MODE - No changes were made ***" 'Yellow'
     Write-Console "  Run with -Execute to perform actual deletions" 'Yellow'
     Write-Console
 }
