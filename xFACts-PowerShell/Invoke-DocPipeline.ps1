@@ -10,24 +10,47 @@
     Launched by the /api/admin/doc-pipeline endpoint (fire-and-forget).
     Not intended for direct manual execution.
 
-.NOTES
-    File Name  : Invoke-DocPipeline.ps1
-    Location   : E:\xFACts-PowerShell
-    Version    : Tracked in dbo.System_Metadata (component: Documentation.Pipeline)
+.COMPONENT
+    Documentation.Pipeline
 
-================================================================================
-CHANGELOG
-================================================================================
-2026-04-02  Bumped output truncation from 2000 to 8000 chars.
-            Added 'warning' status for exit code 2 (success with warnings).
-            Pipeline continues on warning — only halts on failure (non-zero,
-            non-2 exit codes).
-1.0.0      Initial implementation
-           Sequential step execution with per-step status JSON updates
-           Stdout/stderr capture with truncation for API response size
-           Pipeline halts on first failure
-================================================================================
+.NOTES
+    File Name : Invoke-DocPipeline.ps1
+    Location  : E:\xFACts-PowerShell
+
+    FILE ORGANIZATION
+    -----------------
+    CHANGELOG: CHANGE HISTORY
+    PARAMETERS: SCRIPT PARAMETERS
+    CONSTANTS: PIPELINE DEFINITION
+    VARIABLES: SCRIPT-SCOPE STATE
+    FUNCTIONS: STATUS REPORTING
+    EXECUTION: SCRIPT EXECUTION
 #>
+
+<# ============================================================================
+   CHANGELOG: CHANGE HISTORY
+   ----------------------------------------------------------------------------
+   Date-stamped change history. Each entry is one ISO date line followed by an
+   indented description. Entries appear most-recent first.
+   Prefix: (none)
+   ============================================================================ #>
+
+# 2026-04-02  Bumped output truncation from 2000 to 8000 chars.
+#             Added 'warning' status for exit code 2 (success with warnings).
+#             Pipeline continues on warning - only halts on failure (non-zero,
+#             non-2 exit codes).
+# 2026-03-01  Initial implementation
+#             Sequential step execution with per-step status JSON updates
+#             Stdout/stderr capture with truncation for API response size
+#             Pipeline halts on first failure
+
+<# ============================================================================
+   PARAMETERS: SCRIPT PARAMETERS
+   ----------------------------------------------------------------------------
+   Requested steps, status-file path, and the publish/export toggles that
+   shape each step's arguments.
+   Prefix: (none)
+   ============================================================================ #>
 
 [CmdletBinding()]
 param(
@@ -39,12 +62,24 @@ param(
     [switch]$IncludeJSON
 )
 
+<# ============================================================================
+   CONSTANTS: PIPELINE DEFINITION
+   ----------------------------------------------------------------------------
+   The scripts root, the parsed step list, the log directory, and the ordered
+   pipeline definition. Order matters: steps run in declaration order.
+   Prefix: (none)
+   ============================================================================ #>
+
+# Root directory containing the documentation pipeline scripts.
 $ScriptsRoot = "E:\xFACts-PowerShell"
 
-# Parse requested steps (passed as comma-separated string)
+# Parse requested steps (passed as comma-separated string).
 $steps = $StepsJson -split ','
 
-# Pipeline definition — order matters
+# Log directory derived from the status-file path.
+$logDir = Split-Path $StatusFile -Parent
+
+# Pipeline definition - order matters.
 $pipeline = @(
     @{
         Key    = 'generate_ddl'
@@ -77,7 +112,15 @@ $pipeline = @(
     }
 )
 
-# Initialize status structure
+<# ============================================================================
+   VARIABLES: SCRIPT-SCOPE STATE
+   ----------------------------------------------------------------------------
+   Mutable run state: the status structure written to the status file and the
+   flag tracking whether any step finished with warnings.
+   Prefix: (none)
+   ============================================================================ #>
+
+# Initialize status structure.
 $status = @{
     started_at = (Get-Date).ToString('o')
     complete   = $false
@@ -85,19 +128,36 @@ $status = @{
     results    = @()
 }
 
-# Ensure log directory exists
-$logDir = Split-Path $StatusFile -Parent
-if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }
+# Track whether any step completed with warnings.
+$pipelineHasWarnings = $false
 
+<# ============================================================================
+   FUNCTIONS: STATUS REPORTING
+   ----------------------------------------------------------------------------
+   Serializes the current status structure to the status file the Admin page
+   polls.
+   Prefix: (none)
+   ============================================================================ #>
+
+# Serialize the current status structure to the status file.
 function Write-Status {
+    param()
     $status | ConvertTo-Json -Depth 5 | Out-File -FilePath $StatusFile -Encoding UTF8 -Force
 }
 
+<# ============================================================================
+   EXECUTION: SCRIPT EXECUTION
+   ----------------------------------------------------------------------------
+   Ensures the log directory exists, writes the initial status, then runs each
+   selected step in order, capturing output and halting on failure.
+   Prefix: (none)
+   ============================================================================ #>
+
+# Ensure log directory exists.
+if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }
+
 # Write initial status
 Write-Status
-
-# Track whether any step completed with warnings
-$pipelineHasWarnings = $false
 
 foreach ($step in $pipeline) {
     if ($step.Key -notin $steps) { continue }
