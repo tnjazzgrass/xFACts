@@ -6,9 +6,9 @@
     Walks every .ps1 and .psm1 file under the xFACts PowerShell roots,
     parses each with the native PowerShell AST parser, and generates
     Asset_Registry rows describing every catalogable construct plus drift
-    codes. Five file roles are recognized via path-based classification
-    (page-route, api-route, module, shared-library, standalone), each with
-    its own valid-section-types set.
+    codes. Each file's role is derived from its Object_Registry entry
+    (object_type, scope, scope_tier), and each role has its own
+    valid-section-types set.
 
 .PARAMETER Execute
     Required to delete the existing PS rows and write the new row set.
@@ -54,6 +54,16 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-06-16  Made file-role detection Object_Registry-driven. Get-PSFileRole
+#             now derives the role from the file's object_type, scope, and
+#             scope_tier (passed in as the registry entry) instead of filename
+#             and path patterns. scope_tier BOOTSTRAP designates the CC
+#             composition root; object_type plus SHARED scope distinguishes a
+#             shared library from a standalone script. Unregistered files
+#             resolve to role '<undefined>' and skip role-specific section
+#             checks (FILE_NOT_REGISTERED still fires). Removed the now-unused
+#             $SharedLibraryFiles, $SharedModuleFiles, and
+#             $StandalonePathExceptions classification lists.
 # 2026-05-31  Added FORBIDDEN_ENV_ASSIGNMENT. The $env: provider is now
 #             permitted at file scope only for the variables in
 #             $AuthorizedEnvVars (currently NODE_PATH); any other $env: write
@@ -116,8 +126,8 @@ $ErrorActionPreference = 'Stop'
 <# ============================================================================
    CONSTANTS: PATHS AND DISCOVERY
    ----------------------------------------------------------------------------
-   Scan roots and file-classification lists (shared libraries, shared modules,
-   standalone path exceptions).
+   Scan roots, the sanctioned console-helper function names, and the
+   authentication-exempt route list.
    Prefix: (none)
    ============================================================================ #>
 
@@ -128,24 +138,6 @@ $PSScanRoots = @(
     'E:\xFACts-ControlCenter\scripts',
     'E:\xFACts-ControlCenter\scripts\routes',
     'E:\xFACts-ControlCenter\scripts\modules'
-)
-
-# Shared library files (xFACts-PowerShell root). Their functions are visible
-# to all consumers and resolve as scope=SHARED.
-$SharedLibraryFiles = @(
-    'xFACts-OrchestratorFunctions.ps1',
-    'xFACts-AssetRegistryFunctions.ps1',
-    'xFACts-IndexFunctions.ps1'
-)
-
-# Module files (.psm1) exporting cataloged helpers consumed by CC routes.
-$SharedModuleFiles = @(
-    'xFACts-Helpers.psm1',
-    'xFACts-CCShared.psm1'
-)
-
-# Files in a routes-style directory that are structurally standalone.
-$StandalonePathExceptions = @(
 )
 
 # The sanctioned console-output helper functions. Write-Host is forbidden
@@ -530,52 +522,61 @@ $script:ApprovedVerbs             = $null
 <# ============================================================================
    FUNCTIONS: FILE ROLE DETECTION
    ----------------------------------------------------------------------------
-   Path-based classification of each .ps1/.psm1 file into one of the five
-   recognized roles.
+   Object_Registry-driven classification of each .ps1/.psm1 file into one of
+   the recognized roles, derived from the file's object_type, scope, and
+   scope_tier.
    Prefix: (none)
    ============================================================================ #>
 
-# Classify a .ps1 or .psm1 file into one of six roles. Path-based:
-# *.psm1 anywhere                                          -> 'module'
-# *.psd1 anywhere                                          -> 'data-file' (basic inventory only)
-# Start-ControlCenter.ps1                                  -> 'cc-bootstrap' (CC server composition root)
-# ...\scripts\routes\<Name>\<Name>-API.ps1                 -> 'api-route'
-# ...\scripts\routes\<Name>\<Name>.ps1                     -> 'page-route'
-# ...\xFACts-PowerShell\xFACts-<Name>.ps1                  -> 'shared-library' (if in $SharedLibraryFiles)
-# any .ps1 in $StandalonePathExceptions                    -> 'standalone'
-# any other .ps1 under xFACts-PowerShell\                  -> 'standalone'
-# Returns the role string. Throws if the path doesn't match any known shape;
-# the caller decides whether to skip or error.
+# Classify a file into a role from its Object_Registry entry. Derivation,
+# checked in order:
+#   scope_tier = BOOTSTRAP                  -> 'cc-bootstrap'
+#   object_type = Module                    -> 'module'
+#   object_type = API                       -> 'api-route'
+#   object_type = Route                     -> 'page-route'
+#   object_type = Script AND scope = SHARED -> 'shared-library'
+#   object_type = Script (otherwise)        -> 'standalone'
+#   any other / unrecognized object_type    -> '<undefined>'
+# $RegistryEntry is the file's Object_Registry map entry (with ObjectType,
+# Scope, ScopeTier). A $null entry (file absent from Object_Registry) returns
+# '<undefined>'; the caller emits FILE_NOT_REGISTERED and the role-specific
+# section checks find no entry for '<undefined>' and skip.
 function Get-PSFileRole {
-    param([Parameter(Mandatory)][string]$FullPath)
+    param(
+        [Parameter(Mandatory)][string]$FileName,
+        $RegistryEntry
+    )
 
-    $fileName = [System.IO.Path]::GetFileName($FullPath)
+    # Unregistered file: no role to derive.
+    if ($null -eq $RegistryEntry) { return '<undefined>' }
 
-    # Modules: extension wins regardless of location
-    if ($fileName -match '\.psm1$') { return 'module' }
+    $objectType = $RegistryEntry.ObjectType
+    $scope      = $RegistryEntry.Scope
+    $scopeTier  = $RegistryEntry.ScopeTier
 
-    # Shared libraries: explicit list lookup
-    if ($SharedLibraryFiles -contains $fileName) { return 'shared-library' }
+    # CC bootstrap: the Control Center server composition root, designated by a
+    # dedicated scope_tier. Checked first so its Script/LOCAL classification does
+    # not fall through to standalone.
+    if ($scopeTier -eq 'BOOTSTRAP') { return 'cc-bootstrap' }
 
-    # CC bootstrap: the Control Center server composition root. Distinct from
-    # the page/api route files it loads; its body is a single Start-PodeServer
-    # block (treated as opaque EXECUTION).
-    if ($fileName -eq 'Start-ControlCenter.ps1') { return 'cc-bootstrap' }
+    # Modules.
+    if ($objectType -eq 'Module') { return 'module' }
 
-    # Standalone path exceptions (files in a routes-style directory that
-    # aren't actually routes)
-    if ($StandalonePathExceptions -contains $fileName) { return 'standalone' }
+    # API routes.
+    if ($objectType -eq 'API') { return 'api-route' }
 
-    # API routes: filename ends in -API.ps1
-    if ($fileName -match '-API\.ps1$') { return 'api-route' }
+    # Page routes.
+    if ($objectType -eq 'Route') { return 'page-route' }
 
-    # Page routes: file lives directly under \scripts\routes\ as a flat
-    # .ps1 file (not in a per-page subfolder). The -API.ps1 form was already
-    # caught above; any remaining .ps1 directly under routes\ is a page-route.
-    if ($FullPath -match '\\scripts\\routes\\[^\\]+\.ps1$') { return 'page-route' }
+    # Scripts split on scope: SHARED scope is a shared library, everything else
+    # is a standalone script.
+    if ($objectType -eq 'Script') {
+        if ($scope -eq 'SHARED') { return 'shared-library' }
+        return 'standalone'
+    }
 
-    # Standalone: any other .ps1 under xFACts-PowerShell\
-    return 'standalone'
+    # Unrecognized object_type: no role.
+    return '<undefined>'
 }
 
 <# ============================================================================
@@ -2960,7 +2961,7 @@ $astCache = @{}
 
 foreach ($file in $PSFiles) {
     $name = [System.IO.Path]::GetFileName($file)
-    $role = Get-PSFileRole -FullPath $file
+    $role = Get-PSFileRole -FileName $name -RegistryEntry $objectZoneScopeMap[$name]
 
     Write-Console "  Parsing $name (role=$role)..." -NoNewline
     $parsed = Invoke-PSParse -FilePath $file
