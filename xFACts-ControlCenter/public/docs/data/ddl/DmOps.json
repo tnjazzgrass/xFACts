@@ -2427,6 +2427,12 @@
                                                       "sortOrder":  6
                                                   }
                                               ]
+                    },
+                    {
+                        "name":  "xFACts-DmOpsFunctions.ps1",
+                        "description":  "Shared deletion engine dot-sourced by the DmOps consumer scripts (Execute-DmConsumerArchive.ps1 and Execute-DmShellPurge.ps1). Provides one definition of the connection management, chunked SQL primitives, and operation and step wrappers both scripts use to delete and update against the crs5_oltp target instance, plus the shared batch-detail audit writer. Each consuming script supplies its own script-level state through a fixed set of $script:dmo_ names: the target connection and resolved settings, the current batch id, the per-batch counters, and the audit detail table the writer targets. The engine operates on those names rather than defining them, so a single shared copy serves both consumers.",
+                        "module":  "DmOps",
+                        "category":  "Shared"
                     }
                 ],
     "xeSessions":  [
