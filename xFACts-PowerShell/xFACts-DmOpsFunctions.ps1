@@ -41,6 +41,7 @@
     FUNCTIONS: BATCH LOGGING
     FUNCTIONS: OPERATION WRAPPERS
     FUNCTIONS: STEP WRAPPERS
+    FUNCTIONS: SCHEDULE AND CONTROL
 #>
 
 <# ============================================================================
@@ -50,6 +51,13 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-06-18  Added FUNCTIONS: SCHEDULE AND CONTROL with Test-dmo_AbortFlag and
+#             Get-dmo_ScheduleMode, parameterized shared replacements for the
+#             per-consumer schedule-mode and abort-flag checks that previously
+#             lived as Archive/Shell-specific copies in the two execute scripts.
+#             Test-dmo_AbortFlag takes -Category and -SettingName; Get-dmo_ScheduleMode
+#             takes -ScheduleTable. Behavior preserved exactly; only the varying
+#             table name and GlobalConfig category/setting are now parameters.
 # 2026-06-16  Added Write-dmo_BatchDetail (FUNCTIONS: BATCH LOGGING) as a shared
 #             audit writer. The operation wrappers previously called a copy
 #             defined locally in each consuming script; that inverted dependency
@@ -57,7 +65,7 @@
 #             The writer now lives here and targets the table named in
 #             $script:dmo_BatchDetailTable, which each consumer sets to its own
 #             audit detail table.
-# 2026-06-16  Initial extraction. Connection management, chunked SQL primitives,
+#             Initial extraction. Connection management, chunked SQL primitives,
 #             operation wrappers, and step wrappers lifted unchanged from
 #             Execute-DmConsumerArchive.ps1 into a DmOps-scoped shared library so
 #             Execute-DmConsumerArchive.ps1 and Execute-DmShellPurge.ps1 share one
@@ -603,5 +611,69 @@ function Step-dmo_Update {
     if (-not $ok) {
         Write-Log "  STOPPING - cannot safely continue after failure at order $($Params.Order)" "ERROR"
         $script:dmo_StopProcessing = $true
+    }
+}
+
+<# ============================================================================
+   FUNCTIONS: SCHEDULE AND CONTROL
+   ----------------------------------------------------------------------------
+   Read-only control-plane checks consulted before and between batches: the
+   per-hour schedule mode from a DmOps schedule table and the GlobalConfig
+   emergency-abort flag. Both fail safe (treat errors as blocked / not-aborted)
+   so a transient read failure never silently runs unscheduled work.
+   Prefix: dmo
+   ============================================================================ #>
+
+# Returns the current hour's integer schedule mode from the given DmOps schedule table.
+function Get-dmo_ScheduleMode {
+    param(
+        [Parameter(Mandatory)]
+        [string]$ScheduleTable
+    )
+
+    $currentHour = (Get-Date).Hour
+    $hrCol = "hr{0:D2}" -f $currentHour
+
+    try {
+        $result = Get-SqlData -Query @"
+            SELECT $hrCol AS schedule_mode
+            FROM $ScheduleTable
+            WHERE day_of_week = DATEPART(dw, GETDATE())
+"@
+        if ($result) {
+            return [int]$result.schedule_mode
+        }
+        Write-Log "  No schedule row found for today - treating as blocked" "WARN"
+        return 0
+    }
+    catch {
+        Write-Log "  Failed to read schedule: $($_.Exception.Message) - treating as blocked" "WARN"
+        return 0
+    }
+}
+
+# Returns true when the named GlobalConfig abort flag is set for the given category.
+function Test-dmo_AbortFlag {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Category,
+        [Parameter(Mandatory)]
+        [string]$SettingName
+    )
+
+    try {
+        $result = Get-SqlData -Query @"
+            SELECT setting_value FROM dbo.GlobalConfig
+            WHERE module_name = 'DmOps' AND category = '$Category'
+              AND setting_name = '$SettingName' AND is_active = 1
+"@
+        if ($result -and $result.setting_value -eq '1') {
+            return $true
+        }
+        return $false
+    }
+    catch {
+        Write-Log "  Failed to check abort flag - proceeding cautiously" "WARN"
+        return $false
     }
 }
