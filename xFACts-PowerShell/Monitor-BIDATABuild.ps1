@@ -3,90 +3,126 @@
     xFACts - BIDATA Daily Build Monitor
 
 .DESCRIPTION
-    xFACts - BIDATA
-    Script: Monitor-BIDATABuild.ps1
-    Version: Tracked in dbo.System_Metadata (component: BIDATA)
+    Monitors the BIDATA Daily Build SQL Agent job, capturing execution
+    progress in real-time and sending Teams notifications on completion,
+    failure, or when the build fails to start.
 
-    Monitors the BIDATA Daily Build SQL Agent job, capturing execution progress 
-    in real-time and sending Teams notifications on completion, failure, or 
-    when the build fails to start.
-    
-    Key behaviors:
-    - Detects build start and creates BuildExecution record (IN_PROGRESS)
-    - Captures step completions incrementally as they occur
-    - Updates status to COMPLETED or FAILED when build finishes
-    - Alerts if build hasn't started within grace period of scheduled time
-    - Supports multiple execution attempts per day (each gets own record)
-    - Uses instance_id for deduplication to prevent duplicate alerts
-    - Configuration driven via GlobalConfig table
+    Key behaviors: detects build start and creates a BuildExecution record
+    (IN_PROGRESS); captures step completions incrementally as they occur;
+    updates status to COMPLETED or FAILED when the build finishes; alerts if
+    the build has not started within the grace period of its scheduled time;
+    supports multiple execution attempts per day (each gets its own record);
+    uses instance_id for deduplication to prevent duplicate alerts; and is
+    configuration-driven via the GlobalConfig table.
 
-    CHANGELOG
-    ---------
-    2026-05-09  Multi-invocation support
-                Step 5 grouping now partitions sysjobhistory by job outcome
-                  (step_id=0) boundaries instead of collapsing all rows into
-                  a single attempt. Each invocation gets its own BuildExecution
-                  record and notification.
-                Removed the early-exit "all-done-and-notified" shortcut from
-                  Step 3; per-instance dedup in Step 6 is sufficient.
-    2026-04-28  Standardized Teams alerting via Send-TeamsAlert shared function
-                Send-BuildNotification body rewritten to call shared Send-TeamsAlert
-                  (replaces direct EXEC Teams.sp_QueueAlert)
-                Severity remapped to shared function's CRITICAL/WARNING/INFO set:
-                  COMPLETED   INFO/good            (unchanged intent)
-                  FAILED      ERROR -> CRITICAL/attention
-                  NOT_STARTED ERROR -> WARNING/warning  (historically false-positive
-                                                         during in-flight builds)
-                Wrapper signature, trigger_value scheme, and caller-side $Execute
-                  gating preserved
-    2026-03-11  Migrated to Initialize-XFActsScript shared infrastructure
-                Removed inline Write-Log, Get-xFACtsData, Invoke-xFACtsNonQuery
-                Renamed $xFACtsServer/$xFACtsDB to $ServerInstance/$Database
-                Updated header to component-level versioning format
-    2026-02-03  Orchestrator v2 integration
-                Added -TaskId, -ProcessId parameters and callbacks
-                Relocated to E:\xFACts-PowerShell on FA-SQLDBB
-    2026-01-29  Fixed execution grouping logic
-                Single execution per day using MIN instance_id
-    2026-01-28  Initial implementation
-                Real-time step capture, NOT_STARTED alerting
-                Multi-attempt support, instance_id deduplication
-                GlobalConfig-driven configuration
-                Replaces BIDATA.sp_BuildMonitor
+    Deployed in an Availability Group: place the script on both servers in
+    the appropriate folder. The SQL Agent service account must have read
+    access to msdb on the source server (configured via GlobalConfig
+    bidata_build_source_server). This script replaces BIDATA.sp_BuildMonitor;
+    disable that ProcessRegistry entry after deployment. Required GlobalConfig
+    entries: bidata_build_job_name (default: BIDATA Daily Build),
+    bidata_build_source_server (default: DM-PROD-REP), and
+    bidata_build_start_grace_minutes (default: 15).
 
 .PARAMETER ServerInstance
-    SQL Server instance hosting xFACts database (default: AVG-PROD-LSNR)
+    SQL Server instance hosting xFACts database (default: AVG-PROD-LSNR).
 
 .PARAMETER Database
-    xFACts database name (default: xFACts)
+    xFACts database name (default: xFACts).
 
 .PARAMETER SourceServer
-    SQL Server instance where BIDATA Daily Build runs (default: DM-PROD-REP)
+    SQL Server instance where BIDATA Daily Build runs (default: DM-PROD-REP).
 
 .PARAMETER TestDate
-    Override date for testing against historical data (format: yyyy-MM-dd)
+    Override date for testing against historical data (format: yyyy-MM-dd).
 
 .PARAMETER TestTime
-    Override time for testing NOT_STARTED logic (format: HH:mm)
+    Override time for testing NOT_STARTED logic (format: HH:mm).
 
 .PARAMETER Execute
     Perform writes. Without this flag, runs in preview/dry-run mode.
 
-================================================================================
-DEPLOYMENT REMINDERS
-================================================================================
-1. This is deployed in an Availability Group - ensure this script is placed 
-   on both servers in the appropriate folder.
-2. The SQL Agent service account must have read access to msdb on the source
-   server (configured via GlobalConfig bidata_build_source_server).
-3. This script replaces BIDATA.sp_BuildMonitor - disable the ProcessRegistry 
-   entry after deployment.
-4. Required GlobalConfig entries:
-   - bidata_build_job_name (default: BIDATA Daily Build)
-   - bidata_build_source_server (default: DM-PROD-REP)
-   - bidata_build_start_grace_minutes (default: 15)
-================================================================================
+.PARAMETER TaskId
+    Orchestrator TaskLog ID passed by the engine at launch. Used for task
+    completion callback. Default 0 (no callback when run manually).
+
+.PARAMETER ProcessId
+    Orchestrator ProcessRegistry ID passed by the engine at launch. Used for
+    task completion callback. Default 0 (no callback when run manually).
+
+.COMPONENT
+    BIDATA
+
+.NOTES
+    File Name : Monitor-BIDATABuild.ps1
+    Location  : E:\xFACts-PowerShell\Monitor-BIDATABuild.ps1
+
+    FILE ORGANIZATION
+    -----------------
+    CHANGELOG: CHANGE HISTORY
+    PARAMETERS: SCRIPT PARAMETERS
+    IMPORTS: SCRIPT DEPENDENCIES
+    INITIALIZATION: SCRIPT INITIALIZATION
+    FUNCTIONS: BUILD MONITOR HELPERS
+    EXECUTION: SCRIPT EXECUTION
 #>
+
+<# ============================================================================
+   CHANGELOG: CHANGE HISTORY
+   ----------------------------------------------------------------------------
+   Dated change history for this monitor. Most-recent entry first.
+   Prefix: (none)
+   ============================================================================ #>
+
+# 2026-06-17  Conformed to the Control Center PowerShell file format spec:
+#             rebuilt comment-based-help header with .COMPONENT and no inline
+#             dividers or embedded changelog, added block-comment section
+#             banners, moved the dot-source into an IMPORTS section, applied
+#             the bid_ prefix to all helper functions and replaced their
+#             comment-based-help docblocks with single-line purpose comments,
+#             converted inline dividers to sub-section markers, replaced
+#             console writes with the sanctioned Write-Console family, corrected
+#             the SourceQueryFailed variable to the lowercase script scope
+#             qualifier, lifted trailing comments to their own lines, and
+#             stripped trailing whitespace. Also corrected the Step 4
+#             source-query-failure callback from the invalid status WARN to
+#             POLLING (a failed source query is a non-terminal poll; the Agent
+#             job itself is unaffected).
+# 2026-05-09  Multi-invocation support. Step 5 grouping now partitions
+#             sysjobhistory by job outcome (step_id=0) boundaries instead of
+#             collapsing all rows into a single attempt. Each invocation gets
+#             its own BuildExecution record and notification. Removed the
+#             early-exit "all-done-and-notified" shortcut from Step 3;
+#             per-instance dedup in Step 6 is sufficient.
+# 2026-04-28  Standardized Teams alerting via the shared Send-TeamsAlert
+#             function. The build-notification body was rewritten to call
+#             shared Send-TeamsAlert (replaces direct EXEC Teams.sp_QueueAlert).
+#             Severity remapped to the shared function's CRITICAL/WARNING/INFO
+#             set: COMPLETED INFO/good (unchanged intent); FAILED ERROR to
+#             CRITICAL/attention; NOT_STARTED ERROR to WARNING/warning
+#             (historically false-positive during in-flight builds). Wrapper
+#             signature, trigger_value scheme, and caller-side Execute gating
+#             preserved.
+# 2026-03-11  Migrated to Initialize-XFActsScript shared infrastructure.
+#             Removed inline Write-Log, Get-xFACtsData, Invoke-xFACtsNonQuery.
+#             Renamed the xFACts server/database variables to ServerInstance
+#             and Database. Updated header to component-level versioning format.
+# 2026-02-03  Orchestrator v2 integration. Added -TaskId, -ProcessId parameters
+#             and callbacks. Relocated to E:\xFACts-PowerShell on FA-SQLDBB.
+# 2026-01-29  Fixed execution grouping logic. Single execution per day using
+#             MIN instance_id.
+# 2026-01-28  Initial implementation. Real-time step capture, NOT_STARTED
+#             alerting, multi-attempt support, instance_id deduplication,
+#             GlobalConfig-driven configuration. Replaces BIDATA.sp_BuildMonitor.
+
+<# ============================================================================
+   PARAMETERS: SCRIPT PARAMETERS
+   ----------------------------------------------------------------------------
+   Script-level parameters: xFACts target instance and database, the build
+   source server, the test-date/test-time overrides, the execute switch, and
+   the orchestrator callback identifiers.
+   Prefix: (none)
+   ============================================================================ #>
 
 [CmdletBinding()]
 param(
@@ -100,33 +136,40 @@ param(
     [int]$ProcessId = 0
 )
 
-# ============================================================================
-# STANDARD INITIALIZATION
-# ============================================================================
+<# ============================================================================
+   IMPORTS: SCRIPT DEPENDENCIES
+   ----------------------------------------------------------------------------
+   Dot-sourced shared infrastructure: orchestrator helpers providing
+   Initialize-XFActsScript, the shared SQL helpers, Write-Log, the
+   Write-Console family, Send-TeamsAlert, and the task-completion callback.
+   Prefix: (none)
+   ============================================================================ #>
 
 . "$PSScriptRoot\xFACts-OrchestratorFunctions.ps1"
+
+<# ============================================================================
+   INITIALIZATION: SCRIPT INITIALIZATION
+   ----------------------------------------------------------------------------
+   One-time setup of shared infrastructure, logging, and application identity
+   via Initialize-XFActsScript.
+   Prefix: (none)
+   ============================================================================ #>
 
 Initialize-XFActsScript -ScriptName 'Monitor-BIDATABuild' `
     -ServerInstance $ServerInstance -Database $Database -Execute:$Execute
 
-# ============================================================================
-# CONFIGURATION DEFAULTS (overridden by GlobalConfig)
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: BUILD MONITOR HELPERS
+   ----------------------------------------------------------------------------
+   Source-server msdb access, GlobalConfig retrieval, SQL Agent
+   duration/datetime/time converters, scheduled-time and job-history lookups,
+   build-record and captured-step queries, invocation partitioning, and the
+   Teams build-notification wrapper.
+   Prefix: bid
+   ============================================================================ #>
 
-$ConfigDefaults = @{
-    JobName = "BIDATA Daily Build"
-    SourceServer = "DM-PROD-REP"
-    StartGraceMinutes = 15
-    
-    # Steps to exclude from notification (infrastructure steps)
-    ExcludedStepIds = @(1, 2, 18, 19, 20, 21)
-}
-
-# ============================================================================
-# FUNCTIONS
-# ============================================================================
-
-function Get-SourceData {
+# Runs a read query against the source server's msdb and flags a failure for the caller.
+function Get-bid_SourceData {
     param(
         [string]$ServerInstance,
         [string]$Query,
@@ -137,109 +180,94 @@ function Get-SourceData {
     }
     catch {
         Write-Log "Source server query failed: $($_.Exception.Message)" "ERROR"
-        $Script:SourceQueryFailed = $true
+        $script:SourceQueryFailed = $true
         return $null
     }
 }
 
-function Get-GlobalConfig {
-    <#
-    .SYNOPSIS
-        Retrieves configuration values from GlobalConfig table
-    #>
+# Retrieves configuration values from the GlobalConfig table.
+function Get-bid_GlobalConfig {
     param([string[]]$Keys)
-    
+
     $keyList = ($Keys | ForEach-Object { "'$_'" }) -join ","
-    
+
     $query = @"
         SELECT setting_name, setting_value
         FROM dbo.GlobalConfig
         WHERE setting_name IN ($keyList)
           AND is_active = 1
 "@
-    
+
     $results = Get-SqlData -Query $query
-    
+
     $config = @{}
     if ($results) {
         foreach ($row in $results) {
             $config[$row.setting_name] = $row.setting_value
         }
     }
-    
+
     return $config
 }
 
-function ConvertFrom-AgentDuration {
-    <#
-    .SYNOPSIS
-        Converts SQL Agent duration (HHMMSS integer) to seconds and formatted string
-    #>
+# Converts a SQL Agent duration (HHMMSS integer) to seconds and a formatted string.
+function ConvertFrom-bid_AgentDuration {
     param([int]$Duration)
-    
+
     $hours = [int][math]::Floor($Duration / 10000)
     $minutes = [int][math]::Floor(($Duration % 10000) / 100)
     $seconds = [int]($Duration % 100)
-    
+
     $totalSeconds = ($hours * 3600) + ($minutes * 60) + $seconds
     $formatted = "{0:D2}:{1:D2}:{2:D2}" -f $hours, $minutes, $seconds
-    
+
     return @{
         TotalSeconds = $totalSeconds
         Formatted = $formatted
     }
 }
 
-function ConvertFrom-AgentDateTime {
-    <#
-    .SYNOPSIS
-        Converts SQL Agent run_date (YYYYMMDD) and run_time (HHMMSS) to DateTime
-    #>
+# Converts a SQL Agent run_date (YYYYMMDD) and run_time (HHMMSS) to a DateTime.
+function ConvertFrom-bid_AgentDateTime {
     param(
         [int]$RunDate,
         [int]$RunTime
     )
-    
+
     $dateStr = $RunDate.ToString()
     $timeStr = $RunTime.ToString().PadLeft(6, '0')
-    
+
     $year = [int]$dateStr.Substring(0, 4)
     $month = [int]$dateStr.Substring(4, 2)
     $day = [int]$dateStr.Substring(6, 2)
-    
+
     $hour = [int]$timeStr.Substring(0, 2)
     $minute = [int]$timeStr.Substring(2, 2)
     $second = [int]$timeStr.Substring(4, 2)
-    
+
     return Get-Date -Year $year -Month $month -Day $day -Hour $hour -Minute $minute -Second $second
 }
 
-function ConvertFrom-AgentTime {
-    <#
-    .SYNOPSIS
-        Converts SQL Agent active_start_time (HHMMSS integer) to TimeSpan
-    #>
+# Converts a SQL Agent active_start_time (HHMMSS integer) to a TimeSpan.
+function ConvertFrom-bid_AgentTime {
     param([int]$Time)
-    
+
     $timeStr = $Time.ToString().PadLeft(6, '0')
-    
+
     $hour = [int]$timeStr.Substring(0, 2)
     $minute = [int]$timeStr.Substring(2, 2)
     $second = [int]$timeStr.Substring(4, 2)
-    
+
     return New-TimeSpan -Hours $hour -Minutes $minute -Seconds $second
 }
 
-function Get-JobScheduledTime {
-    <#
-    .SYNOPSIS
-        Retrieves the scheduled start time for a SQL Agent job
-    #>
+# Retrieves the scheduled start time for a SQL Agent job.
+function Get-bid_JobScheduledTime {
     param(
         [string]$ServerInstance,
         [string]$JobName
     )
-    
+
     $query = @"
         SELECT TOP 1 s.active_start_time
         FROM msdb.dbo.sysjobs j
@@ -249,27 +277,24 @@ function Get-JobScheduledTime {
           AND s.enabled = 1
         ORDER BY s.active_start_time
 "@
-    
-    $result = Get-SourceData -ServerInstance $ServerInstance -Query $query
-    
+
+    $result = Get-bid_SourceData -ServerInstance $ServerInstance -Query $query
+
     if ($result) {
-        return ConvertFrom-AgentTime -Time $result.active_start_time
+        return ConvertFrom-bid_AgentTime -Time $result.active_start_time
     }
-    
+
     return $null
 }
 
-function Get-ExistingBuilds {
-    <#
-    .SYNOPSIS
-        Retrieves all build records for a specific date (supports multiple attempts)
-    #>
+# Retrieves all build records for a specific date (supports multiple attempts).
+function Get-bid_ExistingBuilds {
     param([DateTime]$BuildDate)
-    
+
     $dateStr = $BuildDate.ToString("yyyy-MM-dd")
-    
+
     $query = @"
-        SELECT 
+        SELECT
             build_id, build_date, instance_id, start_dttm, end_dttm,
             total_duration_seconds, total_duration_formatted,
             step_count, status, run_status, notified_dttm,
@@ -278,42 +303,36 @@ function Get-ExistingBuilds {
         WHERE build_date = '$dateStr'
         ORDER BY build_id
 "@
-    
+
     return Get-SqlData -Query $query
 }
 
-function Get-CapturedSteps {
-    <#
-    .SYNOPSIS
-        Retrieves steps already captured for a build
-    #>
+# Retrieves steps already captured for a build.
+function Get-bid_CapturedSteps {
     param([int]$BuildId)
-    
+
     $query = @"
         SELECT step_id, step_name, run_status, duration_seconds
         FROM BIDATA.StepExecution
         WHERE build_id = $BuildId
         ORDER BY step_id
 "@
-    
+
     return Get-SqlData -Query $query
 }
 
-function Get-JobHistory {
-    <#
-    .SYNOPSIS
-        Retrieves job history from source server for the specified date
-    #>
+# Retrieves job history from the source server for the specified date.
+function Get-bid_JobHistory {
     param(
         [string]$ServerInstance,
         [DateTime]$BuildDate,
         [string]$JobName
     )
-    
+
     $runDateInt = [int]$BuildDate.ToString("yyyyMMdd")
-    
+
     $query = @"
-        SELECT 
+        SELECT
             h.instance_id,
             h.step_id,
             h.step_name,
@@ -327,37 +346,30 @@ function Get-JobHistory {
           AND h.run_date = $runDateInt
         ORDER BY h.instance_id
 "@
-    
-    return Get-SourceData -ServerInstance $ServerInstance -Query $query
+
+    return Get-bid_SourceData -ServerInstance $ServerInstance -Query $query
 }
 
-function Group-JobInvocations {
-    <#
-    .SYNOPSIS
-        Partitions sysjobhistory rows into discrete job invocations.
-
-    .DESCRIPTION
-        Each SQL Agent job invocation in sysjobhistory is a contiguous run of 
-        step_id > 0 rows terminated by a step_id = 0 row (the job-level outcome).
-        Steps within an invocation have monotonically increasing instance_ids.
-        
-        Returns an ordered array of invocation hashtables, each containing:
-          - Anchor      : MIN(instance_id) of the invocation's step rows.
-                          Stable for the lifetime of the invocation; used as
-                          the deduplication key against BIDATA.BuildExecution.
-          - Steps       : Array of step rows (step_id > 0) for this invocation.
-          - JobOutcome  : The step_id = 0 row, or $null if the invocation is
-                          still in progress (no outcome row yet).
-
-        Invocations are emitted in chronological order. An invocation with no
-        Steps (orphan job outcome with no preceding steps) is skipped.
-    #>
+# Partitions sysjobhistory rows into discrete job invocations.
+# Each SQL Agent job invocation in sysjobhistory is a contiguous run of
+# step_id > 0 rows terminated by a step_id = 0 row (the job-level outcome).
+# Steps within an invocation have monotonically increasing instance_ids.
+# Returns an ordered array of invocation hashtables, each containing:
+#   - Anchor      : MIN(instance_id) of the invocation's step rows. Stable
+#                   for the lifetime of the invocation; used as the
+#                   deduplication key against BIDATA.BuildExecution.
+#   - Steps       : Array of step rows (step_id > 0) for this invocation.
+#   - JobOutcome  : The step_id = 0 row, or $null if the invocation is still
+#                   in progress (no outcome row yet).
+# Invocations are emitted in chronological order. An invocation with no
+# Steps (orphan job outcome with no preceding steps) is skipped.
+function Group-bid_JobInvocations {
     param($History)
-    
+
     $invocations = @()
     $currentSteps = @()
-    
-    # History is already ordered by instance_id (Get-JobHistory ORDER BY clause)
+
+    # History is already ordered by instance_id (Get-bid_JobHistory ORDER BY clause)
     foreach ($row in @($History)) {
         if ($row.step_id -eq 0) {
             # Job outcome row terminates the current invocation
@@ -375,7 +387,7 @@ function Group-JobInvocations {
             $currentSteps += $row
         }
     }
-    
+
     # Trailing steps without an outcome row = in-progress invocation
     if ($currentSteps.Count -gt 0) {
         $anchor = [int]($currentSteps | Measure-Object -Property instance_id -Minimum).Minimum
@@ -385,35 +397,28 @@ function Group-JobInvocations {
             JobOutcome = $null
         }
     }
-    
+
     return ,$invocations
 }
 
-function Send-BuildNotification {
-    <#
-    .SYNOPSIS
-        Queues a Teams notification for build events via shared Send-TeamsAlert.
-
-    .DESCRIPTION
-        Builds status-specific title/message/severity, then delegates to the
-        shared Send-TeamsAlert function. Caller is responsible for $Execute
-        gating (this function unconditionally queues when called, matching
-        the script's existing convention).
-
-        Severity/color mapping:
-          COMPLETED   -> INFO     / good       (success summary)
-          FAILED      -> CRITICAL / attention  (build failure)
-          NOT_STARTED -> WARNING  / warning    (rare; historically false-positive
-                                                 during in-flight builds)
-    #>
+# Queues a Teams notification for build events via the shared Send-TeamsAlert.
+# Builds status-specific title/message/severity, then delegates to the shared
+# Send-TeamsAlert function. The caller is responsible for $Execute gating;
+# this function unconditionally queues when called. Severity/color mapping:
+# COMPLETED -> INFO/good (success summary); FAILED -> CRITICAL/attention
+# (build failure); NOT_STARTED -> WARNING/warning (rare; historically
+# false-positive during in-flight builds).
+function Send-bid_BuildNotification {
     param(
-        [string]$Status,           # COMPLETED, FAILED, or NOT_STARTED
+        # COMPLETED, FAILED, or NOT_STARTED
+        [string]$Status,
         [DateTime]$EventTime,
         [string]$Duration,
         [string]$StepDetails,
         [string]$FailedStepName,
         [DateTime]$BuildDate,
-        [string]$TriggerValue      # For deduplication: STATUS-instance_id or NOT_STARTED-date
+        # For deduplication: STATUS-instance_id or NOT_STARTED-date
+        [string]$TriggerValue
     )
 
     switch ($Status) {
@@ -448,25 +453,40 @@ function Send-BuildNotification {
         -TriggerType 'BuildStatus' -TriggerValue $TriggerValue
 }
 
-# ============================================================================
-# MAIN SCRIPT
-# ============================================================================
+<# ============================================================================
+   EXECUTION: SCRIPT EXECUTION
+   ----------------------------------------------------------------------------
+   Configuration defaults and load, target date/time resolution, existing
+   build-record checks, source-server job-history query, invocation
+   partitioning, per-invocation record creation/update and step capture,
+   Teams notifications, the run summary, and the orchestrator completion
+   callback.
+   Prefix: (none)
+   ============================================================================ #>
 
-Write-Host ""
-Write-Host "================================================================" -ForegroundColor Cyan
-Write-Host "  xFACts BIDATA Build Monitor" -ForegroundColor Cyan
-Write-Host "================================================================" -ForegroundColor Cyan
-Write-Host ""
+# -- Configuration defaults --
+
+# Defaults overridden by GlobalConfig at runtime.
+$ConfigDefaults = @{
+    JobName = "BIDATA Daily Build"
+    SourceServer = "DM-PROD-REP"
+    StartGraceMinutes = 15
+
+    # Steps to exclude from notification (infrastructure steps)
+    ExcludedStepIds = @(1, 2, 18, 19, 20, 21)
+}
+
+Write-ConsoleBanner -Label "xFACts BIDATA Build Monitor"
 
 $scriptStart = Get-Date
-$finalStatus = "POLLING"   # Default for orchestrator callback if no invocations processed
+# Default for orchestrator callback if no invocations processed
+$finalStatus = "POLLING"
 
-# ----------------------------------------
-# Step 1: Load configuration from GlobalConfig
-# ----------------------------------------
+# -- Step 1: Load configuration from GlobalConfig --
+
 Write-Log "Loading configuration..."
 
-$globalConfig = Get-GlobalConfig -Keys @(
+$globalConfig = Get-bid_GlobalConfig -Keys @(
     'bidata_build_job_name',
     'bidata_build_source_server',
     'bidata_build_start_grace_minutes'
@@ -488,9 +508,7 @@ Write-Log "  Job Name: $($Config.JobName)"
 Write-Log "  Source Server: $($Config.SourceServer)"
 Write-Log "  Start Grace Minutes: $($Config.StartGraceMinutes)"
 
-# ----------------------------------------
-# Step 2: Determine target date/time
-# ----------------------------------------
+# -- Step 2: Determine target date/time --
 
 if ($TestDate) {
     try {
@@ -522,12 +540,11 @@ else {
     $currentTime = Get-Date
 }
 
-# ----------------------------------------
-# Step 3: Check existing build records for today
-# ----------------------------------------
+# -- Step 3: Check existing build records for today --
+
 Write-Log "Checking existing build records..."
 
-$existingBuilds = Get-ExistingBuilds -BuildDate $targetDate
+$existingBuilds = Get-bid_ExistingBuilds -BuildDate $targetDate
 
 # Build a hashtable of instance_ids we've already processed
 $processedInstances = @{}
@@ -542,7 +559,7 @@ if ($existingBuilds) {
             $processedInstances[[int]$build.instance_id] = $build
         }
     }
-    
+
     Write-Log "  Found $(@($existingBuilds).Count) existing record(s)"
     Write-Log "  Processed instance_ids: $($processedInstances.Keys -join ', ')"
 }
@@ -550,21 +567,20 @@ else {
     Write-Log "  No existing records for today"
 }
 
-# ----------------------------------------
-# Step 4: Query source server for job history
-# ----------------------------------------
+# -- Step 4: Query source server for job history --
+
 Write-Log "Querying job history from $($Config.SourceServer)..."
 
-$Script:SourceQueryFailed = $false
-$jobHistory = Get-JobHistory -ServerInstance $Config.SourceServer -BuildDate $targetDate -JobName $Config.JobName
+$script:SourceQueryFailed = $false
+$jobHistory = Get-bid_JobHistory -ServerInstance $Config.SourceServer -BuildDate $targetDate -JobName $Config.JobName
 
-if ($Script:SourceQueryFailed) {
+if ($script:SourceQueryFailed) {
     Write-Log "  Source server query failed - cannot determine build state. Skipping cycle." "WARN"
     if ($TaskId -gt 0) {
         $totalMs = [int]((Get-Date) - $scriptStart).TotalMilliseconds
         Complete-OrchestratorTask -ServerInstance $ServerInstance -Database $Database `
             -TaskId $TaskId -ProcessId $ProcessId `
-            -Status "WARN" -DurationMs $totalMs `
+            -Status "POLLING" -DurationMs $totalMs `
             -Output "Source query failed - Date: $($targetDate.ToString('yyyy-MM-dd'))"
     }
     exit 0
@@ -572,33 +588,33 @@ if ($Script:SourceQueryFailed) {
 
 if ($null -eq $jobHistory -or @($jobHistory).Count -eq 0) {
     Write-Log "  No job history found for today" "WARN"
-    
+
     # Check if we should alert about NOT_STARTED
-    $scheduledTime = Get-JobScheduledTime -ServerInstance $Config.SourceServer -JobName $Config.JobName
-    
+    $scheduledTime = Get-bid_JobScheduledTime -ServerInstance $Config.SourceServer -JobName $Config.JobName
+
     if ($scheduledTime) {
         $scheduledDateTime = $targetDate.Add($scheduledTime)
         $graceDeadline = $scheduledDateTime.AddMinutes($Config.StartGraceMinutes)
-        
+
         Write-Log "  Scheduled start: $($scheduledDateTime.ToString('HH:mm'))"
         Write-Log "  Grace deadline: $($graceDeadline.ToString('HH:mm'))"
         Write-Log "  Current time: $($currentTime.ToString('HH:mm'))"
-        
+
         if ($currentTime -gt $graceDeadline) {
             # Past grace period - need to alert
             Write-Log "  Build has not started and grace period has passed!" "ERROR"
-            
+
             # Check if we already have a NOT_STARTED record with notification
             $alreadyNotified = $notStartedRecord -and $notStartedRecord.notified_dttm -isnot [DBNull]
-            
+
             if (-not $alreadyNotified) {
                 $triggerValue = "NOT_STARTED-$($targetDate.ToString('yyyy-MM-dd'))"
-                
+
                 if ($Execute) {
                     # Create NOT_STARTED record if it doesn't exist
                     if (-not $notStartedRecord) {
                         Write-Log "Creating NOT_STARTED record..."
-                        
+
                         $insertQuery = @"
                             INSERT INTO BIDATA.BuildExecution (
                                 build_date, job_name, status, is_backfill
@@ -611,7 +627,7 @@ if ($null -eq $jobHistory -or @($jobHistory).Count -eq 0) {
                             );
                             SELECT SCOPE_IDENTITY() AS build_id;
 "@
-                        
+
                         $result = Get-SqlData -Query $insertQuery
                         if ($result) {
                             $notStartedBuildId = $result.build_id
@@ -621,18 +637,18 @@ if ($null -eq $jobHistory -or @($jobHistory).Count -eq 0) {
                     else {
                         $notStartedBuildId = $notStartedRecord.build_id
                     }
-                    
+
                     # Send notification
                     Write-Log "Sending NOT_STARTED notification..."
-                    $notifyResult = Send-BuildNotification `
+                    $notifyResult = Send-bid_BuildNotification `
                         -Status "NOT_STARTED" `
                         -EventTime $currentTime `
                         -BuildDate $targetDate `
                         -TriggerValue $triggerValue
-                    
+
                     if ($notifyResult) {
                         Write-Log "  Notification queued" "SUCCESS"
-                        
+
                         # Mark as notified
                         $markNotifiedQuery = "UPDATE BIDATA.BuildExecution SET notified_dttm = GETDATE() WHERE build_id = $notStartedBuildId"
                         Invoke-SqlNonQuery -Query $markNotifiedQuery | Out-Null
@@ -656,8 +672,8 @@ if ($null -eq $jobHistory -or @($jobHistory).Count -eq 0) {
     else {
         Write-Log "  Could not determine scheduled start time" "WARN"
     }
-    
-    Write-Host ""
+
+    Write-Console ""
     if ($TaskId -gt 0) {
         $totalMs = [int]((Get-Date) - $scriptStart).TotalMilliseconds
         Complete-OrchestratorTask -ServerInstance $ServerInstance -Database $Database `
@@ -671,26 +687,23 @@ if ($null -eq $jobHistory -or @($jobHistory).Count -eq 0) {
 $historyCount = @($jobHistory).Count
 Write-Log "  Found $historyCount history record(s)"
 
-# ----------------------------------------
-# Step 5: Partition history into discrete invocations
-# ----------------------------------------
+# -- Step 5: Partition history into discrete invocations --
+
 Write-Log "Analyzing execution attempts..."
 
-$invocations = Group-JobInvocations -History $jobHistory
+$invocations = Group-bid_JobInvocations -History $jobHistory
 
 Write-Log "  Found $($invocations.Count) execution attempt(s)"
 
-# ----------------------------------------
-# Step 6: Process each invocation
-# ----------------------------------------
+# -- Step 6: Process each invocation --
 
 foreach ($invocation in $invocations) {
     $instanceId = $invocation.Anchor
     $stepHistory = $invocation.Steps
     $jobOutcome = $invocation.JobOutcome
-    
+
     Write-Log "Processing instance_id $instanceId..."
-    
+
     # Check if this instance is already fully processed and notified
     if ($processedInstances.ContainsKey($instanceId)) {
         $existingRecord = $processedInstances[$instanceId]
@@ -700,26 +713,26 @@ foreach ($invocation in $invocations) {
             continue
         }
     }
-    
+
     # Determine build state for this invocation
     $buildCompleted = $null -ne $jobOutcome -and $jobOutcome.run_status -eq 1
     $buildFailed = $null -ne $jobOutcome -and $jobOutcome.run_status -eq 0
-    
+
     $finalStatus = if ($buildCompleted) { "COMPLETED" } elseif ($buildFailed) { "FAILED" } else { "IN_PROGRESS" }
     Write-Log "  Status: $finalStatus"
-    
+
     # Calculate timing
     $firstStep = $stepHistory | Sort-Object run_time | Select-Object -First 1
-    $startDttm = ConvertFrom-AgentDateTime -RunDate $firstStep.run_date -RunTime $firstStep.run_time
-    
+    $startDttm = ConvertFrom-bid_AgentDateTime -RunDate $firstStep.run_date -RunTime $firstStep.run_time
+
     Write-Log "  Started: $($startDttm.ToString('yyyy-MM-dd HH:mm:ss'))"
-    
+
     if ($jobOutcome) {
-        $durationInfo = ConvertFrom-AgentDuration -Duration $jobOutcome.run_duration
+        $durationInfo = ConvertFrom-bid_AgentDuration -Duration $jobOutcome.run_duration
         $endDttm = $startDttm.AddSeconds($durationInfo.TotalSeconds)
         $totalDurationSeconds = $durationInfo.TotalSeconds
         $totalDurationFormatted = $durationInfo.Formatted
-        
+
         Write-Log "  Ended: $($endDttm.ToString('yyyy-MM-dd HH:mm:ss'))"
         Write-Log "  Duration: $totalDurationFormatted"
     }
@@ -728,14 +741,14 @@ foreach ($invocation in $invocations) {
         $elapsed = $currentTime - $startDttm
         $totalDurationSeconds = [int]$elapsed.TotalSeconds
         $totalDurationFormatted = "{0:D2}:{1:D2}:{2:D2}" -f [int]$elapsed.TotalHours, $elapsed.Minutes, $elapsed.Seconds
-        
+
         Write-Log "  Elapsed: $totalDurationFormatted"
     }
-    
+
     # Identify failed step if applicable
     $failedStepId = $null
     $failedStepName = $null
-    
+
     if ($buildFailed) {
         $failedStep = $stepHistory | Where-Object { $_.run_status -eq 0 } | Select-Object -First 1
         if ($failedStep) {
@@ -744,24 +757,21 @@ foreach ($invocation in $invocations) {
             Write-Log "  Failed step: [$failedStepId] $failedStepName" "ERROR"
         }
     }
-    
-    # ----------------------------------------
+
     # Create or update BuildExecution record
-    # ----------------------------------------
-    
     $buildId = $null
     $existingRecord = if ($processedInstances.ContainsKey($instanceId)) { $processedInstances[$instanceId] } else { $null }
-    
+
     if ($Execute) {
         if ($null -eq $existingRecord) {
             # Insert new record
             Write-Log "  Creating BuildExecution record..."
-            
+
             $endDttmSql = if ($endDttm) { "'$($endDttm.ToString('yyyy-MM-dd HH:mm:ss'))'" } else { "NULL" }
             $failedStepIdSql = if ($failedStepId) { $failedStepId } else { "NULL" }
             $failedStepNameSql = if ($failedStepName) { "'$($failedStepName -replace "'", "''")'" } else { "NULL" }
             $runStatus = if ($buildCompleted) { 1 } elseif ($buildFailed) { 0 } else { "NULL" }
-            
+
             $insertQuery = @"
                 INSERT INTO BIDATA.BuildExecution (
                     build_date, job_name, instance_id, start_dttm, end_dttm,
@@ -769,8 +779,8 @@ foreach ($invocation in $invocations) {
                     status, run_status, failed_step_id, failed_step_name, is_backfill
                 )
                 VALUES (
-                    '$($targetDate.ToString('yyyy-MM-dd'))', 
-                    '$($Config.JobName)', 
+                    '$($targetDate.ToString('yyyy-MM-dd'))',
+                    '$($Config.JobName)',
                     $instanceId,
                     '$($startDttm.ToString('yyyy-MM-dd HH:mm:ss'))',
                     $endDttmSql,
@@ -784,7 +794,7 @@ foreach ($invocation in $invocations) {
                 );
                 SELECT SCOPE_IDENTITY() AS build_id;
 "@
-            
+
             $result = Get-SqlData -Query $insertQuery
             if ($result) {
                 $buildId = $result.build_id
@@ -799,12 +809,12 @@ foreach ($invocation in $invocations) {
             # Update existing record
             $buildId = $existingRecord.build_id
             Write-Log "  Updating BuildExecution record (Build ID: $buildId)..."
-            
+
             $endDttmSql = if ($endDttm) { "'$($endDttm.ToString('yyyy-MM-dd HH:mm:ss'))'" } else { "NULL" }
             $failedStepIdSql = if ($failedStepId) { $failedStepId } else { "NULL" }
             $failedStepNameSql = if ($failedStepName) { "'$($failedStepName -replace "'", "''")'" } else { "NULL" }
             $runStatus = if ($buildCompleted) { 1 } elseif ($buildFailed) { 0 } else { "NULL" }
-            
+
             $updateQuery = @"
                 UPDATE BIDATA.BuildExecution
                 SET end_dttm = $endDttmSql,
@@ -816,13 +826,13 @@ foreach ($invocation in $invocations) {
                     failed_step_name = $failedStepNameSql
                 WHERE build_id = $buildId
 "@
-            
+
             $result = Invoke-SqlNonQuery -Query $updateQuery
             if ($result) {
                 Write-Log "    Updated successfully" "SUCCESS"
             }
         }
-        
+
         # If we had a NOT_STARTED record and build has now started, update it
         if ($notStartedRecord -and -not $processedInstances.ContainsKey($instanceId)) {
             Write-Log "  Updating NOT_STARTED record - build has started"
@@ -834,40 +844,39 @@ foreach ($invocation in $invocations) {
                   AND status = 'NOT_STARTED'
 "@
             Invoke-SqlNonQuery -Query $updateNotStartedQuery | Out-Null
-            $notStartedRecord = $null   # Only supersede once across multiple invocations
+            # Only supersede once across multiple invocations
+            $notStartedRecord = $null
         }
     }
     else {
         Write-Log "  PREVIEW: Would create/update BuildExecution with status '$finalStatus'" "WARN"
         $buildId = -1
     }
-    
-    # ----------------------------------------
+
     # Capture step execution details
-    # ----------------------------------------
     Write-Log "  Processing step execution details..."
-    
+
     # Get already captured steps (if any)
     $capturedSteps = @()
     if ($buildId -gt 0) {
-        $captured = Get-CapturedSteps -BuildId $buildId
+        $captured = Get-bid_CapturedSteps -BuildId $buildId
         if ($captured) {
             $capturedSteps = @($captured | ForEach-Object { $_.step_id })
         }
     }
-    
+
     Write-Log "    Already captured: $($capturedSteps.Count) steps"
-    
+
     # Process each step from history
     $newStepsAdded = 0
     $stepDetailsForNotification = @()
-    
+
     foreach ($step in $stepHistory) {
         $stepId = $step.step_id
         $stepName = $step.step_name
         $stepRunStatus = $step.run_status
-        $durationInfo = ConvertFrom-AgentDuration -Duration $step.run_duration
-        
+        $durationInfo = ConvertFrom-bid_AgentDuration -Duration $step.run_duration
+
         # Skip if already captured
         if ($stepId -in $capturedSteps) {
             # Still add to notification details
@@ -876,18 +885,18 @@ foreach ($invocation in $invocations) {
             }
             continue
         }
-        
+
         # Build notification detail (exclude infrastructure steps)
         if ($stepId -notin $Config.ExcludedStepIds) {
             $stepDetailsForNotification += "$stepName`: $($durationInfo.Formatted)"
         }
-        
+
         if ($Execute -and $buildId -gt 0) {
             $stepNameSafe = $stepName -replace "'", "''"
-            
+
             $insertStepQuery = @"
                 INSERT INTO BIDATA.StepExecution (
-                    build_id, step_id, step_name, run_status, 
+                    build_id, step_id, step_name, run_status,
                     run_time, duration_seconds, duration_formatted
                 )
                 VALUES (
@@ -895,7 +904,7 @@ foreach ($invocation in $invocations) {
                     $($step.run_time), $($durationInfo.TotalSeconds), '$($durationInfo.Formatted)'
                 )
 "@
-            
+
             $result = Invoke-SqlNonQuery -Query $insertStepQuery
             if ($result) {
                 $newStepsAdded++
@@ -905,35 +914,32 @@ foreach ($invocation in $invocations) {
             $newStepsAdded++
         }
     }
-    
+
     Write-Log "    New steps captured: $newStepsAdded"
-    
+
     # Update step count
     if ($Execute -and $buildId -gt 0) {
         $updateCountQuery = @"
-            UPDATE BIDATA.BuildExecution 
+            UPDATE BIDATA.BuildExecution
             SET step_count = (SELECT COUNT(*) FROM BIDATA.StepExecution WHERE build_id = $buildId)
             WHERE build_id = $buildId
 "@
         Invoke-SqlNonQuery -Query $updateCountQuery | Out-Null
     }
-    
-    # ----------------------------------------
+
     # Send notification if build finished
-    # ----------------------------------------
-    
     if ($finalStatus -in @("COMPLETED", "FAILED")) {
         # Check if already notified for this specific instance
         $alreadyNotified = $existingRecord -and $existingRecord.notified_dttm -isnot [DBNull]
-        
+
         if (-not $alreadyNotified) {
             Write-Log "  Sending Teams notification..."
-            
+
             $stepDetailsText = $stepDetailsForNotification -join "`n"
             $triggerValue = "$finalStatus-$instanceId"
-            
+
             if ($Execute) {
-                $notifyResult = Send-BuildNotification `
+                $notifyResult = Send-bid_BuildNotification `
                     -Status $finalStatus `
                     -EventTime $endDttm `
                     -Duration $totalDurationFormatted `
@@ -941,15 +947,15 @@ foreach ($invocation in $invocations) {
                     -FailedStepName $failedStepName `
                     -BuildDate $targetDate `
                     -TriggerValue $triggerValue
-                
+
                 if ($notifyResult) {
                     Write-Log "    Notification queued" "SUCCESS"
                 }
                 else {
                     Write-Log "    Notification skipped (dedup) or failed to queue" "INFO"
                 }
-                
-                # Mark as notified regardless of dedup outcome - the notification 
+
+                # Mark as notified regardless of dedup outcome - the notification
                 # decision for this instance is final once we reach this point.
                 $markNotifiedQuery = "UPDATE BIDATA.BuildExecution SET notified_dttm = GETDATE() WHERE build_id = $buildId"
                 Invoke-SqlNonQuery -Query $markNotifiedQuery | Out-Null
@@ -964,31 +970,21 @@ foreach ($invocation in $invocations) {
     }
 }
 
-# ----------------------------------------
-# Summary
-# ----------------------------------------
+# -- Summary --
 
 $scriptEnd = Get-Date
 $scriptDuration = $scriptEnd - $scriptStart
 
-Write-Host ""
-Write-Host "================================================================" -ForegroundColor Cyan
-Write-Host "  Summary" -ForegroundColor Cyan
-Write-Host "================================================================" -ForegroundColor Cyan
-Write-Host ""
-Write-Host "  Target Date:        $($targetDate.ToString('yyyy-MM-dd'))"
-Write-Host "  Execution Attempts: $($invocations.Count)"
-Write-Host "  Script Duration:    $([int]$scriptDuration.TotalMilliseconds) ms"
-Write-Host ""
+Write-ConsoleBanner -Label "Summary"
+Write-Console "  Target Date:        $($targetDate.ToString('yyyy-MM-dd'))"
+Write-Console "  Execution Attempts: $($invocations.Count)"
+Write-Console "  Script Duration:    $([int]$scriptDuration.TotalMilliseconds) ms"
+Write-Console ""
 
-Write-Host "================================================================" -ForegroundColor Cyan
-Write-Host "  Monitor Complete" -ForegroundColor Cyan
-Write-Host "================================================================" -ForegroundColor Cyan
-Write-Host ""
+Write-ConsoleBanner -Label "Monitor Complete"
 
-# ----------------------------------------
-# Orchestrator Callback
-# ----------------------------------------
+# -- Orchestrator Callback --
+
 if ($TaskId -gt 0) {
     $totalMs = [int]$scriptDuration.TotalMilliseconds
     if ($finalStatus -eq "COMPLETED") {
