@@ -62,6 +62,7 @@
     FUNCTIONS: SECTION LIST
     FUNCTIONS: AST WALKING
     FUNCTIONS: PS AST AND HEADER HELPERS
+    FUNCTIONS: PS FUNCTION FINGERPRINTING
 #>
 
 <# ============================================================================
@@ -72,6 +73,19 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-06-18  Added PS function fingerprinting: a new FUNCTIONS: PS FUNCTION
+#             FINGERPRINTING section (Get-PSFunctionFingerprints plus the
+#             Get-Sha256Hex, Get-PSFunctionBodyTokens, Get-PSFunctionBodyAnd-
+#             ShapeHash, and Get-PSFunctionSkeletonHash helpers) computing the
+#             body_hash, shape_hash, and skeleton_hash fingerprints from a
+#             function's AST and token stream. New-AssetRegistryRow gains
+#             optional BodyHash/ShapeHash/SkeletonHash params (default null),
+#             and Invoke-AssetRegistryBulkInsert gains the matching
+#             body_hash/shape_hash/skeleton_hash DataTable columns. The CSS,
+#             HTML, and JS populators are unaffected: they call New-Asset-
+#             RegistryRow without the new params, so their rows carry NULL in
+#             the three hash columns until those populators adopt per-type
+#             fingerprinting of their own promotable constructs.
 # 2026-06-02  Added JS-file page-route resolution support: Get-JsRouteFileMap
 #             (js_file_name -> sibling Route file path, via Object_Registry
 #             component join) plus the Pode route-extraction helpers
@@ -162,7 +176,10 @@ function New-AssetRegistryRow {
         [string]$ParentFunction,
         [string]$RawText,
         [string]$PurposeDescription,
-        [Nullable[bool]]$HasDynamicContent = $null
+        [Nullable[bool]]$HasDynamicContent = $null,
+        [string]$BodyHash,
+        [string]$ShapeHash,
+        [string]$SkeletonHash
     )
 
     # Bounded string columns get defensively truncated against their declared
@@ -202,6 +219,9 @@ function New-AssetRegistryRow {
         DriftCodes         = $null
         DriftText          = $null
         OccurrenceIndex    = 1
+        BodyHash           = $BodyHash
+        ShapeHash          = $ShapeHash
+        SkeletonHash       = $SkeletonHash
     }
 }
 
@@ -646,6 +666,9 @@ function Invoke-AssetRegistryBulkInsert {
     [void]$dt.Columns.Add('drift_codes',         [string])
     [void]$dt.Columns.Add('drift_text',          [string])
     [void]$dt.Columns.Add('occurrence_index',    [int])
+    [void]$dt.Columns.Add('body_hash',           [string])
+    [void]$dt.Columns.Add('shape_hash',          [string])
+    [void]$dt.Columns.Add('skeleton_hash',       [string])
 
     foreach ($r in $Rows) {
         $row = $dt.NewRow()
@@ -680,6 +703,9 @@ function Invoke-AssetRegistryBulkInsert {
         $row['drift_codes']         = Get-NullableValue $r.DriftCodes
         $row['drift_text']          = Get-NullableValue $r.DriftText
         $row['occurrence_index']    = if ($null -eq $r.OccurrenceIndex) { 1 } else { [int]$r.OccurrenceIndex }
+        $row['body_hash']           = Get-NullableValue $r.BodyHash
+        $row['shape_hash']          = Get-NullableValue $r.ShapeHash
+        $row['skeleton_hash']       = Get-NullableValue $r.SkeletonHash
         $dt.Rows.Add($row)
     }
 
@@ -2378,4 +2404,210 @@ function Get-FirstPodeRoutePathFromFile {
     if ($null -eq $routes -or $routes.Count -eq 0) { return $null }
 
     return $routes[0].Path
+}
+
+<# ============================================================================
+   FUNCTIONS: PS FUNCTION FINGERPRINTING
+   ----------------------------------------------------------------------------
+   Computes the three function-body fingerprints (body_hash, shape_hash,
+   skeleton_hash) the catalog uses to surface duplicate, near-duplicate, and
+   same-family function definitions without knowing names in advance. All
+   three are derived from the function's AST and token stream, not from raw
+   text, so meaning-preserving syntax differences (a semicolon versus a
+   newline inside a hashtable, $Script: versus $script: scope casing, SQL
+   whitespace inside a here-string) normalize away. Caller passes the
+   FunctionDefinitionAst and the file's token stream; the populator invokes
+   this from its function row emitter.
+   Prefix: (none)
+   ============================================================================ #>
+
+# Compute a SHA-256 hash of a string and return it as 64 lowercase hex
+# characters. Shared by all three fingerprints.
+function Get-Sha256Hex {
+    param([Parameter(Mandatory)][AllowEmptyString()][string]$Text)
+
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($Text)
+        $digest = $sha.ComputeHash($bytes)
+        return -join ($digest | ForEach-Object { $_.ToString('x2') })
+    }
+    finally {
+        $sha.Dispose()
+    }
+}
+
+# Select the body tokens of a function: the tokens that sit strictly inside
+# the function body, excluding the declaration, any attributes, the param()
+# block, comments, and structural newlines. The floor is the later of the
+# body's opening brace and the param block's closing paren, so [CmdletBinding()]
+# and the param block (which sit before the body statements) are excluded; the
+# ceiling is the body's closing brace. Comment tokens (the docblock and any
+# inline comments) and newline / line-continuation tokens are dropped. Returns
+# the filtered token objects in source order.
+function Get-PSFunctionBodyTokens {
+    param(
+        [Parameter(Mandatory)]$FunctionAst,
+        [Parameter(Mandatory)]$Tokens
+    )
+
+    if ($null -eq $Tokens -or $null -eq $FunctionAst.Body) {
+        return @()
+    }
+
+    $bodyExtent = $FunctionAst.Body.Extent
+    $bodyStartOffset = $bodyExtent.StartOffset
+    $bodyEndOffset   = $bodyExtent.EndOffset
+
+    # Exclude through the param block's closing paren when a param block exists,
+    # otherwise just past the body's opening brace.
+    $paramEndOffset = -1
+    if ($FunctionAst.Body.ParamBlock) {
+        $paramEndOffset = $FunctionAst.Body.ParamBlock.Extent.EndOffset
+    }
+    $floor = [Math]::Max($bodyStartOffset + 1, $paramEndOffset)
+
+    $result = New-Object System.Collections.Generic.List[object]
+    foreach ($tok in $Tokens) {
+        if ($tok.Extent.StartOffset -lt $floor) { continue }
+        if ($tok.Extent.EndOffset   -gt $bodyEndOffset) { continue }
+
+        $kind = $tok.Kind.ToString()
+        if ($kind -eq 'NewLine' -or $kind -eq 'LineContinuation' -or $kind -eq 'Comment') {
+            continue
+        }
+        # The body's own closing brace is the last token in range; drop it.
+        if ($kind -eq 'RCurly' -and $tok.Extent.EndOffset -eq $bodyEndOffset) {
+            continue
+        }
+        $result.Add($tok)
+    }
+    return @($result.ToArray())
+}
+
+# Render the body tokens two ways and hash each:
+#   body_hash  - each token's verbatim text, space-joined (exact).
+#   shape_hash - string / here-string literals folded to STR, numeric literals
+#                folded to N, variable references folded to VAR; all other
+#                tokens (command names, member names, operators, keywords,
+#                braces) kept verbatim.
+# Returns a hashtable with BodyHash and ShapeHash.
+function Get-PSFunctionBodyAndShapeHash {
+    param(
+        [Parameter(Mandatory)]$BodyTokens
+    )
+
+    $exactParts = New-Object System.Collections.Generic.List[string]
+    $shapeParts = New-Object System.Collections.Generic.List[string]
+
+    foreach ($tok in $BodyTokens) {
+        $kind = $tok.Kind.ToString()
+        $text = $tok.Text
+
+        $exactParts.Add($text)
+
+        $shapeText = $text
+        if ($kind -eq 'Variable' -or $kind -eq 'SplattedVariable') {
+            $shapeText = 'VAR'
+        }
+        elseif ($kind -eq 'Number') {
+            $shapeText = 'N'
+        }
+        elseif ($kind -eq 'StringLiteral' -or $kind -eq 'StringExpandable' -or
+                $kind -eq 'HereStringLiteral' -or $kind -eq 'HereStringExpandable') {
+            $shapeText = 'STR'
+        }
+        $shapeParts.Add($shapeText)
+    }
+
+    return @{
+        BodyHash  = Get-Sha256Hex -Text ($exactParts  -join ' ')
+        ShapeHash = Get-Sha256Hex -Text ($shapeParts -join ' ')
+    }
+}
+
+# Compute the skeleton hash: the sorted set of structural construct types
+# present anywhere in the function body, hashed. Deliberately loose - order,
+# count, called names, identifiers, and literals are all ignored, so a whole
+# family of same-purpose functions lands in one bucket regardless of cosmetic
+# or coupling differences. Construct presence is detected by AST node type via
+# the shared Find-PSAstNodes (robust against keywords appearing inside strings
+# or comments, and subclass-aware). elseif / else fold into the parent If
+# presence; for / foreach / while / do-while / do-until all fold into one loop
+# ingredient; a bare return with no value is not counted (only return-with-
+# value carries structural signal). Returns the hash of the pipe-joined sorted
+# ingredient set.
+function Get-PSFunctionSkeletonHash {
+    param(
+        [Parameter(Mandatory)]$FunctionAst
+    )
+
+    $body = $FunctionAst.Body
+    if ($null -eq $body) {
+        return Get-Sha256Hex -Text ''
+    }
+
+    $ingredients = New-Object 'System.Collections.Generic.HashSet[string]'
+
+    # Helper: add an ingredient when the body contains any node of the type.
+    $addIf = {
+        param([type]$AstType, [string]$Label)
+        $nodes = Find-PSAstNodes -Ast $body -AstType $AstType
+        if (@($nodes).Count -gt 0) { [void]$ingredients.Add($Label) }
+    }
+
+    & $addIf ([System.Management.Automation.Language.IfStatementAst])      'if'
+    & $addIf ([System.Management.Automation.Language.SwitchStatementAst])  'switch'
+    & $addIf ([System.Management.Automation.Language.ForEachStatementAst]) 'loop'
+    & $addIf ([System.Management.Automation.Language.ForStatementAst])     'loop'
+    & $addIf ([System.Management.Automation.Language.WhileStatementAst])   'loop'
+    & $addIf ([System.Management.Automation.Language.DoWhileStatementAst]) 'loop'
+    & $addIf ([System.Management.Automation.Language.DoUntilStatementAst]) 'loop'
+    & $addIf ([System.Management.Automation.Language.TryStatementAst])     'try'
+    & $addIf ([System.Management.Automation.Language.ThrowStatementAst])   'throw'
+    & $addIf ([System.Management.Automation.Language.HashtableAst])        'hashtable'
+    & $addIf ([System.Management.Automation.Language.ArrayExpressionAst])  'array'
+    & $addIf ([System.Management.Automation.Language.ArrayLiteralAst])     'array'
+
+    # pipeline: only a REAL multi-element pipeline ($x | Where | ForEach)
+    # counts. The PowerShell AST wraps nearly every statement in a single-
+    # element PipelineAst, so matching PipelineAst directly would tag almost
+    # every function and carry no signal. Require 2+ pipeline elements.
+    $pipelines = Find-PSAstNodes -Ast $body -AstType ([System.Management.Automation.Language.PipelineAst])
+    foreach ($p in @($pipelines)) {
+        if ($null -ne $p.PipelineElements -and @($p.PipelineElements).Count -ge 2) {
+            [void]$ingredients.Add('pipeline'); break
+        }
+    }
+
+    # return-with-value: a ReturnStatementAst that carries a pipeline (i.e.,
+    # 'return $x' / 'return @{...}'), not a bare 'return'.
+    $returns = Find-PSAstNodes -Ast $body -AstType ([System.Management.Automation.Language.ReturnStatementAst])
+    foreach ($r in @($returns)) {
+        if ($null -ne $r.Pipeline) { [void]$ingredients.Add('return'); break }
+    }
+
+    $sorted = @($ingredients) | Sort-Object
+    return Get-Sha256Hex -Text ($sorted -join '|')
+}
+
+# Compute all three fingerprints for a function in a single pass over the body
+# tokens and AST. Returns a hashtable with BodyHash, ShapeHash, and
+# SkeletonHash. This is the entry point the populator calls; the individual
+# helpers above are factored out for clarity, not for separate use.
+function Get-PSFunctionFingerprints {
+    param(
+        [Parameter(Mandatory)]$FunctionAst,
+        $Tokens
+    )
+
+    $bodyTokens = Get-PSFunctionBodyTokens -FunctionAst $FunctionAst -Tokens $Tokens
+    $bs = Get-PSFunctionBodyAndShapeHash -BodyTokens $bodyTokens
+    $skeleton = Get-PSFunctionSkeletonHash -FunctionAst $FunctionAst
+
+    return @{
+        BodyHash     = $bs.BodyHash
+        ShapeHash    = $bs.ShapeHash
+        SkeletonHash = $skeleton
+    }
 }
