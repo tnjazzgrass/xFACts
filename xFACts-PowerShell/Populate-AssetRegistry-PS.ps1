@@ -54,6 +54,14 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-06-18  Add-PSFunctionRow now captures the full function body in
+#             raw_text (was the signature line, which already lived in
+#             signature) and stamps the body_hash, shape_hash, and
+#             skeleton_hash fingerprints via Get-PSFunctionFingerprints (in
+#             xFACts-AssetRegistryFunctions.ps1). The hashes are set only on
+#             PS_FUNCTION / PS_FUNCTION_VARIANT definition rows; every other
+#             row type leaves them null. New-PSRow gained the three
+#             pass-through hash parameters.
 # 2026-06-16  Made file-role detection Object_Registry-driven. Get-PSFileRole
 #             now derives the role from the file's object_type, scope, and
 #             scope_tier (passed in as the registry entry) instead of filename
@@ -1222,6 +1230,9 @@ function New-PSRow {
         [string]$ParentFunction,
         [string]$RawText,
         [string]$PurposeDescription,
+        [string]$BodyHash,
+        [string]$ShapeHash,
+        [string]$SkeletonHash,
         [switch]$SuppressSectionLookup
     )
 
@@ -1250,7 +1261,10 @@ function New-PSRow {
         -Signature          $Signature `
         -ParentFunction     $ParentFunction `
         -RawText            $RawText `
-        -PurposeDescription $PurposeDescription
+        -PurposeDescription $PurposeDescription `
+        -BodyHash           $BodyHash `
+        -ShapeHash          $ShapeHash `
+        -SkeletonHash       $SkeletonHash
 }
 
 # Emit the PS_FILE anchor row for the current file. Universal "this file
@@ -1551,6 +1565,16 @@ function Add-PSFunctionRow {
     $params = Format-ParameterList       -FunctionAst $FunctionAst
     $sig    = "function $fnName $params"
 
+    # Full verbatim function body for raw_text (signature stays in -Signature).
+    # Storing the body lets the catalog surface and compare whole functions
+    # without reopening source files.
+    $bodyText = if ($FunctionAst.Extent) { $FunctionAst.Extent.Text } else { $sig }
+
+    # Three duplication fingerprints (body / shape / skeleton). Computed from
+    # the AST and the file's token stream so meaning-preserving syntax
+    # differences normalize away. Set only on function definition rows.
+    $fp = Get-PSFunctionFingerprints -FunctionAst $FunctionAst -Tokens $script:CurrentTokens
+
     $section = Get-SectionForLine -Sections $script:CurrentSections -Line $line
     $sectionTitle = if ($section) { $section.FullTitle } else { $null }
 
@@ -1591,8 +1615,11 @@ function Add-PSFunctionRow {
         -SourceFile         $script:CurrentFile `
         -SourceSection      $sectionTitle `
         -Signature          $sig `
-        -RawText            $sig `
+        -RawText            $bodyText `
         -PurposeDescription $purpose `
+        -BodyHash           $fp.BodyHash `
+        -ShapeHash          $fp.ShapeHash `
+        -SkeletonHash       $fp.SkeletonHash `
         -SuppressSectionLookup
     $script:rows.Add($row)
 
