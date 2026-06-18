@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-06-18 06:52:40
+Generated: 2026-06-18 18:29:20
 
 ## Module Registry
 
@@ -489,9 +489,9 @@ Generated: 2026-06-18 06:52:40
 | BatchOps | BDL | bdl_lookback_days | 7 | INT | How many days back xFACts checks DM for BDL file collection |
 | BatchOps | BDL | bdl_stall_poll_threshold | 12 | INT | Consecutive idle polls with no new partition activity before stall alert |
 | BatchOps | NB | nb_alert_queue_wait_no_merge_routing | 1 | ALERT_MODE | Alert destination(s) when non-auto-merge batches exceed threshold |
-| BatchOps | NB | nb_alert_queue_wait_routing | 1 | ALERT_MODE | Alert destination(s) when batches wait in merge queue with no activity |
+| BatchOps | NB | nb_alert_queue_wait_routing | 3 | ALERT_MODE | Alert destination(s) when batches wait in merge queue with no activity |
 | BatchOps | NB | nb_alert_release_failed_routing | 3 | ALERT_MODE | Alert destination(s) when a batch release fails |
-| BatchOps | NB | nb_alert_release_merge_skip_routing | 1 | ALERT_MODE | Alert destination(s) when release-merge processing stalls |
+| BatchOps | NB | nb_alert_release_merge_skip_routing | 3 | ALERT_MODE | Alert destination(s) when release-merge processing stalls |
 | BatchOps | NB | nb_alert_stalled_merge_routing | 1 | ALERT_MODE | Alert destination(s) when merge processing stalls |
 | BatchOps | NB | nb_alert_unreleased_routing | 1 | ALERT_MODE | Alert destination(s) when unreleased batches exceed threshold |
 | BatchOps | NB | nb_alert_upload_failed_routing | 3 | ALERT_MODE | Alert destination(s) when a batch upload fails |
