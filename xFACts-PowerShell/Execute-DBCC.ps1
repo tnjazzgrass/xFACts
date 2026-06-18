@@ -3,75 +3,52 @@
     xFACts - DBCC Operations Execution
 
 .DESCRIPTION
-    xFACts - ServerOps.DBCC
-    Script: Execute-DBCC.ps1
-    Version: Tracked in dbo.System_Metadata (component: ServerOps.DBCC)
-
     Executes scheduled DBCC integrity operations against databases per
-    DBCC_ScheduleConfig. Supports CHECKDB, CHECKALLOC, CHECKCATALOG,
-    and CHECKCONSTRAINTS. Runs on a configurable interval via
-    ProcessRegistry; exits NO_WORK when no operations are due.
+    DBCC_ScheduleConfig. Supports CHECKDB, CHECKALLOC, CHECKCATALOG, and
+    CHECKCONSTRAINTS. Runs on a configurable interval via ProcessRegistry;
+    exits NO_WORK when no operations are due.
 
-    Two execution modes:
-    - Scheduled: Queries DBCC_ScheduleConfig for operations due today
-      (run_time hour <= current hour) that have not already been claimed
-      or completed. All due items are batch-claimed as PENDING before
-      execution begins, then processed sequentially from lightest to
-      heaviest: CHECKCATALOG → CHECKALLOC → CHECKCONSTRAINTS → CHECKDB.
-      Concurrent invocations safely claim different work items.
-    - Manual override: -TargetServer + -Operation bypass the schedule
-      table entirely. Optionally -TargetDatabase for a single database.
-      Check mode is looked up from DBCC_ScheduleConfig unless -CheckMode
-      is explicitly specified.
+    Two execution modes. Scheduled mode queries DBCC_ScheduleConfig for
+    operations due today (run_time hour <= current hour) that have not
+    already been claimed or completed; all due items are batch-claimed as
+    PENDING before execution begins, then processed sequentially from
+    lightest to heaviest: CHECKCATALOG -> CHECKALLOC -> CHECKCONSTRAINTS ->
+    CHECKDB. Concurrent invocations safely claim different work items. Manual
+    override mode (-TargetServer + -Operation) bypasses the schedule table
+    entirely; optionally -TargetDatabase targets a single database, and the
+    check mode is looked up from DBCC_ScheduleConfig unless -CheckMode is
+    explicitly specified.
 
-    For AG listener entries, dynamically resolves the current secondary
-    replica and runs DBCC there via direct connection. CHECKCATALOG is
-    always routed to the primary replica (read-only secondary limitation).
+    For AG listener entries, the script dynamically resolves the current
+    secondary replica and runs DBCC there via direct connection. CHECKCATALOG
+    is always routed to the primary replica (read-only secondary limitation).
     The replica_override column on DBCC_ScheduleConfig allows per-database
-    override to PRIMARY for all other operations. For non-AG servers,
+    override to PRIMARY for all other operations. For non-AG servers, it
     connects directly. Results are logged to ServerOps.DBCC_ExecutionLog.
-    Alerting: Teams on any non-SUCCESS, Jira ticket on ERRORS_FOUND.
+    Alerting raises a Teams message on any non-SUCCESS and a Jira ticket on
+    ERRORS_FOUND.
 
-    CHANGELOG
-    ---------
-    2026-03-22  Per-database check_mode from DBCC_ScheduleConfig replaces
-                GlobalConfig dbcc_checkdb_mode. Execute-DbccCheckDb receives
-                CheckMode string directly. Manual mode looks up check_mode
-                from schedule table with optional -CheckMode parameter override.
-    2026-03-22  CHECKCATALOG always routes to PRIMARY on AG listeners
-                replica_override support from DBCC_ScheduleConfig
-                Connection cache keyed by server+replica for split routing
-                Removed skippedServers mechanism (per-operation routing)
-                Metric capture from SQL Server error log (replaces inline
-                parsing suppressed by NO_INFOMSGS/PHYSICAL_ONLY)
-    2026-03-21  Batch claim pattern with PENDING status
-                queued_dttm captures claim time, started_dttm captures
-                actual execution start. Enables queue visibility and
-                time-in-queue metrics on the CC page.
-    2026-03-20  Refactored for multi-operation support
-                Added DBCC_ScheduleConfig-driven scheduling
-                Added CHECKALLOC, CHECKCATALOG, CHECKCONSTRAINTS operations
-                Added -TargetServer, -TargetDatabase, -Operation parameters
-                Replaced dbcc_run_day (ServerRegistry) with schedule table
-                Replaced check_type with operation + check_mode (ExecutionLog)
-                Changed from time-based to interval-based ProcessRegistry
-    2026-03-20  Initial implementation (CHECKDB only)
+    Deploy to E:\xFACts-PowerShell on FA-SQLDBB, with
+    xFACts-OrchestratorFunctions.ps1 in the same directory. The service
+    account needs DBCC permissions on all target databases (db_owner or
+    sysadmin), read/write access to the xFACts database, and network access
+    to all target servers.
 
 .PARAMETER ServerInstance
-    SQL Server instance hosting xFACts database (default: AVG-PROD-LSNR)
+    SQL Server instance hosting xFACts database (default: AVG-PROD-LSNR).
 
 .PARAMETER Database
-    xFACts database name (default: xFACts)
+    xFACts database name (default: xFACts).
 
 .PARAMETER Execute
     Perform DBCC operations. Without this flag, runs in preview mode.
 
 .PARAMETER TargetServer
-    Manual override: server name to target. Bypasses schedule table.
-    Must be used with -Operation. Uses ServerRegistry for connection details.
+    Manual override: server name to target. Bypasses schedule table. Must be
+    used with -Operation. Uses ServerRegistry for connection details.
 
 .PARAMETER TargetDatabase
-    Manual override: specific database name. Optional — if omitted with
+    Manual override: specific database name. Optional - if omitted with
     -TargetServer, runs against all active databases on that server.
 
 .PARAMETER Operation
@@ -79,10 +56,10 @@
     Valid values: CHECKDB, CHECKALLOC, CHECKCATALOG, CHECKCONSTRAINTS.
 
 .PARAMETER CheckMode
-    Manual override: DBCC check mode. Optional — if omitted, looks up the
+    Manual override: DBCC check mode. Optional - if omitted, looks up the
     database's check_mode from DBCC_ScheduleConfig. If no schedule row exists,
-    defaults to PHYSICAL_ONLY. Only applies to CHECKDB operations.
-    Valid values: PHYSICAL_ONLY, FULL.
+    defaults to PHYSICAL_ONLY. Only applies to CHECKDB operations. Valid
+    values: PHYSICAL_ONLY, FULL.
 
 .PARAMETER TaskId
     Orchestrator TaskLog ID passed by the engine at launch. Used for task
@@ -92,17 +69,70 @@
     Orchestrator ProcessRegistry ID passed by the engine at launch. Used for
     task completion callback. Default 0 (no callback when run manually).
 
-================================================================================
-DEPLOYMENT REMINDERS
-================================================================================
-1. Deploy to E:\xFACts-PowerShell on FA-SQLDBB.
-2. xFACts-OrchestratorFunctions.ps1 must be in the same directory.
-3. The service account running this script needs:
-   - DBCC permissions on all target databases (db_owner or sysadmin)
-   - Read/Write access to xFACts database
-   - Network access to all target servers
-================================================================================
+.COMPONENT
+    ServerOps.DBCC
+
+.NOTES
+    File Name : Execute-DBCC.ps1
+    Location  : E:\xFACts-PowerShell\Execute-DBCC.ps1
+
+    FILE ORGANIZATION
+    -----------------
+    CHANGELOG: CHANGE HISTORY
+    PARAMETERS: SCRIPT PARAMETERS
+    IMPORTS: SCRIPT DEPENDENCIES
+    INITIALIZATION: SCRIPT INITIALIZATION
+    FUNCTIONS: DBCC HELPERS
+    FUNCTIONS: OPERATION EXECUTION
+    EXECUTION: SCRIPT EXECUTION
 #>
+
+<# ============================================================================
+   CHANGELOG: CHANGE HISTORY
+   ----------------------------------------------------------------------------
+   Dated change history for this collector. Most-recent entry first.
+   Prefix: (none)
+   ============================================================================ #>
+
+# 2026-06-17  Conformed to the Control Center PowerShell file format spec:
+#             rebuilt comment-based-help header with .COMPONENT and no inline
+#             dividers or embedded changelog, added block-comment section
+#             banners, moved the dot-source into an IMPORTS section, applied
+#             the dbc_ prefix to all helper functions, renamed the
+#             Execute-Dbcc* helpers to Invoke-dbc_* (approved verb), converted
+#             inline dividers to sub-section markers, corrected the Config
+#             variable to the lowercase script scope qualifier, removed a
+#             trailing comment, and stripped trailing whitespace.
+# 2026-03-22  Per-database check_mode from DBCC_ScheduleConfig replaces
+#             GlobalConfig dbcc_checkdb_mode. The CHECKDB runner receives
+#             CheckMode string directly. Manual mode looks up check_mode
+#             from schedule table with optional -CheckMode parameter override.
+# 2026-03-22  CHECKCATALOG always routes to PRIMARY on AG listeners.
+#             replica_override support from DBCC_ScheduleConfig. Connection
+#             cache keyed by server+replica for split routing. Removed
+#             skippedServers mechanism (per-operation routing). Metric capture
+#             from SQL Server error log (replaces inline parsing suppressed by
+#             NO_INFOMSGS/PHYSICAL_ONLY).
+# 2026-03-21  Batch claim pattern with PENDING status. queued_dttm captures
+#             claim time, started_dttm captures actual execution start. Enables
+#             queue visibility and time-in-queue metrics on the CC page.
+# 2026-03-20  Refactored for multi-operation support. Added
+#             DBCC_ScheduleConfig-driven scheduling. Added CHECKALLOC,
+#             CHECKCATALOG, CHECKCONSTRAINTS operations. Added -TargetServer,
+#             -TargetDatabase, -Operation parameters. Replaced dbcc_run_day
+#             (ServerRegistry) with schedule table. Replaced check_type with
+#             operation + check_mode (ExecutionLog). Changed from time-based to
+#             interval-based ProcessRegistry.
+# 2026-03-20  Initial implementation (CHECKDB only).
+
+<# ============================================================================
+   PARAMETERS: SCRIPT PARAMETERS
+   ----------------------------------------------------------------------------
+   Script-level parameters: xFACts target instance and database, the execute
+   switch, the manual-override target/operation/check-mode parameters, and the
+   orchestrator callback identifiers.
+   Prefix: (none)
+   ============================================================================ #>
 
 [CmdletBinding()]
 param(
@@ -119,46 +149,38 @@ param(
     [int]$ProcessId = 0
 )
 
-# ============================================================================
-# STANDARD INITIALIZATION
-# ============================================================================
+<# ============================================================================
+   IMPORTS: SCRIPT DEPENDENCIES
+   ----------------------------------------------------------------------------
+   Dot-sourced shared infrastructure: orchestrator helpers providing
+   Initialize-XFActsScript, the shared SQL helpers, Write-Log, Send-TeamsAlert,
+   and the task-completion callback.
+   Prefix: (none)
+   ============================================================================ #>
 
 . "$PSScriptRoot\xFACts-OrchestratorFunctions.ps1"
+
+<# ============================================================================
+   INITIALIZATION: SCRIPT INITIALIZATION
+   ----------------------------------------------------------------------------
+   One-time setup of shared infrastructure, logging, and application identity
+   via Initialize-XFActsScript.
+   Prefix: (none)
+   ============================================================================ #>
 
 Initialize-XFActsScript -ScriptName 'Execute-DBCC' `
     -ServerInstance $ServerInstance -Database $Database -Execute:$Execute
 
-# ============================================================================
-# PARAMETER VALIDATION
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: DBCC HELPERS
+   ----------------------------------------------------------------------------
+   AG replica resolution, connection-target resolution, duration formatting,
+   execution-log completion, and Teams/Jira alerting.
+   Prefix: dbc
+   ============================================================================ #>
 
-$manualMode = $false
-
-if ($TargetServer -and -not $Operation) {
-    Write-Log "-TargetServer requires -Operation to be specified" "ERROR"
-    exit 1
-}
-if ($Operation -and -not $TargetServer) {
-    Write-Log "-Operation requires -TargetServer to be specified" "ERROR"
-    exit 1
-}
-if ($TargetDatabase -and -not $TargetServer) {
-    Write-Log "-TargetDatabase requires -TargetServer to be specified" "ERROR"
-    exit 1
-}
-if ($CheckMode -and -not $TargetServer) {
-    Write-Log "-CheckMode requires -TargetServer to be specified (manual mode only)" "ERROR"
-    exit 1
-}
-if ($TargetServer -and $Operation) {
-    $manualMode = $true
-}
-
-# ============================================================================
-# HELPER FUNCTIONS
-# ============================================================================
-
-function Get-AGReplicaRoles {
+# Resolve the PRIMARY and SECONDARY replica server names for an AG by name.
+function Get-dbc_AGReplicaRoles {
     param([string]$AGName)
 
     $query = @"
@@ -197,7 +219,8 @@ function Get-AGReplicaRoles {
     return $roles
 }
 
-function Resolve-ConnectionTarget {
+# Resolve the server to connect to: the requested AG replica for listeners, or the direct server otherwise.
+function Resolve-dbc_ConnectionTarget {
     param(
         [object]$Server,
         [hashtable]$Config,
@@ -206,9 +229,9 @@ function Resolve-ConnectionTarget {
 
     if ($Server.server_type -eq 'AG_LISTENER' -and $Server.ag_cluster_name) {
         $replica = if ($ReplicaTarget) { $ReplicaTarget } else { $Config.SourceReplica }
-        Write-Log "  AG listener detected — resolving $replica replica..."
+        Write-Log "  AG listener detected - resolving $replica replica..."
 
-        $roles = Get-AGReplicaRoles -AGName $Config.AGName
+        $roles = Get-dbc_AGReplicaRoles -AGName $Config.AGName
 
         if (-not $roles) {
             Write-Log "  FAILED to resolve AG topology" "ERROR"
@@ -236,7 +259,8 @@ function Resolve-ConnectionTarget {
     }
 }
 
-function Format-Duration {
+# Format a duration in seconds as a compact h/m/s display string.
+function Format-dbc_Duration {
     param([int]$Seconds)
 
     $hours = [math]::Floor($Seconds / 3600)
@@ -248,7 +272,8 @@ function Format-Duration {
     else { return "${secs}s" }
 }
 
-function Update-ExecutionLogComplete {
+# Finalize a DBCC_ExecutionLog row with completion status, duration, error counts, and captured metrics.
+function Update-dbc_ExecutionLogComplete {
     param(
         [int]$LogId,
         [datetime]$EndTime,
@@ -303,7 +328,8 @@ function Update-ExecutionLogComplete {
 "@
 }
 
-function Send-DbccAlert {
+# Raise a Teams alert for any non-SUCCESS DBCC result and queue a Jira ticket for CHECKDB ERRORS_FOUND.
+function Send-dbc_DbccAlert {
     param(
         [string]$OperationName,
         [string]$ServerName,
@@ -317,7 +343,7 @@ function Send-DbccAlert {
         [int]$RunId
     )
 
-    $durationDisplay = Format-Duration $DurationSeconds
+    $durationDisplay = Format-dbc_Duration $DurationSeconds
 
     $alertCategory = if ($Status -eq 'ERRORS_FOUND') { 'CRITICAL' } else { 'WARNING' }
     $alertEmoji = if ($Status -eq 'ERRORS_FOUND') { '{{FIRE}}' } else { '{{WARNING}}' }
@@ -345,7 +371,7 @@ function Send-DbccAlert {
     }
 
     Send-TeamsAlert -SourceModule 'ServerOps' -AlertCategory $alertCategory `
-        -Title "$alertEmoji DBCC $OperationName`: $Status — $DatabaseName" `
+        -Title "$alertEmoji DBCC $OperationName`: $Status - $DatabaseName" `
         -Message $alertMessage `
         -TriggerType "DBCC_$Status" -TriggerValue "$ServerId-$DatabaseName-$OperationName-$RunId"
 
@@ -359,8 +385,8 @@ function Send-DbccAlert {
         $jiraDescription += "Error Count: $ErrorCount`n`n"
         $jiraDescription += "RECOMMENDED ACTIONS:`n"
         $jiraDescription += "1. Run CHECKDB on the PRIMARY replica to confirm corruption scope`n"
-        $jiraDescription += "2. If primary is clean — reseed the secondary from primary`n"
-        $jiraDescription += "3. If primary has corruption — evaluate restore from clean backup`n"
+        $jiraDescription += "2. If primary is clean - reseed the secondary from primary`n"
+        $jiraDescription += "3. If primary has corruption - evaluate restore from clean backup`n"
         $jiraDescription += "4. REPAIR_ALLOW_DATA_LOSS is last resort only`n`n"
         $jiraDescription += "Full DBCC output is available in ServerOps.DBCC_ExecutionLog (run_id: $RunId)."
 
@@ -397,11 +423,16 @@ function Send-DbccAlert {
     }
 }
 
-# ============================================================================
-# OPERATION EXECUTION FUNCTIONS
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: OPERATION EXECUTION
+   ----------------------------------------------------------------------------
+   The per-operation DBCC runners (CHECKDB, CHECKALLOC, CHECKCATALOG,
+   CHECKCONSTRAINTS) and the error-log metric extractor.
+   Prefix: dbc
+   ============================================================================ #>
 
-function Get-DbccMetricsFromErrorLog {
+# Parse DBCC metrics (error counts, elapsed time, LSNs, buffer-pool scan) from the SQL Server error log for a run.
+function Get-dbc_DbccMetricsFromErrorLog {
     param(
         [string]$ConnectServer,
         [string]$DatabaseName,
@@ -444,7 +475,7 @@ function Get-DbccMetricsFromErrorLog {
             $summaryText = ($summaryLines | ForEach-Object { $_.Text }) -join "`n"
             $allSummaryLines += $summaryText
 
-            # Parse error counts — two formats depending on check mode:
+            # Parse error counts - two formats depending on check mode:
             # FULL:          "found X allocation errors and Y consistency errors"
             # PHYSICAL_ONLY: "found X errors and repaired Y errors"
             if ($summaryText -match 'found (\d+) allocation errors and (\d+) consistency errors') {
@@ -458,7 +489,7 @@ function Get-DbccMetricsFromErrorLog {
                 $metrics.RepairedErrors = [int]$Matches[2]
             }
 
-            # Parse repaired errors (FULL mode has separate line — skip if already set by PHYSICAL_ONLY)
+            # Parse repaired errors (FULL mode has separate line - skip if already set by PHYSICAL_ONLY)
             if ($null -eq $metrics.RepairedErrors -and $summaryText -match 'repaired (\d+) errors') {
                 $metrics.RepairedErrors = [int]$Matches[1]
             }
@@ -514,7 +545,7 @@ function Get-DbccMetricsFromErrorLog {
         }
     }
     catch {
-        Write-Log "    Warning: Could not read error log metrics from $ConnectServer — $($_.Exception.Message)" "WARN"
+        Write-Log "    Warning: Could not read error log metrics from $ConnectServer - $($_.Exception.Message)" "WARN"
     }
 
     # Combine all captured lines into summary output
@@ -529,7 +560,8 @@ function Get-DbccMetricsFromErrorLog {
     return $metrics
 }
 
-function Execute-DbccCheckDb {
+# Run DBCC CHECKDB for a database with the given check mode and return status, error count, and details.
+function Invoke-dbc_CheckDb {
     param(
         [string]$ConnectServer,
         [string]$DatabaseName,
@@ -606,7 +638,8 @@ function Execute-DbccCheckDb {
     return $result
 }
 
-function Execute-DbccCheckAlloc {
+# Run DBCC CHECKALLOC for a database and return status, error count, and details.
+function Invoke-dbc_CheckAlloc {
     param(
         [string]$ConnectServer,
         [string]$DatabaseName
@@ -650,7 +683,8 @@ function Execute-DbccCheckAlloc {
     return $result
 }
 
-function Execute-DbccCheckCatalog {
+# Run DBCC CHECKCATALOG for a database and return status, error count, and details.
+function Invoke-dbc_CheckCatalog {
     param(
         [string]$ConnectServer,
         [string]$DatabaseName
@@ -686,7 +720,8 @@ function Execute-DbccCheckCatalog {
     return $result
 }
 
-function Execute-DbccCheckConstraints {
+# Run DBCC CHECKCONSTRAINTS for a database, grouping violations by table/constraint, and return status and counts.
+function Invoke-dbc_CheckConstraints {
     param(
         [string]$ConnectServer,
         [string]$DatabaseName
@@ -733,9 +768,39 @@ function Execute-DbccCheckConstraints {
     return $result
 }
 
-# ============================================================================
-# MAIN SCRIPT
-# ============================================================================
+<# ============================================================================
+   EXECUTION: SCRIPT EXECUTION
+   ----------------------------------------------------------------------------
+   Manual/scheduled parameter validation, configuration load, run-id
+   generation, work-list build and batch claim, per-operation execution with
+   AG-aware routing and metric capture, and the orchestrator completion
+   callback.
+   Prefix: (none)
+   ============================================================================ #>
+
+# -- Parameter validation --
+
+$manualMode = $false
+
+if ($TargetServer -and -not $Operation) {
+    Write-Log "-TargetServer requires -Operation to be specified" "ERROR"
+    exit 1
+}
+if ($Operation -and -not $TargetServer) {
+    Write-Log "-Operation requires -TargetServer to be specified" "ERROR"
+    exit 1
+}
+if ($TargetDatabase -and -not $TargetServer) {
+    Write-Log "-TargetDatabase requires -TargetServer to be specified" "ERROR"
+    exit 1
+}
+if ($CheckMode -and -not $TargetServer) {
+    Write-Log "-CheckMode requires -TargetServer to be specified (manual mode only)" "ERROR"
+    exit 1
+}
+if ($TargetServer -and $Operation) {
+    $manualMode = $true
+}
 
 $scriptStart = Get-Date
 
@@ -758,9 +823,7 @@ else {
 }
 Write-Log ""
 
-# ----------------------------------------------------------------------------
-# Step 1: Load GlobalConfig settings
-# ----------------------------------------------------------------------------
+# -- Step 1: Load GlobalConfig settings --
 
 Write-Log "Loading configuration..."
 
@@ -774,7 +837,7 @@ $configQuery = @"
 
 $configResults = Get-SqlData -Query $configQuery
 
-$Script:Config = @{
+$script:Config = @{
     AGName                  = "DMPRODAG"
     SourceReplica           = "SECONDARY"
     MaxDop                  = 4
@@ -785,32 +848,28 @@ $Script:Config = @{
 if ($configResults) {
     foreach ($row in $configResults) {
         switch ($row.setting_name) {
-            "AGName"                        { $Script:Config.AGName = $row.setting_value }
-            "SourceReplica"                 { $Script:Config.SourceReplica = $row.setting_value }
-            "dbcc_max_dop"                  { $Script:Config.MaxDop = [int]$row.setting_value }
-            "dbcc_extended_logical_checks"  { $Script:Config.ExtendedLogicalChecks = [bool][int]$row.setting_value }
-            "dbcc_alerting_enabled"         { $Script:Config.AlertingEnabled = [bool][int]$row.setting_value }
+            "AGName"                        { $script:Config.AGName = $row.setting_value }
+            "SourceReplica"                 { $script:Config.SourceReplica = $row.setting_value }
+            "dbcc_max_dop"                  { $script:Config.MaxDop = [int]$row.setting_value }
+            "dbcc_extended_logical_checks"  { $script:Config.ExtendedLogicalChecks = [bool][int]$row.setting_value }
+            "dbcc_alerting_enabled"         { $script:Config.AlertingEnabled = [bool][int]$row.setting_value }
         }
     }
 }
 
-Write-Log "  MAXDOP: $($Script:Config.MaxDop)"
-Write-Log "  Extended logical checks: $($Script:Config.ExtendedLogicalChecks)"
-Write-Log "  Alerting: $(if ($Script:Config.AlertingEnabled) { 'Enabled' } else { 'Disabled' })"
+Write-Log "  MAXDOP: $($script:Config.MaxDop)"
+Write-Log "  Extended logical checks: $($script:Config.ExtendedLogicalChecks)"
+Write-Log "  Alerting: $(if ($script:Config.AlertingEnabled) { 'Enabled' } else { 'Disabled' })"
 Write-Log ""
 
-# ----------------------------------------------------------------------------
-# Step 2: Generate run_id
-# ----------------------------------------------------------------------------
+# -- Step 2: Generate run_id --
 
 $runIdResult = Get-SqlData -Query "SELECT ISNULL(MAX(run_id), 0) + 1 AS next_run_id FROM ServerOps.DBCC_ExecutionLog"
 $runId = $runIdResult.next_run_id
 Write-Log "Run ID: $runId"
 Write-Log ""
 
-# ----------------------------------------------------------------------------
-# Step 3: Build and claim the work list
-# ----------------------------------------------------------------------------
+# -- Step 3: Build and claim the work list --
 
 $workItems = @()
 $todayDow = [int](Get-Date).DayOfWeek + 1
@@ -821,10 +880,8 @@ Write-Log "Today is day $todayDow (1=Sun..7=Sat), current hour: $currentHour"
 Write-Log ""
 
 if ($manualMode) {
-    # -----------------------------------------------------------------
-    # Manual mode: look up server from ServerRegistry
-    # -----------------------------------------------------------------
 
+    # Manual mode: look up server from ServerRegistry
     $serverQuery = @"
         SELECT server_id, server_name, instance_name, server_type, ag_cluster_name
         FROM dbo.ServerRegistry
@@ -905,10 +962,8 @@ if ($manualMode) {
     Write-Log "Manual mode: $($workItems.Count) work item(s) queued"
 }
 else {
-    # -----------------------------------------------------------------
-    # Scheduled mode: query DBCC_ScheduleConfig for operations due now
-    # -----------------------------------------------------------------
 
+    # Scheduled mode: query DBCC_ScheduleConfig for operations due now
     $scheduleQuery = @"
         SELECT
             sc.server_id, sc.server_name, sc.database_id, sc.database_name,
@@ -941,7 +996,7 @@ else {
         exit 0
     }
 
-    # Operation definitions in execution priority order (lightest → heaviest)
+    # Operation definitions in execution priority order (lightest -> heaviest)
     $operationDefs = @(
         @{ Name = 'CHECKCATALOG';     EnabledCol = 'checkcatalog_enabled';     DayCol = 'checkcatalog_run_day';     TimeCol = 'checkcatalog_run_time' },
         @{ Name = 'CHECKALLOC';       EnabledCol = 'checkalloc_enabled';       DayCol = 'checkalloc_run_day';       TimeCol = 'checkalloc_run_time' },
@@ -996,9 +1051,7 @@ else {
 
 Write-Log ""
 
-# ----------------------------------------------------------------------------
-# Step 4: Batch claim — INSERT PENDING rows for all unclaimed work items
-# ----------------------------------------------------------------------------
+# -- Step 4: Batch claim - INSERT PENDING rows for all unclaimed work items --
 
 Write-Log "Claiming work items..."
 
@@ -1023,7 +1076,7 @@ foreach ($work in $workItems) {
 "@
 
         if ($existing) {
-            Write-Log "  $opName on $dbName — already claimed today, skipping"
+            Write-Log "  $opName on $dbName - already claimed today, skipping"
             continue
         }
     }
@@ -1041,7 +1094,7 @@ foreach ($work in $workItems) {
                  queued_dttm, status, executed_by)
             VALUES
                 ($runId, $serverId, '$serverName', '$serverName', '$($dbName -replace "'", "''")',
-                 '$opName', $checkModeVal, $($Script:Config.MaxDop), $(if ($Script:Config.ExtendedLogicalChecks) { 1 } else { 0 }),
+                 '$opName', $checkModeVal, $($script:Config.MaxDop), $(if ($script:Config.ExtendedLogicalChecks) { 1 } else { 0 }),
                  '$($claimTime.ToString("yyyy-MM-dd HH:mm:ss"))', 'PENDING', SUSER_SNAME());
             SELECT SCOPE_IDENTITY() AS log_id;
 "@
@@ -1055,7 +1108,7 @@ foreach ($work in $workItems) {
     $work.LogId = $logId
 
     $claimedItems += $work
-    Write-Log "  $opName on $dbName — claimed as PENDING (log_id: $logId)"
+    Write-Log "  $opName on $dbName - claimed as PENDING (log_id: $logId)"
 }
 
 Write-Log ""
@@ -1076,11 +1129,9 @@ if ($claimedItems.Count -eq 0) {
 Write-Log "Claimed $($claimedItems.Count) operation(s)"
 Write-Log ""
 
-# ----------------------------------------------------------------------------
-# Step 5: Initialize connection cache and stats
-# Cache keys: serverId for non-AG, serverId-REPLICA for AG (supports split routing)
-# ----------------------------------------------------------------------------
+# -- Step 5: Initialize connection cache and stats --
 
+# Cache keys: serverId for non-AG, serverId-REPLICA for AG (supports split routing)
 $connectionCache = @{}
 
 $stats = @{
@@ -1091,9 +1142,7 @@ $stats = @{
     OperationsSkipped     = 0
 }
 
-# ----------------------------------------------------------------------------
-# Step 6: Execute claimed work items
-# ----------------------------------------------------------------------------
+# -- Step 6: Execute claimed work items --
 
 foreach ($work in $claimedItems) {
     $serverId    = $work.ServerId
@@ -1109,7 +1158,7 @@ foreach ($work in $claimedItems) {
     }
     Write-Log "----------------------------------------------------------------"
 
-    # Resolve connection — AG-aware routing
+    # Resolve connection - AG-aware routing
     # CHECKCATALOG always routes to PRIMARY on AG listeners (snapshot limitation).
     # replica_override on ScheduleConfig overrides the default for all other operations.
     # Non-AG servers always use direct connection regardless of these settings.
@@ -1117,7 +1166,8 @@ foreach ($work in $claimedItems) {
     $isAGListener = ($work.ServerType -eq 'AG_LISTENER' -and $work.AGCluster)
 
     # Determine which replica to target
-    $targetReplica = $Script:Config.SourceReplica  # default: SECONDARY
+    # default: SECONDARY
+    $targetReplica = $script:Config.SourceReplica
 
     if ($isAGListener) {
         if ($opName -eq 'CHECKCATALOG') {
@@ -1138,18 +1188,18 @@ foreach ($work in $claimedItems) {
             ag_cluster_name = $work.AGCluster
         }
 
-        $connectServer = Resolve-ConnectionTarget -Server $serverObj -Config $Script:Config -ReplicaTarget $targetReplica
+        $connectServer = Resolve-dbc_ConnectionTarget -Server $serverObj -Config $script:Config -ReplicaTarget $targetReplica
 
         if (-not $connectServer) {
-            Write-Log "  FAILED to resolve $targetReplica connection — skipping" "ERROR"
+            Write-Log "  FAILED to resolve $targetReplica connection - skipping" "ERROR"
 
             if ($logId -gt 0) {
-                Update-ExecutionLogComplete -LogId $logId -EndTime (Get-Date) `
+                Update-dbc_ExecutionLogComplete -LogId $logId -EndTime (Get-Date) `
                     -DurationSeconds 0 -Status 'FAILED' -ErrorCount 0 `
                     -ErrorDetails "AG $targetReplica replica resolution failed"
             }
 
-            if ($Script:Config.AlertingEnabled -and $Execute) {
+            if ($script:Config.AlertingEnabled -and $Execute) {
                 Send-TeamsAlert -SourceModule 'ServerOps' -AlertCategory 'WARNING' `
                     -Title "{{WARNING}} DBCC: Connection Resolution Failed" `
                     -Message "**Server:** $serverName`nCould not resolve $targetReplica replica. DBCC $opName skipped for $dbName." `
@@ -1166,7 +1216,7 @@ foreach ($work in $claimedItems) {
     $connectServer = $connectionCache[$cacheKey]
 
     # Log routing decision for AG listeners when not using default
-    if ($isAGListener -and $targetReplica -ne $Script:Config.SourceReplica) {
+    if ($isAGListener -and $targetReplica -ne $script:Config.SourceReplica) {
         $reason = if ($opName -eq 'CHECKCATALOG') { 'CHECKCATALOG requires PRIMARY (read-only secondary limitation)' }
                   elseif ($work.ReplicaOverride) { "replica_override = $($work.ReplicaOverride)" }
                   else { '' }
@@ -1187,10 +1237,10 @@ foreach ($work in $claimedItems) {
 
     if (-not $dbStateResult -or $dbStateResult.state_desc -ne 'ONLINE') {
         $stateDesc = if ($dbStateResult) { $dbStateResult.state_desc } else { 'UNREACHABLE' }
-        Write-Log "    Database is $stateDesc — skipping" "WARN"
+        Write-Log "    Database is $stateDesc - skipping" "WARN"
 
         if ($logId -gt 0) {
-            Update-ExecutionLogComplete -LogId $logId -EndTime (Get-Date) `
+            Update-dbc_ExecutionLogComplete -LogId $logId -EndTime (Get-Date) `
                 -DurationSeconds 0 -Status 'FAILED' -ErrorCount 0 `
                 -ErrorDetails "Database state: $stateDesc"
         }
@@ -1207,7 +1257,7 @@ foreach ($work in $claimedItems) {
         continue
     }
 
-    # Transition PENDING → IN_PROGRESS with actual start time and resolved server
+    # Transition PENDING -> IN_PROGRESS with actual start time and resolved server
     $opStart = Get-Date
 
     Invoke-SqlNonQuery -Query @"
@@ -1222,12 +1272,12 @@ foreach ($work in $claimedItems) {
     $stats.OperationsAttempted++
 
     $opResult = switch ($opName) {
-        'CHECKDB'          { Execute-DbccCheckDb -ConnectServer $connectServer -DatabaseName $dbName `
-                                -CheckMode $work.CheckMode -MaxDop $Script:Config.MaxDop `
-                                -ExtendedLogicalChecks $Script:Config.ExtendedLogicalChecks }
-        'CHECKALLOC'       { Execute-DbccCheckAlloc -ConnectServer $connectServer -DatabaseName $dbName }
-        'CHECKCATALOG'     { Execute-DbccCheckCatalog -ConnectServer $connectServer -DatabaseName $dbName }
-        'CHECKCONSTRAINTS' { Execute-DbccCheckConstraints -ConnectServer $connectServer -DatabaseName $dbName }
+        'CHECKDB'          { Invoke-dbc_CheckDb -ConnectServer $connectServer -DatabaseName $dbName `
+                                -CheckMode $work.CheckMode -MaxDop $script:Config.MaxDop `
+                                -ExtendedLogicalChecks $script:Config.ExtendedLogicalChecks }
+        'CHECKALLOC'       { Invoke-dbc_CheckAlloc -ConnectServer $connectServer -DatabaseName $dbName }
+        'CHECKCATALOG'     { Invoke-dbc_CheckCatalog -ConnectServer $connectServer -DatabaseName $dbName }
+        'CHECKCONSTRAINTS' { Invoke-dbc_CheckConstraints -ConnectServer $connectServer -DatabaseName $dbName }
     }
 
     $opEnd = Get-Date
@@ -1237,7 +1287,7 @@ foreach ($work in $claimedItems) {
     $errorCount = $opResult.ErrorCount
     $errorDetails = $opResult.ErrorDetails
 
-    Write-Log "    $status$(if ($errorCount -gt 0) { " — $errorCount error(s)" } else { '' }) ($(Format-Duration $durationSeconds))" `
+    Write-Log "    $status$(if ($errorCount -gt 0) { " - $errorCount error(s)" } else { '' }) ($(Format-dbc_Duration $durationSeconds))" `
         $(if ($status -eq 'SUCCESS') { 'SUCCESS' } else { 'ERROR' })
 
     if ($logId -gt 0) {
@@ -1246,7 +1296,7 @@ foreach ($work in $claimedItems) {
 
         if ($status -ne 'FAILED') {
             Write-Log "    Extracting metrics from error log..."
-            $metrics = Get-DbccMetricsFromErrorLog -ConnectServer $connectServer `
+            $metrics = Get-dbc_DbccMetricsFromErrorLog -ConnectServer $connectServer `
                 -DatabaseName $dbName -Operation $opName `
                 -StartTime $opStart -EndTime $opEnd
 
@@ -1254,7 +1304,7 @@ foreach ($work in $claimedItems) {
             Write-Log "    Captured $metricCount metric(s) from error log"
         }
 
-        Update-ExecutionLogComplete -LogId $logId -EndTime $opEnd `
+        Update-dbc_ExecutionLogComplete -LogId $logId -EndTime $opEnd `
             -DurationSeconds $durationSeconds -Status $status `
             -ErrorCount $errorCount -ErrorDetails $errorDetails `
             -Metrics $metrics
@@ -1266,8 +1316,8 @@ foreach ($work in $claimedItems) {
         'ERRORS_FOUND'  { $stats.OperationsErrorsFound++ }
     }
 
-    if ($Script:Config.AlertingEnabled -and $status -ne 'SUCCESS') {
-        Send-DbccAlert -OperationName $opName -ServerName $serverName `
+    if ($script:Config.AlertingEnabled -and $status -ne 'SUCCESS') {
+        Send-dbc_DbccAlert -OperationName $opName -ServerName $serverName `
             -ConnectServer $connectServer -DatabaseName $dbName `
             -Status $status -DurationSeconds $durationSeconds `
             -ErrorCount $errorCount -ErrorDetails $errorDetails `
@@ -1277,14 +1327,12 @@ foreach ($work in $claimedItems) {
     Write-Log ""
 }
 
-# ----------------------------------------------------------------------------
-# Summary
-# ----------------------------------------------------------------------------
+# -- Summary --
 
 $scriptEnd = Get-Date
 $totalDuration = [int](($scriptEnd - $scriptStart).TotalSeconds)
 $totalDurationMs = [int](($scriptEnd - $scriptStart).TotalMilliseconds)
-$durationDisplay = Format-Duration $totalDuration
+$durationDisplay = Format-dbc_Duration $totalDuration
 
 Write-Log "================================================================"
 Write-Log "  DBCC Execution Complete"
