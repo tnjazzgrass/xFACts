@@ -488,52 +488,6 @@ function Resolve-dmo_StartupLookups {
    Prefix: dmo
    ============================================================================ #>
 
-# Returns the current hours schedule mode from DmOps.Archive_Schedule.
-function Get-dmo_ArchiveScheduleMode {
-    param()
-
-    $currentHour = (Get-Date).Hour
-    $hrCol = "hr{0:D2}" -f $currentHour
-
-    try {
-        $result = Get-SqlData -Query @"
-            SELECT $hrCol AS schedule_mode
-            FROM DmOps.Archive_Schedule
-            WHERE day_of_week = DATEPART(dw, GETDATE())
-"@
-        if ($result) {
-            return [int]$result.schedule_mode
-        }
-        Write-Log "  No schedule row found for today - treating as blocked" "WARN"
-        return 0
-    }
-    catch {
-        Write-Log "  Failed to read schedule: $($_.Exception.Message) - treating as blocked" "WARN"
-        return 0
-    }
-}
-
-# Returns true when the GlobalConfig archive_abort emergency flag is set.
-function Test-dmo_ArchiveAbort {
-    param()
-
-    try {
-        $result = Get-SqlData -Query @"
-            SELECT setting_value FROM dbo.GlobalConfig
-            WHERE module_name = 'DmOps' AND category = 'Archive'
-              AND setting_name = 'archive_abort' AND is_active = 1
-"@
-        if ($result -and $result.setting_value -eq '1') {
-            return $true
-        }
-        return $false
-    }
-    catch {
-        Write-Log "  Failed to check abort flag - proceeding cautiously" "WARN"
-        return $false
-    }
-}
-
 # Reads and validates the target_workgroups GlobalConfig setting, returning WFAARCH1, WFAARCH3, or BOTH.
 function Get-dmo_TargetWorkgroupsSetting {
     param()
@@ -1107,7 +1061,7 @@ Write-ConsoleBanner "xFACts DM Consumer Archive (Unified)"
 
 Write-Log "--- Step 1: Configuration ---"
 
-if (Test-dmo_ArchiveAbort) {
+if (Test-dmo_AbortFlag -Category 'Archive' -SettingName 'archive_abort') {
     Write-Log "Archive abort flag is set - exiting immediately" "WARN"
     exit 0
 }
@@ -1184,7 +1138,7 @@ if ($BatchSize -gt 0) {
     $activeBatchSize = $BatchSize
     Write-Log "  Manual batch size override: $BatchSize" "INFO"
 } else {
-    $scheduleValue = Get-dmo_ArchiveScheduleMode
+    $scheduleValue = Get-dmo_ScheduleMode -ScheduleTable 'DmOps.Archive_Schedule'
     switch ($scheduleValue) {
         0 {
             $script:dmo_ScheduleMode = 'Blocked'
@@ -1533,12 +1487,12 @@ if ($script:dmo_RetryOfBatchId -eq 0) {
             Write-Log "  Single batch mode - exiting loop" "INFO"
             $continueProcessing = $false
         }
-        elseif (Test-dmo_ArchiveAbort) {
+        elseif (Test-dmo_AbortFlag -Category 'Archive' -SettingName 'archive_abort') {
             Write-Log "  Archive abort flag detected - stopping after batch completion" "WARN"
             $continueProcessing = $false
         }
         else {
-            $nextScheduleValue = Get-dmo_ArchiveScheduleMode
+            $nextScheduleValue = Get-dmo_ScheduleMode -ScheduleTable 'DmOps.Archive_Schedule'
             if ($nextScheduleValue -eq 0) {
                 Write-Log "  Schedule: now in BLOCKED window - stopping" "INFO"
                 $continueProcessing = $false
@@ -2655,7 +2609,7 @@ elseif ($batchStatus -eq 'Failed') {
     Write-Log "  Batch failed - stopping further processing" "ERROR"
     $continueProcessing = $false
 }
-elseif (Test-dmo_ArchiveAbort) {
+elseif (Test-dmo_AbortFlag -Category 'Archive' -SettingName 'archive_abort') {
     Write-Log "  Archive abort flag detected - stopping after batch completion" "WARN"
     $continueProcessing = $false
 }
@@ -2664,7 +2618,7 @@ elseif (Test-dmo_BidataBuildInProgress) {
     $continueProcessing = $false
 }
 else {
-    $nextScheduleValue = Get-dmo_ArchiveScheduleMode
+    $nextScheduleValue = Get-dmo_ScheduleMode -ScheduleTable 'DmOps.Archive_Schedule'
     if ($nextScheduleValue -eq 0) {
         Write-Log "  Schedule: now in BLOCKED window - stopping" "INFO"
         $continueProcessing = $false
