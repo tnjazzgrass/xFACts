@@ -3,66 +3,46 @@
     xFACts - JBoss Application Server Metrics Collection
 
 .DESCRIPTION
-    xFACts - JBoss
-    Script: Collect-JBossMetrics.ps1
-    Version: Tracked in dbo.System_Metadata (component: JBoss)
-
     Collects health metrics from all JBoss-enabled application servers in
-    ServerRegistry and writes results to three tables:
+    ServerRegistry and writes results to three tables.
 
-    1. JBoss.Snapshot — One row per server per cycle. Five data sources:
-       a. HTTP Responsiveness — Invoke-WebRequest to the DM splash page.
-          Primary freeze detection mechanism.
-       b. CIM Service State — Win32_Service for DebtManager-Host.
-       c. CIM JBoss Process Metrics — Win32_Process for the main java.exe
-          (largest by WorkingSetSize): memory, threads, handles.
-       d. Server Uptime — Win32_OperatingSystem.LastBootUpTime.
-       e. JBoss Management API — Composite REST operations via the domain
-          controller for JVM memory/threads, Undertow HTTP stats,
-          transactions, IO worker pool, and datasource pool metrics.
+    JBoss.Snapshot - one row per server per cycle, from five data sources:
+    (a) HTTP responsiveness via Invoke-WebRequest to the DM splash page (the
+    primary freeze-detection mechanism); (b) CIM service state via
+    Win32_Service for DebtManager-Host; (c) CIM JBoss process metrics via
+    Win32_Process for the main java.exe (largest by WorkingSetSize): memory,
+    threads, handles; (d) server uptime via Win32_OperatingSystem.LastBootUpTime;
+    and (e) the JBoss Management API - composite REST operations via the domain
+    controller for JVM memory/threads, Undertow HTTP stats, transactions, the IO
+    worker pool, and datasource pool metrics.
 
-    2. JBoss.QueueSnapshot — One row per active JMS queue per server.
-       ~18 queues × 3 servers = ~54 rows per cycle.
+    JBoss.QueueSnapshot - one row per active JMS queue per server
+    (~18 queues x 3 servers = ~54 rows per cycle). JBoss.ConfigHistory -
+    write-on-change only, tracking JBoss config values (pool sizes, thread
+    counts, timeouts); typically 0 rows per cycle after the initial baseline
+    capture.
 
-    3. JBoss.ConfigHistory — Write-on-change only. Tracks JBoss config
-       values (pool sizes, thread counts, timeouts). Typically 0 rows per
-       cycle after initial baseline capture.
-
-    Each data source is an independent try/catch — partial failures produce
+    Each data source is an independent try/catch - partial failures produce
     partial snapshots with NULL for the failed source.
 
-    CHANGELOG
-    ---------
-    2026-03-18  DS pool alert evaluation (Step 5g)
-                Two consecutive ds_in_use_count above per-server threshold
-                fires CRITICAL Teams alert via Send-TeamsAlert. Episode
-                tracking via ds_alert_fired column on Snapshot. Recovery
-                requires two consecutive snapshots with HTTP 200, ds below
-                threshold, and positive undertow processing delta.
-                jboss_ds_alert_threshold read from ServerRegistry per server.
-    2026-03-18  Renamed from Collect-DmHealthMetrics.ps1.
-                Schema DmOps → JBoss. Tables: App_Snapshot → Snapshot,
-                App_QueueSnapshot → QueueSnapshot, App_ConfigHistory → ConfigHistory.
-                ServerRegistry column: dmops_enabled → jboss_enabled.
-                GlobalConfig module: DmOps → JBoss.
-    2026-03-08  Phase 2 rewrite: Added JBoss Management API collection
-                (health composite, queue composite, config change detection).
-                Migrated to Initialize-XFActsScript shared infrastructure.
-                Added Get-ServiceCredentials for JBoss Management API auth.
-                Removed http_response_bytes (column dropped).
-    2026-03-07  Initial implementation (HTTP, CIM, uptime only)
+    Deployed to E:\xFACts-PowerShell on FA-SQLDBB, with
+    xFACts-OrchestratorFunctions.ps1 in the same directory. The service account
+    (FAC\sqlmon) must have WinRM/CIM access to all three JBoss application
+    servers. JBoss Management API credentials must be stored in dbo.Credentials
+    (ServiceName JBossManagement; ConfigKeys JBossUser, JBossPassword), and the
+    firewall must allow FA-SQLDBB -> dm-prod-app on port 9990.
 
 .PARAMETER ServerInstance
-    SQL Server instance name for xFACts database (default: AVG-PROD-LSNR)
+    SQL Server instance name for xFACts database (default: AVG-PROD-LSNR).
 
 .PARAMETER Database
-    Database name (default: xFACts)
+    Database name (default: xFACts).
 
 .PARAMETER Execute
     Perform writes. Without this flag, runs in preview/dry-run mode.
 
 .PARAMETER Force
-    Bypass any checks and run immediately
+    Bypass any checks and run immediately.
 
 .PARAMETER TaskId
     Orchestrator TaskLog ID passed by the v2 engine at launch. Used for task
@@ -72,18 +52,70 @@
     Orchestrator ProcessRegistry ID passed by the v2 engine at launch. Used for
     task completion callback. Default 0 (no callback when run manually).
 
-================================================================================
-DEPLOYMENT REMINDERS
-================================================================================
-1. Deployed to E:\xFACts-PowerShell on FA-SQLDBB.
-2. The service account (FAC\sqlmon) must have WinRM/CIM access to all three
-   JBoss application servers.
-3. xFACts-OrchestratorFunctions.ps1 must be in the same directory.
-4. JBoss Management API credentials must be stored in dbo.Credentials
-   (ServiceName: JBossManagement, ConfigKeys: JBossUser, JBossPassword).
-5. Firewall rule: FA-SQLDBB -> dm-prod-app port 9990 must be open.
-================================================================================
+.COMPONENT
+    JBoss
+
+.NOTES
+    File Name : Collect-JBossMetrics.ps1
+    Location  : E:\xFACts-PowerShell\Collect-JBossMetrics.ps1
+
+    FILE ORGANIZATION
+    -----------------
+    CHANGELOG: CHANGE HISTORY
+    PARAMETERS: SCRIPT PARAMETERS
+    IMPORTS: SCRIPT DEPENDENCIES
+    INITIALIZATION: SCRIPT INITIALIZATION
+    CONSTANTS: COLLECTION DEFINITIONS
+    FUNCTIONS: COLLECTION HELPERS
+    EXECUTION: SCRIPT EXECUTION
 #>
+
+<# ============================================================================
+   CHANGELOG: CHANGE HISTORY
+   ----------------------------------------------------------------------------
+   Dated change history for this collector. Most-recent entry first.
+   Prefix: (none)
+   ============================================================================ #>
+
+# 2026-06-17  Conformed to the Control Center PowerShell file format spec:
+#             rebuilt comment-based-help header with .COMPONENT and no inline
+#             dividers or embedded changelog, added block-comment section
+#             banners, moved the dot-source into an IMPORTS section, moved the
+#             static queue and config-setting lists into a CONSTANTS section
+#             with the jbm_ prefix applied to those identifiers, applied the
+#             jbm_ prefix to the helper functions and replaced the
+#             Management-API helper's docblock with a single-line purpose
+#             comment, converted inline and box-drawing dividers to sub-section
+#             markers and plain comments, and converted non-ASCII punctuation to
+#             ASCII. Also corrected the orchestrator callback for a partial
+#             collection from the invalid status PARTIAL to FAILED (PARTIAL is
+#             not in Complete-OrchestratorTask's accepted set; the per-server
+#             detail is preserved in the output summary).
+# 2026-03-18  DS pool alert evaluation (Step 5g). Two consecutive ds_in_use_count
+#             above the per-server threshold fires a CRITICAL Teams alert via
+#             Send-TeamsAlert. Episode tracking via the ds_alert_fired column on
+#             Snapshot. Recovery requires two consecutive snapshots with HTTP 200,
+#             ds below threshold, and a positive undertow processing delta.
+#             jboss_ds_alert_threshold read from ServerRegistry per server.
+# 2026-03-18  Renamed from Collect-DmHealthMetrics.ps1. Schema DmOps to JBoss.
+#             Tables: App_Snapshot to Snapshot, App_QueueSnapshot to
+#             QueueSnapshot, App_ConfigHistory to ConfigHistory. ServerRegistry
+#             column: dmops_enabled to jboss_enabled. GlobalConfig module: DmOps
+#             to JBoss.
+# 2026-03-08  Phase 2 rewrite: added JBoss Management API collection (health
+#             composite, queue composite, config change detection). Migrated to
+#             Initialize-XFActsScript shared infrastructure. Added
+#             Get-ServiceCredentials for JBoss Management API auth. Removed
+#             http_response_bytes (column dropped).
+# 2026-03-07  Initial implementation (HTTP, CIM, uptime only).
+
+<# ============================================================================
+   PARAMETERS: SCRIPT PARAMETERS
+   ----------------------------------------------------------------------------
+   Script-level parameters: xFACts target instance and database, the execute
+   and force switches, and the orchestrator callback identifiers.
+   Prefix: (none)
+   ============================================================================ #>
 
 [CmdletBinding()]
 param(
@@ -95,25 +127,41 @@ param(
     [int]$ProcessId = 0
 )
 
-# ============================================================================
-# STANDARD INITIALIZATION
-# ============================================================================
+<# ============================================================================
+   IMPORTS: SCRIPT DEPENDENCIES
+   ----------------------------------------------------------------------------
+   Dot-sourced shared infrastructure: orchestrator helpers providing
+   Initialize-XFActsScript, the shared SQL helpers, Write-Log,
+   Get-ServiceCredentials, Send-TeamsAlert, and the task-completion callback.
+   Prefix: (none)
+   ============================================================================ #>
 
 . "$PSScriptRoot\xFACts-OrchestratorFunctions.ps1"
+
+<# ============================================================================
+   INITIALIZATION: SCRIPT INITIALIZATION
+   ----------------------------------------------------------------------------
+   One-time setup of shared infrastructure, logging, and application identity
+   via Initialize-XFActsScript.
+   Prefix: (none)
+   ============================================================================ #>
 
 Initialize-XFActsScript -ScriptName 'Collect-JBossMetrics' `
     -ServerInstance $ServerInstance -Database $Database -Execute:$Execute
 
-$scriptStart = Get-Date
+<# ============================================================================
+   CONSTANTS: COLLECTION DEFINITIONS
+   ----------------------------------------------------------------------------
+   Static definitions driving collection: the active JMS queue list (queues
+   with observed throughput, from the March 7 2026 discovery session; dynamic
+   discovery is a future enhancement) and the JBoss config values tracked for
+   change detection (profile-level entries read shared config rather than the
+   server-instance runtime values).
+   Prefix: jbm
+   ============================================================================ #>
 
-# ============================================================================
-# ACTIVE QUEUE LIST
-# ============================================================================
 # Queues with observed throughput (messages-added > 0) on any server.
-# Based on discovery session March 7, 2026. Static list — dynamic discovery
-# is a future enhancement.
-
-$ActiveQueues = @(
+$jbm_ActiveQueues = @(
     'requestQueue'
     'jobBatchQueue'
     'fixedFeeEventQueue'
@@ -134,15 +182,11 @@ $ActiveQueues = @(
     'fpRequestQueue'
 )
 
-# ============================================================================
-# CONFIG SETTINGS TO TRACK
-# ============================================================================
 # Each entry defines a JBoss config value to monitor for changes.
-# address_suffix is appended to the server instance address path.
-# profile_level entries read from the profile (shared config) rather than
-# the server instance (runtime values).
-
-$ConfigSettings = @(
+# AddressSuffix is appended to the server instance address path;
+# ProfileLevel entries read from the profile (shared config) rather
+# than the server instance (runtime values).
+$jbm_ConfigSettings = @(
     @{ Name = 'worker_max_threads';    AddressSuffix = '"subsystem":"io"},{"worker":"default"';     Property = 'task-max-threads' }
     @{ Name = 'io_thread_count';       AddressSuffix = '"subsystem":"io"},{"worker":"default"';     Property = 'io-threads' }
     @{ Name = 'datasource_min_pool';   ProfileLevel = $true; AddressSuffix = '"subsystem":"datasources"},{"data-source":"dataSource"'; Property = 'min-pool-size' }
@@ -154,11 +198,15 @@ $ConfigSettings = @(
     @{ Name = 'messaging_thread_pool'; ProfileLevel = $true; AddressSuffix = '"subsystem":"messaging-activemq"},{"server":"default"},{"pooled-connection-factory":"hornetq-ra"'; Property = 'thread-pool-max-size' }
 )
 
-# ============================================================================
-# HELPER FUNCTIONS
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: COLLECTION HELPERS
+   ----------------------------------------------------------------------------
+   GlobalConfig value lookup and the JBoss Management API POST helper.
+   Prefix: jbm
+   ============================================================================ #>
 
-function Get-ConfigValue {
+# Reads a single JBoss GlobalConfig setting value by name and category.
+function Get-jbm_ConfigValue {
     param([string]$SettingName, [string]$Category = 'App')
     $result = Get-SqlData -Query @"
 SELECT setting_value
@@ -172,15 +220,9 @@ WHERE module_name = 'JBoss'
     return $null
 }
 
-function Invoke-JBossAPI {
-    <#
-    .SYNOPSIS
-        Sends a POST request to the JBoss Management API.
-    .DESCRIPTION
-        Handles JSON POST to the Management API endpoint with credential
-        authentication and configurable timeout. Returns the parsed response
-        object on success, $null on failure.
-    #>
+# Sends a POST request to the JBoss Management API and returns the parsed
+# response on success, or $null on failure.
+function Invoke-jbm_JBossAPI {
     param(
         [Parameter(Mandatory)]
         [string]$Body,
@@ -211,9 +253,18 @@ function Invoke-JBossAPI {
     }
 }
 
-# ============================================================================
-# MAIN SCRIPT
-# ============================================================================
+<# ============================================================================
+   EXECUTION: SCRIPT EXECUTION
+   ----------------------------------------------------------------------------
+   Configuration load, credential retrieval, server enumeration, the config
+   change-detection cache, and the per-server collection loop (HTTP/CIM/uptime
+   plus Management API health, queue, and config composites), DS-pool alert
+   evaluation, the run summary, and the orchestrator completion callback.
+   Prefix: (none)
+   ============================================================================ #>
+
+# Wall-clock start for the run-duration callback.
+$scriptStart = Get-Date
 
 Write-Log "========================================"
 Write-Log "xFACts JBoss Metrics Collection"
@@ -223,27 +274,26 @@ if ($Force) {
     Write-Log "Force flag set - manual execution."
 }
 
-# ----------------------------------------
-# Step 1: Load configuration
-# ----------------------------------------
+# -- Step 1: Load configuration --
+
 Write-Log "Loading configuration..."
 
-$httpBasePath = Get-ConfigValue -SettingName 'http_base_path'
+$httpBasePath = Get-jbm_ConfigValue -SettingName 'http_base_path'
 if ($null -eq $httpBasePath) {
     $httpBasePath = "/CRSServicesWeb/"
     Write-Log "  http_base_path not found, using default: $httpBasePath" "WARN"
 }
 
-$httpTimeoutSec = Get-ConfigValue -SettingName 'http_timeout_seconds'
+$httpTimeoutSec = Get-jbm_ConfigValue -SettingName 'http_timeout_seconds'
 if ($null -eq $httpTimeoutSec) { $httpTimeoutSec = 10; Write-Log "  http_timeout_seconds not found, using default: $httpTimeoutSec" "WARN" }
 $httpTimeoutSec = [int]$httpTimeoutSec
 
-$apiTimeoutSec = Get-ConfigValue -SettingName 'api_timeout_seconds'
+$apiTimeoutSec = Get-jbm_ConfigValue -SettingName 'api_timeout_seconds'
 if ($null -eq $apiTimeoutSec) { $apiTimeoutSec = 30; Write-Log "  api_timeout_seconds not found, using default: $apiTimeoutSec" "WARN" }
 $apiTimeoutSec = [int]$apiTimeoutSec
 
-# Management API URL — try GlobalConfig first, fall back to dynamic lookup
-$managementApiUrl = Get-ConfigValue -SettingName 'management_api_url' -Category 'Admin'
+# Management API URL - try GlobalConfig first, fall back to dynamic lookup
+$managementApiUrl = Get-jbm_ConfigValue -SettingName 'management_api_url' -Category 'Admin'
 if ($null -eq $managementApiUrl) {
     Write-Log "  management_api_url not in GlobalConfig, building from ServerRegistry..." "WARN"
     $dcServer = Get-SqlData -Query @"
@@ -259,7 +309,7 @@ WHERE is_active = 1
         Write-Log "  Built API URL from domain controller: $managementApiUrl"
     }
     else {
-        Write-Log "  No domain controller found in ServerRegistry — Management API collection will be skipped" "WARN"
+        Write-Log "  No domain controller found in ServerRegistry - Management API collection will be skipped" "WARN"
     }
 }
 
@@ -268,9 +318,8 @@ Write-Log "  HTTP timeout: ${httpTimeoutSec}s"
 Write-Log "  API timeout: ${apiTimeoutSec}s"
 Write-Log "  Management API URL: $(if ($managementApiUrl) { $managementApiUrl } else { 'NOT CONFIGURED' })"
 
-# ----------------------------------------
-# Step 2: Load JBoss credentials
-# ----------------------------------------
+# -- Step 2: Load JBoss credentials --
+
 $jbossCred = $null
 if ($null -ne $managementApiUrl) {
     Write-Log "Retrieving JBoss Management credentials..."
@@ -281,14 +330,13 @@ if ($null -ne $managementApiUrl) {
         Write-Log "  JBoss credentials loaded."
     }
     else {
-        Write-Log "  Failed to load JBoss credentials — Management API collection will be skipped" "WARN"
+        Write-Log "  Failed to load JBoss credentials - Management API collection will be skipped" "WARN"
         $managementApiUrl = $null
     }
 }
 
-# ----------------------------------------
-# Step 3: Get list of servers to monitor
-# ----------------------------------------
+# -- Step 3: Get list of servers to monitor --
+
 Write-Log "Retrieving server list..."
 
 $servers = Get-SqlData -Query @"
@@ -312,9 +360,8 @@ if ($null -eq $servers -or @($servers).Count -eq 0) {
 $serverCount = @($servers).Count
 Write-Log "Found $serverCount server(s) to monitor."
 
-# ----------------------------------------
-# Step 4: Initialize config change cache
-# ----------------------------------------
+# -- Step 4: Initialize config change cache --
+
 # Load the most recent config value per server per setting for change detection.
 # On first run (empty table), everything will be treated as a new baseline.
 
@@ -338,13 +385,12 @@ WHERE rn = 1
         Write-Log "  Loaded $($configCache.Count) cached config values."
     }
     else {
-        Write-Log "  No existing config history — first run will establish baseline."
+        Write-Log "  No existing config history - first run will establish baseline."
     }
 }
 
-# ----------------------------------------
-# Step 5: Collect from each server
-# ----------------------------------------
+# -- Step 5: Collect from each server --
+
 $collectionTime = Get-Date
 $successServers = 0
 $failedServers = @()
@@ -383,9 +429,7 @@ foreach ($server in @($servers)) {
 
     $serverSuccess = $true
 
-    # ----------------------------------------
     # Step 5a: HTTP Responsiveness
-    # ----------------------------------------
     Write-Log "  HTTP responsiveness..."
     $healthUrl = "http://${serverName}.fac.local${httpBasePath}"
 
@@ -416,9 +460,7 @@ foreach ($server in @($servers)) {
         $serverSuccess = $false
     }
 
-    # ----------------------------------------
     # Step 5b: CIM Collection (service, process, uptime)
-    # ----------------------------------------
     Write-Log "  CIM collection..."
 
     try {
@@ -439,7 +481,7 @@ foreach ($server in @($servers)) {
             Write-Log "    Service '$svcName' not found" "WARN"
         }
 
-        # JBoss process metrics — largest java.exe by WorkingSetSize
+        # JBoss process metrics - largest java.exe by WorkingSetSize
         $javaProcesses = Get-CimInstance -CimSession $session -ClassName Win32_Process `
             -Filter "Name='java.exe'" -ErrorAction Stop
 
@@ -476,9 +518,7 @@ foreach ($server in @($servers)) {
         }
     }
 
-    # ----------------------------------------
-    # Step 5c: Management API — Health Composite
-    # ----------------------------------------
+    # Step 5c: Management API - Health Composite
     if ($null -ne $managementApiUrl) {
         Write-Log "  Management API health composite..."
 
@@ -486,7 +526,7 @@ foreach ($server in @($servers)) {
         $jbossHost = $serverName.ToLower()
         $inst = "${jbossHost}-inst1"
 
-        # Hand-built JSON — PowerShell 5.1 ConvertTo-Json does not reliably
+        # Hand-built JSON - PowerShell 5.1 ConvertTo-Json does not reliably
         # serialize the nested array-of-objects address format JBoss requires.
         $healthBody = @"
 {
@@ -532,7 +572,7 @@ foreach ($server in @($servers)) {
 }
 "@
 
-        $healthResult = Invoke-JBossAPI -Body $healthBody -ApiUrl $managementApiUrl `
+        $healthResult = Invoke-jbm_JBossAPI -Body $healthBody -ApiUrl $managementApiUrl `
             -Credential $jbossCred -TimeoutSec $apiTimeoutSec
 
         if ($null -ne $healthResult) {
@@ -608,13 +648,11 @@ foreach ($server in @($servers)) {
             Write-Log "    Health composite collected successfully."
         }
         else {
-            Write-Log "    Health composite failed — API columns will be NULL" "WARN"
+            Write-Log "    Health composite failed - API columns will be NULL" "WARN"
         }
     }
 
-    # ----------------------------------------
     # Step 5d: Insert Snapshot
-    # ----------------------------------------
     $insertQuery = @"
 INSERT INTO JBoss.Snapshot
     (server_id, server_name, collected_dttm,
@@ -662,15 +700,13 @@ VALUES
         Write-Log "  [Preview] Would insert Snapshot for $serverName"
     }
 
-    # ----------------------------------------
-    # Step 5e: Management API — Queue Composite
-    # ----------------------------------------
+    # Step 5e: Management API - Queue Composite
     if ($null -ne $managementApiUrl -and $null -ne $healthResult) {
         Write-Log "  Management API queue composite..."
 
         # Build composite steps for all active queues
         $queueSteps = @()
-        foreach ($qName in $ActiveQueues) {
+        foreach ($qName in $jbm_ActiveQueues) {
             $queueSteps += @"
         {
             "operation": "read-resource",
@@ -691,18 +727,18 @@ $queueStepsJson
 }
 "@
 
-        $queueResult = Invoke-JBossAPI -Body $queueBody -ApiUrl $managementApiUrl `
+        $queueResult = Invoke-jbm_JBossAPI -Body $queueBody -ApiUrl $managementApiUrl `
             -Credential $jbossCred -TimeoutSec $apiTimeoutSec
 
         if ($null -ne $queueResult) {
             $queueInsertCount = 0
 
-            for ($i = 0; $i -lt $ActiveQueues.Count; $i++) {
+            for ($i = 0; $i -lt $jbm_ActiveQueues.Count; $i++) {
                 $stepKey = "step-$($i + 1)"
                 $step = $queueResult.result.$stepKey
 
                 if ($null -ne $step -and $step.outcome -eq 'success') {
-                    $qName = $ActiveQueues[$i]
+                    $qName = $jbm_ActiveQueues[$i]
                     $msgCount = $step.result.'message-count'
                     $delCount = $step.result.'delivering-count'
                     $conCount = $step.result.'consumer-count'
@@ -729,15 +765,13 @@ VALUES
             Write-Log "  Queue snapshots: $queueInsertCount rows$(if (-not $Execute) { ' [Preview]' })" "SUCCESS"
         }
         else {
-            Write-Log "  Queue composite failed — no queue data for $serverName" "WARN"
+            Write-Log "  Queue composite failed - no queue data for $serverName" "WARN"
         }
     }
 
-    # ----------------------------------------
-    # Step 5f: Management API — Config Composite
-    # ----------------------------------------
+    # Step 5f: Management API - Config Composite
     # One composite call per server with all 9 config settings as steps.
-    # Steps mix profile-level and server-instance-level address paths —
+    # Steps mix profile-level and server-instance-level address paths -
     # JBoss composites support mixed addresses in the same request.
 
     if ($null -ne $managementApiUrl -and $null -ne $healthResult) {
@@ -747,7 +781,7 @@ VALUES
 
         # Build composite steps for all config settings
         $configSteps = @()
-        foreach ($setting in $ConfigSettings) {
+        foreach ($setting in $jbm_ConfigSettings) {
             if ($setting.ProfileLevel) {
                 $addr = "[{`"profile`":`"full-ha`"},{$($setting.AddressSuffix)}]"
             }
@@ -768,12 +802,12 @@ $configStepsJson
 }
 "@
 
-        $configResult = Invoke-JBossAPI -Body $configBody -ApiUrl $managementApiUrl `
+        $configResult = Invoke-jbm_JBossAPI -Body $configBody -ApiUrl $managementApiUrl `
             -Credential $jbossCred -TimeoutSec $apiTimeoutSec
 
         if ($null -ne $configResult) {
-            for ($i = 0; $i -lt $ConfigSettings.Count; $i++) {
-                $setting = $ConfigSettings[$i]
+            for ($i = 0; $i -lt $jbm_ConfigSettings.Count; $i++) {
+                $setting = $jbm_ConfigSettings[$i]
                 $settingName = $setting.Name
                 $stepKey = "step-$($i + 1)"
                 $step = $configResult.result.$stepKey
@@ -828,7 +862,7 @@ VALUES
             }
         }
         else {
-            Write-Log "  Config composite failed — no config data for $serverName" "WARN"
+            Write-Log "  Config composite failed - no config data for $serverName" "WARN"
         }
 
         $totalConfigRows += $configChanges
@@ -840,9 +874,7 @@ VALUES
         }
     }
 
-    # ----------------------------------------
-    # Step 5g: Alert Evaluation — DS Pool Elevation
-    # ----------------------------------------
+    # Step 5g: Alert Evaluation - DS Pool Elevation
     # Fires a CRITICAL Teams alert when two consecutive snapshots show
     # ds_in_use_count at or above the per-server threshold. Episode tracking
     # via ds_alert_fired column prevents duplicate alerts during an ongoing
@@ -875,14 +907,14 @@ ORDER BY collected_dttm DESC
             $previousDS = [int]$previous.ds_in_use_count
             $currentSnapshotId = $current.snapshot_id
 
-            # ── Check if we're in an open alert episode ──
+            # Check if we're in an open alert episode
             $inEpisode = [bool]$previous.ds_alert_fired
 
             if ($currentDS -ge $dsAlertThreshold -and $previousDS -ge $dsAlertThreshold) {
                 # Two consecutive above threshold
 
                 if (-not $inEpisode) {
-                    # ── NEW EPISODE — fire alert ──
+                    # NEW EPISODE - fire alert
                     Write-Log "  ALERT: DS pool elevation detected on $serverName ($currentDS / $dsAlertThreshold)" "WARN"
 
                     # Calculate undertow delta percentage for the alert message
@@ -935,7 +967,7 @@ Undertow: Falling ($undertowPctText)
                     }
                 }
                 else {
-                    Write-Log "  DS pool elevated on $serverName ($currentDS) — episode already open, skipping alert" "DEBUG"
+                    Write-Log "  DS pool elevated on $serverName ($currentDS) - episode already open, skipping alert" "DEBUG"
                 }
 
                 # Mark current snapshot as part of the episode
@@ -947,7 +979,7 @@ WHERE snapshot_id = $currentSnapshotId
 
             }
             elseif ($inEpisode) {
-                # ── Episode is open — check for recovery or mark ongoing ──
+                # Episode is open - check for recovery or mark ongoing
 
                 # Recovery condition: HTTP 200, ds below threshold, undertow delta positive
                 # Must be true for BOTH current and previous snapshots (two consecutive)
@@ -974,12 +1006,12 @@ WHERE snapshot_id = $currentSnapshotId
                 }
 
                 if ($curHttpOk -and $curDsOk -and $curUndertowOk -and $prevHttpOk -and $prevDsOk -and $prevUndertowOk) {
-                    # Two consecutive recovery snapshots — episode over
-                    Write-Log "  DS pool alert episode CLOSED on $serverName — recovery confirmed" "SUCCESS"
+                    # Two consecutive recovery snapshots - episode over
+                    Write-Log "  DS pool alert episode CLOSED on $serverName - recovery confirmed" "SUCCESS"
                     # Current snapshot stays at ds_alert_fired = 0 (default)
                 }
                 else {
-                    # Still in episode — mark current snapshot
+                    # Still in episode - mark current snapshot
                     Invoke-SqlNonQuery -Query @"
 UPDATE JBoss.Snapshot
 SET ds_alert_fired = 1
@@ -1003,9 +1035,8 @@ WHERE snapshot_id = $currentSnapshotId
     }
 }
 
-# ----------------------------------------
-# Summary
-# ----------------------------------------
+# -- Summary --
+
 Write-Log "========================================"
 Write-Log "Collection Complete$(if (-not $Execute) { ' [PREVIEW]' })"
 Write-Log "  Servers attempted: $serverCount"
@@ -1020,9 +1051,8 @@ if ($failedServers.Count -gt 0) {
     Write-Log "Failed servers: $($failedServers -join ', ')" "WARN"
 }
 
-# ----------------------------------------
-# Orchestrator Callback
-# ----------------------------------------
+# -- Orchestrator Callback --
+
 if ($TaskId -gt 0) {
     $totalMs = [int]((New-TimeSpan -Start $scriptStart -End (Get-Date)).TotalMilliseconds)
     $outputMsg = "Servers: $successServers/$serverCount, Queues: $totalQueueRows rows, Config: $totalConfigRows changes, Alerts: $totalAlertsFired"
@@ -1030,7 +1060,7 @@ if ($TaskId -gt 0) {
         $outputMsg += " (failed: $($failedServers -join ', '))"
     }
     Complete-OrchestratorTask -TaskId $TaskId -ProcessId $ProcessId `
-        -Status $(if ($failedServers.Count -eq 0) { "SUCCESS" } else { "PARTIAL" }) `
+        -Status $(if ($failedServers.Count -eq 0) { "SUCCESS" } else { "FAILED" }) `
         -DurationMs $totalMs `
         -Output $outputMsg
 }
