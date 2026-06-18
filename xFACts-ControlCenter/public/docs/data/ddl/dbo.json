@@ -482,6 +482,33 @@
                                        },
                                        {
                                            "ordinal":  19,
+                                           "name":  "skeleton_hash",
+                                           "dataType":  "varchar",
+                                           "length":  "64",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Maximally loose family fingerprint of a definition\u0027s body, SHA-256 as 64 hex characters. Computed from the set of structural construct types present (for functions: control-flow constructs, returns, throws, and aggregate-builder forms), independent of their order, count, the names called, identifiers, and literals. Intended as a name-free entry point: rows sharing skeleton_hash form a loose candidate family that is then narrowed by shape_hash, body_hash, signature, and name. Deliberately coarse - common skeletons return large generic cohorts by design, and skeleton_hash is never used in isolation to make consolidation determinations. Set on the promotable DEFINITION rows each populator chooses to fingerprint; NULL where it does not apply."
+                                       },
+                                       {
+                                           "ordinal":  20,
+                                           "name":  "shape_hash",
+                                           "dataType":  "varchar",
+                                           "length":  "64",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Structural fingerprint of a definition\u0027s body, SHA-256 as 64 hex characters. Same normalization as body_hash but with string and numeric literals folded to placeholder tokens and identifier references folded to a single token, while called-name and member-access names are kept literal. Two rows sharing shape_hash are the same logic differing only in literals, identifier names, casing, or formatting (combinable with little or no change). Set on the promotable DEFINITION rows each populator chooses to fingerprint; NULL where it does not apply."
+                                       },
+                                       {
+                                           "ordinal":  21,
+                                           "name":  "body_hash",
+                                           "dataType":  "varchar",
+                                           "length":  "64",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Exact fingerprint of a definition\u0027s body, SHA-256 as 64 hex characters. Computed from the construct body with language-specific scaffolding removed (for functions: the declaration line, parameter block, binding/output attributes, and documentation block), remaining tokens rendered verbatim. Two rows sharing body_hash are byte-identical bodies (true copy-paste). Set on the promotable DEFINITION rows each populator chooses to fingerprint (constructs that could become shared resources, such as functions); NULL on rows where a body fingerprint does not apply."
+                                       },
+                                       {
+                                           "ordinal":  22,
                                            "name":  "has_dynamic_content",
                                            "dataType":  "bit",
                                            "nullable":  true,
@@ -489,7 +516,7 @@
                                            "description":  "When TRUE, the parent attribute or text construct from which this row was extracted also contains runtime-only content the populator cannot statically resolve (e.g., a class attribute that combines literal class names with a parameter-passed class name). When FALSE or NULL, the parent construct is fully captured in the catalog. Used by HTML and JS populator rows; not meaningful for CSS rows, which are always fully literal."
                                        },
                                        {
-                                           "ordinal":  20,
+                                           "ordinal":  23,
                                            "name":  "parent_function",
                                            "dataType":  "varchar",
                                            "length":  "200",
@@ -498,7 +525,7 @@
                                            "description":  "The enclosing context, where applicable."
                                        },
                                        {
-                                           "ordinal":  21,
+                                           "ordinal":  24,
                                            "name":  "raw_text",
                                            "dataType":  "varchar",
                                            "length":  "MAX",
@@ -507,7 +534,7 @@
                                            "description":  "Verbatim source text of the construct."
                                        },
                                        {
-                                           "ordinal":  22,
+                                           "ordinal":  25,
                                            "name":  "purpose_description",
                                            "dataType":  "varchar",
                                            "length":  "MAX",
@@ -516,7 +543,7 @@
                                            "description":  "Human-authored description of the construct, extracted from preceding comments."
                                        },
                                        {
-                                           "ordinal":  23,
+                                           "ordinal":  26,
                                            "name":  "occurrence_index",
                                            "dataType":  "int",
                                            "nullable":  false,
@@ -525,7 +552,7 @@
                                            "description":  "1-based ordinal disambiguator for repeated instances within a file."
                                        },
                                        {
-                                           "ordinal":  24,
+                                           "ordinal":  27,
                                            "name":  "drift_codes",
                                            "dataType":  "varchar",
                                            "length":  "500",
@@ -534,7 +561,7 @@
                                            "description":  "Comma-separated list of spec-drift codes attached to this row."
                                        },
                                        {
-                                           "ordinal":  25,
+                                           "ordinal":  28,
                                            "name":  "drift_text",
                                            "dataType":  "varchar",
                                            "length":  "MAX",
@@ -543,7 +570,7 @@
                                            "description":  "Pipe-separated human-readable descriptions corresponding to drift_codes."
                                        },
                                        {
-                                           "ordinal":  26,
+                                           "ordinal":  29,
                                            "name":  "last_parsed_dttm",
                                            "dataType":  "datetime2",
                                            "nullable":  false,
