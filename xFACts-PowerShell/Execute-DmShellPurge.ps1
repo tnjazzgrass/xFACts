@@ -60,7 +60,6 @@
     INITIALIZATION: SCRIPT INITIALIZATION
     CONSTANTS: AUDIT TARGETS
     VARIABLES: SCRIPT-LEVEL STATE
-    FUNCTIONS: SCHEDULE AND CONTROL
     FUNCTIONS: BATCH LOGGING
     EXECUTION: SCRIPT EXECUTION
 #>
@@ -197,59 +196,6 @@ $script:dmo_TotalBatchesFailed = 0
 $script:dmo_SessionTotalDeleted = 0
 # Session rollup of consumers purged.
 $script:dmo_SessionTotalConsumers = 0
-<# ============================================================================
-   FUNCTIONS: SCHEDULE AND CONTROL
-   ----------------------------------------------------------------------------
-   Schedule-mode lookup and emergency-abort check, both reading their state
-   from DmOps GlobalConfig and the ShellPurge_Schedule table.
-   Prefix: dmo
-   ============================================================================ #>
-
-# Returns the integer schedule mode for the current day-hour from ShellPurge_Schedule.
-function Get-dmo_ShellScheduleMode {
-    param()
-
-    $currentHour = (Get-Date).Hour
-    $hrCol = "hr{0:D2}" -f $currentHour
-
-    try {
-        $result = Get-SqlData -Query @"
-            SELECT $hrCol AS schedule_mode
-            FROM DmOps.ShellPurge_Schedule
-            WHERE day_of_week = DATEPART(dw, GETDATE())
-"@
-        if ($result) {
-            return [int]$result.schedule_mode
-        }
-        Write-Log "  No schedule row found for today - treating as blocked" "WARN"
-        return 0
-    }
-    catch {
-        Write-Log "  Failed to read schedule: $($_.Exception.Message) - treating as blocked" "WARN"
-        return 0
-    }
-}
-
-# Returns $true when the GlobalConfig shell_purge_abort emergency flag is set.
-function Test-dmo_ShellAbort {
-    param()
-
-    try {
-        $result = Get-SqlData -Query @"
-            SELECT setting_value FROM dbo.GlobalConfig
-            WHERE module_name = 'DmOps' AND category = 'ShellPurge'
-              AND setting_name = 'shell_purge_abort' AND is_active = 1
-"@
-        if ($result -and $result.setting_value -eq '1') {
-            return $true
-        }
-        return $false
-    }
-    catch {
-        Write-Log "  Failed to check abort flag - proceeding cautiously" "WARN"
-        return $false
-    }
-}
 
 <# ============================================================================
    FUNCTIONS: BATCH LOGGING
@@ -381,7 +327,7 @@ Write-Log "--- Step 1: Configuration ---"
 
 # -- Abort flag check (overrides everything) --
 
-if (Test-dmo_ShellAbort) {
+if (Test-dmo_AbortFlag -Category 'ShellPurge' -SettingName 'shell_purge_abort') {
     Write-Log "Shell purge abort flag is set - exiting immediately" "WARN"
     exit 0
 }
@@ -450,7 +396,7 @@ if ($BatchSize -gt 0) {
     Write-Log "  Manual batch size override: $BatchSize" "INFO"
 } else {
     # Determine batch size from schedule
-    $scheduleValue = Get-dmo_ShellScheduleMode
+    $scheduleValue = Get-dmo_ScheduleMode -ScheduleTable 'DmOps.ShellPurge_Schedule'
     switch ($scheduleValue) {
         0 {
             $script:dmo_ScheduleMode = 'Blocked'
@@ -1255,7 +1201,7 @@ elseif ($batchStatus -eq 'Failed') {
     Write-Log "  Batch failed - stopping further processing" "ERROR"
     $continueProcessing = $false
 }
-elseif (Test-dmo_ShellAbort) {
+elseif (Test-dmo_AbortFlag -Category 'ShellPurge' -SettingName 'shell_purge_abort') {
     Write-Log "  Shell purge abort flag detected - stopping after batch completion" "WARN"
     if ($script:dmo_AlertingEnabled) {
         $remainingResult = Invoke-dmo_TargetQuery -Query @"
@@ -1293,7 +1239,7 @@ WHERE c.wrkgrp_id = $($script:dmo_PurgeWorkgroupId) AND ca.cnsmr_id IS NULL
     $continueProcessing = $false
 }
 else {
-    $nextScheduleValue = Get-dmo_ShellScheduleMode
+    $nextScheduleValue = Get-dmo_ScheduleMode -ScheduleTable 'DmOps.ShellPurge_Schedule'
     if ($nextScheduleValue -eq 0) {
         Write-Log "  Schedule: now in BLOCKED window - stopping" "INFO"
         if ($script:dmo_AlertingEnabled) {
