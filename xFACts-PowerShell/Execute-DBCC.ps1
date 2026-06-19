@@ -94,6 +94,11 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-06-18  Replaced the local Get-dbc_AGReplicaRoles with the shared
+#             Get-AGReplicaRoles from xFACts-OrchestratorFunctions.ps1.
+#             Removed the local definition and repointed the call in
+#             Resolve-dbc_ConnectionTarget; -AGName is still passed
+#             explicitly, so behavior is unchanged.
 # 2026-06-17  Conformed to the Control Center PowerShell file format spec:
 #             rebuilt comment-based-help header with .COMPONENT and no inline
 #             dividers or embedded changelog, added block-comment section
@@ -174,50 +179,10 @@ Initialize-XFActsScript -ScriptName 'Execute-DBCC' `
 <# ============================================================================
    FUNCTIONS: DBCC HELPERS
    ----------------------------------------------------------------------------
-   AG replica resolution, connection-target resolution, duration formatting,
-   execution-log completion, and Teams/Jira alerting.
+   Connection-target resolution, duration formatting, execution-log
+   completion, and Teams/Jira alerting.
    Prefix: dbc
    ============================================================================ #>
-
-# Resolve the PRIMARY and SECONDARY replica server names for an AG by name.
-function Get-dbc_AGReplicaRoles {
-    param([string]$AGName)
-
-    $query = @"
-        SELECT
-            ar.replica_server_name,
-            ars.role_desc
-        FROM sys.dm_hadr_availability_replica_states ars
-        INNER JOIN sys.availability_replicas ar
-            ON ars.replica_id = ar.replica_id
-        INNER JOIN sys.availability_groups ag
-            ON ar.group_id = ag.group_id
-        WHERE ag.name = '$AGName'
-"@
-
-    $results = Get-SqlData -Query $query
-
-    if (-not $results) {
-        Write-Log "Failed to query AG replica states for $AGName" "ERROR"
-        return $null
-    }
-
-    $roles = @{
-        PRIMARY   = $null
-        SECONDARY = $null
-    }
-
-    foreach ($row in $results) {
-        if ($row.role_desc -eq 'PRIMARY') {
-            $roles.PRIMARY = $row.replica_server_name
-        }
-        elseif ($row.role_desc -eq 'SECONDARY') {
-            $roles.SECONDARY = $row.replica_server_name
-        }
-    }
-
-    return $roles
-}
 
 # Resolve the server to connect to: the requested AG replica for listeners, or the direct server otherwise.
 function Resolve-dbc_ConnectionTarget {
@@ -231,7 +196,7 @@ function Resolve-dbc_ConnectionTarget {
         $replica = if ($ReplicaTarget) { $ReplicaTarget } else { $Config.SourceReplica }
         Write-Log "  AG listener detected - resolving $replica replica..."
 
-        $roles = Get-dbc_AGReplicaRoles -AGName $Config.AGName
+        $roles = Get-AGReplicaRoles -AGName $Config.AGName
 
         if (-not $roles) {
             Write-Log "  FAILED to resolve AG topology" "ERROR"
