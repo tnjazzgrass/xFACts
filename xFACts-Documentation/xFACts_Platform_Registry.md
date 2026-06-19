@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-06-19 07:12:11
+Generated: 2026-06-19 13:25:15
 
 ## Module Registry
 
@@ -299,6 +299,7 @@ Generated: 2026-06-19 07:12:11
 | ServerOps.Backup | Process-BackupAWSUpload.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Process-BackupAWSUpload.ps1 | Uploads backup files to AWS S3 |
 | ServerOps.Backup | Process-BackupNetworkCopy.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Process-BackupNetworkCopy.ps1 | Copies backup files to network share |
 | ServerOps.Backup | Process-BackupRetention.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Process-BackupRetention.ps1 | Manages backup file retention and cleanup |
+| ServerOps.Backup | xFACts-BackupFunctions.ps1 | PowerShell | Script | E:\xFACts-PowerShell\xFACts-BackupFunctions.ps1 | Shared function library for the ServerOps.Backup pipeline scripts. Dot-sourced by the backup collector and the network-copy, AWS-upload, and retention processors. Centralizes backup-filename physical-server parsing, local-to-UNC admin-share path conversion, the Backup_ExecutionLog detail writer, and the AWS-upload and network-copy Backup_FileTracking status writes that the collectors and processors share. |
 | ServerOps.Backup | Backup-API.ps1 | WebAsset | API | E:\xFACts-ControlCenter\scripts\routes\Backup-API.ps1 | Backup Monitoring CC API endpoints |
 | ServerOps.Backup | backup.css | WebAsset | CSS | E:\xFACts-ControlCenter\public\css\backup.css | Backup Monitoring CC styles |
 | ServerOps.Backup | backup.js | WebAsset | JavaScript | E:\xFACts-ControlCenter\public\js\backup.js | Backup Monitoring CC client-side logic |
