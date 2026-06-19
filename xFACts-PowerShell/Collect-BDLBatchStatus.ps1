@@ -74,6 +74,15 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-06-18  Migrated to the shared xFACts-BatchOpsFunctions.ps1 helpers.
+#             Removed the local Get-bat_BDL_SourceData, Get-bat_BDL_-
+#             AGReplicaRoles, and Get-bat_BDL_StallDurationText; calls now
+#             use Get-bat_SourceData, the shared Get-AGReplicaRoles via
+#             Resolve-bat_ReadServer, and Get-bat_StallDurationText.
+#             BatchOps.Status writes go through Set-bat_BatchStatus, and
+#             the alert dispatch through Send-bat_BatchAlert. Dropped the
+#             dead AGPrimary/AGSecondary script variables. Behavior
+#             unchanged.
 # 2026-04-06  Terminal detection refactored to use File_Registry.file_stts_cd
 #             instead of bdl_log status codes. file_registry_status_code stored on tracking row.
 #             completed_status vocabulary aligned with DM: PROCESSED, FAILED,
@@ -115,6 +124,7 @@ param(
    ============================================================================ #>
 
 . "$PSScriptRoot\xFACts-OrchestratorFunctions.ps1"
+. "$PSScriptRoot\xFACts-BatchOpsFunctions.ps1"
 
 <# ============================================================================
    INITIALIZATION: SCRIPT INITIALIZATION
@@ -132,12 +142,6 @@ Initialize-XFActsScript -ScriptName 'Collect-BDLBatchStatus' `
    Mutable script-scope state populated during configuration and execution.
    Prefix: bat
    ============================================================================ #>
-
-# Resolved AG PRIMARY replica server name.
-$script:AGPrimary = $null
-
-# Resolved AG SECONDARY replica server name.
-$script:AGSecondary = $null
 
 # Server the script reads DM source data from (PRIMARY or SECONDARY per config).
 $script:ReadServer = $null
@@ -158,58 +162,6 @@ $script:PollingIntervalMinutes = $null
    the stall-duration text helper.
    Prefix: bat
    ============================================================================ #>
-
-# Executes a query against the source database on the configured AG replica.
-function Get-bat_BDL_SourceData {
-    param(
-        [string]$Query,
-        [int]$Timeout = 120
-    )
-
-    if (-not $script:ReadServer) {
-        Write-Log "ReadServer not configured - cannot query source" "ERROR"
-        return $null
-    }
-
-    try {
-        Invoke-Sqlcmd -ServerInstance $script:ReadServer -Database $SourceDB -Query $Query -QueryTimeout $Timeout -ApplicationName $script:XFActsAppName -ErrorAction Stop -SuppressProviderContextWarning -TrustServerCertificate
-    }
-    catch {
-        Write-Log "Source query failed on $($script:ReadServer): $($_.Exception.Message)" "ERROR"
-        return $null
-    }
-}
-
-# Queries the AG to resolve current PRIMARY and SECONDARY replica server names.
-function Get-bat_BDL_AGReplicaRoles {
-    param()
-    $agName = $script:Config.AGName
-    if (-not $agName) {
-        Write-Log "AGName not configured - cannot query replica states" "ERROR"
-        return $null
-    }
-
-    $query = @"
-        SELECT ar.replica_server_name, ars.role_desc
-        FROM sys.dm_hadr_availability_replica_states ars
-        INNER JOIN sys.availability_replicas ar ON ars.replica_id = ar.replica_id
-        INNER JOIN sys.availability_groups ag ON ar.group_id = ag.group_id
-        WHERE ag.name = '$agName'
-"@
-
-    $results = Get-SqlData -Query $query
-    if (-not $results) {
-        Write-Log "Failed to query AG replica states" "ERROR"
-        return $null
-    }
-
-    $roles = @{ PRIMARY = $null; SECONDARY = $null }
-    foreach ($row in $results) {
-        if ($row.role_desc -eq 'PRIMARY') { $roles.PRIMARY = $row.replica_server_name }
-        elseif ($row.role_desc -eq 'SECONDARY') { $roles.SECONDARY = $row.replica_server_name }
-    }
-    return $roles
-}
 
 # Loads GlobalConfig settings, resolves AG replica roles, and sets read/write servers.
 function Initialize-bat_BDL_Configuration {
@@ -256,34 +208,9 @@ function Initialize-bat_BDL_Configuration {
 
     $script:WriteServer = $ServerInstance
 
-    if ($ForceSourceServer) {
-        $script:ReadServer = $ForceSourceServer
-        Write-Log "  ReadServer: $($script:ReadServer) (forced via parameter)" "WARN"
-    }
-    else {
-        Write-Log "Detecting AG replica roles..." "INFO"
-        $agRoles = Get-bat_BDL_AGReplicaRoles
-        if (-not $agRoles) {
-            Write-Log "AG detection failed - cannot determine read server" "ERROR"
-            return $false
-        }
-
-        $script:AGPrimary = $agRoles.PRIMARY
-        $script:AGSecondary = $agRoles.SECONDARY
-        Write-Log "  AG PRIMARY: $($script:AGPrimary)" "INFO"
-        Write-Log "  AG SECONDARY: $($script:AGSecondary)" "INFO"
-
-        if ($script:Config.SourceReplica -eq "PRIMARY") {
-            $script:ReadServer = $script:AGPrimary
-        } else {
-            $script:ReadServer = $script:AGSecondary
-        }
-
-        if (-not $script:ReadServer) {
-            Write-Log "Could not determine ReadServer from AG roles" "ERROR"
-            return $false
-        }
-        Write-Log "  ReadServer: $($script:ReadServer) (from GlobalConfig: $($script:Config.SourceReplica))" "SUCCESS"
+    $script:ReadServer = Resolve-bat_ReadServer -AGName $script:Config.AGName -SourceReplica $script:Config.SourceReplica -ForceSourceServer $ForceSourceServer
+    if (-not $script:ReadServer) {
+        return $false
     }
 
     Write-Log "  WriteServer: $($script:WriteServer)" "INFO"
@@ -303,17 +230,6 @@ function Initialize-bat_BDL_Configuration {
     }
 
     return $true
-}
-
-# Renders a human-readable stall-duration string from a poll count.
-function Get-bat_BDL_StallDurationText {
-    param([int]$PollCount)
-    if ($null -ne $script:PollingIntervalMinutes) {
-        $totalMinutes = [math]::Round($PollCount * $script:PollingIntervalMinutes)
-        return "$PollCount polls (~$totalMinutes min)"
-    } else {
-        return "$PollCount polls"
-    }
 }
 
 <# ============================================================================
@@ -415,7 +331,7 @@ function Step-bat_BDL_CollectNewFiles {
             ORDER BY cs.file_registry_id
 "@
 
-        $sourceFiles = Get-bat_BDL_SourceData -Query $sourceQuery -Timeout 120
+        $sourceFiles = Get-bat_SourceData -Query $sourceQuery -Timeout 120
 
         if (-not $sourceFiles) {
             Write-Log "  No source files returned (or query failed)" "WARN"
@@ -560,7 +476,7 @@ function Step-bat_BDL_UpdateIncompleteFiles {
             INNER JOIN dbo.Ref_File_Stts_Cd frs ON fr.file_stts_cd = frs.file_stts_cd
             WHERE fr.File_registry_id IN ($fileIds)
 "@
-        $fileRegistryData = Get-bat_BDL_SourceData -Query $fileRegistryQuery
+        $fileRegistryData = Get-bat_SourceData -Query $fileRegistryQuery
 
         # Bulk query 2: Current bdl_log file-level status (for progress info)
         $statusQuery = @"
@@ -577,7 +493,7 @@ function Step-bat_BDL_UpdateIncompleteFiles {
             SELECT file_registry_id, bdl_prcss_stss_cd, status_text, bdl_log_msg, crtd_dttm
             FROM RankedStatus WHERE rn = 1
 "@
-        $statusData = Get-bat_BDL_SourceData -Query $statusQuery
+        $statusData = Get-bat_SourceData -Query $statusQuery
 
         # Bulk query 3: Lifecycle timestamps
         $timestampQuery = @"
@@ -588,7 +504,7 @@ function Step-bat_BDL_UpdateIncompleteFiles {
             WHERE bl.file_registry_id IN ($fileIds) AND bl.sub_entty_nm_txt IS NULL
             GROUP BY bl.file_registry_id
 "@
-        $timestampData = Get-bat_BDL_SourceData -Query $timestampQuery
+        $timestampData = Get-bat_SourceData -Query $timestampQuery
 
         # Bulk query 4: Entity types
         $entityQuery = @"
@@ -600,7 +516,7 @@ function Step-bat_BDL_UpdateIncompleteFiles {
             )
             SELECT file_registry_id, sub_entty_nm_txt FROM RankedEntity WHERE rn = 1
 "@
-        $entityData = Get-bat_BDL_SourceData -Query $entityQuery
+        $entityData = Get-bat_SourceData -Query $entityQuery
 
         # Bulk query 5: Partition progress
         $partitionQuery = @"
@@ -613,7 +529,7 @@ function Step-bat_BDL_UpdateIncompleteFiles {
             WHERE bl.file_registry_id IN ($fileIds) AND bl.sub_entty_nm_txt IS NOT NULL
             GROUP BY bl.file_registry_id
 "@
-        $partitionData = Get-bat_BDL_SourceData -Query $partitionQuery
+        $partitionData = Get-bat_SourceData -Query $partitionQuery
 
         # Bulk query 6: Custom details
         $customDtlQuery = @"
@@ -628,7 +544,7 @@ function Step-bat_BDL_UpdateIncompleteFiles {
             WHERE d.file_registry_id IN ($fileIds)
             GROUP BY d.file_registry_id
 "@
-        $customDtlData = Get-bat_BDL_SourceData -Query $customDtlQuery
+        $customDtlData = Get-bat_SourceData -Query $customDtlQuery
 
         # Build lookup hashtables for O(1) access
         $fileRegistryLookup = @{}
@@ -787,17 +703,6 @@ function Step-bat_BDL_EvaluateAlerts {
     $alertsDetected = 0
     $alertsFired = 0
 
-    $jiraProjectKey = 'SD'; $jiraIssueType = 'Issue'; $jiraPriority = 'Highest'
-    $jiraCascadingFieldId = 'customfield_18401'; $jiraCascadingParent = 'File Processing'
-    $jiraCustomField1Id = 'customfield_10305'; $jiraCustomField1Value = 'FAC INFORMATION TECHNOLOGY'
-    $jiraCustomField2Id = 'customfield_10009'; $jiraCustomField2Value = 'sd/1b77b626-3ad4-4bee-8727-abc18b68c5fa'
-    $jiraEmailRecipients = 'applications@frost-arnett.com'
-
-    $dayOfWeek = [int](Get-Date).DayOfWeek
-    if ($dayOfWeek -eq 0) { $jiraDueDate = (Get-Date).AddDays(1).ToString("yyyy-MM-dd") }
-    elseif ($dayOfWeek -eq 6) { $jiraDueDate = (Get-Date).AddDays(2).ToString("yyyy-MM-dd") }
-    else { $jiraDueDate = (Get-Date).ToString("yyyy-MM-dd") }
-
     try {
         if (-not $script:Config.BDL_AlertingEnabled) {
             Write-Log "  Alerting is DISABLED (bdl_alerting_enabled = 0)" "INFO"
@@ -836,59 +741,13 @@ function Step-bat_BDL_EvaluateAlerts {
                     $detectionTime = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
                     $createdTime = if ($file.file_created_dttm -isnot [DBNull]) { $file.file_created_dttm.ToString("yyyy-MM-dd HH:mm:ss") } else { 'N/A' }
 
-                    if ($routing -band 2) {
-                        $jiraDedup = Get-SqlData -Query "SELECT TOP 1 1 AS x FROM Jira.RequestLog WHERE Trigger_Type = '$triggerType' AND Trigger_Value = '$triggerValue' AND StatusCode = 201 AND TicketKey IS NOT NULL AND TicketKey != 'Email'"
-                        if (-not $jiraDedup) {
-                            $jiraSummary = "BDL Failed: $filenameDisplay"
-                            $jiraDesc = "BDL File Failed`n`nFile Registry ID: $fileRegId`nFilename: $filenameDisplay`nEntity Type: $entityType`nTotal Records: $totalRecs`nLast BDL Status: $fileStatus`nRecords Staged: $stagedCount (Failed: $stageFailed)`nImport Success: $importSuccess (Failed: $importFailed)`nCreated: $createdTime`n`nError: $errMsg`n`nAction: Review the BDL file in Debt Manager for failure details.`n`nDetection Date: $detectionTime"
-                            Invoke-SqlNonQuery -Query @"
-                                EXEC Jira.sp_QueueTicket
-                                    @SourceModule = @SourceModule,
-                                    @ProjectKey = @ProjectKey,
-                                    @Summary = @Summary,
-                                    @Description = @Description,
-                                    @IssueType = @IssueType,
-                                    @Priority = @Priority,
-                                    @EmailRecipients = @EmailRecipients,
-                                    @CascadingField_ID = @CascadingField_ID,
-                                    @CascadingField_ParentValue = @CascadingField_ParentValue,
-                                    @CascadingField_ChildValue = @CascadingField_ChildValue,
-                                    @CustomField_ID = @CustomField_ID,
-                                    @CustomField_Value = @CustomField_Value,
-                                    @CustomField2_ID = @CustomField2_ID,
-                                    @CustomField2_Value = @CustomField2_Value,
-                                    @DueDate = @DueDate,
-                                    @TriggerType = @TriggerType,
-                                    @TriggerValue = @TriggerValue
-"@ -Parameters @{
-                                SourceModule = 'BatchOps'
-                                ProjectKey = $jiraProjectKey
-                                Summary = $jiraSummary
-                                Description = $jiraDesc
-                                IssueType = $jiraIssueType
-                                Priority = $jiraPriority
-                                EmailRecipients = $jiraEmailRecipients
-                                CascadingField_ID = $jiraCascadingFieldId
-                                CascadingField_ParentValue = $jiraCascadingParent
-                                CascadingField_ChildValue = $cascadingChild
-                                CustomField_ID = $jiraCustomField1Id
-                                CustomField_Value = $jiraCustomField1Value
-                                CustomField2_ID = $jiraCustomField2Id
-                                CustomField2_Value = $jiraCustomField2Value
-                                DueDate = $jiraDueDate
-                                TriggerType = $triggerType
-                                TriggerValue = $triggerValue
-                            } | Out-Null
-                            Write-Log "    Jira ticket queued for file $fileRegId" "SUCCESS"
-                        } else { Write-Log "    Jira dedup: ticket exists for $triggerType/$triggerValue" "INFO" }
-                    }
-                    if ($routing -band 1) {
-                        $teamsTitle = "{{FIRE}} BDL Failed: $filenameDisplay"
-                        $teamsMessage = "**File Registry ID:** $fileRegId`n**Filename:** $filenameDisplay`n**Entity Type:** $entityType`n**Total Records:** $totalRecs`n**Last BDL Status:** $fileStatus`n**Records Staged:** $stagedCount (Failed: $stageFailed)`n**Import Success:** $importSuccess (Failed: $importFailed)`n**Created:** $createdTime`n`n**Error:** $errMsg`n`nAction: Review the BDL file in Debt Manager for failure details.`n`n**Detection:** $detectionTime"
-                        Send-TeamsAlert -SourceModule 'BatchOps' -AlertCategory 'CRITICAL' `
-                            -Title $teamsTitle -Message $teamsMessage -Color 'attention' `
-                            -TriggerType $triggerType -TriggerValue $triggerValue | Out-Null
-                    }
+                    $jiraSummary = "BDL Failed: $filenameDisplay"
+                    $jiraDesc = "BDL File Failed`n`nFile Registry ID: $fileRegId`nFilename: $filenameDisplay`nEntity Type: $entityType`nTotal Records: $totalRecs`nLast BDL Status: $fileStatus`nRecords Staged: $stagedCount (Failed: $stageFailed)`nImport Success: $importSuccess (Failed: $importFailed)`nCreated: $createdTime`n`nError: $errMsg`n`nAction: Review the BDL file in Debt Manager for failure details.`n`nDetection Date: $detectionTime"
+                    $teamsTitle = "{{FIRE}} BDL Failed: $filenameDisplay"
+                    $teamsMessage = "**File Registry ID:** $fileRegId`n**Filename:** $filenameDisplay`n**Entity Type:** $entityType`n**Total Records:** $totalRecs`n**Last BDL Status:** $fileStatus`n**Records Staged:** $stagedCount (Failed: $stageFailed)`n**Import Success:** $importSuccess (Failed: $importFailed)`n**Created:** $createdTime`n`n**Error:** $errMsg`n`nAction: Review the BDL file in Debt Manager for failure details.`n`n**Detection:** $detectionTime"
+                    Send-bat_BatchAlert -Routing $routing -TriggerType $triggerType -TriggerValue $triggerValue -CascadingChild $cascadingChild `
+                        -JiraSummary $jiraSummary -JiraDescription $jiraDesc `
+                        -TeamsTitle $teamsTitle -TeamsMessage $teamsMessage -TeamsCategory 'CRITICAL' -TeamsColor 'attention'
                     Invoke-SqlNonQuery -Query "UPDATE BatchOps.BDL_BatchTracking SET alert_count = alert_count + 1 WHERE file_registry_id = $fileRegId" | Out-Null
                     $alertsFired++
                 }
@@ -914,7 +773,7 @@ function Step-bat_BDL_EvaluateAlerts {
                 $alertsDetected++
                 $fileRegId = $file.file_registry_id
                 $filenameDisplay = if ($file.filename -isnot [DBNull]) { $file.filename } else { "File $fileRegId" }
-                $stallDuration = Get-bat_BDL_StallDurationText -PollCount $file.stall_poll_count
+                $stallDuration = Get-bat_StallDurationText -PollCount $file.stall_poll_count
                 Write-Log "  ALERT: Stall detected - file $fileRegId ($filenameDisplay) - $stallDuration" "WARN"
 
                 if ($script:Config.BDL_AlertingEnabled -and -not $PreviewOnly -and $routing -gt 0) {
@@ -930,59 +789,13 @@ function Step-bat_BDL_EvaluateAlerts {
                     $detectionTime = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
                     $createdTime = if ($file.file_created_dttm -isnot [DBNull]) { $file.file_created_dttm.ToString("yyyy-MM-dd HH:mm:ss") } else { 'N/A' }
 
-                    if ($routing -band 2) {
-                        $jiraDedup = Get-SqlData -Query "SELECT TOP 1 1 AS x FROM Jira.RequestLog WHERE Trigger_Type = '$triggerType' AND Trigger_Value = '$triggerValue' AND StatusCode = 201 AND TicketKey IS NOT NULL AND TicketKey != 'Email'"
-                        if (-not $jiraDedup) {
-                            $jiraSummary = "BDL Processing Stalled: $filenameDisplay"
-                            $jiraDesc = "BDL File Processing Stalled`n`nFile Registry ID: $fileRegId`nFilename: $filenameDisplay`nEntity Type: $entityType`nTotal Records: $totalRecs`nBDL Status: $fileStatus`nFile Registry Status: $fileSttsCode`nPartitions: $partCompleted of $partCount completed`nStalled: $stallDuration with no partition activity`nLast Activity: $lastLogTime`nCreated: $createdTime`n`nAction: Check BDL processing status in Debt Manager.`n`nDetection Date: $detectionTime"
-                            Invoke-SqlNonQuery -Query @"
-                                EXEC Jira.sp_QueueTicket
-                                    @SourceModule = @SourceModule,
-                                    @ProjectKey = @ProjectKey,
-                                    @Summary = @Summary,
-                                    @Description = @Description,
-                                    @IssueType = @IssueType,
-                                    @Priority = @Priority,
-                                    @EmailRecipients = @EmailRecipients,
-                                    @CascadingField_ID = @CascadingField_ID,
-                                    @CascadingField_ParentValue = @CascadingField_ParentValue,
-                                    @CascadingField_ChildValue = @CascadingField_ChildValue,
-                                    @CustomField_ID = @CustomField_ID,
-                                    @CustomField_Value = @CustomField_Value,
-                                    @CustomField2_ID = @CustomField2_ID,
-                                    @CustomField2_Value = @CustomField2_Value,
-                                    @DueDate = @DueDate,
-                                    @TriggerType = @TriggerType,
-                                    @TriggerValue = @TriggerValue
-"@ -Parameters @{
-                                SourceModule = 'BatchOps'
-                                ProjectKey = $jiraProjectKey
-                                Summary = $jiraSummary
-                                Description = $jiraDesc
-                                IssueType = $jiraIssueType
-                                Priority = $jiraPriority
-                                EmailRecipients = $jiraEmailRecipients
-                                CascadingField_ID = $jiraCascadingFieldId
-                                CascadingField_ParentValue = $jiraCascadingParent
-                                CascadingField_ChildValue = $cascadingChild
-                                CustomField_ID = $jiraCustomField1Id
-                                CustomField_Value = $jiraCustomField1Value
-                                CustomField2_ID = $jiraCustomField2Id
-                                CustomField2_Value = $jiraCustomField2Value
-                                DueDate = $jiraDueDate
-                                TriggerType = $triggerType
-                                TriggerValue = $triggerValue
-                            } | Out-Null
-                            Write-Log "    Jira ticket queued for file $fileRegId" "SUCCESS"
-                        } else { Write-Log "    Jira dedup: ticket exists for $triggerType/$triggerValue" "INFO" }
-                    }
-                    if ($routing -band 1) {
-                        $teamsTitle = "{{WARN}} BDL Processing Stalled: $filenameDisplay"
-                        $teamsMessage = "**File Registry ID:** $fileRegId`n**Filename:** $filenameDisplay`n**Entity Type:** $entityType`n**Total Records:** $totalRecs`n**BDL Status:** $fileStatus`n**File Registry Status:** $fileSttsCode`n**Partitions:** $partCompleted of $partCount completed`n**Stalled:** $stallDuration with no partition activity`n**Last Activity:** $lastLogTime`n`nAction: Check BDL processing status in Debt Manager.`n`n**Detection:** $detectionTime"
-                        Send-TeamsAlert -SourceModule 'BatchOps' -AlertCategory 'WARNING' `
-                            -Title $teamsTitle -Message $teamsMessage -Color 'warning' `
-                            -TriggerType $triggerType -TriggerValue $triggerValue | Out-Null
-                    }
+                    $jiraSummary = "BDL Processing Stalled: $filenameDisplay"
+                    $jiraDesc = "BDL File Processing Stalled`n`nFile Registry ID: $fileRegId`nFilename: $filenameDisplay`nEntity Type: $entityType`nTotal Records: $totalRecs`nBDL Status: $fileStatus`nFile Registry Status: $fileSttsCode`nPartitions: $partCompleted of $partCount completed`nStalled: $stallDuration with no partition activity`nLast Activity: $lastLogTime`nCreated: $createdTime`n`nAction: Check BDL processing status in Debt Manager.`n`nDetection Date: $detectionTime"
+                    $teamsTitle = "{{WARN}} BDL Processing Stalled: $filenameDisplay"
+                    $teamsMessage = "**File Registry ID:** $fileRegId`n**Filename:** $filenameDisplay`n**Entity Type:** $entityType`n**Total Records:** $totalRecs`n**BDL Status:** $fileStatus`n**File Registry Status:** $fileSttsCode`n**Partitions:** $partCompleted of $partCount completed`n**Stalled:** $stallDuration with no partition activity`n**Last Activity:** $lastLogTime`n`nAction: Check BDL processing status in Debt Manager.`n`n**Detection:** $detectionTime"
+                    Send-bat_BatchAlert -Routing $routing -TriggerType $triggerType -TriggerValue $triggerValue -CascadingChild $cascadingChild `
+                        -JiraSummary $jiraSummary -JiraDescription $jiraDesc `
+                        -TeamsTitle $teamsTitle -TeamsMessage $teamsMessage -TeamsCategory 'WARNING' -TeamsColor 'warning'
                     Invoke-SqlNonQuery -Query "UPDATE BatchOps.BDL_BatchTracking SET alert_count = alert_count + 1 WHERE file_registry_id = $fileRegId" | Out-Null
                     $alertsFired++
                 }
@@ -1020,7 +833,7 @@ try {
     }
 
     if ($Execute) {
-        Invoke-SqlNonQuery -Query "UPDATE BatchOps.Status SET processing_status = 'RUNNING', started_dttm = GETDATE() WHERE collector_name = 'Collect-BDLBatchStatus'" | Out-Null
+        Set-bat_BatchStatus -CollectorName 'Collect-BDLBatchStatus' -State RUNNING
     }
 
     $previewOnly = -not $Execute
@@ -1045,7 +858,7 @@ catch {
 finally {
     if ($Execute) {
         $statusText = if ($overallSuccess) { 'SUCCESS' } else { 'FAILED' }
-        Invoke-SqlNonQuery -Query "UPDATE BatchOps.Status SET processing_status = 'IDLE', completed_dttm = GETDATE(), last_duration_ms = $($stopwatch.ElapsedMilliseconds), last_status = '$statusText' WHERE collector_name = 'Collect-BDLBatchStatus'" | Out-Null
+        Set-bat_BatchStatus -CollectorName 'Collect-BDLBatchStatus' -State IDLE -Status $statusText -DurationMs $stopwatch.ElapsedMilliseconds
     }
 
     if ($TaskId -gt 0 -and $ProcessId -gt 0) {
