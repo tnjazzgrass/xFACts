@@ -1732,6 +1732,30 @@
                                                       "sortOrder":  2
                                                   }
                                               ]
+                    },
+                    {
+                        "name":  "xFACts-BatchOpsFunctions.ps1",
+                        "description":  "Shared scoped-function library for the BatchOps batch-status collectors. Centralizes the read-replica source querying, availability-group read-server resolution, stall-duration text formatting, BatchOps.Status run-state writes, and Jira/Teams alert dispatch that the collectors and the pre-maintenance summary previously duplicated. Dot-sourced after xFACts-OrchestratorFunctions.ps1, which supplies the Get-AGReplicaRoles it calls.",
+                        "module":  "BatchOps",
+                        "category":  "BatchOps",
+                        "dataFlow":  "Dot-sourced by Collect-BDLBatchStatus.ps1, Collect-NBBatchStatus.ps1, Collect-PMTBatchStatus.ps1, and Send-OpenBatchSummary.ps1 after xFACts-OrchestratorFunctions.ps1. Get-bat_SourceData runs read-only queries against the Debt Manager source database on the resolved read replica. Resolve-bat_ReadServer calls the shared Get-AGReplicaRoles to pick the read server by replica role. Set-bat_BatchStatus writes the RUNNING and IDLE rows to BatchOps.Status that the Control Center Process Status cards display. Send-bat_BatchAlert deduplicates against Jira.RequestLog, queues tickets via Jira.sp_QueueTicket, and posts Teams alerts via the shared Send-TeamsAlert. The functions hold no state of their own; they operate on the calling script\u0027s script-scope context ($script:ReadServer, $script:Config, $script:PollingIntervalMinutes).",
+                        "designNotes":  [
+                                            {
+                                                "topic":  "No self-import of the orchestrator",
+                                                "note":  "As a shared-library file it declares no IMPORTS section, so it does not dot-source xFACts-OrchestratorFunctions.ps1 even though Resolve-bat_ReadServer depends on Get-AGReplicaRoles from it. Consuming scripts dot-source the orchestrator first, then this helper. This keeps the load order explicit at the call site and avoids a shared library reaching back into platform infrastructure.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "topic":  "Caller-side execute gating",
+                                                "note":  "Set-bat_BatchStatus and Send-bat_BatchAlert do no preview or execute checking of their own. The calling script gates each invocation with its own execute guard. This keeps the functions as pure writers with one calling convention across all four scripts rather than each carrying its own preview awareness.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "topic":  "Alert dispatch owns the shared fields, callers own the counts",
+                                                "note":  "Send-bat_BatchAlert holds the invariant Jira ticket field set, the deduplication query, and the weekend-aware due-date calculation, taking only the per-alert values as parameters. The per-script alert_count increment stays at the call site because it keys each collector\u0027s own tracking table.",
+                                                "sortOrder":  3
+                                            }
+                                        ]
                     }
                 ],
     "xeSessions":  [
