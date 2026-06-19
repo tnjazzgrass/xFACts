@@ -1,44 +1,21 @@
 <#
 .SYNOPSIS
-    xFACts - Index Maintenance Execution
+    Executes index rebuild operations from the ServerOps.Index queue.
 
 .DESCRIPTION
-    xFACts - ServerOps.Index
-    Script: Execute-IndexMaintenance.ps1
-    Version: Tracked in dbo.System_Metadata (component: ServerOps.Index)
-
-    Executes index rebuild operations from the Index_Queue:
-    - Respects per-database maintenance schedules (Exception → Holiday → Database)
-    - Uses best-fit algorithm on weekdays to maximize throughput
-    - Uses priority order on weekends/holidays (extended windows)
-    - Marks oversized indexes as SCHEDULED for extended window processing
-    - Logs execution details to Index_ExecutionLog
-    - Updates Index_Registry after successful rebuilds
-    - Tracks variance between estimated and actual duration for refinement
-
-    CHANGELOG
-    ---------
-    2026-03-10  Migrated to Initialize-XFActsScript shared infrastructure
-                Removed inline Write-Log, Get-SqlData, Invoke-SqlNonQuery
-                Standardized param names ($ServerInstance, $Database)
-                Updated header to component-level versioning format
-    2026-02-14  Orchestrator v2 standardization
-                Added -TaskId, -ProcessId, orchestrator callback
-                Standardized initialization block, added file logging
-                Relocated to E:\xFACts-PowerShell
-    2026-01-22  xFACts Refactoring - Phase 3/8
-                Table references updated to Index_* naming
-                GlobalConfig-based settings, server-level master switch
-    2026-01-13  Schedule integration, Maintenance component refactor
-                Schedule awareness, best-fit algorithm, SCHEDULED status
-    2026-01-11  Initial PowerShell implementation for Index Maintenance 2.0
-                Processes queue by priority, logs variance for estimate refinement
+    Processes the index-rebuild queue with schedule awareness. Respects per-
+    database maintenance schedules (exception -> holiday -> database), uses a
+    best-fit algorithm on weekdays to maximize throughput and priority order on
+    weekends and holidays, marks oversized indexes as SCHEDULED for extended
+    windows, logs execution detail to Index_ExecutionLog, updates Index_Registry
+    after successful rebuilds, and tracks estimate-versus-actual variance for
+    refinement.
 
 .PARAMETER ServerInstance
-    SQL Server instance hosting xFACts database (default: AVG-PROD-LSNR)
+    SQL Server instance hosting the xFACts database (default: AVG-PROD-LSNR).
 
 .PARAMETER Database
-    xFACts database name (default: xFACts)
+    xFACts database name (default: xFACts).
 
 .PARAMETER DatabaseFilter
     Process only specific database(s). Comma-separated.
@@ -47,7 +24,7 @@
     Exclude specific database(s). Comma-separated.
 
 .PARAMETER MaxMinutes
-    Maximum runtime in minutes. 0 = unlimited. (default: 0)
+    Maximum runtime in minutes. 0 = unlimited (default: 0).
 
 .PARAMETER Execute
     Perform rebuilds. Without this flag, runs in preview mode.
@@ -56,24 +33,58 @@
     Bypass schedule checks and process all databases.
 
 .PARAMETER TaskId
-    Orchestrator TaskLog ID passed by the v2 engine at launch. Used for task
-    completion callback. Default 0 (no callback when run manually).
+    Orchestrator TaskLog ID passed by the v2 engine at launch. Used for task completion callback. Default 0 (no callback when run manually).
 
 .PARAMETER ProcessId
-    Orchestrator ProcessRegistry ID passed by the v2 engine at launch. Used for
-    task completion callback. Default 0 (no callback when run manually).
+    Orchestrator ProcessRegistry ID passed by the v2 engine at launch. Used for task completion callback. Default 0 (no callback when run manually).
 
-================================================================================
-DEPLOYMENT REMINDERS
-================================================================================
-1. Deploy to E:\xFACts-PowerShell on FA-SQLDBB.
-2. xFACts-OrchestratorFunctions.ps1 must be in the same directory.
-3. xFACts-IndexFunctions.ps1 must be in the same directory (hard dependency).
-4. The service account running this script needs:
-   - ALTER INDEX permission on all enrolled databases
-   - Read/Write access to xFACts database
-================================================================================
+.COMPONENT
+    ServerOps.Index
+
+.NOTES
+    File Name : Execute-IndexMaintenance.ps1
+    Location  : E:\xFACts-PowerShell\Execute-IndexMaintenance.ps1
+
+    FILE ORGANIZATION
+    -----------------
+    CHANGELOG: CHANGE HISTORY
+    PARAMETERS: SCRIPT PARAMETERS
+    IMPORTS: SCRIPT DEPENDENCIES
+    INITIALIZATION: SCRIPT INITIALIZATION
+    EXECUTION: SCRIPT EXECUTION
 #>
+
+<# ============================================================================
+   CHANGELOG: CHANGE HISTORY
+   ----------------------------------------------------------------------------
+   Date-driven change history for this script. Most-recent entry first.
+   Prefix: (none)
+   ============================================================================ #>
+
+# 2026-06-19  Brought into PowerShell spec conformance: rebuilt header, moved
+#             change history into the CHANGELOG section, added section banners,
+#             removed the deployment block and inline dividers. Migrated onto the
+#             idx_-prefixed shared Index functions and replaced the local
+#             Get-AGPrimary with the shared Get-idx_AGPrimary.
+# 2026-03-10  Migrated to Initialize-XFActsScript shared infrastructure. Removed
+#             inline Write-Log, Get-SqlData, Invoke-SqlNonQuery. Standardized
+#             param names ($ServerInstance, $Database).
+# 2026-02-14  Orchestrator v2 standardization. Added -TaskId, -ProcessId,
+#             orchestrator callback. Standardized initialization, added file
+#             logging. Relocated to E:\xFACts-PowerShell.
+# 2026-01-22  Table references updated to Index_* naming. GlobalConfig-based
+#             settings, server-level master switch.
+# 2026-01-13  Schedule integration: schedule awareness, best-fit algorithm,
+#             SCHEDULED status.
+# 2026-01-11  Initial PowerShell implementation for Index Maintenance. Processes
+#             queue by priority, logs variance for estimate refinement.
+
+<# ============================================================================
+   PARAMETERS: SCRIPT PARAMETERS
+   ----------------------------------------------------------------------------
+   The CmdletBinding attribute and param() block declaring script-level parameters.
+   Prefix: (none)
+   ============================================================================ #>
 
 [CmdletBinding()]
 param(
@@ -88,49 +99,35 @@ param(
     [int]$ProcessId = 0
 )
 
-# ============================================================================
-# STANDARD INITIALIZATION
-# ============================================================================
+<# ============================================================================
+   IMPORTS: SCRIPT DEPENDENCIES
+   ----------------------------------------------------------------------------
+   Dot-sources the shared orchestrator functions and the shared index functions.
+   The index functions are a hard dependency and load after the orchestrator.
+   Prefix: (none)
+   ============================================================================ #>
 
 . "$PSScriptRoot\xFACts-OrchestratorFunctions.ps1"
+. "$PSScriptRoot\xFACts-IndexFunctions.ps1"
+
+<# ============================================================================
+   INITIALIZATION: SCRIPT INITIALIZATION
+   ----------------------------------------------------------------------------
+   One-time setup that must run at file scope before the execution body.
+   Prefix: (none)
+   ============================================================================ #>
 
 Initialize-XFActsScript -ScriptName 'Execute-IndexMaintenance' `
     -ServerInstance $ServerInstance -Database $Database -Execute:$Execute
 
-# Dot-source shared index functions (hard dependency - must be after OrchestratorFunctions)
-. "$PSScriptRoot\xFACts-IndexFunctions.ps1"
-
-# ============================================================================
-# HELPER FUNCTIONS
-# ============================================================================
-
-function Get-AGPrimary {
-    param(
-        [string]$ListenerName
-    )
-    
-    $query = @"
-SELECT ar.replica_server_name
-FROM sys.dm_hadr_availability_group_states ags
-JOIN sys.availability_replicas ar ON ags.group_id = ar.group_id
-WHERE ags.primary_replica = ar.replica_server_name
-"@
-    
-    try {
-        $result = Invoke-Sqlcmd -ServerInstance $ListenerName -Database "master" -Query $query -QueryTimeout 10 -ApplicationName $script:XFActsAppName -ErrorAction Stop -SuppressProviderContextWarning -TrustServerCertificate
-        if ($result) {
-            return $result.replica_server_name
-        }
-    }
-    catch {
-        Write-Log "Could not detect AG primary for $ListenerName : $($_.Exception.Message)" "WARN"
-    }
-    return $null
-}
-
-# ============================================================================
-# MAIN SCRIPT
-# ============================================================================
+<# ============================================================================
+   EXECUTION: SCRIPT EXECUTION
+   ----------------------------------------------------------------------------
+   The procedural execution body: server-level gate, config load, schedule and
+   window resolution, the per-database rebuild loop, summary, and orchestrator
+   callback.
+   Prefix: (none)
+   ============================================================================ #>
 
 $scriptStart = Get-Date
 
@@ -140,18 +137,16 @@ Write-Log "  Index Maintenance Execution"
 Write-Log "================================================================"
 Write-Log ""
 
-# ----------------------------------------------------------------------------
 # Step 0: Check server-level master switch
-# ----------------------------------------------------------------------------
 
 Write-Log "Checking server-level index maintenance enable flag..."
 
-$serverCheck = Get-SqlData -Query "
+$serverCheck = Get-SqlData -Query @"
     SELECT COUNT(*) AS enabled_count
     FROM dbo.ServerRegistry
     WHERE is_active = 1
       AND serverops_index_enabled = 1
-"
+"@
 
 if (-not $serverCheck -or $serverCheck.enabled_count -eq 0) {
     Write-Log "Index maintenance is not enabled on any server (serverops_index_enabled = 0). Exiting." "WARN"
@@ -166,14 +161,12 @@ if (-not $serverCheck -or $serverCheck.enabled_count -eq 0) {
 
 Write-Log "Found $($serverCheck.enabled_count) server(s) with index maintenance enabled" "SUCCESS"
 
-# ----------------------------------------------------------------------------
 # Load Configuration
-# ----------------------------------------------------------------------------
 Write-Log "Loading configuration settings..."
 
 $configQuery = @"
-    SELECT setting_name, setting_value, data_type 
-    FROM dbo.GlobalConfig 
+    SELECT setting_name, setting_value, data_type
+    FROM dbo.GlobalConfig
     WHERE module_name = 'ServerOps'
       AND category = 'Index'
       AND is_active = 1
@@ -218,10 +211,8 @@ if ($MaxMinutes -gt 0) {
     Write-Log "  Time limit: Unlimited"
 }
 
-# ----------------------------------------------------------------------------
 # Check for Abort Flag at Startup
-# ----------------------------------------------------------------------------
-if ($Execute -and (Test-AbortRequested -ServerInstance $ServerInstance -Database $Database -SettingName 'index_execute_abort')) {
+if ($Execute -and (Test-idx_AbortRequested -ServerInstance $ServerInstance -Database $Database -SettingName 'index_execute_abort')) {
     Write-Log "Abort flag (index_execute_abort) is set to 1 - exiting without processing" "WARN"
     Write-Log "Reset the flag to 0 to allow execution" "WARN"
     if ($TaskId -gt 0) {
@@ -233,12 +224,10 @@ if ($Execute -and (Test-AbortRequested -ServerInstance $ServerInstance -Database
     exit 0
 }
 
-# ----------------------------------------------------------------------------
 # Determine if Extended Window (Weekend/Holiday)
-# ----------------------------------------------------------------------------
 Write-Log "Checking window type..."
 
-$windowCheck = Test-IsExtendedWindow -ServerInstance $ServerInstance -Database $Database
+$windowCheck = Test-idx_IsExtendedWindow -ServerInstance $ServerInstance -Database $Database
 $isExtendedWindow = $windowCheck.IsExtended
 
 if ($isExtendedWindow) {
@@ -247,39 +236,33 @@ if ($isExtendedWindow) {
     Write-Log "  Standard weekday window" "SCHEDULE"
 }
 
-# ----------------------------------------------------------------------------
 # Reset Queue Statuses
-# ----------------------------------------------------------------------------
 if ($Execute) {
     Write-Log "Resetting queue statuses..."
-    
+
     # Always reset DEFERRED and FAILED to PENDING
     $resetDeferredQuery = "UPDATE ServerOps.Index_Queue SET status = 'PENDING' WHERE status IN ('DEFERRED', 'FAILED')"
     Invoke-SqlNonQuery -Query $resetDeferredQuery | Out-Null
-    Write-Log "  DEFERRED/FAILED → PENDING"
-    
+    Write-Log "  DEFERRED/FAILED -> PENDING"
+
     # Reset SCHEDULED to PENDING only on extended windows
     if ($isExtendedWindow) {
         $resetScheduledQuery = "UPDATE ServerOps.Index_Queue SET status = 'PENDING' WHERE status = 'SCHEDULED'"
         Invoke-SqlNonQuery -Query $resetScheduledQuery | Out-Null
-        Write-Log "  SCHEDULED → PENDING (extended window)"
+        Write-Log "  SCHEDULED -> PENDING (extended window)"
     }
 }
 
-# ----------------------------------------------------------------------------
 # Get Run ID
-# ----------------------------------------------------------------------------
 $runIdQuery = "SELECT ISNULL(MAX(run_id), 0) + 1 AS next_run_id FROM ServerOps.Index_ExecutionSummary WHERE process_name = 'EXECUTE'"
 $runIdResult = Get-SqlData -Query $runIdQuery
 $runId = $runIdResult.next_run_id
 Write-Log "Run ID: $runId"
 
-# ----------------------------------------------------------------------------
 # Update Index_Status to IN_PROGRESS
-# ----------------------------------------------------------------------------
 if ($Execute) {
     $summaryUpdateQuery = @"
-UPDATE ServerOps.Index_Status 
+UPDATE ServerOps.Index_Status
 SET started_dttm = GETDATE(),
     completed_dttm = NULL,
     last_status = 'IN_PROGRESS',
@@ -293,9 +276,7 @@ WHERE process_name = 'EXECUTE'
     Invoke-SqlNonQuery -Query $summaryUpdateQuery | Out-Null
 }
 
-# ----------------------------------------------------------------------------
 # Get Databases with Queued Indexes
-# ----------------------------------------------------------------------------
 Write-Log "Identifying databases with queued indexes..."
 
 $dbQuery = @"
@@ -323,10 +304,10 @@ $databases = @(Get-SqlData -Query $dbQuery -Timeout 60)
 
 if ($databases.Count -eq 0) {
     Write-Log "No databases with queued indexes to process." "WARN"
-    
+
     if ($Execute) {
         $summaryCompleteQuery = @"
-UPDATE ServerOps.Index_Status 
+UPDATE ServerOps.Index_Status
 SET completed_dttm = GETDATE(),
     last_status = 'NO_WORK',
     last_duration_seconds = DATEDIFF(SECOND, started_dttm, GETDATE())
@@ -345,19 +326,17 @@ WHERE process_name = 'EXECUTE'
 
 Write-Log "Found $($databases.Count) database(s) with queued work"
 
-# ----------------------------------------------------------------------------
 # Build server connection map (handle AG listeners)
-# ----------------------------------------------------------------------------
 $serverConnections = @{}
 $servers = $databases | Select-Object -Property server_name, server_type -Unique
 
 foreach ($server in $servers) {
     $serverName = $server.server_name
     $serverType = $server.server_type
-    
+
     if ($serverType -eq 'AG_LISTENER') {
         Write-Log "Detecting AG primary for listener: $serverName"
-        $primary = Get-AGPrimary -ListenerName $serverName
+        $primary = Get-idx_AGPrimary -ListenerName $serverName
         if ($primary) {
             Write-Log "  Primary replica: $primary" "SUCCESS"
             $serverConnections[$serverName] = $primary
@@ -370,9 +349,7 @@ foreach ($server in $servers) {
     }
 }
 
-# ----------------------------------------------------------------------------
 # Initialize Statistics
-# ----------------------------------------------------------------------------
 $stats = @{
     Processed = 0
     Succeeded = 0
@@ -385,9 +362,7 @@ $stats = @{
 $dbStats = @{}
 $abortRequested = $false
 
-# ----------------------------------------------------------------------------
 # Process Each Database
-# ----------------------------------------------------------------------------
 Write-Log "Beginning index maintenance..."
 
 foreach ($db in $databases) {
@@ -396,7 +371,7 @@ foreach ($db in $databases) {
         Write-Log "Abort in effect - skipping remaining databases" "WARN"
         break
     }
-    
+
     $dbName = $db.database_name
     $dbId = $db.database_id
     $serverId = $db.server_id
@@ -404,15 +379,15 @@ foreach ($db in $databases) {
     $connectionServer = $serverConnections[$serverName]
     $sqlEdition = $db.sql_edition
     $allowOffline = $db.index_allow_offline_rebuild
-    
+
     # Determine if using online or offline estimates
     $useOnlineEstimate = ($sqlEdition -eq 'Enterprise')
-    
+
     Write-Log ""
-    Write-Log "  ══════════════════════════════════════════════════════════"
+    Write-Log "  =========================================================="
     Write-Log "  Database: $dbName ($serverName)"
-    Write-Log "  ══════════════════════════════════════════════════════════"
-    
+    Write-Log "  =========================================================="
+
     # Initialize database stats
     $dbStats[$dbName] = @{
         ServerName = $serverName
@@ -424,17 +399,15 @@ foreach ($db in $databases) {
         Deferred = 0
         Scheduled = 0
     }
-    
-    # --------------------------------------------------------------------------
+
     # Check Schedule (unless -Force)
-    # --------------------------------------------------------------------------
     if (-not $Force) {
-        $schedule = Get-EffectiveSchedule -ServerInstance $ServerInstance -Database $Database `
+        $schedule = Get-idx_EffectiveSchedule -ServerInstance $ServerInstance -Database $Database `
             -DatabaseId $dbId -ServerId $serverId
-        
+
         if ($schedule.Source -eq 'NO_SCHEDULE') {
             Write-Log "    No schedule configured - skipping" "WARN"
-            
+
             # Log SKIPPED entry
             if ($Execute) {
                 $skipLogQuery = @"
@@ -451,33 +424,29 @@ VALUES (
 "@
                 Invoke-SqlNonQuery -Query $skipLogQuery | Out-Null
             }
-            
+
             $stats.Skipped++
             continue
         }
-        
+
         if (-not $schedule.IsAllowed) {
             Write-Log "    Current hour blocked by $($schedule.Source) - skipping" "SCHEDULE"
             $stats.Skipped++
             continue
         }
-        
+
         Write-Log "    Schedule: Allowed ($($schedule.Source))" "SCHEDULE"
     } else {
         Write-Log "    Schedule: Bypassed (-Force)" "WARN"
     }
-    
-    # --------------------------------------------------------------------------
+
     # Get Max Weekday Window for SCHEDULED determination
-    # --------------------------------------------------------------------------
-    $maxWeekdayMinutes = Get-MaxWeekdayWindow -ServerInstance $ServerInstance -Database $Database -DatabaseId $dbId
+    $maxWeekdayMinutes = Get-idx_MaxWeekdayWindow -ServerInstance $ServerInstance -Database $Database -DatabaseId $dbId
     Write-Log "    Max weekday window: $maxWeekdayMinutes minutes"
-    
-    # --------------------------------------------------------------------------
+
     # WHILE LOOP: Continue processing while time and work remain
-    # --------------------------------------------------------------------------
     $continueProcessing = $true
-    
+
     while ($continueProcessing) {
         # Check script-level time limit
         if ($MaxMinutes -gt 0) {
@@ -488,61 +457,62 @@ VALUES (
                 break
             }
         }
-        
+
         # Get available time in current window
-        $availableMinutes = if ($Force) { 
-            1440  # 24 hours if forcing
+        $availableMinutes = if ($Force) {
+            # 24 hours if forcing
+            1440
         } else {
-            Get-AvailableMinutes -ServerInstance $ServerInstance -Database $Database `
+            Get-idx_AvailableMinutes -ServerInstance $ServerInstance -Database $Database `
                 -DatabaseId $dbId -ServerId $serverId
         }
-        
+
         if ($availableMinutes -le 0) {
             Write-Log "    No time remaining in maintenance window" "SCHEDULE"
             $continueProcessing = $false
             break
         }
-        
+
         Write-Log "    Available window: $availableMinutes minutes"
-        
+
         # Get indexes that fit in the window
-        $windowResult = Get-IndexesForWindow -ServerInstance $ServerInstance -Database $Database `
+        $windowResult = Get-idx_IndexesForWindow -ServerInstance $ServerInstance -Database $Database `
             -DatabaseId $dbId -AvailableMinutes $availableMinutes -MaxWeekdayMinutes $maxWeekdayMinutes `
             -IsExtendedWindow $isExtendedWindow -UseOnlineEstimate $useOnlineEstimate
-        
+
         # Handle empty result (function returns array on error)
         if ($windowResult -is [Array]) {
             Write-Log "    Failed to query index queue" "ERROR"
             $continueProcessing = $false
             break
         }
-        
+
         $selectedIndexes = $windowResult.SelectedIndexes
         $scheduledIndexes = $windowResult.ScheduledIndexes
         $deferredScheduledIndexes = $windowResult.DeferredScheduledIndexes
-        
+
         # Update SCHEDULED status for oversized indexes
         if ($Execute -and $scheduledIndexes -and $scheduledIndexes.Count -gt 0) {
             foreach ($idx in $scheduledIndexes) {
                 $scheduleUpdateQuery = @"
-UPDATE ServerOps.Index_Queue 
-SET status = 'SCHEDULED', 
+UPDATE ServerOps.Index_Queue
+SET status = 'SCHEDULED',
     last_evaluated_dttm = GETDATE()
 WHERE queue_id = $($idx.queue_id)
 "@
                 Invoke-SqlNonQuery -Query $scheduleUpdateQuery | Out-Null
-                Write-Log "    [$($idx.index_name)] → SCHEDULED (exceeds max weekday window)" "SCHEDULE"
+                Write-Log "    [$($idx.index_name)] -> SCHEDULED (exceeds max weekday window)" "SCHEDULE"
                 $stats.Scheduled++
                 $dbStats[$dbName].Scheduled++
             }
         }
-        
+
         # Increment deferral count for SCHEDULED indexes that didn't fit in extended window
         if ($Execute -and $deferredScheduledIndexes -and $deferredScheduledIndexes.Count -gt 0) {
             foreach ($idx in $deferredScheduledIndexes) {
                 $deferralUpdateQuery = @"
-UPDATE ServerOps.Index_Queue 
-SET deferral_count = deferral_count + 1, 
+UPDATE ServerOps.Index_Queue
+SET deferral_count = deferral_count + 1,
     last_evaluated_dttm = GETDATE()
 WHERE queue_id = $($idx.queue_id)
 "@
@@ -550,37 +520,35 @@ WHERE queue_id = $($idx.queue_id)
                 Write-Log "    [$($idx.index_name)] SCHEDULED index didn't fit - deferral count incremented" "WARN"
             }
         }
-        
+
         # Check if any indexes to process
         if (-not $selectedIndexes -or $selectedIndexes.Count -eq 0) {
             Write-Log "    No indexes fit in remaining window"
             $continueProcessing = $false
             break
         }
-        
+
         Write-Log "    Selected $($selectedIndexes.Count) index(es) for this batch (~$([math]::Round($windowResult.TotalEstimatedSeconds / 60, 1)) min estimated)"
-        
+
         # In preview mode, only do one pass (nothing gets removed from queue)
         if (-not $Execute) {
             $continueProcessing = $false
         }
-        
-        # ----------------------------------------------------------------------
+
         # Process Selected Indexes
-        # ----------------------------------------------------------------------
         foreach ($item in $selectedIndexes) {
             # Re-check schedule before each index
             if (-not $Force) {
-                $currentSchedule = Get-EffectiveSchedule -ServerInstance $ServerInstance -Database $Database `
+                $currentSchedule = Get-idx_EffectiveSchedule -ServerInstance $ServerInstance -Database $Database `
                     -DatabaseId $dbId -ServerId $serverId
-                
+
                 if (-not $currentSchedule.IsAllowed) {
                     Write-Log "    Maintenance window closed - stopping gracefully" "SCHEDULE"
                     $continueProcessing = $false
                     break
                 }
             }
-            
+
             # Check script-level time limit
             if ($MaxMinutes -gt 0) {
                 $elapsed = ((Get-Date) - $scriptStart).TotalMinutes
@@ -590,7 +558,7 @@ WHERE queue_id = $($idx.queue_id)
                     break
                 }
             }
-            
+
             $schemaName = $item.schema_name
             $tableName = $item.table_name
             $indexName = $item.index_name
@@ -602,30 +570,30 @@ WHERE queue_id = $($idx.queue_id)
             $deferralCount = $item.deferral_count
             $onlineOption = $item.online_option
             $estimatedSeconds = [int]$item.estimated_seconds
-            
+
             # Override online_option for Standard Edition
             $editionOverride = $false
             if ($sqlEdition -ne 'Enterprise' -and $onlineOption -eq 1) {
                 $onlineOption = 0
                 $editionOverride = $true
             }
-            
+
             # Determine rebuild mode
             $rebuildMode = if ($onlineOption -eq 1) { "ONLINE" } else { "OFFLINE" }
-            
+
             $indexDisplay = "[$schemaName].[$tableName].[$indexName]"
             $modeDisplay = if ($editionOverride) { "OFFLINE*" } else { $rebuildMode }
             Write-Log "    Processing: $indexDisplay ($modeDisplay, ~$([math]::Round($estimatedSeconds/60, 1)) min est)" "STEP"
-            
+
             if (-not $Execute) {
                 Write-Log "      [PREVIEW] Would rebuild index" "WARN"
                 $stats.Processed++
                 $dbStats[$dbName].Processed++
                 continue
             }
-            
+
             $indexStart = Get-Date
-            
+
             # Insert IN_PROGRESS row to Index_ExecutionLog
             $detailInsertQuery = @"
 INSERT INTO ServerOps.Index_ExecutionLog (
@@ -644,32 +612,32 @@ VALUES (
 );
 SELECT SCOPE_IDENTITY() AS detail_id;
 "@
-            
+
             $detailResult = Get-SqlData -Query $detailInsertQuery
             $detailId = $detailResult.detail_id
-            
+
             # Mark as IN_PROGRESS in queue
             $inProgressQuery = "UPDATE ServerOps.Index_Queue SET status = 'IN_PROGRESS' WHERE queue_id = $queueId"
             Invoke-SqlNonQuery -Query $inProgressQuery | Out-Null
-            
+
             # Build ALTER INDEX command
             $onlineClause = if ($rebuildMode -eq "ONLINE") { "ONLINE = ON" } else { "ONLINE = OFF" }
             $maxdopClause = "MAXDOP = $maxdop"
-            
+
             $rebuildCommand = @"
 SET STATISTICS PROFILE ON;
 SET LOCK_TIMEOUT $($lockTimeoutSeconds * 1000);
 ALTER INDEX [$indexName] ON [$schemaName].[$tableName] REBUILD WITH ($onlineClause, $maxdopClause);
 "@
-            
+
             # Execute rebuild
             $rebuildSuccess = $false
             $errorMessage = $null
-            
+
             try {
                 # Use longer timeout for the rebuild itself - estimate + buffer
                 $cmdTimeout = [math]::Min([math]::Max($estimatedSeconds * 2, 300), 65535)
-                
+
                 Invoke-Sqlcmd -ServerInstance $connectionServer -Database $dbName -Query $rebuildCommand -QueryTimeout $cmdTimeout -ApplicationName $script:XFActsAppName -ErrorAction Stop -SuppressProviderContextWarning -TrustServerCertificate
                 $rebuildSuccess = $true
             }
@@ -680,13 +648,13 @@ ALTER INDEX [$indexName] ON [$schemaName].[$tableName] REBUILD WITH ($onlineClau
                 }
                 Write-Log "      [FAILED] $($_.Exception.Message)" "ERROR"
             }
-            
+
             $indexEnd = Get-Date
             $durationSeconds = [int](($indexEnd - $indexStart).TotalSeconds)
-            
+
             if ($rebuildSuccess) {
                 Write-Log "      [SUCCESS] Completed in $durationSeconds seconds" "SUCCESS"
-                
+
                 # Query post-rebuild fragmentation with scaled timeout
                 $fragCheckTimeout = $scanTimeoutBase + [int]([long]$pageCount / $scanPagesPerSecond)
                 $fragAfterQuery = @"
@@ -694,15 +662,15 @@ SELECT avg_fragmentation_in_percent
 FROM sys.dm_db_index_physical_stats(DB_ID(), OBJECT_ID('[$schemaName].[$tableName]'), NULL, NULL, 'LIMITED')
 WHERE index_id = (SELECT index_id FROM sys.indexes WHERE object_id = OBJECT_ID('[$schemaName].[$tableName]') AND name = '$indexName')
 "@
-                
+
                 $fragAfterResult = Get-SqlData -Instance $connectionServer -DatabaseName $dbName -Query $fragAfterQuery -Timeout $fragCheckTimeout
                 $fragAfter = if ($fragAfterResult) { [math]::Round($fragAfterResult.avg_fragmentation_in_percent, 2) } else { 0 }
-                
+
                 # Calculate variance
-                $variancePct = if ($estimatedSeconds -gt 0) { 
-                    [math]::Round((($durationSeconds - $estimatedSeconds) / $estimatedSeconds) * 100, 2) 
+                $variancePct = if ($estimatedSeconds -gt 0) {
+                    [math]::Round((($durationSeconds - $estimatedSeconds) / $estimatedSeconds) * 100, 2)
                 } else { 0 }
-                
+
                 # Update Index_ExecutionLog with success
                 $detailUpdateQuery = @"
 UPDATE ServerOps.Index_ExecutionLog
@@ -714,7 +682,7 @@ SET completed_dttm = GETDATE(),
 WHERE detail_id = $detailId
 "@
                 Invoke-SqlNonQuery -Query $detailUpdateQuery | Out-Null
-                
+
                 # Update Index_Registry
                 $registryUpdateQuery = @"
 UPDATE ServerOps.Index_Registry
@@ -726,19 +694,19 @@ SET last_rebuild_dttm = GETDATE(),
 WHERE registry_id = $registryId
 "@
                 Invoke-SqlNonQuery -Query $registryUpdateQuery | Out-Null
-                
+
                 # Delete from queue
                 $queueDeleteQuery = "DELETE FROM ServerOps.Index_Queue WHERE queue_id = $queueId"
                 Invoke-SqlNonQuery -Query $queueDeleteQuery | Out-Null
-                
+
                 # Update summary counters in real-time
                 $summaryIncrementQuery = @"
-UPDATE ServerOps.Index_Status 
+UPDATE ServerOps.Index_Status
 SET items_added = items_added + 1
 WHERE process_name = 'EXECUTE'
 "@
                 Invoke-SqlNonQuery -Query $summaryIncrementQuery | Out-Null
-                
+
                 $stats.Succeeded++
                 $dbStats[$dbName].Succeeded++
             }
@@ -753,62 +721,60 @@ SET completed_dttm = GETDATE(),
 WHERE detail_id = $detailId
 "@
                 Invoke-SqlNonQuery -Query $detailUpdateQuery | Out-Null
-                
+
                 # Mark as FAILED in queue and increment deferral count
                 $queueFailQuery = @"
-UPDATE ServerOps.Index_Queue 
+UPDATE ServerOps.Index_Queue
 SET status = 'FAILED',
     deferral_count = deferral_count + 1,
     last_evaluated_dttm = GETDATE()
 WHERE queue_id = $queueId
 "@
                 Invoke-SqlNonQuery -Query $queueFailQuery | Out-Null
-                
+
                 # Update summary counters in real-time
                 $summaryIncrementQuery = @"
-UPDATE ServerOps.Index_Status 
+UPDATE ServerOps.Index_Status
 SET items_failed = items_failed + 1
 WHERE process_name = 'EXECUTE'
 "@
                 Invoke-SqlNonQuery -Query $summaryIncrementQuery | Out-Null
-                
+
                 $stats.Failed++
                 $dbStats[$dbName].Failed++
             }
-            
+
             $stats.Processed++
             $dbStats[$dbName].Processed++
-            
+
             # Check for abort flag after each index
-            if ($Execute -and (Test-AbortRequested -ServerInstance $ServerInstance -Database $Database -SettingName 'index_execute_abort')) {
+            if ($Execute -and (Test-idx_AbortRequested -ServerInstance $ServerInstance -Database $Database -SettingName 'index_execute_abort')) {
                 Write-Log "Abort requested - stopping gracefully after current index" "WARN"
                 $continueProcessing = $false
                 $abortRequested = $true
             }
         }
-        
+
         # If we broke out of the index loop early, stop processing this database
         if (-not $continueProcessing) {
             break
         }
-        
+
         # Small pause before re-querying for more work
         Start-Sleep -Milliseconds 500
-        
-    }  # End WHILE loop
-    
-    # --------------------------------------------------------------------------
+
+    }
+
     # Write Index_ExecutionSummary entry for this database
-    # --------------------------------------------------------------------------
     if ($Execute -and $dbStats[$dbName].Processed -gt 0) {
         $dbEndTime = Get-Date
         $dbDurationMs = [int](($dbEndTime - $dbStats[$dbName].StartTime).TotalMilliseconds)
-        
+
         $dbStatus = if ($dbStats[$dbName].Failed -eq 0 -and $dbStats[$dbName].Succeeded -gt 0) { 'SUCCESS' }
                     elseif ($dbStats[$dbName].Succeeded -gt 0 -and $dbStats[$dbName].Failed -gt 0) { 'PARTIAL' }
                     elseif ($dbStats[$dbName].Failed -gt 0) { 'FAILED' }
                     else { 'NO_WORK' }
-        
+
         $logInsertQuery = @"
 INSERT INTO ServerOps.Index_ExecutionSummary (
     run_id, process_name, server_name, database_name,
@@ -823,7 +789,7 @@ VALUES (
 "@
         Invoke-SqlNonQuery -Query $logInsertQuery | Out-Null
     }
-    
+
     # Check if we should stop processing more databases
     if ($MaxMinutes -gt 0) {
         $elapsed = ((Get-Date) - $scriptStart).TotalMinutes
@@ -832,12 +798,10 @@ VALUES (
             break
         }
     }
-    
-}  # End database loop
 
-# ----------------------------------------------------------------------------
+}
+
 # Update Index_Status with final results
-# ----------------------------------------------------------------------------
 $scriptEnd = Get-Date
 $totalDuration = [int](($scriptEnd - $scriptStart).TotalSeconds)
 $totalDurationMs = [int](($scriptEnd - $scriptStart).TotalMilliseconds)
@@ -852,7 +816,7 @@ $finalStatus = if (-not $Execute) { 'PREVIEW' }
 
 if ($Execute) {
     $summaryCompleteQuery = @"
-UPDATE ServerOps.Index_Status 
+UPDATE ServerOps.Index_Status
 SET completed_dttm = GETDATE(),
     last_status = '$finalStatus',
     last_duration_seconds = $totalDuration,
@@ -865,9 +829,7 @@ WHERE process_name = 'EXECUTE'
     Invoke-SqlNonQuery -Query $summaryCompleteQuery | Out-Null
 }
 
-# ----------------------------------------------------------------------------
 # Summary Output
-# ----------------------------------------------------------------------------
 $durationHours = [math]::Floor($totalDuration / 3600)
 $durationMinutes = [math]::Floor(($totalDuration % 3600) / 60)
 $durationSec = $totalDuration % 60
@@ -904,9 +866,7 @@ Write-Log "  Execution Complete"
 Write-Log "================================================================"
 Write-Log ""
 
-# ----------------------------------------
 # Orchestrator Callback
-# ----------------------------------------
 if ($TaskId -gt 0) {
     $outputSummary = "Processed:$($stats.Processed) Succeeded:$($stats.Succeeded) Failed:$($stats.Failed) Scheduled:$($stats.Scheduled) Skipped:$($stats.Skipped)"
     Complete-OrchestratorTask -ServerInstance $ServerInstance -Database $Database `
