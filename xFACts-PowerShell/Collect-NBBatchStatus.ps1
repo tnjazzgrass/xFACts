@@ -62,6 +62,17 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-06-18  Migrated to the shared xFACts-BatchOpsFunctions.ps1 helpers.
+#             Removed the local Get-bat_NB_SourceData, Get-bat_NB_-
+#             AGReplicaRoles, Get-bat_NB_StallDurationText, and Step-bat_NB_-
+#             UpdateStatus; calls now use Get-bat_SourceData, the shared
+#             Get-AGReplicaRoles via Resolve-bat_ReadServer, Get-bat_-
+#             StallDurationText, and Set-bat_BatchStatus for the RUNNING and
+#             IDLE Status writes. All eight alert checks dispatch through
+#             Send-bat_BatchAlert; the QueueWaitNoMerge check now uses the
+#             standard $routing scratch variable instead of $routingNoMerge.
+#             Dropped the dead AGPrimary/AGSecondary script variables.
+#             Behavior unchanged.
 # 2026-04-28  Standardized Teams alerting via Send-TeamsAlert shared function.
 #             Converted all 7 alert checks from direct INSERT to Send-TeamsAlert.
 #             Inline Teams.RequestLog dedup queries removed (handled by shared function).
@@ -108,6 +119,7 @@ param(
    ============================================================================ #>
 
 . "$PSScriptRoot\xFACts-OrchestratorFunctions.ps1"
+. "$PSScriptRoot\xFACts-BatchOpsFunctions.ps1"
 
 <# ============================================================================
    INITIALIZATION: SCRIPT INITIALIZATION
@@ -125,12 +137,6 @@ Initialize-XFActsScript -ScriptName 'Collect-NBBatchStatus' `
    Mutable script-scope state populated during configuration and execution.
    Prefix: bat
    ============================================================================ #>
-
-# Resolved AG PRIMARY replica server name.
-$script:AGPrimary = $null
-
-# Resolved AG SECONDARY replica server name.
-$script:AGSecondary = $null
 
 # Server the script reads DM source data from (PRIMARY or SECONDARY per config).
 $script:ReadServer = $null
@@ -151,73 +157,6 @@ $script:PollingIntervalMinutes = $null
    stall-duration text helper.
    Prefix: bat
    ============================================================================ #>
-
-# Executes a query against the source database on the configured AG replica.
-function Get-bat_NB_SourceData {
-    param(
-        [string]$Query,
-        [int]$Timeout = 60
-    )
-
-    if (-not $script:ReadServer) {
-        Write-Log "ReadServer not configured - cannot query source" "ERROR"
-        return $null
-    }
-
-    try {
-        Invoke-Sqlcmd -ServerInstance $script:ReadServer -Database $SourceDB -Query $Query -QueryTimeout $Timeout -ApplicationName $script:XFActsAppName -ErrorAction Stop -SuppressProviderContextWarning -TrustServerCertificate
-    }
-    catch {
-        Write-Log "Source query failed on $($script:ReadServer): $($_.Exception.Message)" "ERROR"
-        return $null
-    }
-}
-
-# Queries the AG to resolve current PRIMARY and SECONDARY replica server names.
-function Get-bat_NB_AGReplicaRoles {
-    param()
-    $agName = $script:Config.AGName
-
-    if (-not $agName) {
-        Write-Log "AGName not configured - cannot query replica states" "ERROR"
-        return $null
-    }
-
-    $query = @"
-        SELECT
-            ar.replica_server_name,
-            ars.role_desc
-        FROM sys.dm_hadr_availability_replica_states ars
-        INNER JOIN sys.availability_replicas ar
-            ON ars.replica_id = ar.replica_id
-        INNER JOIN sys.availability_groups ag
-            ON ar.group_id = ag.group_id
-        WHERE ag.name = '$agName'
-"@
-
-    $results = Get-SqlData -Query $query
-
-    if (-not $results) {
-        Write-Log "Failed to query AG replica states" "ERROR"
-        return $null
-    }
-
-    $roles = @{
-        PRIMARY = $null
-        SECONDARY = $null
-    }
-
-    foreach ($row in $results) {
-        if ($row.role_desc -eq 'PRIMARY') {
-            $roles.PRIMARY = $row.replica_server_name
-        }
-        elseif ($row.role_desc -eq 'SECONDARY') {
-            $roles.SECONDARY = $row.replica_server_name
-        }
-    }
-
-    return $roles
-}
 
 # Loads GlobalConfig settings, resolves AG replica roles, and sets read/write servers.
 function Initialize-bat_NB_Configuration {
@@ -298,38 +237,9 @@ function Initialize-bat_NB_Configuration {
     $script:WriteServer = $ServerInstance
 
     # Determine read server
-    if ($ForceSourceServer) {
-        $script:ReadServer = $ForceSourceServer
-        Write-Log "  ReadServer: $($script:ReadServer) (forced via parameter)" "WARN"
-    }
-    else {
-        Write-Log "Detecting AG replica roles..." "INFO"
-        $agRoles = Get-bat_NB_AGReplicaRoles
-
-        if (-not $agRoles) {
-            Write-Log "AG detection failed - cannot determine read server" "ERROR"
-            return $false
-        }
-
-        $script:AGPrimary = $agRoles.PRIMARY
-        $script:AGSecondary = $agRoles.SECONDARY
-
-        Write-Log "  AG PRIMARY: $($script:AGPrimary)" "INFO"
-        Write-Log "  AG SECONDARY: $($script:AGSecondary)" "INFO"
-
-        if ($script:Config.SourceReplica -eq "PRIMARY") {
-            $script:ReadServer = $script:AGPrimary
-        }
-        else {
-            $script:ReadServer = $script:AGSecondary
-        }
-
-        if (-not $script:ReadServer) {
-            Write-Log "Could not determine ReadServer from AG roles" "ERROR"
-            return $false
-        }
-
-        Write-Log "  ReadServer: $($script:ReadServer) (from GlobalConfig: $($script:Config.SourceReplica))" "SUCCESS"
+    $script:ReadServer = Resolve-bat_ReadServer -AGName $script:Config.AGName -SourceReplica $script:Config.SourceReplica -ForceSourceServer $ForceSourceServer
+    if (-not $script:ReadServer) {
+        return $false
     }
 
     Write-Log "  WriteServer: $($script:WriteServer)" "INFO"
@@ -358,24 +268,11 @@ function Initialize-bat_NB_Configuration {
     return $true
 }
 
-# Formats a stall poll count into a human-readable duration string.
-function Get-bat_NB_StallDurationText {
-    param([int]$PollCount)
-
-    if ($null -ne $script:PollingIntervalMinutes) {
-        $totalMinutes = [math]::Round($PollCount * $script:PollingIntervalMinutes)
-        return "$PollCount polls (~$totalMinutes min)"
-    }
-    else {
-        return "$PollCount polls"
-    }
-}
-
 <# ============================================================================
    FUNCTIONS: COLLECTION STEPS
    ----------------------------------------------------------------------------
-   The collect, update, orphan-detection, alert-evaluation, and status-update steps
-   executed against tracked NB batches.
+   The collect, update, orphan-detection, and alert-evaluation steps executed
+   against tracked NB batches.
    Prefix: bat
    ============================================================================ #>
 
@@ -440,7 +337,7 @@ function Step-bat_NB_CollectNewBatches {
             WHERE nbb.new_bsnss_btch_crt_dt >= DATEADD(DAY, -$lookbackDays, GETDATE())
 "@
 
-        $sourceBatches = Get-bat_NB_SourceData -Query $sourceQuery
+        $sourceBatches = Get-bat_SourceData -Query $sourceQuery
 
         if (-not $sourceBatches) {
             Write-Log "  No source batches returned (or query failed)" "WARN"
@@ -638,7 +535,7 @@ function Step-bat_NB_UpdateIncompleteBatches {
                 WHERE nbb.new_bsnss_btch_id = $batchId
 "@
 
-            $batchState = Get-bat_NB_SourceData -Query $batchQuery
+            $batchState = Get-bat_SourceData -Query $batchQuery
 
             if (-not $batchState) {
                 Write-Log "  Batch $batchId ($batchName): failed to query DM" "WARN"
@@ -663,7 +560,7 @@ function Step-bat_NB_UpdateIncompleteBatches {
                 WHERE new_bsnss_btch_id = $batchId
 "@
 
-            $logData = Get-bat_NB_SourceData -Query $logQuery
+            $logData = Get-bat_SourceData -Query $logQuery
 
             # Extract values
             $batchStatusCd = $batchState.new_bsnss_btch_stts_cd
@@ -850,7 +747,7 @@ function Step-bat_NB_DetectOrphanedBatches {
             FROM dbo.new_bsnss_btch
             WHERE new_bsnss_btch_id IN ($batchIds)
 "@
-        $existingBatches = Get-bat_NB_SourceData -Query $existsQuery
+        $existingBatches = Get-bat_SourceData -Query $existsQuery
 
         $existingIds = @()
         if ($existingBatches) {
@@ -916,25 +813,6 @@ function Step-bat_NB_EvaluateAlerts {
     $alertsDetected = 0
     $alertsFired = 0
 
-    # Jira ticket constants (hardcoded per xFACts convention)
-    $jiraProjectKey = 'SD'
-    $jiraIssueType = 'Issue'
-    $jiraPriority = 'Highest'
-    $jiraCascadingFieldId = 'customfield_18401'
-    $jiraCascadingParent = 'File Processing'
-    $jiraCustomField1Id = 'customfield_10305'
-    $jiraCustomField1Value = 'FAC INFORMATION TECHNOLOGY'
-    $jiraCustomField2Id = 'customfield_10009'
-    $jiraCustomField2Value = 'sd/1b77b626-3ad4-4bee-8727-abc18b68c5fa'
-    $jiraEmailRecipients = 'applications@frost-arnett.com'
-
-    # Due date: today if weekday, Monday if weekend
-    # 0=Sun, 1=Mon ... 6=Sat
-    $dayOfWeek = [int](Get-Date).DayOfWeek
-    if ($dayOfWeek -eq 0) { $jiraDueDate = (Get-Date).AddDays(1).ToString("yyyy-MM-dd") }
-    elseif ($dayOfWeek -eq 6) { $jiraDueDate = (Get-Date).AddDays(2).ToString("yyyy-MM-dd") }
-    else { $jiraDueDate = (Get-Date).ToString("yyyy-MM-dd") }
-
     try {
         if (-not $script:Config.NB_AlertingEnabled) {
             Write-Log "  Alerting is DISABLED (nb_alerting_enabled = 0)" "INFO"
@@ -973,7 +851,7 @@ function Step-bat_NB_EvaluateAlerts {
                           AND new_bsnss_log_mssg_txt NOT LIKE '%not in valid state to perform the operation%'
                           AND new_bsnss_log_mssg_txt NOT LIKE 'Error while saving new business consumer information%'
 "@
-                    $errorCountResult = Get-bat_NB_SourceData -Query $errorCountQuery
+                    $errorCountResult = Get-bat_SourceData -Query $errorCountQuery
                     $errorCount = if ($errorCountResult -and $errorCountResult.error_count -isnot [DBNull]) { $errorCountResult.error_count } else { 0 }
 
                     $errorListQuery = @"
@@ -989,7 +867,7 @@ function Step-bat_NB_EvaluateAlerts {
                                COUNT(*) AS displayed_count
                         FROM DistinctErrors
 "@
-                    $errorListResult = Get-bat_NB_SourceData -Query $errorListQuery
+                    $errorListResult = Get-bat_SourceData -Query $errorListQuery
                     $errorList = if ($errorListResult -and $errorListResult.error_list -isnot [DBNull]) { $errorListResult.error_list } else { $null }
                     $displayedCount = if ($errorListResult -and $errorListResult.displayed_count -isnot [DBNull]) { $errorListResult.displayed_count } else { 0 }
 
@@ -1014,19 +892,8 @@ function Step-bat_NB_EvaluateAlerts {
                     $detectionTime = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
 
                     # Jira ticket (routing 2 or 3)
-                    if ($routing -band 2) {
-                        $jiraDedup = Get-SqlData -Query @"
-                            SELECT TOP 1 1 AS ticket_exists
-                            FROM Jira.RequestLog
-                            WHERE Trigger_Type = '$triggerType'
-                              AND Trigger_Value = '$triggerValue'
-                              AND StatusCode = 201
-                              AND TicketKey IS NOT NULL
-                              AND TicketKey != 'Email'
-"@
-                        if (-not $jiraDedup) {
-                            $jiraSummary = "New Business Batch Upload Failed: $batchId"
-                            $jiraDesc = @"
+                    $jiraSummary = "New Business Batch Upload Failed: $batchId"
+                    $jiraDesc = @"
 New Business Batch Upload Failed
 
 Batch ID: $batchId
@@ -1040,55 +907,8 @@ Action: Delete the failed batch in Debt Manager and re-upload.
 
 Detection Date: $detectionTime
 "@
-                            Invoke-SqlNonQuery -Query @"
-                                EXEC Jira.sp_QueueTicket
-                                    @SourceModule = @SourceModule,
-                                    @ProjectKey = @ProjectKey,
-                                    @Summary = @Summary,
-                                    @Description = @Description,
-                                    @IssueType = @IssueType,
-                                    @Priority = @Priority,
-                                    @EmailRecipients = @EmailRecipients,
-                                    @CascadingField_ID = @CascadingField_ID,
-                                    @CascadingField_ParentValue = @CascadingField_ParentValue,
-                                    @CascadingField_ChildValue = @CascadingField_ChildValue,
-                                    @CustomField_ID = @CustomField_ID,
-                                    @CustomField_Value = @CustomField_Value,
-                                    @CustomField2_ID = @CustomField2_ID,
-                                    @CustomField2_Value = @CustomField2_Value,
-                                    @DueDate = @DueDate,
-                                    @TriggerType = @TriggerType,
-                                    @TriggerValue = @TriggerValue
-"@ -Parameters @{
-                                    SourceModule = 'BatchOps'
-                                    ProjectKey = $jiraProjectKey
-                                    Summary = $jiraSummary
-                                    Description = $jiraDesc
-                                    IssueType = $jiraIssueType
-                                    Priority = $jiraPriority
-                                    EmailRecipients = $jiraEmailRecipients
-                                    CascadingField_ID = $jiraCascadingFieldId
-                                    CascadingField_ParentValue = $jiraCascadingParent
-                                    CascadingField_ChildValue = $cascadingChild
-                                    CustomField_ID = $jiraCustomField1Id
-                                    CustomField_Value = $jiraCustomField1Value
-                                    CustomField2_ID = $jiraCustomField2Id
-                                    CustomField2_Value = $jiraCustomField2Value
-                                    DueDate = $jiraDueDate
-                                    TriggerType = $triggerType
-                                    TriggerValue = $triggerValue
-                            } | Out-Null
-                            Write-Log "    Jira ticket queued for batch $batchId" "SUCCESS"
-                        }
-                        else {
-                            Write-Log "    Jira dedup: ticket already exists for $triggerType/$triggerValue" "INFO"
-                        }
-                    }
-
-                    # Teams alert (routing 1 or 3)
-                    if ($routing -band 1) {
-                        $teamsTitle = "{{FIRE}} New Business Batch Upload Failed: $batchId"
-                        $teamsMessage = @"
+                    $teamsTitle = "{{FIRE}} New Business Batch Upload Failed: $batchId"
+                    $teamsMessage = @"
 **Batch ID:** $batchId
 **Batch Name:** $batchName
 **File:** $uploadFile
@@ -1101,10 +921,9 @@ Action: Delete the failed batch in Debt Manager and re-upload.
 
 **Detection:** $detectionTime
 "@
-                        Send-TeamsAlert -SourceModule 'BatchOps' -AlertCategory 'CRITICAL' `
-                            -Title $teamsTitle -Message $teamsMessage -Color 'attention' `
-                            -TriggerType $triggerType -TriggerValue $triggerValue | Out-Null
-                    }
+                    Send-bat_BatchAlert -Routing $routing -TriggerType $triggerType -TriggerValue $triggerValue -CascadingChild $cascadingChild `
+                        -JiraSummary $jiraSummary -JiraDescription $jiraDesc `
+                        -TeamsTitle $teamsTitle -TeamsMessage $teamsMessage -TeamsCategory 'CRITICAL' -TeamsColor 'attention'
 
                     # Increment alert_count
                     Invoke-SqlNonQuery -Query @"
@@ -1151,19 +970,8 @@ Action: Delete the failed batch in Debt Manager and re-upload.
                     $rlsStarted = if ($batch.release_started_dttm -isnot [DBNull]) { $batch.release_started_dttm.ToString("yyyy-MM-dd HH:mm:ss") } else { 'N/A' }
 
                     # Jira ticket (routing 2 or 3)
-                    if ($routing -band 2) {
-                        $jiraDedup = Get-SqlData -Query @"
-                            SELECT TOP 1 1 AS ticket_exists
-                            FROM Jira.RequestLog
-                            WHERE Trigger_Type = '$triggerType'
-                              AND Trigger_Value = '$triggerValue'
-                              AND StatusCode = 201
-                              AND TicketKey IS NOT NULL
-                              AND TicketKey != 'Email'
-"@
-                        if (-not $jiraDedup) {
-                            $jiraSummary = "New Business Batch Release Failed: $batchId"
-                            $jiraDesc = @"
+                    $jiraSummary = "New Business Batch Release Failed: $batchId"
+                    $jiraDesc = @"
 New Business Batch Release Failed
 
 Batch ID: $batchId
@@ -1176,55 +984,8 @@ Action: Set batch back to Uploaded status and re-release manually.
 
 Detection Date: $detectionTime
 "@
-                            Invoke-SqlNonQuery -Query @"
-                                EXEC Jira.sp_QueueTicket
-                                    @SourceModule = @SourceModule,
-                                    @ProjectKey = @ProjectKey,
-                                    @Summary = @Summary,
-                                    @Description = @Description,
-                                    @IssueType = @IssueType,
-                                    @Priority = @Priority,
-                                    @EmailRecipients = @EmailRecipients,
-                                    @CascadingField_ID = @CascadingField_ID,
-                                    @CascadingField_ParentValue = @CascadingField_ParentValue,
-                                    @CascadingField_ChildValue = @CascadingField_ChildValue,
-                                    @CustomField_ID = @CustomField_ID,
-                                    @CustomField_Value = @CustomField_Value,
-                                    @CustomField2_ID = @CustomField2_ID,
-                                    @CustomField2_Value = @CustomField2_Value,
-                                    @DueDate = @DueDate,
-                                    @TriggerType = @TriggerType,
-                                    @TriggerValue = @TriggerValue
-"@ -Parameters @{
-                                    SourceModule = 'BatchOps'
-                                    ProjectKey = $jiraProjectKey
-                                    Summary = $jiraSummary
-                                    Description = $jiraDesc
-                                    IssueType = $jiraIssueType
-                                    Priority = $jiraPriority
-                                    EmailRecipients = $jiraEmailRecipients
-                                    CascadingField_ID = $jiraCascadingFieldId
-                                    CascadingField_ParentValue = $jiraCascadingParent
-                                    CascadingField_ChildValue = $cascadingChild
-                                    CustomField_ID = $jiraCustomField1Id
-                                    CustomField_Value = $jiraCustomField1Value
-                                    CustomField2_ID = $jiraCustomField2Id
-                                    CustomField2_Value = $jiraCustomField2Value
-                                    DueDate = $jiraDueDate
-                                    TriggerType = $triggerType
-                                    TriggerValue = $triggerValue
-                            } | Out-Null
-                            Write-Log "    Jira ticket queued for batch $batchId" "SUCCESS"
-                        }
-                        else {
-                            Write-Log "    Jira dedup: ticket already exists for $triggerType/$triggerValue" "INFO"
-                        }
-                    }
-
-                    # Teams alert (routing 1 or 3)
-                    if ($routing -band 1) {
-                        $teamsTitle = "{{FIRE}} New Business Batch Release Failed: $batchId"
-                        $teamsMessage = @"
+                    $teamsTitle = "{{FIRE}} New Business Batch Release Failed: $batchId"
+                    $teamsMessage = @"
 **Batch ID:** $batchId
 **Batch Name:** $batchName
 **File:** $uploadFile
@@ -1235,10 +996,9 @@ Action: Set batch back to Uploaded status and re-release manually.
 
 **Detection:** $detectionTime
 "@
-                        Send-TeamsAlert -SourceModule 'BatchOps' -AlertCategory 'CRITICAL' `
-                            -Title $teamsTitle -Message $teamsMessage -Color 'attention' `
-                            -TriggerType $triggerType -TriggerValue $triggerValue | Out-Null
-                    }
+                    Send-bat_BatchAlert -Routing $routing -TriggerType $triggerType -TriggerValue $triggerValue -CascadingChild $cascadingChild `
+                        -JiraSummary $jiraSummary -JiraDescription $jiraDesc `
+                        -TeamsTitle $teamsTitle -TeamsMessage $teamsMessage -TeamsCategory 'CRITICAL' -TeamsColor 'attention'
 
                     # Increment alert_count
                     Invoke-SqlNonQuery -Query @"
@@ -1287,22 +1047,11 @@ Action: Set batch back to Uploaded status and re-release manually.
                     $consCount = if ($batch.consumer_count -isnot [DBNull]) { $batch.consumer_count } else { 'N/A' }
                     $mergeStatus = if ($batch.merge_status -isnot [DBNull]) { $batch.merge_status } else { 'N/A' }
                     $lastLogTime = if ($batch.last_log_dttm -isnot [DBNull]) { $batch.last_log_dttm.ToString("yyyy-MM-dd HH:mm:ss") } else { 'N/A' }
-                    $stallDuration = Get-bat_NB_StallDurationText -PollCount $batch.stall_poll_count
+                    $stallDuration = Get-bat_StallDurationText -PollCount $batch.stall_poll_count
 
                     # Jira ticket (routing 2 or 3)
-                    if ($routing -band 2) {
-                        $jiraDedup = Get-SqlData -Query @"
-                            SELECT TOP 1 1 AS ticket_exists
-                            FROM Jira.RequestLog
-                            WHERE Trigger_Type = '$triggerType'
-                              AND Trigger_Value = '$triggerValue'
-                              AND StatusCode = 201
-                              AND TicketKey IS NOT NULL
-                              AND TicketKey != 'Email'
-"@
-                        if (-not $jiraDedup) {
-                            $jiraSummary = "New Business Batch Merge Stalled: $batchId"
-                            $jiraDesc = @"
+                    $jiraSummary = "New Business Batch Merge Stalled: $batchId"
+                    $jiraDesc = @"
 New Business Batch Merge Stalled
 
 Batch ID: $batchId
@@ -1316,55 +1065,8 @@ Action: Check merge queue and batch status in Debt Manager. May need to reset ba
 
 Detection Date: $detectionTime
 "@
-                            Invoke-SqlNonQuery -Query @"
-                                EXEC Jira.sp_QueueTicket
-                                    @SourceModule = @SourceModule,
-                                    @ProjectKey = @ProjectKey,
-                                    @Summary = @Summary,
-                                    @Description = @Description,
-                                    @IssueType = @IssueType,
-                                    @Priority = @Priority,
-                                    @EmailRecipients = @EmailRecipients,
-                                    @CascadingField_ID = @CascadingField_ID,
-                                    @CascadingField_ParentValue = @CascadingField_ParentValue,
-                                    @CascadingField_ChildValue = @CascadingField_ChildValue,
-                                    @CustomField_ID = @CustomField_ID,
-                                    @CustomField_Value = @CustomField_Value,
-                                    @CustomField2_ID = @CustomField2_ID,
-                                    @CustomField2_Value = @CustomField2_Value,
-                                    @DueDate = @DueDate,
-                                    @TriggerType = @TriggerType,
-                                    @TriggerValue = @TriggerValue
-"@ -Parameters @{
-                                    SourceModule = 'BatchOps'
-                                    ProjectKey = $jiraProjectKey
-                                    Summary = $jiraSummary
-                                    Description = $jiraDesc
-                                    IssueType = $jiraIssueType
-                                    Priority = $jiraPriority
-                                    EmailRecipients = $jiraEmailRecipients
-                                    CascadingField_ID = $jiraCascadingFieldId
-                                    CascadingField_ParentValue = $jiraCascadingParent
-                                    CascadingField_ChildValue = $cascadingChild
-                                    CustomField_ID = $jiraCustomField1Id
-                                    CustomField_Value = $jiraCustomField1Value
-                                    CustomField2_ID = $jiraCustomField2Id
-                                    CustomField2_Value = $jiraCustomField2Value
-                                    DueDate = $jiraDueDate
-                                    TriggerType = $triggerType
-                                    TriggerValue = $triggerValue
-                            } | Out-Null
-                            Write-Log "    Jira ticket queued for batch $batchId" "SUCCESS"
-                        }
-                        else {
-                            Write-Log "    Jira dedup: ticket already exists for $triggerType/$triggerValue" "INFO"
-                        }
-                    }
-
-                    # Teams alert (routing 1 or 3)
-                    if ($routing -band 1) {
-                        $teamsTitle = "{{WARN}} New Business Batch Merge Stalled: $batchId"
-                        $teamsMessage = @"
+                    $teamsTitle = "{{WARN}} New Business Batch Merge Stalled: $batchId"
+                    $teamsMessage = @"
 **Batch ID:** $batchId
 **Batch Name:** $batchName
 **Merge Status:** $mergeStatus
@@ -1376,10 +1078,9 @@ Action: Check merge queue and batch status in Debt Manager. May need to reset ba
 
 **Detection:** $detectionTime
 "@
-                        Send-TeamsAlert -SourceModule 'BatchOps' -AlertCategory 'WARNING' `
-                            -Title $teamsTitle -Message $teamsMessage -Color 'warning' `
-                            -TriggerType $triggerType -TriggerValue $triggerValue | Out-Null
-                    }
+                    Send-bat_BatchAlert -Routing $routing -TriggerType $triggerType -TriggerValue $triggerValue -CascadingChild $cascadingChild `
+                        -JiraSummary $jiraSummary -JiraDescription $jiraDesc `
+                        -TeamsTitle $teamsTitle -TeamsMessage $teamsMessage -TeamsCategory 'WARNING' -TeamsColor 'warning'
 
                     # Increment alert_count
                     Invoke-SqlNonQuery -Query @"
@@ -1427,19 +1128,8 @@ Action: Check merge queue and batch status in Debt Manager. May need to reset ba
                     $createdTime = if ($batch.batch_created_dttm -isnot [DBNull]) { $batch.batch_created_dttm.ToString("yyyy-MM-dd HH:mm:ss") } else { 'N/A' }
 
                     # Jira ticket (routing 2 or 3)
-                    if ($routing -band 2) {
-                        $jiraDedup = Get-SqlData -Query @"
-                            SELECT TOP 1 1 AS ticket_exists
-                            FROM Jira.RequestLog
-                            WHERE Trigger_Type = '$triggerType'
-                              AND Trigger_Value = '$triggerValue'
-                              AND StatusCode = 201
-                              AND TicketKey IS NOT NULL
-                              AND TicketKey != 'Email'
-"@
-                        if (-not $jiraDedup) {
-                            $jiraSummary = "New Business Batch Upload Stall: $batchId"
-                            $jiraDesc = @"
+                    $jiraSummary = "New Business Batch Upload Stall: $batchId"
+                    $jiraDesc = @"
 New Business Batch Upload Stall
 
 Batch ID: $batchId
@@ -1451,55 +1141,8 @@ Action: Check upload process in Debt Manager. Upload may need to be cancelled an
 
 Detection Date: $detectionTime
 "@
-                            Invoke-SqlNonQuery -Query @"
-                                EXEC Jira.sp_QueueTicket
-                                    @SourceModule = @SourceModule,
-                                    @ProjectKey = @ProjectKey,
-                                    @Summary = @Summary,
-                                    @Description = @Description,
-                                    @IssueType = @IssueType,
-                                    @Priority = @Priority,
-                                    @EmailRecipients = @EmailRecipients,
-                                    @CascadingField_ID = @CascadingField_ID,
-                                    @CascadingField_ParentValue = @CascadingField_ParentValue,
-                                    @CascadingField_ChildValue = @CascadingField_ChildValue,
-                                    @CustomField_ID = @CustomField_ID,
-                                    @CustomField_Value = @CustomField_Value,
-                                    @CustomField2_ID = @CustomField2_ID,
-                                    @CustomField2_Value = @CustomField2_Value,
-                                    @DueDate = @DueDate,
-                                    @TriggerType = @TriggerType,
-                                    @TriggerValue = @TriggerValue
-"@ -Parameters @{
-                                    SourceModule = 'BatchOps'
-                                    ProjectKey = $jiraProjectKey
-                                    Summary = $jiraSummary
-                                    Description = $jiraDesc
-                                    IssueType = $jiraIssueType
-                                    Priority = $jiraPriority
-                                    EmailRecipients = $jiraEmailRecipients
-                                    CascadingField_ID = $jiraCascadingFieldId
-                                    CascadingField_ParentValue = $jiraCascadingParent
-                                    CascadingField_ChildValue = $cascadingChild
-                                    CustomField_ID = $jiraCustomField1Id
-                                    CustomField_Value = $jiraCustomField1Value
-                                    CustomField2_ID = $jiraCustomField2Id
-                                    CustomField2_Value = $jiraCustomField2Value
-                                    DueDate = $jiraDueDate
-                                    TriggerType = $triggerType
-                                    TriggerValue = $triggerValue
-                            } | Out-Null
-                            Write-Log "    Jira ticket queued for batch $batchId" "SUCCESS"
-                        }
-                        else {
-                            Write-Log "    Jira dedup: ticket already exists for $triggerType/$triggerValue" "INFO"
-                        }
-                    }
-
-                    # Teams alert (routing 1 or 3)
-                    if ($routing -band 1) {
-                        $teamsTitle = "{{WARN}} New Business Batch Upload Stall: $batchId"
-                        $teamsMessage = @"
+                    $teamsTitle = "{{WARN}} New Business Batch Upload Stall: $batchId"
+                    $teamsMessage = @"
 **Batch ID:** $batchId
 **Batch Name:** $batchName
 **Created:** $createdTime
@@ -1509,10 +1152,9 @@ Action: Check upload process in Debt Manager. Upload may need to be cancelled an
 
 **Detection:** $detectionTime
 "@
-                        Send-TeamsAlert -SourceModule 'BatchOps' -AlertCategory 'WARNING' `
-                            -Title $teamsTitle -Message $teamsMessage -Color 'warning' `
-                            -TriggerType $triggerType -TriggerValue $triggerValue | Out-Null
-                    }
+                    Send-bat_BatchAlert -Routing $routing -TriggerType $triggerType -TriggerValue $triggerValue -CascadingChild $cascadingChild `
+                        -JiraSummary $jiraSummary -JiraDescription $jiraDesc `
+                        -TeamsTitle $teamsTitle -TeamsMessage $teamsMessage -TeamsCategory 'WARNING' -TeamsColor 'warning'
 
                     # Increment alert_count
                     Invoke-SqlNonQuery -Query @"
@@ -1565,19 +1207,8 @@ Action: Check upload process in Debt Manager. Upload may need to be cancelled an
                     $consCount = if ($batch.consumer_count -isnot [DBNull]) { $batch.consumer_count } else { 'N/A' }
 
                     # Jira ticket (routing 2 or 3)
-                    if ($routing -band 2) {
-                        $jiraDedup = Get-SqlData -Query @"
-                            SELECT TOP 1 1 AS ticket_exists
-                            FROM Jira.RequestLog
-                            WHERE Trigger_Type = '$triggerType'
-                              AND Trigger_Value = '$triggerValue'
-                              AND StatusCode = 201
-                              AND TicketKey IS NOT NULL
-                              AND TicketKey != 'Email'
-"@
-                        if (-not $jiraDedup) {
-                            $jiraSummary = "New Business Batch Queue Wait: $batchId"
-                            $jiraDesc = @"
+                    $jiraSummary = "New Business Batch Queue Wait: $batchId"
+                    $jiraDesc = @"
 New Business Batch Queue Wait
 
 Batch ID: $batchId
@@ -1590,55 +1221,8 @@ No merge log activity since release. Merge queue may be backed up or batch may n
 
 Detection Date: $detectionTime
 "@
-                            Invoke-SqlNonQuery -Query @"
-                                EXEC Jira.sp_QueueTicket
-                                    @SourceModule = @SourceModule,
-                                    @ProjectKey = @ProjectKey,
-                                    @Summary = @Summary,
-                                    @Description = @Description,
-                                    @IssueType = @IssueType,
-                                    @Priority = @Priority,
-                                    @EmailRecipients = @EmailRecipients,
-                                    @CascadingField_ID = @CascadingField_ID,
-                                    @CascadingField_ParentValue = @CascadingField_ParentValue,
-                                    @CascadingField_ChildValue = @CascadingField_ChildValue,
-                                    @CustomField_ID = @CustomField_ID,
-                                    @CustomField_Value = @CustomField_Value,
-                                    @CustomField2_ID = @CustomField2_ID,
-                                    @CustomField2_Value = @CustomField2_Value,
-                                    @DueDate = @DueDate,
-                                    @TriggerType = @TriggerType,
-                                    @TriggerValue = @TriggerValue
-"@ -Parameters @{
-                                    SourceModule = 'BatchOps'
-                                    ProjectKey = $jiraProjectKey
-                                    Summary = $jiraSummary
-                                    Description = $jiraDesc
-                                    IssueType = $jiraIssueType
-                                    Priority = $jiraPriority
-                                    EmailRecipients = $jiraEmailRecipients
-                                    CascadingField_ID = $jiraCascadingFieldId
-                                    CascadingField_ParentValue = $jiraCascadingParent
-                                    CascadingField_ChildValue = $cascadingChild
-                                    CustomField_ID = $jiraCustomField1Id
-                                    CustomField_Value = $jiraCustomField1Value
-                                    CustomField2_ID = $jiraCustomField2Id
-                                    CustomField2_Value = $jiraCustomField2Value
-                                    DueDate = $jiraDueDate
-                                    TriggerType = $triggerType
-                                    TriggerValue = $triggerValue
-                            } | Out-Null
-                            Write-Log "    Jira ticket queued for batch $batchId" "SUCCESS"
-                        }
-                        else {
-                            Write-Log "    Jira dedup: ticket already exists for $triggerType/$triggerValue" "INFO"
-                        }
-                    }
-
-                    # Teams alert (routing 1 or 3)
-                    if ($routing -band 1) {
-                        $teamsTitle = "{{WARN}} New Business Batch Queue Wait: $batchId"
-                        $teamsMessage = @"
+                    $teamsTitle = "{{WARN}} New Business Batch Queue Wait: $batchId"
+                    $teamsMessage = @"
 **Batch ID:** $batchId
 **Batch Name:** $batchName
 **Consumers:** $consCount
@@ -1649,10 +1233,9 @@ No merge log activity since release. Merge queue may be backed up or batch may n
 
 **Detection:** $detectionTime
 "@
-                        Send-TeamsAlert -SourceModule 'BatchOps' -AlertCategory 'WARNING' `
-                            -Title $teamsTitle -Message $teamsMessage -Color 'warning' `
-                            -TriggerType $triggerType -TriggerValue $triggerValue | Out-Null
-                    }
+                    Send-bat_BatchAlert -Routing $routing -TriggerType $triggerType -TriggerValue $triggerValue -CascadingChild $cascadingChild `
+                        -JiraSummary $jiraSummary -JiraDescription $jiraDesc `
+                        -TeamsTitle $teamsTitle -TeamsMessage $teamsMessage -TeamsCategory 'WARNING' -TeamsColor 'warning'
 
                     # Increment alert_count
                     Invoke-SqlNonQuery -Query @"
@@ -1669,7 +1252,7 @@ No merge log activity since release. Merge queue may be backed up or batch may n
         # CHECK 5b: Queue Wait (RELEASED, auto-merge OFF, no log activity)
         # Longer threshold - these batches are intentionally held
         # Daily re-alert using composite trigger with date
-        $routingNoMerge = $script:Config.NB_Alert_QueueWaitNoMerge
+        $routing = $script:Config.NB_Alert_QueueWaitNoMerge
         $queueWaitNoMergeMinutes = $script:Config.NB_QueueWaitNoMergeMinutes
 
         $queueWaitNoMergeQuery = @"
@@ -1695,7 +1278,7 @@ No merge log activity since release. Merge queue may be backed up or batch may n
                 $batchName = $batch.batch_name
                 Write-Log "  ALERT: No-auto-merge queue wait detected - batch $batchId ($batchName) - waiting $($batch.minutes_in_queue) minutes" "WARN"
 
-                if ($script:Config.NB_AlertingEnabled -and -not $PreviewOnly -and $routingNoMerge -gt 0) {
+                if ($script:Config.NB_AlertingEnabled -and -not $PreviewOnly -and $routing -gt 0) {
                     $triggerType = 'NB_QueueWaitNoMerge'
                     $todayStr = (Get-Date).ToString("yyyy-MM-dd")
                     $triggerValue = "${batchId}_${todayStr}"
@@ -1706,19 +1289,8 @@ No merge log activity since release. Merge queue may be backed up or batch may n
                     $hoursWaiting = [math]::Round($batch.minutes_in_queue / 60, 1)
 
                     # Jira ticket (routing 2 or 3)
-                    if ($routingNoMerge -band 2) {
-                        $jiraDedup = Get-SqlData -Query @"
-                            SELECT TOP 1 1 AS ticket_exists
-                            FROM Jira.RequestLog
-                            WHERE Trigger_Type = '$triggerType'
-                              AND Trigger_Value = '$triggerValue'
-                              AND StatusCode = 201
-                              AND TicketKey IS NOT NULL
-                              AND TicketKey != 'Email'
-"@
-                        if (-not $jiraDedup) {
-                            $jiraSummary = "New Business Batch Held (No Auto-Merge): $batchId"
-                            $jiraDesc = @"
+                    $jiraSummary = "New Business Batch Held (No Auto-Merge): $batchId"
+                    $jiraDesc = @"
 New Business Batch Held - Auto-Merge Disabled
 
 Batch ID: $batchId
@@ -1732,55 +1304,8 @@ Manual merge initiation may be required.
 
 Detection Date: $detectionTime
 "@
-                            Invoke-SqlNonQuery -Query @"
-                                EXEC Jira.sp_QueueTicket
-                                    @SourceModule = @SourceModule,
-                                    @ProjectKey = @ProjectKey,
-                                    @Summary = @Summary,
-                                    @Description = @Description,
-                                    @IssueType = @IssueType,
-                                    @Priority = @Priority,
-                                    @EmailRecipients = @EmailRecipients,
-                                    @CascadingField_ID = @CascadingField_ID,
-                                    @CascadingField_ParentValue = @CascadingField_ParentValue,
-                                    @CascadingField_ChildValue = @CascadingField_ChildValue,
-                                    @CustomField_ID = @CustomField_ID,
-                                    @CustomField_Value = @CustomField_Value,
-                                    @CustomField2_ID = @CustomField2_ID,
-                                    @CustomField2_Value = @CustomField2_Value,
-                                    @DueDate = @DueDate,
-                                    @TriggerType = @TriggerType,
-                                    @TriggerValue = @TriggerValue
-"@ -Parameters @{
-                                    SourceModule = 'BatchOps'
-                                    ProjectKey = $jiraProjectKey
-                                    Summary = $jiraSummary
-                                    Description = $jiraDesc
-                                    IssueType = $jiraIssueType
-                                    Priority = $jiraPriority
-                                    EmailRecipients = $jiraEmailRecipients
-                                    CascadingField_ID = $jiraCascadingFieldId
-                                    CascadingField_ParentValue = $jiraCascadingParent
-                                    CascadingField_ChildValue = $cascadingChild
-                                    CustomField_ID = $jiraCustomField1Id
-                                    CustomField_Value = $jiraCustomField1Value
-                                    CustomField2_ID = $jiraCustomField2Id
-                                    CustomField2_Value = $jiraCustomField2Value
-                                    DueDate = $jiraDueDate
-                                    TriggerType = $triggerType
-                                    TriggerValue = $triggerValue
-                            } | Out-Null
-                            Write-Log "    Jira ticket queued for batch $batchId" "SUCCESS"
-                        }
-                        else {
-                            Write-Log "    Jira dedup: ticket already exists for $triggerType/$triggerValue" "INFO"
-                        }
-                    }
-
-                    # Teams alert (routing 1 or 3)
-                    if ($routingNoMerge -band 1) {
-                        $teamsTitle = "{{WARN}} New Business Batch Queue Wait (No Auto-Merge): $batchId"
-                        $teamsMessage = @"
+                    $teamsTitle = "{{WARN}} New Business Batch Queue Wait (No Auto-Merge): $batchId"
+                    $teamsMessage = @"
 **Batch ID:** $batchId
 **Batch Name:** $batchName
 **Consumers:** $consCount
@@ -1791,10 +1316,9 @@ This batch has auto-merge disabled and has been in RELEASED status without merge
 
 **Detection:** $detectionTime
 "@
-                        Send-TeamsAlert -SourceModule 'BatchOps' -AlertCategory 'WARNING' `
-                            -Title $teamsTitle -Message $teamsMessage -Color 'warning' `
-                            -TriggerType $triggerType -TriggerValue $triggerValue | Out-Null
-                    }
+                    Send-bat_BatchAlert -Routing $routing -TriggerType $triggerType -TriggerValue $triggerValue -CascadingChild $cascadingChild `
+                        -JiraSummary $jiraSummary -JiraDescription $jiraDesc `
+                        -TeamsTitle $teamsTitle -TeamsMessage $teamsMessage -TeamsCategory 'WARNING' -TeamsColor 'warning'
 
                     # Increment alert_count
                     Invoke-SqlNonQuery -Query @"
@@ -1847,19 +1371,8 @@ This batch has auto-merge disabled and has been in RELEASED status without merge
                     $hoursWaiting = [math]::Round($batch.minutes_waiting / 60, 1)
 
                     # Jira ticket (routing 2 or 3)
-                    if ($routing -band 2) {
-                        $jiraDedup = Get-SqlData -Query @"
-                            SELECT TOP 1 1 AS ticket_exists
-                            FROM Jira.RequestLog
-                            WHERE Trigger_Type = '$triggerType'
-                              AND Trigger_Value = '$triggerValue'
-                              AND StatusCode = 201
-                              AND TicketKey IS NOT NULL
-                              AND TicketKey != 'Email'
-"@
-                        if (-not $jiraDedup) {
-                            $jiraSummary = "New Business Batch Awaiting Release: $batchId"
-                            $jiraDesc = @"
+                    $jiraSummary = "New Business Batch Awaiting Release: $batchId"
+                    $jiraDesc = @"
 New Business Batch Awaiting Manual Release
 
 Batch ID: $batchId
@@ -1874,55 +1387,8 @@ Action: Release this batch manually in Debt Manager. Client is not configured fo
 
 Detection Date: $detectionTime
 "@
-                            Invoke-SqlNonQuery -Query @"
-                                EXEC Jira.sp_QueueTicket
-                                    @SourceModule = @SourceModule,
-                                    @ProjectKey = @ProjectKey,
-                                    @Summary = @Summary,
-                                    @Description = @Description,
-                                    @IssueType = @IssueType,
-                                    @Priority = @Priority,
-                                    @EmailRecipients = @EmailRecipients,
-                                    @CascadingField_ID = @CascadingField_ID,
-                                    @CascadingField_ParentValue = @CascadingField_ParentValue,
-                                    @CascadingField_ChildValue = @CascadingField_ChildValue,
-                                    @CustomField_ID = @CustomField_ID,
-                                    @CustomField_Value = @CustomField_Value,
-                                    @CustomField2_ID = @CustomField2_ID,
-                                    @CustomField2_Value = @CustomField2_Value,
-                                    @DueDate = @DueDate,
-                                    @TriggerType = @TriggerType,
-                                    @TriggerValue = @TriggerValue
-"@ -Parameters @{
-                                    SourceModule = 'BatchOps'
-                                    ProjectKey = $jiraProjectKey
-                                    Summary = $jiraSummary
-                                    Description = $jiraDesc
-                                    IssueType = $jiraIssueType
-                                    Priority = $jiraPriority
-                                    EmailRecipients = $jiraEmailRecipients
-                                    CascadingField_ID = $jiraCascadingFieldId
-                                    CascadingField_ParentValue = $jiraCascadingParent
-                                    CascadingField_ChildValue = $cascadingChild
-                                    CustomField_ID = $jiraCustomField1Id
-                                    CustomField_Value = $jiraCustomField1Value
-                                    CustomField2_ID = $jiraCustomField2Id
-                                    CustomField2_Value = $jiraCustomField2Value
-                                    DueDate = $jiraDueDate
-                                    TriggerType = $triggerType
-                                    TriggerValue = $triggerValue
-                            } | Out-Null
-                            Write-Log "    Jira ticket queued for batch $batchId" "SUCCESS"
-                        }
-                        else {
-                            Write-Log "    Jira dedup: ticket already exists for $triggerType/$triggerValue" "INFO"
-                        }
-                    }
-
-                    # Teams alert (routing 1 or 3)
-                    if ($routing -band 1) {
-                        $teamsTitle = "{{WARN}} New Business Batch Awaiting Release: $batchId"
-                        $teamsMessage = @"
+                    $teamsTitle = "{{WARN}} New Business Batch Awaiting Release: $batchId"
+                    $teamsMessage = @"
 **Batch ID:** $batchId
 **Batch Name:** $batchName
 **File:** $uploadFile
@@ -1935,10 +1401,9 @@ Action: Release this batch manually in Debt Manager. Client is not configured fo
 
 **Detection:** $detectionTime
 "@
-                        Send-TeamsAlert -SourceModule 'BatchOps' -AlertCategory 'WARNING' `
-                            -Title $teamsTitle -Message $teamsMessage -Color 'warning' `
-                            -TriggerType $triggerType -TriggerValue $triggerValue | Out-Null
-                    }
+                    Send-bat_BatchAlert -Routing $routing -TriggerType $triggerType -TriggerValue $triggerValue -CascadingChild $cascadingChild `
+                        -JiraSummary $jiraSummary -JiraDescription $jiraDesc `
+                        -TeamsTitle $teamsTitle -TeamsMessage $teamsMessage -TeamsCategory 'WARNING' -TeamsColor 'warning'
 
                     # Increment alert_count
                     Invoke-SqlNonQuery -Query @"
@@ -1979,7 +1444,7 @@ Action: Release this batch manually in Debt Manager. Client is not configured fo
                 $alertsDetected++
                 $batchId = $batch.batch_id
                 $batchName = $batch.batch_name
-                $stallDuration = Get-bat_NB_StallDurationText -PollCount $batch.stall_poll_count
+                $stallDuration = Get-bat_StallDurationText -PollCount $batch.stall_poll_count
                 Write-Log "  ALERT: Release-merge skip stall - batch $batchId ($batchName) - RELEASING+merging with no activity for $stallDuration" "WARN"
 
                 if ($script:Config.NB_AlertingEnabled -and -not $PreviewOnly -and $routing -gt 0) {
@@ -1995,19 +1460,8 @@ Action: Release this batch manually in Debt Manager. Client is not configured fo
                     $lastLogTime = if ($batch.last_log_dttm -isnot [DBNull]) { $batch.last_log_dttm.ToString("yyyy-MM-dd HH:mm:ss") } else { 'N/A' }
 
                     # Jira ticket (routing 2 or 3)
-                    if ($routing -band 2) {
-                        $jiraDedup = Get-SqlData -Query @"
-                            SELECT TOP 1 1 AS ticket_exists
-                            FROM Jira.RequestLog
-                            WHERE Trigger_Type = '$triggerType'
-                              AND Trigger_Value = '$triggerValue'
-                              AND StatusCode = 201
-                              AND TicketKey IS NOT NULL
-                              AND TicketKey != 'Email'
-"@
-                        if (-not $jiraDedup) {
-                            $jiraSummary = "New Business Batch Release-Merge Skip Stall: $batchId"
-                            $jiraDesc = @"
+                    $jiraSummary = "New Business Batch Release-Merge Skip Stall: $batchId"
+                    $jiraDesc = @"
 New Business Batch Release-Merge Skip Stall
 
 Batch ID: $batchId
@@ -2027,55 +1481,8 @@ If the batch does not resume processing, set it back to Uploaded status and re-r
 
 Detection Date: $detectionTime
 "@
-                            Invoke-SqlNonQuery -Query @"
-                                EXEC Jira.sp_QueueTicket
-                                    @SourceModule = @SourceModule,
-                                    @ProjectKey = @ProjectKey,
-                                    @Summary = @Summary,
-                                    @Description = @Description,
-                                    @IssueType = @IssueType,
-                                    @Priority = @Priority,
-                                    @EmailRecipients = @EmailRecipients,
-                                    @CascadingField_ID = @CascadingField_ID,
-                                    @CascadingField_ParentValue = @CascadingField_ParentValue,
-                                    @CascadingField_ChildValue = @CascadingField_ChildValue,
-                                    @CustomField_ID = @CustomField_ID,
-                                    @CustomField_Value = @CustomField_Value,
-                                    @CustomField2_ID = @CustomField2_ID,
-                                    @CustomField2_Value = @CustomField2_Value,
-                                    @DueDate = @DueDate,
-                                    @TriggerType = @TriggerType,
-                                    @TriggerValue = @TriggerValue
-"@ -Parameters @{
-                                    SourceModule = 'BatchOps'
-                                    ProjectKey = $jiraProjectKey
-                                    Summary = $jiraSummary
-                                    Description = $jiraDesc
-                                    IssueType = $jiraIssueType
-                                    Priority = $jiraPriority
-                                    EmailRecipients = $jiraEmailRecipients
-                                    CascadingField_ID = $jiraCascadingFieldId
-                                    CascadingField_ParentValue = $jiraCascadingParent
-                                    CascadingField_ChildValue = $cascadingChild
-                                    CustomField_ID = $jiraCustomField1Id
-                                    CustomField_Value = $jiraCustomField1Value
-                                    CustomField2_ID = $jiraCustomField2Id
-                                    CustomField2_Value = $jiraCustomField2Value
-                                    DueDate = $jiraDueDate
-                                    TriggerType = $triggerType
-                                    TriggerValue = $triggerValue
-                            } | Out-Null
-                            Write-Log "    Jira ticket queued for batch $batchId" "SUCCESS"
-                        }
-                        else {
-                            Write-Log "    Jira dedup: ticket already exists for $triggerType/$triggerValue" "INFO"
-                        }
-                    }
-
-                    # Teams alert (routing 1 or 3)
-                    if ($routing -band 1) {
-                        $teamsTitle = "{{WARN}} New Business Batch Release-Merge Skip Stall: $batchId"
-                        $teamsMessage = @"
+                    $teamsTitle = "{{WARN}} New Business Batch Release-Merge Skip Stall: $batchId"
+                    $teamsMessage = @"
 **Batch ID:** $batchId
 **Batch Name:** $batchName
 **File:** $uploadFile
@@ -2092,10 +1499,9 @@ If batch does not resume, set back to Uploaded and re-release.
 
 **Detection:** $detectionTime
 "@
-                        Send-TeamsAlert -SourceModule 'BatchOps' -AlertCategory 'WARNING' `
-                            -Title $teamsTitle -Message $teamsMessage -Color 'warning' `
-                            -TriggerType $triggerType -TriggerValue $triggerValue | Out-Null
-                    }
+                    Send-bat_BatchAlert -Routing $routing -TriggerType $triggerType -TriggerValue $triggerValue -CascadingChild $cascadingChild `
+                        -JiraSummary $jiraSummary -JiraDescription $jiraDesc `
+                        -TeamsTitle $teamsTitle -TeamsMessage $teamsMessage -TeamsCategory 'WARNING' -TeamsColor 'warning'
 
                     # Increment alert_count
                     Invoke-SqlNonQuery -Query @"
@@ -2115,36 +1521,6 @@ If batch does not resume, set back to Uploaded and re-release.
     catch {
         Write-Log "  Error in Evaluate Alerts: $($_.Exception.Message)" "ERROR"
         return @{ Detected = $alertsDetected; Fired = $alertsFired; Error = $_.Exception.Message }
-    }
-}
-
-# Updates BatchOps.Status with the run outcome and duration.
-function Step-bat_NB_UpdateStatus {
-    param(
-        [bool]$PreviewOnly = $true,
-        [string]$Status = "SUCCESS",
-        [int]$DurationMs = 0
-    )
-
-    if ($PreviewOnly) {
-        Write-Log "  [Preview] Would update BatchOps.Status for Collect-NBBatchStatus" "INFO"
-        return
-    }
-
-    try {
-        $statusQuery = @"
-            UPDATE BatchOps.Status
-            SET processing_status = 'IDLE',
-                completed_dttm = GETDATE(),
-                last_duration_ms = $DurationMs,
-                last_status = '$Status'
-            WHERE collector_name = 'Collect-NBBatchStatus'
-"@
-
-        Invoke-SqlNonQuery -Query $statusQuery | Out-Null
-    }
-    catch {
-        Write-Log "  Failed to update Status: $($_.Exception.Message)" "WARN"
     }
 }
 
@@ -2199,12 +1575,7 @@ $stepResults = @{}
 
 # Mark as RUNNING
 if (-not $previewOnly) {
-    Invoke-SqlNonQuery -Query @"
-        UPDATE BatchOps.Status
-        SET processing_status = 'RUNNING',
-            started_dttm = GETDATE()
-        WHERE collector_name = 'Collect-NBBatchStatus'
-"@ | Out-Null
+    Set-bat_BatchStatus -CollectorName 'Collect-NBBatchStatus' -State RUNNING
 }
 
 Write-Console "----------------------------------------------------------------" DarkGray
@@ -2267,7 +1638,9 @@ if (-not $Execute) {
 }
 
 # Update Status table
-Step-bat_NB_UpdateStatus -PreviewOnly $previewOnly -Status $finalStatus -DurationMs $totalMs
+if (-not $previewOnly) {
+    Set-bat_BatchStatus -CollectorName 'Collect-NBBatchStatus' -State IDLE -Status $finalStatus -DurationMs $totalMs
+}
 
 Write-Console "================================================================" Cyan
 Write-Console "  NB Batch Status Collection Complete" Cyan
