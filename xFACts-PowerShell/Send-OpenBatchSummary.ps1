@@ -64,6 +64,15 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-06-18  Migrated to the shared xFACts-BatchOpsFunctions.ps1 helpers.
+#             Removed the local Get-bat_OBS_SourceData and Get-bat_OBS_-
+#             AGReplicaRoles; source queries now use Get-bat_SourceData
+#             (with -Timeout 300 to preserve the prior default) and read-
+#             server resolution uses the shared Get-AGReplicaRoles via
+#             Resolve-bat_ReadServer. Both BatchOps.Status writes go through
+#             Set-bat_BatchStatus. Replaced the stale GlobalConfig module
+#             filter 'Core' with 'BatchOps' to match the collectors.
+#             Behavior unchanged.
 # 2026-04-28  Standardized Teams alerting via Send-TeamsAlert shared function.
 #             Converted direct INSERT to Send-TeamsAlert with -CardJson parameter.
 #             trigger_value changed from yyyy-MM-dd to yyyy-MM-dd-HH for future schedule
@@ -104,6 +113,7 @@ param(
    ============================================================================ #>
 
 . "$PSScriptRoot\xFACts-OrchestratorFunctions.ps1"
+. "$PSScriptRoot\xFACts-BatchOpsFunctions.ps1"
 
 <# ============================================================================
    INITIALIZATION: SCRIPT INITIALIZATION
@@ -141,71 +151,6 @@ $script:Config = @{
    Prefix: bat
    ============================================================================ #>
 
-# Executes a query against the source database (crs5_oltp) on the configured replica.
-function Get-bat_OBS_SourceData {
-    param(
-        [string]$Query,
-        [int]$Timeout = 300
-    )
-    if (-not $script:ReadServer) {
-        Write-Log "ReadServer not configured - cannot query source" "ERROR"
-        return $null
-    }
-    try {
-        Invoke-Sqlcmd -ServerInstance $script:ReadServer -Database $SourceDB -Query $Query -QueryTimeout $Timeout -ApplicationName $script:XFActsAppName -ErrorAction Stop -TrustServerCertificate
-    }
-    catch {
-        Write-Log "Source query failed on $($script:ReadServer): $($_.Exception.Message)" "ERROR"
-        return $null
-    }
-}
-
-# Queries the AG to resolve current PRIMARY and SECONDARY replica server names.
-function Get-bat_OBS_AGReplicaRoles {
-    param()
-    $agName = $script:Config.AGName
-
-    if (-not $agName) {
-        Write-Log "AGName not configured - cannot query replica states" "ERROR"
-        return $null
-    }
-
-    $query = @"
-        SELECT
-            ar.replica_server_name,
-            ars.role_desc
-        FROM sys.dm_hadr_availability_replica_states ars
-        INNER JOIN sys.availability_replicas ar
-            ON ars.replica_id = ar.replica_id
-        INNER JOIN sys.availability_groups ag
-            ON ar.group_id = ag.group_id
-        WHERE ag.name = '$agName'
-"@
-
-    $results = Get-SqlData -Query $query
-
-    if (-not $results) {
-        Write-Log "Failed to query AG replica states" "ERROR"
-        return $null
-    }
-
-    $roles = @{
-        PRIMARY = $null
-        SECONDARY = $null
-    }
-
-    foreach ($row in $results) {
-        if ($row.role_desc -eq 'PRIMARY') {
-            $roles.PRIMARY = $row.replica_server_name
-        }
-        elseif ($row.role_desc -eq 'SECONDARY') {
-            $roles.SECONDARY = $row.replica_server_name
-        }
-    }
-
-    return $roles
-}
-
 # Loads GlobalConfig settings and determines server connections.
 function Initialize-bat_OBS_Configuration {
     param()
@@ -219,7 +164,7 @@ function Initialize-bat_OBS_Configuration {
     $configQuery = @"
         SELECT module_name, setting_name, setting_value
         FROM dbo.GlobalConfig
-        WHERE module_name IN ('Core', 'Shared', 'dbo')
+        WHERE module_name IN ('BatchOps', 'Shared', 'dbo')
           AND is_active = 1
 "@
 
@@ -239,36 +184,9 @@ function Initialize-bat_OBS_Configuration {
     Write-Log "  SourceReplica: $($script:Config.SourceReplica)" "INFO"
 
     # Determine read server
-    if ($ForceSourceServer) {
-        $script:ReadServer = $ForceSourceServer
-        Write-Log "  ReadServer: $($script:ReadServer) (forced via parameter)" "WARN"
-        Write-Log "  AG detection skipped due to ForceSourceServer" "WARN"
-    }
-    else {
-        Write-Log "Detecting AG replica roles..." "INFO"
-        $agRoles = Get-bat_OBS_AGReplicaRoles
-
-        if (-not $agRoles) {
-            Write-Log "AG detection failed - cannot determine read server" "ERROR"
-            return $false
-        }
-
-        Write-Log "  AG PRIMARY: $($agRoles.PRIMARY)" "INFO"
-        Write-Log "  AG SECONDARY: $($agRoles.SECONDARY)" "INFO"
-
-        if ($script:Config.SourceReplica -eq "PRIMARY") {
-            $script:ReadServer = $agRoles.PRIMARY
-        }
-        else {
-            $script:ReadServer = $agRoles.SECONDARY
-        }
-
-        if (-not $script:ReadServer) {
-            Write-Log "Could not determine ReadServer from AG roles" "ERROR"
-            return $false
-        }
-
-        Write-Log "  ReadServer: $($script:ReadServer) (from GlobalConfig: $($script:Config.SourceReplica))" "SUCCESS"
+    $script:ReadServer = Resolve-bat_ReadServer -AGName $script:Config.AGName -SourceReplica $script:Config.SourceReplica -ForceSourceServer $ForceSourceServer
+    if (-not $script:ReadServer) {
+        return $false
     }
 
     Write-Log "  WriteServer: $($script:WriteServer)" "INFO"
@@ -313,7 +231,7 @@ function Get-bat_OBS_OpenNBBatches {
         ORDER BY nbb.new_bsnss_btch_crt_dt DESC
 "@
 
-    $results = Get-bat_OBS_SourceData -Query $query
+    $results = Get-bat_SourceData -Query $query -Timeout 300
 
     $details = @()
     $count = 0
@@ -378,7 +296,7 @@ function Get-bat_OBS_OpenPMTBatches {
         ORDER BY cpb.cnsmr_pymnt_btch_crt_dttm DESC
 "@
 
-    $results = Get-bat_OBS_SourceData -Query $query
+    $results = Get-bat_SourceData -Query $query -Timeout 300
 
     $details = @()
     $count = 0
@@ -736,17 +654,7 @@ if (-not $initResult) {
 
 # Mark as RUNNING in BatchOps.Status
 if ($Execute) {
-    try {
-        Invoke-SqlNonQuery -Query @"
-            UPDATE BatchOps.Status
-            SET processing_status = 'RUNNING',
-                started_dttm = GETDATE()
-            WHERE collector_name = 'Send-OpenBatchSummary'
-"@ | Out-Null
-    }
-    catch {
-        Write-Log "  Failed to set RUNNING status: $($_.Exception.Message)" "WARN"
-    }
+    Set-bat_BatchStatus -CollectorName 'Send-OpenBatchSummary' -State RUNNING
 }
 
 # -- Step 2: Run all processing checks --
@@ -847,20 +755,8 @@ Write-Log "========================================"
 # -- Update BatchOps.Status --
 
 if ($Execute) {
-    try {
-        $totalMs = [int]$scriptDuration.TotalMilliseconds
-        Invoke-SqlNonQuery -Query @"
-            UPDATE BatchOps.Status
-            SET processing_status = 'IDLE',
-                completed_dttm = GETDATE(),
-                last_duration_ms = $totalMs,
-                last_status = 'SUCCESS'
-            WHERE collector_name = 'Send-OpenBatchSummary'
-"@ | Out-Null
-    }
-    catch {
-        Write-Log "  Failed to update Status: $($_.Exception.Message)" "WARN"
-    }
+    $totalMs = [int]$scriptDuration.TotalMilliseconds
+    Set-bat_BatchStatus -CollectorName 'Send-OpenBatchSummary' -State IDLE -Status 'SUCCESS' -DurationMs $totalMs
 }
 
 # -- Orchestrator Callback --
