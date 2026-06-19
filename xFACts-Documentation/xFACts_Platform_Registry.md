@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-06-18 18:29:20
+Generated: 2026-06-19 07:12:11
 
 ## Module Registry
 
@@ -74,6 +74,7 @@ Generated: 2026-06-18 18:29:20
 | BatchOps | Collect-NBBatchStatus.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Collect-NBBatchStatus.ps1 | Collects NewBatch processing status |
 | BatchOps | Collect-PMTBatchStatus.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Collect-PMTBatchStatus.ps1 | Collects PMT processing status |
 | BatchOps | Send-OpenBatchSummary.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Send-OpenBatchSummary.ps1 | Evaluates open batches and queues summary alert |
+| BatchOps | xFACts-BatchOpsFunctions.ps1 | PowerShell | Script | E:\xFACts-PowerShell\xFACts-BatchOpsFunctions.ps1 | Shared function library for the BatchOps batch-status collectors. Centralizes read-replica source querying, availability-group read-server resolution, stall-duration text formatting, the BatchOps.Status run-state writes (RUNNING and IDLE transitions), and the Jira/Teams alert dispatch with mandatory deduplication that the collectors and the pre-maintenance summary share. |
 | BatchOps | BatchMonitoring-API.ps1 | WebAsset | API | E:\xFACts-ControlCenter\scripts\routes\BatchMonitoring-API.ps1 | Batch Monitoring CC API endpoints |
 | BatchOps | batch-monitoring.css | WebAsset | CSS | E:\xFACts-ControlCenter\public\css\batch-monitoring.css | Batch Monitoring CC styles |
 | BatchOps | batch-monitoring.js | WebAsset | JavaScript | E:\xFACts-ControlCenter\public\js\batch-monitoring.js | Batch Monitoring CC client-side logic |
