@@ -26,6 +26,7 @@
     FUNCTIONS: SCRIPT INITIALIZATION
     FUNCTIONS: LOGGING AND CONSOLE OUTPUT
     FUNCTIONS: SQL DATA ACCESS
+    FUNCTIONS: AVAILABILITY GROUP
     FUNCTIONS: CREDENTIAL RETRIEVAL
     FUNCTIONS: TASK COMPLETION CALLBACK
     FUNCTIONS: ENGINE EVENT PUSH
@@ -41,6 +42,12 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-06-18  Added Get-AGReplicaRoles (FUNCTIONS: AVAILABILITY GROUP), the
+#             parameterized resolver of an availability group's current
+#             PRIMARY and SECONDARY replica servers. Lifted from eight
+#             duplicate per-component copies (BatchOps, BS-review, JobFlow,
+#             DBCC) into one shared definition; takes -AGName explicitly
+#             rather than reading a caller's script-scoped Config.
 # 2026-06-15  Added the sanctioned console-output helper family - Write-Console,
 #             Write-ConsoleBanner, Write-ConsoleRule - the blessed replacement
 #             for Write-Host (ephemeral, colored, operator-facing console
@@ -582,6 +589,83 @@ function Invoke-SqlNonQuery {
         Write-Log "SQL Execute failed on ${Instance}/${DatabaseName}: $($_.Exception.Message)" "ERROR"
         return $false
     }
+}
+
+<# ============================================================================
+   FUNCTIONS: AVAILABILITY GROUP
+   ----------------------------------------------------------------------------
+   Availability-group topology resolution shared across every component that
+   must target a specific replica. Get-AGReplicaRoles queries the AG DMVs for
+   the named group and returns the current PRIMARY and SECONDARY replica
+   server names, so callers can pick a read or write target by role rather
+   than by hardcoded server name.
+   Prefix: (none)
+   ============================================================================ #>
+
+function Get-AGReplicaRoles {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$AGName
+    )
+
+    <#
+    .SYNOPSIS
+        Resolves the current PRIMARY and SECONDARY replica servers for an availability group.
+
+    .DESCRIPTION
+        Queries the Always On availability-group dynamic management views for
+        the named group and returns a hashtable with PRIMARY and SECONDARY
+        keys holding the corresponding replica server names. Used by any
+        component that selects a read or write target by replica role rather
+        than a hardcoded server name. Returns $null when the AGName is empty
+        or the replica-state query fails, logging the reason; a role with no
+        matching replica is left $null in the returned hashtable.
+
+    .PARAMETER AGName
+        Name of the availability group to resolve, as it appears in
+        sys.availability_groups.name.
+    #>
+
+    if (-not $AGName) {
+        Write-Log "AGName not configured - cannot query replica states" "ERROR"
+        return $null
+    }
+
+    $query = @"
+        SELECT
+            ar.replica_server_name,
+            ars.role_desc
+        FROM sys.dm_hadr_availability_replica_states ars
+        INNER JOIN sys.availability_replicas ar
+            ON ars.replica_id = ar.replica_id
+        INNER JOIN sys.availability_groups ag
+            ON ar.group_id = ag.group_id
+        WHERE ag.name = '$AGName'
+"@
+
+    $results = Get-SqlData -Query $query
+
+    if (-not $results) {
+        Write-Log "Failed to query AG replica states for $AGName" "ERROR"
+        return $null
+    }
+
+    $roles = @{
+        PRIMARY   = $null
+        SECONDARY = $null
+    }
+
+    foreach ($row in $results) {
+        if ($row.role_desc -eq 'PRIMARY') {
+            $roles.PRIMARY = $row.replica_server_name
+        }
+        elseif ($row.role_desc -eq 'SECONDARY') {
+            $roles.SECONDARY = $row.replica_server_name
+        }
+    }
+
+    return $roles
 }
 
 <# ============================================================================
