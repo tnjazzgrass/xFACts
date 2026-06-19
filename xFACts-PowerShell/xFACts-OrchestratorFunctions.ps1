@@ -42,6 +42,11 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-06-19  Added Get-SqlInstanceName (FUNCTIONS: SQL DATA ACCESS), the
+#             server-plus-optional-instance connection-target builder. Lifted
+#             from a per-script local copy in Collect-BackupStatus into one
+#             shared definition; the ServerHealth-zone collectors still carry
+#             their own copies pending their refactors.
 # 2026-06-18  Added Get-AGReplicaRoles (FUNCTIONS: AVAILABILITY GROUP), the
 #             parameterized resolver of an availability group's current
 #             PRIMARY and SECONDARY replica servers. Lifted from eight
@@ -365,6 +370,42 @@ function Write-ConsoleRule {
    character and binary result columns.
    Prefix: (none)
    ============================================================================ #>
+
+function Get-SqlInstanceName {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$ServerName,
+
+        [string]$InstanceName
+    )
+
+    <#
+    .SYNOPSIS
+        Builds a SQL Server instance connection target from a server name and optional instance name.
+
+    .DESCRIPTION
+        Composes the instance connection string used to reach a specific SQL
+        Server: returns the bare server name for a default instance, or the
+        Server\Instance form when a named instance is supplied. A blank or
+        whitespace-only instance name is treated as a default instance. Used by
+        scripts that iterate registered servers and must address each instance
+        by its connection target.
+
+    .PARAMETER ServerName
+        The SQL Server host name.
+
+    .PARAMETER InstanceName
+        The named-instance name, or empty/whitespace for a default instance.
+    #>
+
+    if ([string]::IsNullOrWhiteSpace($InstanceName)) {
+        return $ServerName
+    }
+    else {
+        return "$ServerName\$InstanceName"
+    }
+}
 
 function Get-SqlData {
     [CmdletBinding()]
