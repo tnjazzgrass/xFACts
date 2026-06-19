@@ -11808,6 +11808,35 @@
                                         ]
                     },
                     {
+                        "name":  "xFACts-BackupFunctions.ps1",
+                        "description":  "Shared scoped-function library for the ServerOps.Backup pipeline scripts. Centralizes the backup-filename physical-server parsing, the local-to-UNC admin-share path conversion, the Backup_ExecutionLog detail writer, the AWS-upload and network-copy Backup_FileTracking status writes, and the retry-handling routine that the backup collector and the network-copy, AWS-upload, and retention processors previously duplicated. Dot-sourced after xFACts-OrchestratorFunctions.ps1, which supplies the Write-Log, Get-SqlData, Invoke-SqlNonQuery, and Send-TeamsAlert it calls.",
+                        "module":  "ServerOps",
+                        "category":  "Backup",
+                        "dataFlow":  "Dot-sourced by Collect-BackupStatus.ps1, Process-BackupNetworkCopy.ps1, Process-BackupAWSUpload.ps1, and Process-BackupRetention.ps1 after xFACts-OrchestratorFunctions.ps1. Get-bkp_PhysicalServerFromPath and Convert-bkp_ToUncPath resolve the physical server and admin-share UNC path for a backup file so the processors can reach files on whichever AG replica produced them. Write-bkp_ExecutionLog writes one detail row per operation to ServerOps.Backup_ExecutionLog. Set-bkp_AwsUploadStatus and Set-bkp_NetworkCopyStatus update the per-file status columns in ServerOps.Backup_FileTracking that the Control Center Backup Monitoring page displays. Invoke-bkp_RetryFailedFiles resets retry-eligible failed files in Backup_FileTracking back to PENDING and posts the retries-exhausted alert via the shared Send-TeamsAlert. The functions hold no state of their own; they operate on values the calling script passes in.",
+                        "designNotes":  [
+                                            {
+                                                "topic":  "No self-import of the orchestrator",
+                                                "note":  "As a shared-library file it declares no IMPORTS section, so it does not dot-source xFACts-OrchestratorFunctions.ps1 even though it depends on that file\u0027s Write-Log, Get-SqlData, Invoke-SqlNonQuery, and Send-TeamsAlert. Consuming scripts dot-source the orchestrator first, then this helper. This keeps the load order explicit at the call site and avoids a shared library reaching back into platform infrastructure.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "topic":  "One execution-log writer for all callers",
+                                                "note":  "Write-bkp_ExecutionLog takes the union of every pipeline\u0027s columns, including the error_details column only the AWS-upload path supplies, so all four scripts share one writer. Any unsupplied duration, byte count, error message, or error detail is written as a SQL NULL rather than a zero or empty string, which keeps a missing metric distinguishable from a real zero in Backup_ExecutionLog.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "topic":  "Separate status writers per column family",
+                                                "note":  "The AWS-upload and network-copy pipelines write to different Backup_FileTracking column families, so each has its own writer (Set-bkp_AwsUploadStatus, Set-bkp_NetworkCopyStatus) rather than one writer parameterized across both. Each writer includes only the columns it was given, building the UPDATE set clause from the supplied values.",
+                                                "sortOrder":  3
+                                            },
+                                            {
+                                                "topic":  "Retry handling parameterized by operation",
+                                                "note":  "Invoke-bkp_RetryFailedFiles serves both the network-copy and AWS-upload pipelines over their separate column families through a single -Operation discriminator that selects the column family, the alert label, and the trigger type. It performs both halves of the retry step: resetting retry-eligible failed files to PENDING and alerting on files that have exhausted their retries. The network-copy script\u0027s network-root verification stays inline in that script because it is adjacent to, not part of, the shared retry pattern.",
+                                                "sortOrder":  4
+                                            }
+                                        ]
+                    },
+                    {
                         "name":  "xFACts-IndexFunctions.ps1",
                         "description":  "Shared function library dot-sourced by Execute-IndexMaintenance.ps1 and Scan-IndexFragmentation.ps1. Provides schedule evaluation (Get-EffectiveSchedule), available window calculation (Get-AvailableMinutes, Get-MaxWeekdayWindow), extended window detection (Test-IsExtendedWindow), index selection for windows (Get-IndexesForWindow), abort flag checking (Test-AbortRequested), and AG primary detection (Get-AGPrimary).",
                         "module":  "ServerOps",
