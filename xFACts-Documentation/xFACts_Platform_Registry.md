@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-06-19 13:25:15
+Generated: 2026-06-19 19:13:47
 
 ## Module Registry
 
@@ -25,7 +25,7 @@ Generated: 2026-06-19 13:25:15
 
 | module_name | component_name | description | cc_prefix | doc_page_id | doc_title | doc_json_schema | doc_json_categories | doc_cc_slug | doc_sort_order | doc_section_order |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| B2B | B2B | IBM Sterling B2B Integrator workflow monitoring, file transfer tracking, process configuration, and alerting |  |  |  |  |  |  |  |  |
+| B2B | B2B | IBM Sterling B2B Integrator workflow monitoring, file transfer tracking, process configuration, and alerting | b2b |  |  |  |  |  |  |  |
 | BatchOps | BatchOps | Real-time Debt Manager batch processing activity, complete pipeline tracking, and execution history | bat | batchops | Batch Monitoring | BatchOps |  |  | 80 | 1 |
 | BIDATA | BIDATA | Real-time BIDATA nightly build monitoring with process status, duration trending and build history | bid | bidata | BIDATA Monitoring | BIDATA |  |  | 90 | 1 |
 | ControlCenter | ControlCenter.Admin | Administration page: process timeline, engine controls, platform management tools | adm | controlcenter | Administration |  |  | admin |  |  |
