@@ -3,22 +3,12 @@
     Consolidates all xFACts platform files into a single upload-ready folder.
 
 .DESCRIPTION
-    xFACts - Upload Consolidation
-    Script: Consolidate-UploadFiles.ps1
-
     Collects all platform files from their various server locations into a single
     flat folder for uploading to Claude as project context. Optionally extracts
-    stored procedure/trigger/function definitions from the database and includes
-    JSON data files.
-
-    Generates a _manifest.txt with source path mappings so Claude has awareness
-    of the server directory structure.
-
-    Designed to be run manually or triggered from the Control Center Admin page.
-
-    CHANGELOG
-    ---------
-    1.0.0  Initial implementation
+    user SQL object definitions from the database and includes JSON data files.
+    Generates a _manifest.txt with source path mappings so the consumer has
+    awareness of the server directory structure. Designed to be run manually or
+    triggered from the Control Center Admin page.
 
 .PARAMETER OutputPath
     Root folder for consolidated output. Default: E:\xFACts-Upload
@@ -38,18 +28,50 @@
 .PARAMETER Execute
     Required to actually copy files. Without this, runs in preview mode.
 
-.EXAMPLE
-    .\Consolidate-UploadFiles.ps1
-    Preview mode - shows what would be collected without copying.
+.COMPONENT
+    Documentation.Pipeline
 
-.EXAMPLE
-    .\Consolidate-UploadFiles.ps1 -Execute
-    Collects all standard files (no JSON, no SQL objects).
+.NOTES
+    File Name : Consolidate-UploadFiles.ps1
+    Location  : E:\xFACts-PowerShell\Consolidate-UploadFiles.ps1
 
-.EXAMPLE
-    .\Consolidate-UploadFiles.ps1 -Execute -IncludeJSON -IncludeSQLObjects
-    Full collection including JSON data files and extracted SQL definitions.
+    FILE ORGANIZATION
+    -----------------
+    CHANGELOG: CHANGE HISTORY
+    PARAMETERS: SCRIPT PARAMETERS
+    IMPORTS: SCRIPT DEPENDENCIES
+    INITIALIZATION: SCRIPT INITIALIZATION
+    CONSTANTS: PATHS AND SOURCES
+    EXECUTION: SCRIPT EXECUTION
 #>
+
+<# ============================================================================
+   CHANGELOG: CHANGE HISTORY
+   ----------------------------------------------------------------------------
+   Dated change history for this file, most recent first. Authoritative version
+   tracking lives in dbo.System_Metadata (component Documentation.Pipeline);
+   this section records what changed and when.
+   Prefix: (none)
+   ============================================================================ #>
+
+# 2026-06-20  Conformed to the PowerShell file format spec: block-comment header
+#             and section banners, dedicated CHANGELOG section, single EXECUTION
+#             section, and Write-Console in place of Write-Host. Dot-sources
+#             xFACts-OrchestratorFunctions.ps1 and xFACts-DocPipelineFunctions.ps1
+#             and runs Initialize-XFActsScript for shared infrastructure. SQL
+#             object extraction now calls the shared Get-SqlObjectDefinitions;
+#             registry markdown generation now calls the shared
+#             Get-RegistryExportMarkdown, which returns the markdown and the
+#             count of tables rendered, replacing the per-script copies.
+# 2026-03-01  Initial implementation.
+
+<# ============================================================================
+   PARAMETERS: SCRIPT PARAMETERS
+   ----------------------------------------------------------------------------
+   Output location, optional-content switches, the SQL connection target for
+   object extraction and registry export, and the execute guard.
+   Prefix: (none)
+   ============================================================================ #>
 
 [CmdletBinding()]
 param(
@@ -61,83 +83,110 @@ param(
     [switch]$Execute
 )
 
-# ============================================================================
-# CONFIGURATION
-# ============================================================================
+<# ============================================================================
+   IMPORTS: SCRIPT DEPENDENCIES
+   ----------------------------------------------------------------------------
+   Dot-sourced shared infrastructure: orchestrator helpers (initialization,
+   console output, SQL data access) and the documentation-pipeline helpers (SQL
+   object extraction and Platform Registry markdown generation).
+   Prefix: (none)
+   ============================================================================ #>
 
+. "$PSScriptRoot\xFACts-OrchestratorFunctions.ps1"
+. "$PSScriptRoot\xFACts-DocPipelineFunctions.ps1"
+
+<# ============================================================================
+   INITIALIZATION: SCRIPT INITIALIZATION
+   ----------------------------------------------------------------------------
+   One-time shared setup: SQL module loading, application identity, log path,
+   default connection target, and the preview-mode guard. The connection target
+   is set from the script's xFACtsServer/xFACtsDB parameters so the shared SQL
+   helpers address exactly what those parameters specify.
+   Prefix: (none)
+   ============================================================================ #>
+
+Initialize-XFActsScript -ScriptName 'Consolidate-UploadFiles' -ServerInstance $xFACtsServer -Database $xFACtsDB -Execute:$Execute
+
+<# ============================================================================
+   CONSTANTS: PATHS AND SOURCES
+   ----------------------------------------------------------------------------
+   Server source roots and the base file-source collection map. Each source
+   entry defines a directory, a filename filter, and a human-readable category
+   used in console output and the generated manifest.
+   Prefix: (none)
+   ============================================================================ #>
+
+# Root of the orchestrator PowerShell script tree.
 $ScriptsRoot = "E:\xFACts-PowerShell"
+# Root of the Control Center application and documentation-site tree.
 $CCRoot      = "E:\xFACts-ControlCenter"
+# Root of the standalone documentation and planning tree.
 $DocsRoot    = "E:\xFACts-Documentation"
 
-# Source mappings: each entry defines what to collect
+# Base file-source map: each entry is a directory, a filter, and a category.
 $FileSources = @(
-    @{ Source = $ScriptsRoot;                            Filter = "*";  Description = "Orchestrator scripts" }
-    @{ Source = "$CCRoot\scripts";                        Filter = "Start-ControlCenter.ps1"; Description = "Control Center entry point" }
-    @{ Source = "$CCRoot\scripts\routes";                Filter = "*.ps1";  Description = "Control Center routes + APIs" }
-    @{ Source = "$CCRoot\scripts\modules";               Filter = "*.psm1"; Description = "Control Center modules" }
-    @{ Source = "$CCRoot\public\css";                    Filter = "*.css";  Description = "Control Center CSS" }
-    @{ Source = "$CCRoot\public\js";                     Filter = "*.js";   Description = "Control Center JS" }
-    @{ Source = "$CCRoot\public\docs\pages";             Filter = "*.html"; Description = "Narrative pages" }
-    @{ Source = "$CCRoot\public\docs\pages\arch";        Filter = "*.html"; Description = "Architecture pages" }
-    @{ Source = "$CCRoot\public\docs\pages\cc";          Filter = "*.html"; Description = "Control Center guide pages" }
-    @{ Source = "$CCRoot\public\docs\pages\guides";      Filter = "*.html"; Description = "User guide pages" }
-    @{ Source = "$CCRoot\public\docs\images\cc";          Filter = "*.png";  Description = "Control Center guide screenshots" }
-    @{ Source = "$CCRoot\public\docs\pages\ref";         Filter = "*.html"; Description = "Reference pages" }
-    @{ Source = "$CCRoot\public\docs\css";               Filter = "*.css";  Description = "Documentation CSS" }
-    @{ Source = "$CCRoot\public\docs\js";                Filter = "*.js";   Description = "Documentation JS" }
-    @{ Source = "$CCRoot\public\docs\data\md\ref";    Filter = "*.md";   Description = "Module reference documentation (ref-only md exports)" }
-    @{ Source = "$DocsRoot\docs";                        Filter = "*.md";   Description = "Planning documents" }
+    @{ Source = $ScriptsRoot;                       Filter = "*";                       Description = "Orchestrator scripts" }
+    @{ Source = "$CCRoot\scripts";                  Filter = "Start-ControlCenter.ps1"; Description = "Control Center entry point" }
+    @{ Source = "$CCRoot\scripts\routes";           Filter = "*.ps1";                   Description = "Control Center routes + APIs" }
+    @{ Source = "$CCRoot\scripts\modules";          Filter = "*.psm1";                  Description = "Control Center modules" }
+    @{ Source = "$CCRoot\public\css";               Filter = "*.css";                   Description = "Control Center CSS" }
+    @{ Source = "$CCRoot\public\js";                Filter = "*.js";                    Description = "Control Center JS" }
+    @{ Source = "$CCRoot\public\docs\pages";        Filter = "*.html";                  Description = "Narrative pages" }
+    @{ Source = "$CCRoot\public\docs\pages\arch";   Filter = "*.html";                  Description = "Architecture pages" }
+    @{ Source = "$CCRoot\public\docs\pages\cc";     Filter = "*.html";                  Description = "Control Center guide pages" }
+    @{ Source = "$CCRoot\public\docs\pages\guides"; Filter = "*.html";                  Description = "User guide pages" }
+    @{ Source = "$CCRoot\public\docs\images\cc";    Filter = "*.png";                   Description = "Control Center guide screenshots" }
+    @{ Source = "$CCRoot\public\docs\pages\ref";    Filter = "*.html";                  Description = "Reference pages" }
+    @{ Source = "$CCRoot\public\docs\css";          Filter = "*.css";                   Description = "Documentation CSS" }
+    @{ Source = "$CCRoot\public\docs\js";           Filter = "*.js";                    Description = "Documentation JS" }
+    @{ Source = "$CCRoot\public\docs\data\md\ref";  Filter = "*.md";                    Description = "Module reference documentation (ref-only md exports)" }
+    @{ Source = "$DocsRoot\docs";                   Filter = "*.md";                    Description = "Planning documents" }
 )
 
+<# ============================================================================
+   EXECUTION: SCRIPT EXECUTION
+   ----------------------------------------------------------------------------
+   Collects files from each source into the output folder, optionally extracts
+   SQL object definitions and JSON data files, exports the Platform Registry
+   markdown, writes the manifest, and prints a run summary.
+   Prefix: (none)
+   ============================================================================ #>
+
+# Append the JSON data-file source when requested.
 if ($IncludeJSON) {
     $FileSources += @{ Source = "$CCRoot\public\docs\data\ddl"; Filter = "*.json"; Description = "JSON data files" }
 }
 
-# ============================================================================
-# PREVIEW / EXECUTE GUARD
-# ============================================================================
+# Run-local accumulators: per-file origin records, manifest rows, and counters.
+$fileOrigins = @()
+$manifest    = @()
+$totalFiles  = 0
+$totalErrors = 0
 
-if (-not $Execute) {
-    Write-Host ""
-    Write-Host "  PREVIEW MODE - No files will be copied. Run with -Execute to consolidate." -ForegroundColor Yellow
-    Write-Host ""
-}
-
-# ============================================================================
-# PREPARE OUTPUT FOLDER
-# ============================================================================
-
+# Prepare the output folder: clear its contents on execute, creating it if absent.
 if ($Execute) {
     if (Test-Path $OutputPath) {
-        # Clear contents without removing the folder itself (allows Explorer to stay open)
         Get-ChildItem -Path $OutputPath -Force | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-        Write-Host "  Cleared existing output folder." -ForegroundColor DarkGray
-    } else {
+        Write-Console "  Cleared existing output folder." 'DarkGray'
+    }
+    else {
         New-Item -Path $OutputPath -ItemType Directory -Force | Out-Null
-        Write-Host "  Created output folder." -ForegroundColor DarkGray
+        Write-Console "  Created output folder." 'DarkGray'
     }
 }
 
-# ============================================================================
-# COLLECT FILES
-# ============================================================================
+# -- File collection --
 
-# Track source origin for every file (used in manifest)
-$fileOrigins = @()
-$manifest = @()
-$totalFiles = 0
-$totalErrors = 0
-
-Write-Host "  File Collection" -ForegroundColor Cyan
-Write-Host "  ---------------" -ForegroundColor Cyan
+Write-Console "  File Collection" 'Cyan'
+Write-Console "  ---------------" 'Cyan'
 
 foreach ($source in $FileSources) {
-    $sourcePath = $source.Source
-    $filter = $source.Filter
+    $sourcePath  = $source.Source
+    $filter      = $source.Filter
     $description = $source.Description
 
     if (-not (Test-Path $sourcePath)) {
-        Write-Host "    SKIP  $description — path not found" -ForegroundColor DarkGray
+        Write-Console "    SKIP  $description - path not found" 'DarkGray'
         $manifest += [PSCustomObject]@{ Category = $description; Source = $sourcePath; Count = 0; Status = "PATH NOT FOUND" }
         continue
     }
@@ -146,7 +195,7 @@ foreach ($source in $FileSources) {
     $fileCount = @($files).Count
 
     if ($fileCount -eq 0) {
-        Write-Host "    SKIP  $description — no $filter files" -ForegroundColor DarkGray
+        Write-Console "    SKIP  $description - no $filter files" 'DarkGray'
         $manifest += [PSCustomObject]@{ Category = $description; Source = $sourcePath; Count = 0; Status = "EMPTY" }
         continue
     }
@@ -157,7 +206,7 @@ foreach ($source in $FileSources) {
             $destFile = Join-Path $OutputPath $file.Name
 
             if (Test-Path $destFile) {
-                Write-Host "    COLLISION  $($file.Name) — already exists from a different source" -ForegroundColor Red
+                Write-Console "    COLLISION  $($file.Name) - already exists from a different source" 'Red'
                 $copyErrors++
                 $totalErrors++
                 continue
@@ -168,16 +217,16 @@ foreach ($source in $FileSources) {
                 $fileOrigins += [PSCustomObject]@{ FileName = $file.Name; SourcePath = $sourcePath; Category = $description }
             }
             catch {
-                Write-Host "    ERROR  $($file.Name) — $($_.Exception.Message)" -ForegroundColor Red
+                Write-Console "    ERROR  $($file.Name) - $($_.Exception.Message)" 'Red'
                 $copyErrors++
                 $totalErrors++
             }
         }
         $successCount = $fileCount - $copyErrors
-        Write-Host "    OK    $description — $successCount files" -ForegroundColor Green
+        Write-Console "    OK    $description - $successCount files" 'Green'
     }
     else {
-        Write-Host "    FOUND $description — $fileCount files" -ForegroundColor White
+        Write-Console "    FOUND $description - $fileCount files" 'White'
         $fileOrigins += foreach ($file in $files) {
             [PSCustomObject]@{ FileName = $file.Name; SourcePath = $sourcePath; Category = $description }
         }
@@ -187,222 +236,77 @@ foreach ($source in $FileSources) {
     $manifest += [PSCustomObject]@{ Category = $description; Source = $sourcePath; Count = $fileCount; Status = if ($Execute) { "OK" } else { "PREVIEW" } }
 }
 
-# ============================================================================
-# OPTIONAL: EXTRACT SQL OBJECT DEFINITIONS
-# ============================================================================
+# -- SQL object extraction (optional) --
 
 if ($IncludeSQLObjects) {
-    Write-Host ""
-    Write-Host "  SQL Object Extraction" -ForegroundColor Cyan
-    Write-Host "  ---------------------" -ForegroundColor Cyan
+    Write-Console "" 'Gray'
+    Write-Console "  SQL Object Extraction" 'Cyan'
+    Write-Console "  ---------------------" 'Cyan'
 
-    $sqlModuleLoaded = $false
-    try {
-        Import-Module SqlServer -ErrorAction Stop
-        $sqlModuleLoaded = $true
-    }
-    catch {
-        try {
-            Import-Module SQLPS -DisableNameChecking -ErrorAction Stop
-            $sqlModuleLoaded = $true
-        }
-        catch {
-            Write-Host "    ERROR  Cannot load SQL module — skipping extraction" -ForegroundColor Red
-            $totalErrors++
-        }
-    }
+    $sqlObjects = Get-SqlObjectDefinitions
+    $sqlCount = @($sqlObjects).Count
 
-    if ($sqlModuleLoaded) {
-        $sqlQuery = @"
-            SELECT 
-                s.name AS schema_name,
-                o.name AS object_name,
-                o.type_desc,
-                m.definition
-            FROM sys.sql_modules m
-            INNER JOIN sys.objects o ON m.object_id = o.object_id
-            INNER JOIN sys.schemas s ON o.schema_id = s.schema_id
-            WHERE s.name NOT IN ('sys', 'INFORMATION_SCHEMA')
-              AND o.is_ms_shipped = 0
-            ORDER BY s.name, o.type_desc, o.name
-"@
-
-        try {
-            $sqlObjects = Invoke-Sqlcmd -ServerInstance $xFACtsServer -Database $xFACtsDB `
-                -Query $sqlQuery -QueryTimeout 120 -MaxCharLength 1000000 -ErrorAction Stop `
-                -ApplicationName "xFACts Consolidate-UploadFiles" -TrustServerCertificate
-
-            $sqlCount = @($sqlObjects).Count
-
-            if ($sqlCount -gt 0) {
-                if ($Execute) {
-                    $sqlErrors = 0
-                    foreach ($obj in $sqlObjects) {
-                        $fileName = "$($obj.schema_name).$($obj.object_name).sql"
-                        $destFile = Join-Path $OutputPath $fileName
-
-                        try {
-                            $obj.definition | Out-File -FilePath $destFile -Encoding UTF8 -ErrorAction Stop
-                            $fileOrigins += [PSCustomObject]@{ FileName = $fileName; SourcePath = "$xFACtsServer/$xFACtsDB"; Category = "SQL: $($obj.type_desc)" }
-                        }
-                        catch {
-                            Write-Host "    ERROR  $fileName — $($_.Exception.Message)" -ForegroundColor Red
-                            $sqlErrors++
-                            $totalErrors++
-                        }
-                    }
-                    $successCount = $sqlCount - $sqlErrors
-                    Write-Host "    OK    SQL objects — $successCount definitions" -ForegroundColor Green
-                }
-                else {
-                    Write-Host "    FOUND SQL objects — $sqlCount definitions" -ForegroundColor White
-                    foreach ($obj in $sqlObjects) {
-                        Write-Host "          $($obj.schema_name).$($obj.object_name) ($($obj.type_desc))" -ForegroundColor DarkGray
-                    }
-                    $fileOrigins += foreach ($obj in $sqlObjects) {
-                        [PSCustomObject]@{ FileName = "$($obj.schema_name).$($obj.object_name).sql"; SourcePath = "$xFACtsServer/$xFACtsDB"; Category = "SQL: $($obj.type_desc)" }
-                    }
-                }
-
-                $totalFiles += $sqlCount
-                $manifest += [PSCustomObject]@{ Category = "SQL object definitions"; Source = "$xFACtsServer/$xFACtsDB"; Count = $sqlCount; Status = if ($Execute) { "OK" } else { "PREVIEW" } }
-            }
-            else {
-                Write-Host "    SKIP  No SQL objects found" -ForegroundColor DarkGray
-            }
-        }
-        catch {
-            Write-Host "    ERROR  SQL extraction failed: $($_.Exception.Message)" -ForegroundColor Red
-            $totalErrors++
-        }
-    }
-}
-
-# ============================================================================
-# EXPORT REFERENCE TABLE DATA
-# ============================================================================
-# Exports designated table contents to a single markdown file for session context.
-# Add entries to $TableExports to include additional tables.
-# Each entry needs a Query (returning the desired columns) and a Title.
-# ============================================================================
-
-$TableExports = @(
-    @{
-        Title = "Module Registry"
-        Query = "SELECT module_name, description FROM dbo.Module_Registry WHERE is_active = 1 ORDER BY module_name"
-    },
-    @{
-        Title = "Component Registry"
-        Query = "SELECT module_name, component_name, description, cc_prefix, doc_page_id, doc_title, doc_json_schema, doc_json_categories, doc_cc_slug, doc_sort_order, doc_section_order FROM dbo.Component_Registry WHERE is_active = 1 ORDER BY module_name, component_name"
-    },
-    @{
-        Title = "Object Registry"
-        Query = "SELECT component_name, object_name, object_category, object_type, object_path, description FROM dbo.Object_Registry WHERE is_active = 1 ORDER BY component_name, object_category, object_type, object_name"
-    },
-    @{
-        Title = "Nav Registry"
-        Query = "SELECT page_route, nav_label, display_title, description, section_key, sort_order, doc_page_id, show_in_nav, show_on_home FROM dbo.RBAC_NavRegistry WHERE is_active = 1 ORDER BY section_key, sort_order, page_route"
-    },
-    @{
-        Title = "Process Registry"
-        Query = "SELECT module_name, process_name, description, script_path, procedure_name, execution_mode, dependency_group, interval_seconds, scheduled_time, timeout_seconds, run_mode, allow_concurrent, cc_engine_slug, cc_engine_label, cc_page_route, cc_sort_order FROM Orchestrator.ProcessRegistry ORDER BY dependency_group, module_name, process_name"
-    },
-    @{
-        Title = "Global Configuration"
-        Query = "SELECT module_name, category, setting_name, setting_value, data_type, description FROM dbo.GlobalConfig WHERE is_active = 1 ORDER BY module_name, category, setting_name"
-    }
-)
-
-Write-Host ""
-Write-Host "  Reference Table Export" -ForegroundColor Cyan
-Write-Host "  ----------------------" -ForegroundColor Cyan
-
-# Ensure SQL module is available (may already be loaded from SQL extraction above)
-$sqlAvailable = $false
-try {
-    Import-Module SqlServer -ErrorAction Stop
-    $sqlAvailable = $true
-} catch {
-    try {
-        Import-Module SQLPS -DisableNameChecking -ErrorAction Stop
-        $sqlAvailable = $true
-    } catch {
-        Write-Host "    ERROR  Cannot load SQL module — skipping table export" -ForegroundColor Red
-        $totalErrors++
-    }
-}
-
-if ($sqlAvailable) {
-    $registryContent = @()
-    $registryContent += "# xFACts Platform Registry"
-    $registryContent += "Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-    $registryContent += ""
-    $exportedTables = 0
-
-    foreach ($export in $TableExports) {
-        try {
-            $rows = Invoke-Sqlcmd -ServerInstance $xFACtsServer -Database $xFACtsDB `
-                -Query $export.Query -QueryTimeout 60 -ErrorAction Stop `
-                -ApplicationName "xFACts Consolidate-UploadFiles" -TrustServerCertificate
-
-            $rowCount = @($rows).Count
-            if ($rowCount -eq 0) {
-                Write-Host "    SKIP  $($export.Title) — no rows" -ForegroundColor DarkGray
-                continue
-            }
-
-            # Build markdown table from query results
-            $registryContent += "## $($export.Title)"
-            $registryContent += ""
-
-            # Get column names from the first row (exclude RowError/Table/etc. system properties)
-            $columns = $rows[0].PSObject.Properties |
-                Where-Object { $_.Name -notin @('RowError','RowState','Table','ItemArray','HasErrors') } |
-                ForEach-Object { $_.Name }
-
-            # Header row
-            $registryContent += "| " + ($columns -join " | ") + " |"
-            $registryContent += "| " + (($columns | ForEach-Object { "---" }) -join " | ") + " |"
-
-            # Data rows
-            foreach ($row in $rows) {
-                $values = foreach ($col in $columns) {
-                    $val = $row.$col
-                    if ($null -eq $val -or $val -is [DBNull]) { "" }
-                    else { [string]$val -replace '\|', '\|' -replace '\r?\n', ' ' }
-                }
-                $registryContent += "| " + ($values -join " | ") + " |"
-            }
-
-            $registryContent += ""
-            $exportedTables++
-
-            if ($Execute) {
-                Write-Host "    OK    $($export.Title) — $rowCount rows" -ForegroundColor Green
-            } else {
-                Write-Host "    FOUND $($export.Title) — $rowCount rows" -ForegroundColor White
-            }
-        }
-        catch {
-            Write-Host "    ERROR  $($export.Title) — $($_.Exception.Message)" -ForegroundColor Red
-            $totalErrors++
-        }
-    }
-
-    if ($exportedTables -gt 0) {
-        $registryFile = Join-Path $OutputPath "xFACts_Platform_Registry.md"
+    if ($sqlCount -gt 0) {
         if ($Execute) {
-            $registryContent | Out-File -FilePath $registryFile -Encoding UTF8
-            $fileOrigins += [PSCustomObject]@{ FileName = "xFACts_Platform_Registry.md"; SourcePath = "$xFACtsServer/$xFACtsDB"; Category = "Reference table export" }
-            $totalFiles++
+            $sqlErrors = 0
+            foreach ($obj in $sqlObjects) {
+                $fileName = "$($obj.schema_name).$($obj.object_name).sql"
+                $destFile = Join-Path $OutputPath $fileName
+
+                try {
+                    $obj.definition | Out-File -FilePath $destFile -Encoding UTF8 -ErrorAction Stop
+                    $fileOrigins += [PSCustomObject]@{ FileName = $fileName; SourcePath = "$xFACtsServer/$xFACtsDB"; Category = "SQL: $($obj.type_desc)" }
+                }
+                catch {
+                    Write-Console "    ERROR  $fileName - $($_.Exception.Message)" 'Red'
+                    $sqlErrors++
+                    $totalErrors++
+                }
+            }
+            $successCount = $sqlCount - $sqlErrors
+            Write-Console "    OK    SQL objects - $successCount definitions" 'Green'
         }
-        $manifest += [PSCustomObject]@{ Category = "Reference table export"; Source = "$xFACtsServer/$xFACtsDB"; Count = $exportedTables; Status = if ($Execute) { "OK" } else { "PREVIEW" } }
+        else {
+            Write-Console "    FOUND SQL objects - $sqlCount definitions" 'White'
+            foreach ($obj in $sqlObjects) {
+                Write-Console "          $($obj.schema_name).$($obj.object_name) ($($obj.type_desc))" 'DarkGray'
+            }
+            $fileOrigins += foreach ($obj in $sqlObjects) {
+                [PSCustomObject]@{ FileName = "$($obj.schema_name).$($obj.object_name).sql"; SourcePath = "$xFACtsServer/$xFACtsDB"; Category = "SQL: $($obj.type_desc)" }
+            }
+        }
+
+        $totalFiles += $sqlCount
+        $manifest += [PSCustomObject]@{ Category = "SQL object definitions"; Source = "$xFACtsServer/$xFACtsDB"; Count = $sqlCount; Status = if ($Execute) { "OK" } else { "PREVIEW" } }
+    }
+    else {
+        Write-Console "    SKIP  No SQL objects found" 'DarkGray'
     }
 }
 
-# ============================================================================
-# WRITE MANIFEST
-# ============================================================================
+# -- Reference table export --
+
+Write-Console "" 'Gray'
+Write-Console "  Reference Table Export" 'Cyan'
+Write-Console "  ----------------------" 'Cyan'
+
+$registryExport = Get-RegistryExportMarkdown
+
+if ($registryExport.TableCount -gt 0) {
+    $registryFile = Join-Path $OutputPath "xFACts_Platform_Registry.md"
+    if ($Execute) {
+        $registryExport.Markdown | Out-File -FilePath $registryFile -Encoding UTF8
+        $fileOrigins += [PSCustomObject]@{ FileName = "xFACts_Platform_Registry.md"; SourcePath = "$xFACtsServer/$xFACtsDB"; Category = "Reference table export" }
+        $totalFiles++
+        Write-Console "    OK    Platform Registry markdown - $($registryExport.TableCount) tables" 'Green'
+    }
+    else {
+        Write-Console "    FOUND Platform Registry markdown - $($registryExport.TableCount) tables" 'White'
+    }
+    $manifest += [PSCustomObject]@{ Category = "Reference table export"; Source = "$xFACtsServer/$xFACtsDB"; Count = $registryExport.TableCount; Status = if ($Execute) { "OK" } else { "PREVIEW" } }
+}
+
+# -- Write manifest --
 
 if ($Execute) {
     $manifestPath = Join-Path $OutputPath "_manifest.txt"
@@ -415,14 +319,13 @@ if ($Execute) {
     if ($totalErrors -gt 0) { $manifestContent += "Errors: $totalErrors" }
     $manifestContent += ""
 
-    # Section 1: Directory structure map
     $manifestContent += "Server Directory Structure"
     $manifestContent += "-------------------------"
     $manifestContent += "E:\xFACts-PowerShell\                          Orchestrator automation scripts"
     $manifestContent += "E:\xFACts-PowerShell\docs\                     Planning documents (Dev Guidelines, Backlog, etc.)"
     $manifestContent += "E:\xFACts-ControlCenter\scripts\               Control Center entry point (Start-ControlCenter.ps1)"
     $manifestContent += "E:\xFACts-ControlCenter\scripts\routes\        Control Center route pages + API files"
-    $manifestContent += "E:\xFACts-ControlCenter\scripts\modules\       Control Center shared modules (xFACts-Helpers.psm1)"
+    $manifestContent += "E:\xFACts-ControlCenter\scripts\modules\       Control Center shared modules (xFACts-CCShared.psm1)"
     $manifestContent += "E:\xFACts-ControlCenter\public\css\            Control Center page CSS"
     $manifestContent += "E:\xFACts-ControlCenter\public\js\             Control Center page JS"
     $manifestContent += "E:\xFACts-ControlCenter\public\docs\pages\     Documentation narrative pages (HTML)"
@@ -433,10 +336,9 @@ if ($Execute) {
     $manifestContent += "E:\xFACts-ControlCenter\public\docs\js\        Documentation JS (nav.js, ddl-loader.js, ddl-erd.js)"
     $manifestContent += "E:\xFACts-ControlCenter\public\docs\data\ddl\  JSON data files (from sp_GenerateDDLReference)"
     $manifestContent += "E:\xFACts-ControlCenter\public\docs\data\md\     Module documentation markdown exports (full, for team use)"
-    $manifestContent += "E:\xFACts-ControlCenter\public\docs\data\md\ref\ Reference-only markdown exports (for Claude project knowledge)"
+    $manifestContent += "E:\xFACts-ControlCenter\public\docs\data\md\ref\ Reference-only markdown exports (for project knowledge)"
     $manifestContent += ""
 
-    # Section 2: Category summary with counts
     $manifestContent += "Collection Summary"
     $manifestContent += "------------------"
     foreach ($entry in $manifest) {
@@ -445,7 +347,6 @@ if ($Execute) {
     }
     $manifestContent += ""
 
-    # Section 3: Every file with its source path
     $manifestContent += "File Origins"
     $manifestContent += "------------"
     $currentSource = ""
@@ -461,24 +362,22 @@ if ($Execute) {
     $manifestContent | Out-File -FilePath $manifestPath -Encoding UTF8
 }
 
-# ============================================================================
-# SUMMARY
-# ============================================================================
+# -- Summary --
 
-Write-Host ""
-Write-Host "  Summary" -ForegroundColor Cyan
-Write-Host "  -------" -ForegroundColor Cyan
-Write-Host "    Total: $totalFiles files"
+Write-Console "" 'Gray'
+Write-Console "  Summary" 'Cyan'
+Write-Console "  -------" 'Cyan'
+Write-Console "    Total: $totalFiles files" 'White'
 
 if ($totalErrors -gt 0) {
-    Write-Host "    Errors: $totalErrors" -ForegroundColor Red
+    Write-Console "    Errors: $totalErrors" 'Red'
 }
 
 if ($Execute) {
-    Write-Host "    Output: $OutputPath" -ForegroundColor Green
+    Write-Console "    Output: $OutputPath" 'Green'
 }
 else {
-    Write-Host "    Run with -Execute to consolidate." -ForegroundColor Yellow
+    Write-Console "    Run with -Execute to consolidate." 'Yellow'
 }
 
-Write-Host ""
+Write-Console "" 'Gray'
