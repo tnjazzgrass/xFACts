@@ -3,34 +3,25 @@
     xFACts - Business Services Review Request Distribution
 
 .DESCRIPTION
-    Automated distribution of unassigned review requests to configured users
-    in distribution-enabled groups. Reads the user roster and assignment caps
-    from DeptOps tables, determines how many requests each user needs to reach
-    their cap, then assigns the oldest unassigned requests in CRS5.
+    Automated distribution of unassigned review requests to configured users in
+    distribution-enabled groups. Reads the user roster and assignment caps from
+    DeptOps tables, determines how many requests each user needs to reach their
+    cap, then assigns the oldest unassigned requests in CRS5.
 
-    Key behaviors:
-    - Reads user roster and caps from xFACts (DeptOps.BS_ReviewRequest_User)
-    - Reads current assigned counts from CRS5 directly (source of truth for live state)
-    - Writes assignments to CRS5 primary (updates cnsmr_rvw_rqst)
-    - Does NOT update xFACts tracking table (collector handles sync)
-    - AG-aware: detects primary for CRS5 writes
-    - Supports preview mode for safe testing
-    - Uses FAC\sqlmon service account usr_id for upsrt_usr_id attribution
-
-.NOTES
-    File Name      : Distribute-BSReviewRequests.ps1
-    Location       : E:\xFACts-PowerShell
-    Author         : Frost Arnett Applications Team
-    Version        : Tracked in dbo.System_Metadata (component: DeptOps.BusinessServices)
+    Reads the user roster and caps from xFACts (DeptOps.BS_ReviewRequest_User) and
+    current assigned counts from CRS5 directly (the live source of truth). Writes
+    assignments to the CRS5 primary and does not update the xFACts tracking table;
+    the collector handles that sync. Detects the AG primary for CRS5 writes, supports
+    a preview mode, and attributes writes to the FAC\sqlmon service account usr_id.
 
 .PARAMETER ServerInstance
-    SQL Server instance hosting xFACts database (default: AVG-PROD-LSNR)
+    SQL Server instance hosting the xFACts database (default: AVG-PROD-LSNR).
 
 .PARAMETER Database
-    xFACts database name (default: xFACts)
+    xFACts database name (default: xFACts).
 
 .PARAMETER SourceDB
-    Source database for Debt Manager data (default: crs5_oltp)
+    Source database for Debt Manager data (default: crs5_oltp).
 
 .PARAMETER Execute
     Perform writes. Without this flag, runs in preview/dry-run mode.
@@ -39,49 +30,66 @@
     Override AG detection and connect to a specific server for CRS5 operations.
 
 .PARAMETER TaskId
-    Orchestrator TaskLog ID for completion callback. Default 0.
+    Orchestrator TaskLog ID for the completion callback. Default 0.
 
 .PARAMETER ProcessId
-    Orchestrator ProcessRegistry ID for completion callback. Default 0.
+    Orchestrator ProcessRegistry ID for the completion callback. Default 0.
 
-================================================================================
-DEPLOYMENT REMINDERS
-================================================================================
-1. The service account (FAC\sqlmon) must have:
-   - Read/Write access to crs5_oltp on the AG primary
-   - Read access to crs5_oltp on the AG secondary
-   - Read access to xFACts database
-   - A corresponding usr record in crs5_oltp.dbo.usr
-2. Required GlobalConfig entries:
-   - Shared.AGName (default: DMPRODAG)
-   - DeptOps.bs_distribution_enabled (master switch, default: 1)
-3. Required DeptOps tables:
-   - BS_ReviewRequest_Group (with distribution_enabled flag)
-   - BS_ReviewRequest_User (user roster with assignment caps)
-================================================================================
+.COMPONENT
+    DeptOps.BusinessServices
 
-================================================================================
-CHANGELOG
-================================================================================
-2026-03-11  Migrated to Initialize-XFActsScript shared infrastructure
-            Removed inline Write-Log and Get-xFACtsData
-            Renamed $ServerInstance/$Database to $ServerInstance/$Database
-            Updated Get-SourceData/Invoke-SourceWrite ApplicationName
-            Updated header to component-level versioning format
-2026-03-10  Round-robin distribution
-            Replaced sequential fill (first user gets all) with round-robin assignment
-            Users sorted by fewest currently assigned — most available capacity goes first
-            Each round gives one request per user before cycling back
-            Cap enforcement preserved
-2026-02-13  Initial implementation
-            Oldest-first assignment from unassigned backlog
-            Per-user cap enforcement
-            Master enable/disable via GlobalConfig
-            AG-aware CRS5 primary detection for writes
-            Preview mode support
-            Orchestrator v2 integration
-================================================================================
+.NOTES
+    File Name : Distribute-BSReviewRequests.ps1
+    Location  : E:\xFACts-PowerShell
+
+    FILE ORGANIZATION
+    -----------------
+    CHANGELOG: CHANGE HISTORY
+    PARAMETERS: SCRIPT PARAMETERS
+    IMPORTS: SCRIPT DEPENDENCIES
+    INITIALIZATION: SCRIPT INITIALIZATION
+    VARIABLES: SERVER AND CONFIG STATE
+    FUNCTIONS: CONFIGURATION
+    FUNCTIONS: DISTRIBUTION STEPS
+    EXECUTION: SCRIPT EXECUTION
 #>
+
+<# ============================================================================
+   CHANGELOG: CHANGE HISTORY
+   ----------------------------------------------------------------------------
+   Dated change history, most recent first. Authoritative version tracking lives
+   in dbo.System_Metadata (component DeptOps.BusinessServices).
+   Prefix: (none)
+   ============================================================================ #>
+
+# 2026-06-19  Conformed to the xFACts PowerShell file format spec: section banners,
+#             comment-based-help header with .COMPONENT, dedicated CHANGELOG section,
+#             bsv-prefixed local functions, and single-line purpose comments. Deleted
+#             the local Get-AGReplicaRoles and Get-SourceData copies and switched to the
+#             shared orchestrator versions (Get-AGReplicaRoles -AGName, Get-SourceData
+#             with explicit -ReadServer/-SourceDB). Renamed Initialize-Configuration to
+#             Initialize-bsv_DistributeConfig and Invoke-bsv_SourceWrite to Invoke-bsv_SourceWrite.
+#             Removed the Author and Version header fields (Version lives in System_Metadata).
+#             Converted Write-Host output to the shared Write-Console family.
+# 2026-03-11  Migrated to Initialize-XFActsScript shared infrastructure. Removed inline
+#             Write-Log and Get-xFACtsData. Updated Get-SourceData/Invoke-bsv_SourceWrite
+#             ApplicationName. Updated the header to component-level versioning.
+# 2026-03-10  Round-robin distribution. Replaced sequential fill (first user gets all) with
+#             round-robin assignment; users sorted by fewest currently assigned so the most
+#             available capacity goes first. Each round gives one request per user before
+#             cycling back. Cap enforcement preserved.
+# 2026-02-13  Initial implementation. Oldest-first assignment from the unassigned backlog,
+#             per-user cap enforcement, master enable/disable via GlobalConfig, AG-aware
+#             CRS5 primary detection for writes, preview mode support, and Orchestrator v2
+#             integration.
+
+<# ============================================================================
+   PARAMETERS: SCRIPT PARAMETERS
+   ----------------------------------------------------------------------------
+   Connection targets, the source database, the Execute write-guard, an optional
+   server override, and the orchestrator TaskId/ProcessId callback identifiers.
+   Prefix: (none)
+   ============================================================================ #>
 
 [CmdletBinding()]
 param(
@@ -94,101 +102,61 @@ param(
     [int]$ProcessId = 0
 )
 
-# ============================================================================
-# STANDARD INITIALIZATION
-# ============================================================================
+<# ============================================================================
+   IMPORTS: SCRIPT DEPENDENCIES
+   ----------------------------------------------------------------------------
+   Shared orchestrator and script-infrastructure functions: initialization, logging,
+   SQL access, AG replica resolution, source-data access, and the completion callback.
+   Prefix: (none)
+   ============================================================================ #>
 
 . "$PSScriptRoot\xFACts-OrchestratorFunctions.ps1"
+
+<# ============================================================================
+   INITIALIZATION: SCRIPT INITIALIZATION
+   ----------------------------------------------------------------------------
+   One-time startup: loads the SQL module, sets application identity and log path,
+   stores default connection targets, and applies the preview-mode execute guard.
+   Prefix: (none)
+   ============================================================================ #>
 
 Initialize-XFActsScript -ScriptName 'Distribute-BSReviewRequests' `
     -ServerInstance $ServerInstance -Database $Database -Execute:$Execute
 
-# ============================================================================
-# GLOBAL VARIABLES
-# ============================================================================
+<# ============================================================================
+   VARIABLES: SERVER AND CONFIG STATE
+   ----------------------------------------------------------------------------
+   Script-scope state populated by Initialize-bsv_DistributeConfig and read across the
+   distribution step: resolved AG replica names, CRS5 read/write targets, the loaded
+   GlobalConfig hashtable, and the resolved service-account usr_id.
+   Prefix: bsv
+   ============================================================================ #>
 
-$Script:AGPrimary = $null
-$Script:AGSecondary = $null
-$Script:CRS5ReadServer = $null
-$Script:CRS5WriteServer = $null
-$Script:Config = @{}
-$Script:ServiceAccountUserId = $null
+# Current AG primary server (physical name).
+$script:AGPrimary = $null
+# Current AG secondary server (physical name).
+$script:AGSecondary = $null
+# Server for crs5_oltp reads (AG secondary, or primary as fallback).
+$script:CRS5ReadServer = $null
+# Server for crs5_oltp writes (AG primary).
+$script:CRS5WriteServer = $null
+# Loaded GlobalConfig settings (AGName, DistributionEnabled, ServiceAccountUsername).
+$script:Config = @{}
+# Resolved CRS5 usr_id for the service account, used for write attribution.
+$script:ServiceAccountUserId = $null
 
-# ============================================================================
-# FUNCTIONS
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: CONFIGURATION
+   ----------------------------------------------------------------------------
+   Loads distribution configuration and the master enable switch, resolves the CRS5
+   read and write servers via shared AG detection, and resolves the service-account usr_id.
+   Prefix: bsv
+   ============================================================================ #>
 
-function Get-SourceData {
-    param(
-        [string]$Query,
-        [int]$Timeout = 60
-    )
-    try {
-        Invoke-Sqlcmd -ServerInstance $Script:CRS5ReadServer -Database $SourceDB -Query $Query -QueryTimeout $Timeout -ApplicationName $script:XFActsAppName -ErrorAction Stop -SuppressProviderContextWarning -TrustServerCertificate
-    }
-    catch {
-        Write-Log "CRS5 read failed on $($Script:CRS5ReadServer): $($_.Exception.Message)" "ERROR"
-        return $null
-    }
-}
+# Loads distribution config, checks the master switch, resolves CRS5 servers and the service usr_id.
+function Initialize-bsv_DistributeConfig {
+param()
 
-function Invoke-SourceWrite {
-    param(
-        [string]$Query,
-        [int]$Timeout = 30
-    )
-    try {
-        Invoke-Sqlcmd -ServerInstance $Script:CRS5WriteServer -Database $SourceDB -Query $Query -QueryTimeout $Timeout -ApplicationName $script:XFActsAppName -ErrorAction Stop -SuppressProviderContextWarning -TrustServerCertificate
-        return $true
-    }
-    catch {
-        Write-Log "CRS5 write failed on $($Script:CRS5WriteServer): $($_.Exception.Message)" "ERROR"
-        return $false
-    }
-}
-
-# ============================================================================
-# CONFIGURATION
-# ============================================================================
-
-function Get-AGReplicaRoles {
-    $agName = $Script:Config.AGName
-
-    if (-not $agName) {
-        Write-Log "AGName not configured" "ERROR"
-        return $null
-    }
-
-    $query = @"
-        SELECT
-            ar.replica_server_name,
-            ars.role_desc
-        FROM sys.dm_hadr_availability_replica_states ars
-        INNER JOIN sys.availability_replicas ar
-            ON ars.replica_id = ar.replica_id
-        INNER JOIN sys.availability_groups ag
-            ON ar.group_id = ag.group_id
-        WHERE ag.name = '$agName'
-"@
-
-    $results = Get-SqlData -Query $query
-
-    if (-not $results) {
-        Write-Log "Failed to query AG replica states" "ERROR"
-        return $null
-    }
-
-    $roles = @{ PRIMARY = $null; SECONDARY = $null }
-
-    foreach ($row in $results) {
-        if ($row.role_desc -eq 'PRIMARY')   { $roles.PRIMARY = $row.replica_server_name }
-        elseif ($row.role_desc -eq 'SECONDARY') { $roles.SECONDARY = $row.replica_server_name }
-    }
-
-    return $roles
-}
-
-function Initialize-Configuration {
     Write-Log "Loading configuration..." "INFO"
 
     $configQuery = @"
@@ -200,7 +168,7 @@ function Initialize-Configuration {
 
     $configResults = Get-SqlData -Query $configQuery
 
-    $Script:Config = @{
+    $script:Config = @{
         AGName                = "DMPRODAG"
         DistributionEnabled   = $true
         ServiceAccountUsername = "sqlmon"
@@ -209,81 +177,97 @@ function Initialize-Configuration {
     if ($configResults) {
         foreach ($row in $configResults) {
             switch ($row.setting_name) {
-                "AGName"                  { $Script:Config.AGName = $row.setting_value }
-                "bs_distribution_enabled" { $Script:Config.DistributionEnabled = ($row.setting_value -eq '1') }
+                "AGName"                  { $script:Config.AGName = $row.setting_value }
+                "bs_distribution_enabled" { $script:Config.DistributionEnabled = ($row.setting_value -eq '1') }
             }
         }
     }
 
-    Write-Log "  AGName: $($Script:Config.AGName)" "INFO"
-    Write-Log "  Distribution Enabled: $($Script:Config.DistributionEnabled)" "INFO"
+    Write-Log "  AGName: $($script:Config.AGName)" "INFO"
+    Write-Log "  Distribution Enabled: $($script:Config.DistributionEnabled)" "INFO"
 
     # Check master switch
-    if (-not $Script:Config.DistributionEnabled) {
+    if (-not $script:Config.DistributionEnabled) {
         Write-Log "Distribution is DISABLED via GlobalConfig (bs_distribution_enabled = 0)" "WARN"
         return $false
     }
 
     # Determine servers
     if ($ForceSourceServer) {
-        $Script:CRS5ReadServer = $ForceSourceServer
-        $Script:CRS5WriteServer = $ForceSourceServer
+        $script:CRS5ReadServer = $ForceSourceServer
+        $script:CRS5WriteServer = $ForceSourceServer
         Write-Log "  CRS5 Server: $ForceSourceServer (forced via parameter)" "WARN"
     }
     else {
         Write-Log "Detecting AG replica roles..." "INFO"
-        $agRoles = Get-AGReplicaRoles
+        $agRoles = Get-AGReplicaRoles -AGName $script:Config.AGName
 
         if (-not $agRoles) {
             Write-Log "AG detection failed" "ERROR"
             return $false
         }
 
-        $Script:AGPrimary = $agRoles.PRIMARY
-        $Script:AGSecondary = $agRoles.SECONDARY
+        $script:AGPrimary = $agRoles.PRIMARY
+        $script:AGSecondary = $agRoles.SECONDARY
 
-        Write-Log "  AG PRIMARY: $($Script:AGPrimary)" "INFO"
-        Write-Log "  AG SECONDARY: $($Script:AGSecondary)" "INFO"
+        Write-Log "  AG PRIMARY: $($script:AGPrimary)" "INFO"
+        Write-Log "  AG SECONDARY: $($script:AGSecondary)" "INFO"
 
         # Read from secondary, write to primary
-        $Script:CRS5ReadServer = if ($Script:AGSecondary) { $Script:AGSecondary } else { $Script:AGPrimary }
-        $Script:CRS5WriteServer = $Script:AGPrimary
+        $script:CRS5ReadServer = if ($script:AGSecondary) { $script:AGSecondary } else { $script:AGPrimary }
+        $script:CRS5WriteServer = $script:AGPrimary
 
-        if (-not $Script:CRS5WriteServer) {
+        if (-not $script:CRS5WriteServer) {
             Write-Log "Could not determine CRS5 write server (PRIMARY)" "ERROR"
             return $false
         }
 
-        Write-Log "  CRS5 Read:  $($Script:CRS5ReadServer)" "INFO"
-        Write-Log "  CRS5 Write: $($Script:CRS5WriteServer)" "SUCCESS"
+        Write-Log "  CRS5 Read:  $($script:CRS5ReadServer)" "INFO"
+        Write-Log "  CRS5 Write: $($script:CRS5WriteServer)" "SUCCESS"
     }
 
     # Resolve service account usr_id from CRS5
     Write-Log "Resolving service account usr_id..." "INFO"
-    $svcAcctQuery = "SELECT usr_id FROM dbo.usr WHERE usr_usrnm = '$($Script:Config.ServiceAccountUsername)'"
-    $svcResult = Get-SourceData -Query $svcAcctQuery
+    $svcAcctQuery = "SELECT usr_id FROM dbo.usr WHERE usr_usrnm = '$($script:Config.ServiceAccountUsername)'"
+    $svcResult = Get-SourceData -Query $svcAcctQuery -ReadServer $script:CRS5ReadServer -SourceDB $SourceDB
 
     if (-not $svcResult -or @($svcResult).Count -eq 0) {
-        Write-Log "Could not resolve usr_id for service account '$($Script:Config.ServiceAccountUsername)'" "ERROR"
+        Write-Log "Could not resolve usr_id for service account '$($script:Config.ServiceAccountUsername)'" "ERROR"
         return $false
     }
 
-    $Script:ServiceAccountUserId = @($svcResult)[0].usr_id
-    Write-Log "  Service Account: $($Script:Config.ServiceAccountUsername) (usr_id: $($Script:ServiceAccountUserId.ToString()))" "INFO"
+    $script:ServiceAccountUserId = @($svcResult)[0].usr_id
+    Write-Log "  Service Account: $($script:Config.ServiceAccountUsername) (usr_id: $($script:ServiceAccountUserId.ToString()))" "INFO"
 
     return $true
 }
 
-# ============================================================================
-# DISTRIBUTION LOGIC
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: DISTRIBUTION STEPS
+   ----------------------------------------------------------------------------
+   The distribution pipeline: a CRS5 write wrapper and the round-robin assignment of
+   oldest unassigned requests to users below their cap, per distribution-enabled group.
+   Prefix: bsv
+   ============================================================================ #>
 
-function Step-Distribute {
-    <#
-    .SYNOPSIS
-        For each distribution-enabled group, determines how many requests each
-        user needs to reach their cap, then assigns the oldest unassigned requests.
-    #>
+# Executes a write query against the CRS5 write server, returning success as a boolean.
+function Invoke-bsv_SourceWrite {
+    param(
+        [string]$Query,
+        [int]$Timeout = 30
+    )
+    try {
+        Invoke-Sqlcmd -ServerInstance $script:CRS5WriteServer -Database $SourceDB -Query $Query -QueryTimeout $Timeout -ApplicationName $script:XFActsAppName -ErrorAction Stop -SuppressProviderContextWarning -TrustServerCertificate
+        return $true
+    }
+    catch {
+        Write-Log "CRS5 write failed on $($script:CRS5WriteServer): $($_.Exception.Message)" "ERROR"
+        return $false
+    }
+}
+
+# Assigns oldest unassigned CRS5 requests round-robin to users below their cap, per group.
+function Step-bsv_Distribute {
     param([bool]$PreviewOnly = $true)
 
     Write-Log "Step 1: Distribute Review Requests" "STEP"
@@ -293,7 +277,7 @@ function Step-Distribute {
     try {
         # Load distribution roster from xFACts
         $rosterQuery = @"
-            SELECT 
+            SELECT
                 u.user_id,
                 u.dm_user_id,
                 u.username,
@@ -344,7 +328,7 @@ function Step-Distribute {
             $dmUserIds = @($groupInfo.users | ForEach-Object { $_.dm_user_id }) -join ','
 
             $currentCountsQuery = @"
-                SELECT 
+                SELECT
                     cnsmr_rvw_rqst_assgn_usr_id AS dm_user_id,
                     COUNT(*) AS assigned_count
                 FROM dbo.cnsmr_rvw_rqst
@@ -354,7 +338,7 @@ function Step-Distribute {
                 GROUP BY cnsmr_rvw_rqst_assgn_usr_id
 "@
 
-            $currentCounts = Get-SourceData -Query $currentCountsQuery
+            $currentCounts = Get-SourceData -Query $currentCountsQuery -ReadServer $script:CRS5ReadServer -SourceDB $SourceDB
             $countMap = @{}
             if ($currentCounts) {
                 foreach ($c in @($currentCounts)) {
@@ -401,7 +385,7 @@ function Step-Distribute {
                 ORDER BY cnsmr_rvw_rqst_assgn_dt ASC
 "@
 
-            $unassigned = Get-SourceData -Query $unassignedQuery
+            $unassigned = Get-SourceData -Query $unassignedQuery -ReadServer $script:CRS5ReadServer -SourceDB $SourceDB
 
             if (-not $unassigned -or @($unassigned).Count -eq 0) {
                 Write-Log "  [$groupName] No unassigned requests available" "INFO"
@@ -411,7 +395,7 @@ function Step-Distribute {
             $available = @($unassigned)
             Write-Log "  [$groupName] Found $($available.Count) unassigned request(s)" "INFO"
 
-            # Round-robin distribution — fewest assigned goes first
+            # Round-robin distribution - fewest assigned goes first
             $needsList = @($needsList | Sort-Object { $_.current_count })
 
             $idx = 0
@@ -439,14 +423,14 @@ function Step-Distribute {
                             SET cnsmr_rvw_rqst_assgn_usr_id = $($user.dm_user_id),
                                 cnsmr_rvw_rqst_stts_cd = 1,
                                 upsrt_dttm = GETDATE(),
-                                upsrt_usr_id = $($Script:ServiceAccountUserId),
+                                upsrt_usr_id = $($script:ServiceAccountUserId),
                                 upsrt_trnsctn_nmbr = upsrt_trnsctn_nmbr + 1
                             WHERE cnsmr_rvw_rqst_id = $reqId
                               AND cnsmr_rvw_rqst_assgn_usr_id IS NULL
                               AND cnsmr_rvw_rqst_sft_dlt_flg = 'N'
 "@
 
-                        $result = Invoke-SourceWrite -Query $assignQuery
+                        $result = Invoke-bsv_SourceWrite -Query $assignQuery
                         if ($result) {
                             $userAssignedCounts[$user.dm_user_id]++
                             $totalAssigned++
@@ -480,17 +464,18 @@ function Step-Distribute {
     }
 }
 
-# ============================================================================
-# MAIN EXECUTION
-# ============================================================================
+<# ============================================================================
+   EXECUTION: SCRIPT EXECUTION
+   ----------------------------------------------------------------------------
+   The distribution run: initialize configuration, run the distribution step, print the
+   summary, and fire the orchestrator completion callback.
+   Prefix: (none)
+   ============================================================================ #>
 
 $scriptStart = Get-Date
 
-Write-Host ""
-Write-Host "================================================================" -ForegroundColor Cyan
-Write-Host "  xFACts BS Review Request Distribution" -ForegroundColor Cyan
-Write-Host "================================================================" -ForegroundColor Cyan
-Write-Host ""
+Write-Console
+Write-ConsoleBanner -Label "xFACts BS Review Request Distribution" -Color Cyan
 
 if ($Execute) {
     Write-Log "Mode: EXECUTE (changes will be applied to CRS5)" "WARN"
@@ -499,9 +484,9 @@ else {
     Write-Log "Mode: PREVIEW (no changes will be made)" "INFO"
 }
 
-Write-Host ""
+Write-Console
 
-if (-not (Initialize-Configuration)) {
+if (-not (Initialize-bsv_DistributeConfig)) {
     Write-Log "Configuration initialization failed - exiting" "ERROR"
 
     if ($TaskId -gt 0) {
@@ -515,21 +500,16 @@ if (-not (Initialize-Configuration)) {
     exit 1
 }
 
-Write-Host ""
+Write-Console
 
 $previewOnly = -not $Execute
 $stepResults = @{}
 
-Write-Host "----------------------------------------------------------------" -ForegroundColor DarkGray
-Write-Host "  Executing Steps" -ForegroundColor DarkGray
-Write-Host "----------------------------------------------------------------" -ForegroundColor DarkGray
-Write-Host ""
+Write-ConsoleBanner -Label "Executing Steps" -Color DarkGray -RuleChar '-'
 
-$stepResults.Distribute = Step-Distribute -PreviewOnly $previewOnly
+$stepResults.Distribute = Step-bsv_Distribute -PreviewOnly $previewOnly
 
-# ============================================================================
 # SUMMARY
-# ============================================================================
 
 $scriptEnd = Get-Date
 $scriptDuration = $scriptEnd - $scriptStart
@@ -540,30 +520,24 @@ if ($stepResults.Distribute.Error) {
     $finalStatus = "FAILED"
 }
 
-Write-Host ""
-Write-Host "================================================================" -ForegroundColor Cyan
-Write-Host "  Execution Summary" -ForegroundColor Cyan
-Write-Host "================================================================" -ForegroundColor Cyan
-Write-Host ""
-Write-Host "  CRS5 Read:   $($Script:CRS5ReadServer)"
-Write-Host "  CRS5 Write:  $($Script:CRS5WriteServer)"
-Write-Host ""
-Write-Host "  Results:"
-Write-Host "    Requests Assigned: $($stepResults.Distribute.Assigned)"
-Write-Host ""
-Write-Host "  Duration: $totalMs ms"
-Write-Host ""
+Write-Console
+Write-ConsoleBanner -Label "Execution Summary" -Color Cyan
+Write-Console "  CRS5 Read:   $($script:CRS5ReadServer)"
+Write-Console "  CRS5 Write:  $($script:CRS5WriteServer)"
+Write-Console
+Write-Console "  Results:"
+Write-Console "    Requests Assigned: $($stepResults.Distribute.Assigned)"
+Write-Console
+Write-Console "  Duration: $totalMs ms"
+Write-Console
 
 if (-not $Execute) {
-    Write-Host "  *** PREVIEW MODE - No changes were made ***" -ForegroundColor Yellow
-    Write-Host "  Run with -Execute to perform actual updates" -ForegroundColor Yellow
-    Write-Host ""
+    Write-Console "  *** PREVIEW MODE - No changes were made ***" Yellow
+    Write-Console "  Run with -Execute to perform actual updates" Yellow
+    Write-Console
 }
 
-Write-Host "================================================================" -ForegroundColor Cyan
-Write-Host "  BS Review Request Distribution Complete" -ForegroundColor Cyan
-Write-Host "================================================================" -ForegroundColor Cyan
-Write-Host ""
+Write-ConsoleBanner -Label "BS Review Request Distribution Complete" -Color Cyan
 
 # Orchestrator callback
 if ($TaskId -gt 0) {
@@ -574,5 +548,3 @@ if ($TaskId -gt 0) {
         -Status $finalStatus -DurationMs $totalMs `
         -Output $outputSummary
 }
-
-if ($finalStatus -eq "FAILED") { exit 1 } else { exit 0 }
