@@ -52,6 +52,13 @@
 #             from a per-script local copy in Collect-BackupStatus into one
 #             shared definition; the ServerHealth-zone collectors still carry
 #             their own copies pending their refactors.
+#             Added Get-GlobalConfigValue (FUNCTIONS: SQL DATA ACCESS), the
+#             shared single-value dbo.GlobalConfig reader. Takes -Module and
+#             -SettingName, with -Category optional for category-scoped
+#             settings; binds all predicates as SQL parameters and returns the
+#             matched setting_value, or $null when no row matches or when the
+#             filter is ambiguous (multiple rows). Per-script inline GlobalConfig
+#             reads are redirected to it in subsequent passes.
 # 2026-06-18  Added Get-AGReplicaRoles (FUNCTIONS: AVAILABILITY GROUP), the
 #             parameterized resolver of an availability group's current
 #             PRIMARY and SECONDARY replica servers. Lifted from eight
@@ -410,6 +417,87 @@ function Get-SqlInstanceName {
     else {
         return "$ServerName\$InstanceName"
     }
+}
+
+function Get-GlobalConfigValue {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$Module,
+
+        [Parameter(Mandatory)]
+        [string]$SettingName,
+
+        [string]$Category
+    )
+
+    <#
+    .SYNOPSIS
+        Returns a single configuration value from dbo.GlobalConfig.
+
+    .DESCRIPTION
+        The shared single-value reader for dbo.GlobalConfig. Resolves one active
+        setting by module and setting name, optionally narrowed to a category,
+        and returns its setting_value. All predicates are bound as SQL
+        parameters rather than concatenated into the query text. Returns $null
+        when no active row matches. When the filter is ambiguous -- more than one
+        active row matches, which happens when a setting name exists under
+        multiple categories and no Category was supplied to disambiguate -- it
+        logs a warning and returns $null rather than silently returning one of
+        the values. Supply Category to resolve such cases. This is the platform
+        reader that per-script inline GlobalConfig reads are migrating to.
+
+    .PARAMETER Module
+        The module_name the setting belongs to (e.g., ServerOps, BatchOps).
+
+    .PARAMETER SettingName
+        The setting_name to resolve.
+
+    .PARAMETER Category
+        Optional category to narrow the lookup. When supplied, the match is
+        further constrained to this category; when omitted, category is not part
+        of the filter and a setting name that is unique across categories
+        resolves directly.
+    #>
+
+    if ($PSBoundParameters.ContainsKey('Category')) {
+        $query = @"
+SELECT setting_value
+FROM dbo.GlobalConfig
+WHERE module_name = @Module
+  AND category = @Category
+  AND setting_name = @SettingName
+  AND is_active = 1
+"@
+        $params = @{ Module = $Module; Category = $Category; SettingName = $SettingName }
+    }
+    else {
+        $query = @"
+SELECT setting_value
+FROM dbo.GlobalConfig
+WHERE module_name = @Module
+  AND setting_name = @SettingName
+  AND is_active = 1
+"@
+        $params = @{ Module = $Module; SettingName = $SettingName }
+    }
+
+    $result = Get-SqlData -Query $query -Parameters $params
+    if ($null -eq $result) {
+        return $null
+    }
+
+    $rows = @($result)
+    if ($rows.Count -eq 0) {
+        return $null
+    }
+    if ($rows.Count -gt 1) {
+        $scope = if ($PSBoundParameters.ContainsKey('Category')) { "$Module/$Category/$SettingName" } else { "$Module/$SettingName" }
+        Write-Log "GlobalConfig lookup for $scope matched $($rows.Count) active rows; returning null. Supply -Category to disambiguate." "WARN"
+        return $null
+    }
+
+    return $rows[0].setting_value
 }
 
 function Get-SourceData {
