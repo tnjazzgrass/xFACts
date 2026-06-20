@@ -1,49 +1,107 @@
-# ============================================================================
-# Publish-ConfluenceDocumentation.ps1
-#
-# xFACts - Documentation.Pipeline
-# Version: Tracked in dbo.System_Metadata (component: Documentation.Pipeline)
-#
-# Publishes xFACts documentation to Confluence via REST API.
-# Reads HTML narrative pages, architecture pages, and JSON DDL reference files,
-# converts to Confluence Storage Format, and creates or updates pages in the
-# target space.
-#
-# Data Sources:
-#   - doc-registry.json (data/ddl directory): page registry from Component_Registry
-#   - HTML narrative pages (pages directory): derived from pageId convention
-#   - HTML architecture pages (pages/arch directory): discovered by file existence
-#   - JSON reference files (data/ddl directory): schema names from registry sections
-#
-# Page Hierarchy:
-#   Hub (from index.html)
-#     ├── Teams Integration (from teams.html)
-#     │   ├── Teams Integration - Architecture (from teams-arch.html)
-#     │   └── Teams Integration - Reference (from Teams.json)
-#     ├── File Monitoring (from fileops.html)
-#     │   ├── File Monitoring - Architecture (from fileops-arch.html)
-#     │   └── File Monitoring - Reference (from FileOps.json)
-#     └── ... etc
-#
-# Architecture Page Conversion:
-#   - ERD divs (erd-root) → PlantUML entity diagrams generated from JSON
-#   - Diagram placeholders → Confluence note panels with description
-#   - Tech-tip divs → Confluence tip panels
-#   - Section-nav → Stripped (Confluence has its own TOC)
-#   - Standard content → Same converter as narrative pages
-#
-# Authentication:
-#   Session-based login against Confluence Server (form POST to /dologin.action).
-#   Manual credential entry for now; future: dbo.Credentials via two-tier decryption.
-#
-# Usage:
-#   .\Publish-ConfluenceDocumentation.ps1 -Execute
-#   .\Publish-ConfluenceDocumentation.ps1 -Execute -PageId teams
-#   .\Publish-ConfluenceDocumentation.ps1 -ExportOnly
-#   .\Publish-ConfluenceDocumentation.ps1                          # Preview mode
-#
-# CHANGELOG
-# ---------
+<#
+.SYNOPSIS
+    Publishes xFACts documentation to Confluence and exports module markdown.
+
+.DESCRIPTION
+    Publishes the xFACts documentation set to Confluence Server via its REST API
+    and exports per-module markdown. The page registry is discovered dynamically
+    from doc-registry.json (generated from Component_Registry doc_* columns):
+    narrative HTML pages are derived by pageId convention, while architecture,
+    Control Center guide, and reference pages are discovered by file existence.
+    Standalone guide pages are auto-discovered from the guides directory, with
+    their title and parent taken from the page HTML.
+
+    HTML narrative, architecture, CC-guide, and guide pages are converted to
+    Confluence Storage Format, and JSON reference files are rendered into
+    reference pages; ERD divs become PlantUML entity diagrams, diagram
+    placeholders become note panels, and tech-tip divs become tip panels. Pages
+    are created or updated under a configurable root parent, forming a hub with
+    one branch per module (narrative, architecture, CC guide, and reference
+    children). The same converters also produce full and reference-only markdown
+    exports. Confluence access uses session-based login; credentials resolve from
+    the -Credential parameter, then dbo.Credentials, then an interactive prompt.
+
+.PARAMETER Execute
+    Required to actually publish to Confluence. Without it, runs in preview mode.
+
+.PARAMETER PageId
+    Limit publishing to the hub plus a single module by pageId. Empty publishes all.
+
+.PARAMETER BaseUrl
+    Confluence Server base URL. Default: http://confluence.fac.local:8090
+
+.PARAMETER SpaceKey
+    Target Confluence space key. Default: ITDOC
+
+.PARAMETER DocsRoot
+    Root of the documentation source tree. Default:
+    E:\xFACts-ControlCenter\public\docs
+
+.PARAMETER Credential
+    Manual Confluence credential override; bypasses dbo.Credentials retrieval.
+
+.PARAMETER SqlServer
+    SQL Server instance for credential retrieval. Default: AVG-PROD-LSNR
+
+.PARAMETER SqlDatabase
+    Database name for credential retrieval. Default: xFACts
+
+.PARAMETER RootParentTitle
+    Confluence parent page title the hub is created under. Default:
+    Information Technology
+
+.PARAMETER Editors
+    AD accounts granted edit permission on published pages. View remains open.
+
+.PARAMETER TitlePrefix
+    Optional prefix applied to page titles (e.g. 'TEST - ') to avoid collisions.
+
+.PARAMETER ExportPath
+    Output folder for markdown export. Default:
+    E:\xFACts-ControlCenter\public\docs\data\md
+
+.PARAMETER ExportOnly
+    Export markdown only; skip all Confluence publishing.
+
+.COMPONENT
+    Documentation.Pipeline
+
+.NOTES
+    File Name : Publish-ConfluenceDocumentation.ps1
+    Location  : E:\xFACts-PowerShell\Publish-ConfluenceDocumentation.ps1
+
+    FILE ORGANIZATION
+    -----------------
+    CHANGELOG: CHANGE HISTORY
+    PARAMETERS: SCRIPT PARAMETERS
+    IMPORTS: SCRIPT DEPENDENCIES
+    INITIALIZATION: SCRIPT INITIALIZATION
+    CONSTANTS: PATHS AND REGISTRY SOURCE
+    FUNCTIONS: STORAGE FORMAT CONVERSION
+    FUNCTIONS: REFERENCE AND GUIDE CONVERSION
+    FUNCTIONS: CONFLUENCE REST API
+    FUNCTIONS: MARKDOWN CONVERSION
+    EXECUTION: SCRIPT EXECUTION
+#>
+
+<# ============================================================================
+   CHANGELOG: CHANGE HISTORY
+   ----------------------------------------------------------------------------
+   Dated change history for this file, most recent first. Authoritative version
+   tracking lives in dbo.System_Metadata (component Documentation.Pipeline);
+   this section records what changed and when.
+   Prefix: (none)
+   ============================================================================ #>
+
+# 2026-06-20  Conformed to the PowerShell file format spec: comment-based-help
+#             header and section banners, dedicated CHANGELOG section, single
+#             EXECUTION section after the functions, function purpose comments,
+#             and Write-Console in place of Write-Host. Dot-sources
+#             xFACts-OrchestratorFunctions.ps1 and xFACts-DocPipelineFunctions.ps1
+#             and runs Initialize-XFActsScript. Credential retrieval now uses the
+#             shared Get-ServiceCredentials, replacing the local
+#             Get-MasterPassphrase and Get-ConfluenceCredentials functions; the
+#             interactive prompt is retained as a final fallback.
 # 2026-04-13  Added standalone guide page support. Auto-discovery from
 #             pages/guides/*.html, Convert-GuideToStorageFormat,
 #             Convert-GuideToMarkdown, Phase 1.7 publishing, markdown export.
@@ -52,10 +110,19 @@
 #             Component_Registry doc_* columns). Filenames derived by convention,
 #             arch/ref pages discovered by file existence check. Adding a new
 #             documentation page no longer requires editing this script.
-# 2026-03-11  Fixed markdown export missing column/parameter type lengths
-#             Four spots in Convert-JsonToMarkdown now append (length) to dataType
-#             Affects: table columns, proc params, function params, view columns
-# ============================================================================
+# 2026-03-11  Fixed markdown export missing column/parameter type lengths. Four
+#             spots in Convert-JsonToMarkdown now append (length) to dataType,
+#             affecting table columns, proc params, function params, view columns.
+
+<# ============================================================================
+   PARAMETERS: SCRIPT PARAMETERS
+   ----------------------------------------------------------------------------
+   Publish target (base URL, space, root parent), the documentation source root,
+   credential resolution inputs (manual credential plus SQL connection), title
+   and editor controls, the markdown export path, and the execute and
+   export-only guards.
+   Prefix: (none)
+   ============================================================================ #>
 
 [CmdletBinding()]
 param(
@@ -66,7 +133,7 @@ param(
     [string]$BaseUrl = 'http://confluence.fac.local:8090',
     [string]$SpaceKey = 'ITDOC',
 
-    # --- Server paths (E:\xFACts-ControlCenter\public\docs structure) ---
+    # Server paths (E:\xFACts-ControlCenter\public\docs structure)
     [string]$DocsRoot = 'E:\xFACts-ControlCenter\public\docs',
 
     # Manual credential override (bypasses dbo.Credentials)
@@ -76,7 +143,7 @@ param(
     [string]$SqlServer = 'AVG-PROD-LSNR',
     [string]$SqlDatabase = 'xFACts',
 
-    # Parent page title in Confluence — Hub page will be created under this
+    # Parent page title in Confluence - Hub page will be created under this
     [string]$RootParentTitle = 'Information Technology',
 
     # Users allowed to edit pages (view remains open to all)
@@ -92,220 +159,80 @@ param(
     [switch]$ExportOnly
 )
 
-# --- Derived paths from DocsRoot ---
+<# ============================================================================
+   IMPORTS: SCRIPT DEPENDENCIES
+   ----------------------------------------------------------------------------
+   Dot-sourced shared infrastructure: orchestrator helpers (initialization,
+   console output, SQL data access, credential retrieval) and the
+   documentation-pipeline helpers.
+   Prefix: (none)
+   ============================================================================ #>
+
+. "$PSScriptRoot\xFACts-OrchestratorFunctions.ps1"
+. "$PSScriptRoot\xFACts-DocPipelineFunctions.ps1"
+
+<# ============================================================================
+   INITIALIZATION: SCRIPT INITIALIZATION
+   ----------------------------------------------------------------------------
+   One-time shared setup: SQL module loading, application identity, log path,
+   default connection target, and the preview-mode guard. The connection target
+   is set from the script's SqlServer/SqlDatabase parameters so the shared SQL
+   helpers and credential retrieval address exactly what those parameters
+   specify.
+   Prefix: (none)
+   ============================================================================ #>
+
+Initialize-XFActsScript -ScriptName 'Publish-ConfluenceDocumentation' -ServerInstance $SqlServer -Database $SqlDatabase -Execute:$Execute
+
+<# ============================================================================
+   CONSTANTS: PATHS AND REGISTRY SOURCE
+   ----------------------------------------------------------------------------
+   Documentation source subpaths derived from DocsRoot and the doc-registry.json
+   path that drives dynamic page discovery.
+   Prefix: (none)
+   ============================================================================ #>
+
+# Narrative HTML pages directory.
 $PagesPath   = Join-Path $DocsRoot 'pages'
+# Architecture HTML pages directory.
 $ArchPath    = Join-Path $DocsRoot 'pages\arch'
+# Control Center guide HTML pages directory.
 $CcPath      = Join-Path $DocsRoot 'pages\cc'
+# Reference HTML pages directory.
 $RefPath     = Join-Path $DocsRoot 'pages\ref'
+# Schema JSON reference data directory.
 $JsonPath    = Join-Path $DocsRoot 'data\ddl'
-$HubPath     = $PagesPath  # index.html lives in pages root
+# Hub index.html lives in the pages root.
+$HubPath     = $PagesPath
+# Standalone guide HTML pages directory.
 $GuidesPath  = Join-Path $DocsRoot 'pages\guides'
-
-# ============================================================================
-# CONFIGURATION: Page Registry (loaded from doc-registry.json)
-# ============================================================================
-# Reads the documentation registry JSON generated by Generate-DDLReference.ps1
-# from Component_Registry doc_* columns. Transforms each entry into the same
-# property structure the downstream publishing and export logic expects.
-#
-# Derived properties:
-#   Id             - pageId from JSON
-#   Title          - title from JSON (used as Confluence page title)
-#   HtmlFile       - Derived: {pageId}.html
-#   IsHub          - true when sortOrder = 0
-#   ParentId       - 'index' for all non-hub pages
-#   ArchHtmlFile   - Derived: {pageId}-arch.html (only if file exists on disk)
-#   ArchTitle      - Derived: {Title} - Architecture
-#   RefTitle       - Derived: {Title} - Reference (only if JsonSchema populated)
-#   JsonSchema     - Collected from all sections, split on comma, as array
-#   JsonCategories - Collected from all sections, split on comma, as array
-
+# Documentation registry JSON that drives dynamic page discovery.
 $DocRegistryPath = Join-Path $DocsRoot 'data\ddl\doc-registry.json'
 
-if (-not (Test-Path $DocRegistryPath)) {
-    Write-Error "doc-registry.json not found at $DocRegistryPath. Run Generate-DDLReference.ps1 -Execute first."
-    exit 1
-}
+<# ============================================================================
+   FUNCTIONS: STORAGE FORMAT CONVERSION
+   ----------------------------------------------------------------------------
+   Converters that transform documentation HTML and reference JSON into
+   Confluence Storage Format: narrative pages, architecture pages (including
+   PlantUML ERD generation), reference objects, and guide and CC-guide pages,
+   plus the small Confluence macro emitters they share.
+   Prefix: (none)
+   ============================================================================ #>
 
-$registryJson = Get-Content -Path $DocRegistryPath -Raw -Encoding UTF8 | ConvertFrom-Json
-
-$PageRegistry = @()
-foreach ($entry in $registryJson) {
-    $isHub = ($entry.sortOrder -eq 0)
-    $htmlFile = "$($entry.pageId).html"
-    $archFile = "$($entry.pageId)-arch.html"
-
-    # Build per-section reference data pairs (schema + category filter)
-    # Each section maintains its own schema/category association so that
-    # multi-component pages like Engine Room can have dbo (unfiltered) and
-    # dbo (RBAC-filtered) as separate sections without cross-contamination.
-    $refSections = @()
-    $allSchemas = @()   # Flat list for JSON cache pre-loading only
-    if ($entry.sections) {
-        foreach ($section in $entry.sections) {
-            if ($section.jsonSchema) {
-                $sectionSchemas = ($section.jsonSchema -split ',') | ForEach-Object { $_.Trim() }
-                $sectionCats = if ($section.jsonCategories) {
-                    @(($section.jsonCategories -split ',') | ForEach-Object { $_.Trim() })
-                } else { $null }
-
-                foreach ($schema in $sectionSchemas) {
-                    $refSections += @{ Schema = $schema; Categories = $sectionCats; ExcludeCategories = $null }
-                    $allSchemas += $schema
-                }
-            }
-        }
-    }
-
-    # When the same schema appears in multiple sections (e.g., dbo with no filter
-    # AND dbo with RBAC filter), the unfiltered section would show ALL objects
-    # including those claimed by the filtered section. Compute exclusion lists
-    # so each section shows only its own objects.
-    foreach ($rs in $refSections) {
-        if ($null -eq $rs.Categories) {
-            # This is an unfiltered section — find categories claimed by other
-            # sections of the same schema and exclude them
-            $claimed = @()
-            foreach ($other in $refSections) {
-                if ($other -ne $rs -and $other.Schema -eq $rs.Schema -and $null -ne $other.Categories) {
-                    $claimed += $other.Categories
-                }
-            }
-            if ($claimed.Count -gt 0) {
-                $rs.ExcludeCategories = @($claimed | Select-Object -Unique)
-            }
-        }
-    }
-
-    # Check for physical file existence to determine which child pages to publish
-    $archExists = Test-Path (Join-Path $ArchPath $archFile)
-    $refHasData = $refSections.Count -gt 0
-
-    # Detect CC guide pages — named slugs (from registry) or standard single file
-    $ccPages = @()
-    $ccSlugs = @()
-    if ($entry.sections) {
-        $ccSlugs = @($entry.sections | Where-Object { $_.ccSlug } | ForEach-Object {
-            @{ Slug = $_.ccSlug; Title = if ($_.ccTitle) { $_.ccTitle } else { $_.ccSlug } }
-        })
-    }
-    if ($ccSlugs.Count -gt 0) {
-        # Named CC guide pages — check each slug file
-        foreach ($cc in $ccSlugs) {
-            $ccFile = "$($entry.pageId)-cc-$($cc.Slug).html"
-            if (Test-Path (Join-Path $CcPath $ccFile)) {
-                $ccPages += @{ File = $ccFile; Title = $cc.Title }
-            }
-        }
-    } else {
-        # Standard single CC guide page
-        $ccFile = "$($entry.pageId)-cc.html"
-        if (Test-Path (Join-Path $CcPath $ccFile)) {
-            $ccPages += @{ File = $ccFile; Title = "$($entry.title) - Control Center Guide" }
-        }
-    }
-
-    $page = @{
-        Id             = $entry.pageId
-        Title          = $entry.title
-        HtmlFile       = $htmlFile
-        IsHub          = $isHub
-    }
-
-    if (-not $isHub) {
-        $page.ParentId = 'index'
-
-        if ($archExists) {
-            $page.ArchHtmlFile = $archFile
-            $page.ArchTitle    = "$($entry.title) - Architecture"
-        }
-
-        if ($ccPages.Count -gt 0) {
-            $page.CcPages = $ccPages
-        }
-
-        if ($refHasData) {
-            $page.RefTitle     = "$($entry.title) - Reference"
-            $page.RefSections  = $refSections
-            # Flat schema list for JSON cache pre-loading (deduplicated)
-            $page.JsonSchema   = @($allSchemas | Select-Object -Unique)
-        }
-    }
-
-    $PageRegistry += $page
-}
-
-Write-Host "Loaded $($PageRegistry.Count) pages from doc-registry.json" -ForegroundColor Cyan
-Write-Host ""
-
-# ============================================================================
-# CONFIGURATION: Guide Pages (auto-discovered from pages/guides/*.html)
-# ============================================================================
-# Standalone user guide pages are discovered by scanning the guides directory.
-# Title and parent pageId are extracted from the HTML content:
-#   - Title: from the <h1> tag
-#   - Parent: from the breadcrumb link in <div class="doc-nav">
-# No registry file needed — drop an HTML file in the folder and it's discovered.
-
-$GuideRegistry = @()
-if (Test-Path $GuidesPath) {
-    $guideFiles = Get-ChildItem -Path $GuidesPath -Filter "*.html" -File -ErrorAction SilentlyContinue
-    foreach ($guideFile in $guideFiles) {
-        $guideHtml = Get-Content -Path $guideFile.FullName -Raw -Encoding UTF8
-
-        # Extract title from <h1> tag
-        $guideTitle = ''
-        if ($guideHtml -match '<h1>(.*?)</h1>') {
-            $guideTitle = $Matches[1] -replace '<[^>]+>', ''
-            $guideTitle = $guideTitle -replace '&mdash;', [char]0x2014
-            $guideTitle = $guideTitle -replace '&rsquo;', [char]0x2019
-            $guideTitle = $guideTitle -replace '&amp;', '&'
-            $guideTitle = $guideTitle.Trim()
-        }
-
-        # Extract parent pageId from breadcrumb nav link
-        $guideParent = ''
-        if ($guideHtml -match '<div class="doc-nav">\s*<a href="[^"]*?([^/]+)\.html"') {
-            $guideParent = $Matches[1]
-        }
-
-        if ($guideTitle -and $guideParent) {
-            $GuideRegistry += @{
-                File         = $guideFile.Name
-                Title        = $guideTitle
-                ParentPageId = $guideParent
-                FullPath     = $guideFile.FullName
-            }
-        } else {
-            Write-Warning "Guide page missing title or breadcrumb parent: $($guideFile.Name)"
-        }
-    }
-    if ($GuideRegistry.Count -gt 0) {
-        Write-Host "Discovered $($GuideRegistry.Count) guide pages from $GuidesPath" -ForegroundColor Cyan
-    }
-} else {
-    Write-Host "No guides directory found (guides will be skipped)" -ForegroundColor Gray
-}
-Write-Host ""
-
-# ============================================================================
-# HTML-TO-STORAGE-FORMAT CONVERTER
-# ============================================================================
-
+# Converts a narrative documentation HTML page into Confluence Storage Format.
 function Convert-HtmlToStorageFormat {
     param([string]$HtmlContent, [string]$PageTitle)
 
     $body = $HtmlContent
 
-    # --- Extract body content inside page-wrapper ---
+    # Extract body content inside page-wrapper
     if ($body -match '(?s)<div class="page-wrapper">(.*)</div>\s*<script') {
         $body = $Matches[1]
     }
 
-    # =============================================
-    # PHASE 1: Remove non-Confluence elements
+    # -- PHASE 1: Remove non-Confluence elements --
+
     # These consume the div entirely (opening + content + closing)
-    # =============================================
 
     # Page header (has nested subtitle div)
     $body = $body -replace '(?s)<div class="page-header">\s*<h1>.*?</h1>\s*<div class="subtitle">.*?</div>\s*</div>', ''
@@ -320,10 +247,9 @@ function Convert-HtmlToStorageFormat {
     # Script tags
     $body = $body -replace '(?s)<script[^>]*>.*?</script>', ''
 
-    # =============================================
-    # PHASE 2: Convert special divs to Confluence macros
+    # -- PHASE 2: Convert special divs to Confluence macros --
+
     # Each conversion consumes the div entirely
-    # =============================================
 
     # Context-bar -> info panel
     $body = [regex]::Replace($body, '(?s)<div class="context-bar">\s*(.*?)\s*</div>', {
@@ -478,10 +404,10 @@ function Convert-HtmlToStorageFormat {
         $table
     })
 
-    # =============================================
-    # PHASE 2.5: XHTML compliance before stripping remaining divs
+    # -- PHASE 2.5: XHTML compliance before stripping remaining divs --
+
     # Must happen before Phase 3 so bare <br> inside surviving spans are fixed
-    # =============================================
+
     $body = $body -replace '<br\s*(?!/)>', '<br/>'
 
     # Strip orphaned span tags with classes/styles (visual-only after div removal)
@@ -489,17 +415,14 @@ function Convert-HtmlToStorageFormat {
     $body = $body -replace '<span class="pattern-arrow"[^>]*>.*?</span>', ''
     $body = $body -replace '<span class="fac"[^>]*>.*?</span>', ''
 
-    # =============================================
-    # PHASE 3: Strip ALL remaining div tags
+    # -- PHASE 3: Strip ALL remaining div tags --
+
     # Only section wrappers and structural divs should be left
-    # =============================================
 
     $body = $body -replace '<div[^>]*>', ''
     $body = $body -replace '</div>', ''
 
-    # =============================================
-    # PHASE 4: Clean up tables, links, entities
-    # =============================================
+    # -- PHASE 4: Clean up tables, links, entities --
 
     $body = $body -replace 'class="info-table"', ''
     $body = $body -replace 'class="tech-table"', ''
@@ -520,7 +443,7 @@ function Convert-HtmlToStorageFormat {
     $body = $body -replace '&hellip;', '&#8230;'
     $body = $body -replace '&ndash;', '&#8211;'
 
-    # XHTML compliance — escape bare ampersands in URLs (e.g., mailto query strings)
+    # XHTML compliance - escape bare ampersands in URLs (e.g., mailto query strings)
     # Matches & not already followed by amp; or #digits; or #x hex; or a named entity ending in ;
     $body = [regex]::Replace($body, '&(?!amp;|#\d+;|#x[\da-fA-F]+;|\w+;)', '&amp;')
 
@@ -535,6 +458,7 @@ function Convert-HtmlToStorageFormat {
     return $body
 }
 
+# Builds a PlantUML entity-relationship diagram from a schema JSON object.
 function Convert-JsonToPlantUmlErd {
     param(
         $JsonData,
@@ -622,39 +546,31 @@ function Convert-JsonToPlantUmlErd {
     return $uml
 }
 
-# ============================================================================
-# ARCHITECTURE HTML-TO-STORAGE-FORMAT CONVERTER
-# ============================================================================
-# Extends the narrative converter with architecture-specific element handling:
-# - ERD divs → PlantUML macros
-# - Tech-tip divs → Confluence tip panels
-# - Diagram placeholders → Confluence note panels
-# - Section-nav → Stripped
-
+# Converts an architecture HTML page to Storage Format, rendering ERDs, tech-tips, and diagram placeholders as Confluence macros before the standard narrative phases.
 function Convert-ArchHtmlToStorageFormat {
     param(
         [string]$HtmlContent,
         [string]$PageTitle,
-        [hashtable]$JsonDataCache   # Schema name → parsed JSON data
+        # Schema name -> parsed JSON data.
+        [hashtable]$JsonDataCache
     )
 
     $body = $HtmlContent
 
-    # --- Extract body content inside page-wrapper ---
+    # Extract body content inside page-wrapper
     if ($body -match '(?s)<div class="page-wrapper">(.*)</div>\s*<script') {
         $body = $Matches[1]
     }
 
-    # =============================================
-    # PHASE 0: Architecture-specific element conversion
-    # Must happen before the generic phases strip divs
-    # =============================================
+    # -- PHASE 0: Architecture-specific element conversion --
 
-    # Section-nav → strip entirely (Confluence has TOC macro)
+    # Must happen before the generic phases strip divs
+
+    # Section-nav -> strip entirely (Confluence has TOC macro)
     # Match the known structure: section-nav containing section-nav-top and section-nav-links
     $body = $body -replace '(?s)<div class="section-nav">\s*<div class="section-nav-top"></div>\s*<div class="section-nav-links">.*?</div>\s*</div>', ''
 
-    # ERD divs → PlantUML macro
+    # ERD divs -> PlantUML macro
     # Match: <div class="erd-root" data-schema="X"></div>
     # Match: <div class="erd-root" data-schema="X" data-category="Y"></div>
     $body = [regex]::Replace($body, '<div class="erd-root"\s+data-schema="([^"]+)"(?:\s+data-category="([^"]*)")?\s*>\s*</div>', {
@@ -680,7 +596,7 @@ function Convert-ArchHtmlToStorageFormat {
         return "<p><em>ERD: $label (see Control Center for interactive diagram)</em></p>"
     })
 
-    # Tech-tip divs → Confluence tip panels
+    # Tech-tip divs -> Confluence tip panels
     # These can contain nested <strong> and <p> tags
     $body = [regex]::Replace($body, '(?s)<div class="tech-tip">\s*(.*?)\s*</div>', {
         param($m)
@@ -688,7 +604,7 @@ function Convert-ArchHtmlToStorageFormat {
         "<ac:structured-macro ac:name=`"tip`"><ac:rich-text-body>`n$content`n</ac:rich-text-body></ac:structured-macro>"
     })
 
-    # Expand cards → Confluence expand macros (with separator lines)
+    # Expand cards -> Confluence expand macros (with separator lines)
     $body = [regex]::Replace($body, '(?s)<div class="expand-card">\s*<div class="expand-card-title">(.*?)</div>\s*<div class="expand-card-body">(.*?)</div>\s*</div>', {
         param($m)
         $title = $m.Groups[1].Value.Trim()
@@ -697,7 +613,7 @@ function Convert-ArchHtmlToStorageFormat {
         "<hr/><ac:structured-macro ac:name=`"expand`"><ac:parameter ac:name=`"title`">$escaped</ac:parameter><ac:rich-text-body>`n$cardBody`n</ac:rich-text-body></ac:structured-macro><hr/>"
     })
 
-    # Diagram placeholders → Confluence note panels
+    # Diagram placeholders -> Confluence note panels
     $body = [regex]::Replace($body, '(?s)<div class="diagram-placeholder">\s*<div class="placeholder-label">(.*?)</div>\s*<div class="placeholder-desc">(.*?)</div>\s*</div>', {
         param($m)
         $label = $m.Groups[1].Value.Trim()
@@ -705,7 +621,7 @@ function Convert-ArchHtmlToStorageFormat {
         "<ac:structured-macro ac:name=`"note`"><ac:parameter ac:name=`"title`">$label</ac:parameter><ac:rich-text-body>`n<p>$desc</p>`n</ac:rich-text-body></ac:structured-macro>"
     })
 
-    # Architecture flow diagrams → Confluence table with arrows
+    # Architecture flow diagrams -> Confluence table with arrows
     # Handles arch-flow-step (with title + detail), arch-flow-fork (branch outcomes),
     # arch-flow-arrow, and arch-flow-caption.
     # Uses index-based extraction to handle nested divs correctly.
@@ -725,11 +641,13 @@ function Convert-ArchHtmlToStorageFormat {
                 $searchIdx = $nextOpen + 1
             } else {
                 $depth--
-                if ($depth -eq 0) { $endIdx = $nextClose + 6; break }  # 6 = length of '</div>'
+                # 6 = length of the closing div tag.
+                if ($depth -eq 0) { $endIdx = $nextClose + 6; break }
                 $searchIdx = $nextClose + 1
             }
         }
-        if ($endIdx -eq -1) { break }  # Safety: couldn't find matching close
+        # Safety: couldn't find matching close.
+        if ($endIdx -eq -1) { break }
 
         $flowBlock = $body.Substring($startIdx, $endIdx - $startIdx)
 
@@ -792,10 +710,9 @@ function Convert-ArchHtmlToStorageFormat {
         $body = $body.Substring(0, $startIdx) + $table + $body.Substring($endIdx)
     }
 
-    # =============================================
-    # Now run the standard narrative converter phases
+    # -- Now run the standard narrative converter phases --
+
     # (Phase 1-4: remove non-Confluence elements, convert divs, strip remaining, cleanup)
-    # =============================================
 
     # PHASE 1: Remove non-Confluence elements
     $body = $body -replace '(?s)<div class="page-header">\s*<h1>.*?</h1>\s*<div class="subtitle">.*?</div>\s*</div>', ''
@@ -832,7 +749,7 @@ function Convert-ArchHtmlToStorageFormat {
         "<ac:structured-macro ac:name=`"note`"><ac:rich-text-body>`n$($m.Groups[1].Value.Trim())`n</ac:rich-text-body></ac:structured-macro>"
     })
 
-    # Expand cards → Confluence expand macros (with separator lines)
+    # Expand cards -> Confluence expand macros (with separator lines)
     $body = [regex]::Replace($body, '(?s)<div class="expand-card">\s*<div class="expand-card-title">(.*?)</div>\s*<div class="expand-card-body">(.*?)</div>\s*</div>', {
         param($m)
         $title = $m.Groups[1].Value.Trim()
@@ -867,7 +784,7 @@ function Convert-ArchHtmlToStorageFormat {
     $body = $body -replace '&hellip;', '&#8230;'
     $body = $body -replace '&ndash;', '&#8211;'
 
-    # XHTML compliance — escape bare ampersands in URLs (e.g., mailto query strings)
+    # XHTML compliance - escape bare ampersands in URLs (e.g., mailto query strings)
     $body = [regex]::Replace($body, '&(?!amp;|#\d+;|#x[\da-fA-F]+;|\w+;)', '&amp;')
 
     # Strip inline styles with CSS variables
@@ -881,10 +798,7 @@ function Convert-ArchHtmlToStorageFormat {
     return $body
 }
 
-# ============================================================================
-# JSON-TO-STORAGE-FORMAT CONVERTER (Reference Pages)
-# ============================================================================
-
+# Wraps a title and body in a Confluence expand macro.
 function ConvertTo-ConfluenceExpand {
     param([string]$Title, [string]$Body)
     @"
@@ -897,6 +811,7 @@ $Body
 "@
 }
 
+# Emits a Confluence table macro from header and row data.
 function ConvertTo-ConfluenceTable {
     param([string[]]$Headers, [string[][]]$Rows)
     $h = '<table><colgroup>' + ('<col/>' * $Headers.Count) + '</colgroup><tbody>'
@@ -910,6 +825,7 @@ function ConvertTo-ConfluenceTable {
     return $h
 }
 
+# Emits a Confluence code-block macro for a code string.
 function ConvertTo-ConfluenceCodeBlock {
     param([string]$Code, [string]$Language = 'sql')
     @"
@@ -920,6 +836,7 @@ function ConvertTo-ConfluenceCodeBlock {
 "@
 }
 
+# Emits a Confluence info-panel macro from a title and body.
 function ConvertTo-ConfluenceInfoPanel {
     param([string]$Title, [string]$Body)
     @"
@@ -930,6 +847,7 @@ function ConvertTo-ConfluenceInfoPanel {
 "@
 }
 
+# Renders one schema object (table, proc, function, view, trigger) as Storage Format.
 function Convert-JsonObjectToStorageFormat {
     param($Obj, [string]$TypeLabel)
 
@@ -952,10 +870,10 @@ function Convert-JsonObjectToStorageFormat {
         $body += ConvertTo-ConfluenceInfoPanel -Title 'Data Flow' -Body "<p>$(& $esc $Obj.dataFlow)</p>"
     }
 
-    # Collect inner expand sections — joined with <hr/> for visual separation
+    # Collect inner expand sections - joined with <hr/> for visual separation
     $sections = @()
 
-    # --- Fields (tables) ---
+    # Fields (tables)
     if ($Obj.columns -and $Obj.columns.Count -gt 0) {
         $rows = @()
         foreach ($col in $Obj.columns) {
@@ -972,7 +890,7 @@ function Convert-JsonObjectToStorageFormat {
         $sections += ConvertTo-ConfluenceExpand -Title "Fields ($($Obj.columns.Count))" -Body $fieldHtml
     }
 
-    # --- Parameters (procs/functions) ---
+    # Parameters (procs/functions)
     if ($Obj.parameters -and $Obj.parameters.Count -gt 0) {
         $rows = @()
         foreach ($p in $Obj.parameters) {
@@ -986,7 +904,7 @@ function Convert-JsonObjectToStorageFormat {
         $sections += ConvertTo-ConfluenceExpand -Title "Parameters ($($Obj.parameters.Count))" -Body $paramHtml
     }
 
-    # --- Indexes ---
+    # Indexes
     if ($Obj.indexes -and $Obj.indexes.Count -gt 0) {
         $rows = @()
         foreach ($idx in $Obj.indexes) {
@@ -998,7 +916,7 @@ function Convert-JsonObjectToStorageFormat {
         $sections += ConvertTo-ConfluenceExpand -Title "Indexes ($($Obj.indexes.Count))" -Body $idxHtml
     }
 
-    # --- Check Constraints ---
+    # Check Constraints
     if ($Obj.checkConstraints -and $Obj.checkConstraints.Count -gt 0) {
         $rows = @()
         foreach ($ck in $Obj.checkConstraints) {
@@ -1008,7 +926,7 @@ function Convert-JsonObjectToStorageFormat {
         $sections += ConvertTo-ConfluenceExpand -Title "Check Constraints ($($Obj.checkConstraints.Count))" -Body $ckHtml
     }
 
-    # --- Foreign Keys ---
+    # Foreign Keys
     if ($Obj.foreignKeys -and $Obj.foreignKeys.Count -gt 0) {
         $rows = @()
         foreach ($fk in $Obj.foreignKeys) {
@@ -1019,7 +937,7 @@ function Convert-JsonObjectToStorageFormat {
         $sections += ConvertTo-ConfluenceExpand -Title "Foreign Keys ($($Obj.foreignKeys.Count))" -Body $fkHtml
     }
 
-    # --- Design Notes ---
+    # Design Notes
     if ($Obj.designNotes -and $Obj.designNotes.Count -gt 0) {
         $dnHtml = ''
         foreach ($note in $Obj.designNotes) {
@@ -1030,7 +948,7 @@ function Convert-JsonObjectToStorageFormat {
         $sections += ConvertTo-ConfluenceExpand -Title "Design Notes ($($Obj.designNotes.Count))" -Body $dnHtml
     }
 
-    # --- Status Values ---
+    # Status Values
     if ($Obj.statusValues -and $Obj.statusValues.Count -gt 0) {
         $byCol = @{}
         foreach ($sv in $Obj.statusValues) {
@@ -1050,7 +968,7 @@ function Convert-JsonObjectToStorageFormat {
         $sections += ConvertTo-ConfluenceExpand -Title "Status Values ($($Obj.statusValues.Count))" -Body $svHtml
     }
 
-    # --- Common Queries ---
+    # Common Queries
     if ($Obj.queries -and $Obj.queries.Count -gt 0) {
         $qHtml = ''
         foreach ($q in $Obj.queries) {
@@ -1061,7 +979,7 @@ function Convert-JsonObjectToStorageFormat {
         $sections += ConvertTo-ConfluenceExpand -Title "Common Queries ($($Obj.queries.Count))" -Body $qHtml
     }
 
-    # --- Relationship Notes ---
+    # Relationship Notes
     if ($Obj.relationshipNotes -and $Obj.relationshipNotes.Count -gt 0) {
         $relHtml = ''
         foreach ($rel in $Obj.relationshipNotes) {
@@ -1077,13 +995,22 @@ function Convert-JsonObjectToStorageFormat {
     return ConvertTo-ConfluenceExpand -Title "$name ($TypeLabel)" -Body $body
 }
 
+<# ============================================================================
+   FUNCTIONS: REFERENCE AND GUIDE CONVERSION
+   ----------------------------------------------------------------------------
+   Converters that render schema JSON references and standalone guide and
+   CC-guide pages into Confluence Storage Format.
+   Prefix: (none)
+   ============================================================================ #>
+
+# Renders a full schema JSON reference into Confluence Storage Format.
 function Convert-JsonToRefStorageFormat {
     param($JsonData)
 
     $page = ''
     $page += '<p><em>Auto-generated from xFACts Object_Metadata and system catalog.</em></p><hr/>'
 
-    # Collect all top-level object sections — joined with <hr/> for visual separation
+    # Collect all top-level object sections - joined with <hr/> for visual separation
     $objects = @()
 
     foreach ($t in @($JsonData.tables)) {
@@ -1116,27 +1043,21 @@ function Convert-JsonToRefStorageFormat {
     return $page
 }
 
-# ============================================================================
-# GUIDE PAGE HTML-TO-STORAGE-FORMAT CONVERTER
-# ============================================================================
-# Converts standalone guide pages (pages/guides/) to Confluence Storage Format.
-# Strips guide-specific visual elements (mockups, jump nav, step badges, embedded
-# styles) then delegates to the standard narrative converter for everything else.
-
+# Converts a standalone guide page to Storage Format, stripping guide-specific visual elements before delegating to the narrative converter.
 function Convert-GuideToStorageFormat {
     param([string]$HtmlContent, [string]$PageTitle)
 
     $body = $HtmlContent
 
-    # --- Static reference banner ---
+    # Static reference banner
     $banner = '<ac:structured-macro ac:name="info"><ac:rich-text-body><p>This page is a text reference version. The interactive guide with visual mockups is available on the xFACts documentation site.</p></ac:rich-text-body></ac:structured-macro>'
 
-    # --- Strip guide-specific elements before standard conversion ---
+    # Strip guide-specific elements before standard conversion
 
     # Embedded <style> block (guide-specific CSS)
     $body = $body -replace '(?s)<style>.*?</style>', ''
 
-    # Guide mockup blocks (visual renderings) — depth-counted removal
+    # Guide mockup blocks (visual renderings) - depth-counted removal
     while ($body.Contains('<div class="guide-mock"')) {
         $gmStart = $body.IndexOf('<div class="guide-mock"')
         if ($gmStart -eq -1) { break }
@@ -1156,7 +1077,7 @@ function Convert-GuideToStorageFormat {
     # Jump nav
     $body = $body -replace '(?s)<div class="guide-jump-nav">.*?</div>', ''
 
-    # Step number badges inside h2 tags — convert to plain number prefix
+    # Step number badges inside h2 tags - convert to plain number prefix
     $body = $body -replace '<span class="step-num-badge">(\d+)</span>\s*', '$1. '
 
     # Guide step wrapper divs (keep content, strip wrapper)
@@ -1165,7 +1086,7 @@ function Convert-GuideToStorageFormat {
     # Inline key-item spans
     $body = $body -replace '<span class="key-item">(.*?)</span>', '$1'
 
-    # Mock environment badge spans — convert to plain text
+    # Mock environment badge spans - convert to plain text
     $body = $body -replace '<span class="mock-env-badge[^"]*">([^<]*)</span>', '<strong>$1</strong>'
 
     # Mock badge-fv spans
@@ -1180,7 +1101,7 @@ function Convert-GuideToStorageFormat {
     $body = $body -replace '(?s)<div class="doc-nav">\s*<a[^>]*>.*?</a>\s*<span[^>]*>.*?</span>\s*<span[^>]*>.*?</span>\s*</div>', ''
 
     # Strip ALL remaining span tags (keep content, remove tags)
-    # Guide pages use spans for visual styling only — safe to remove universally
+    # Guide pages use spans for visual styling only - safe to remove universally
     $body = $body -replace '<span[^>]*>', ''
     $body = $body -replace '</span>', ''
 
@@ -1188,7 +1109,7 @@ function Convert-GuideToStorageFormat {
     $body = $body -replace '&ensp;', '&#8194;'
     $body = $body -replace '&empty;', '&#8709;'
 
-    # --- Extract page-wrapper content ---
+    # Extract page-wrapper content
     # Guide pages have no <script> tag at the end, so the standard converter's
     # extraction regex (which anchors on </div>\s*<script) won't match.
     # Extract here before delegating.
@@ -1196,28 +1117,27 @@ function Convert-GuideToStorageFormat {
         $body = '<div class="page-wrapper">' + $Matches[1] + '</div>'
     }
 
-    # --- Now run the standard narrative converter ---
+    # Now run the standard narrative converter
     $converted = Convert-HtmlToStorageFormat -HtmlContent $body -PageTitle $PageTitle
 
     return $banner + "`n" + $converted
 }
 
+# Converts a Control Center guide page to Storage Format with its own element handling.
 function Convert-CcGuideToStorageFormat {
     param([string]$HtmlContent, [string]$PageTitle)
 
-    # =============================================
-    # Standalone converter for CC guide pages.
-    # Extracts: About intro, Key flip cards, Guide sections.
-    # Strips: Header, nav, mockup, sidebar items, footer, slideout, scripts.
-    # Does NOT pass through Convert-HtmlToStorageFormat.
-    # =============================================
+    # Standalone converter for CC guide pages. Extracts the About intro, Key
+    # flip cards, and Guide sections; strips header, nav, mockup, sidebar items,
+    # footer, slideout, and scripts. Does not pass through
+    # Convert-HtmlToStorageFormat.
 
     $body = ''
 
-    # --- Static reference banner ---
+    # Static reference banner
     $body += '<ac:structured-macro ac:name="info"><ac:rich-text-body><p>This page is a static reference version. The interactive guide with page mockup and guided tour is available on the xFACts documentation site.</p></ac:rich-text-body></ac:structured-macro>'
 
-    # --- Extract "About This Page" intro paragraphs ---
+    # Extract "About This Page" intro paragraphs
     if ($HtmlContent -match '(?s)<div class="sidebar-intro">\s*<h3>[^<]*</h3>\s*(.*?)\s*</div>') {
         $aboutIntro = $Matches[1].Trim()
         # Entity cleanup on intro
@@ -1237,7 +1157,7 @@ function Convert-CcGuideToStorageFormat {
         $body += "`n$aboutIntro"
     }
 
-    # --- Extract Key flip cards → table ---
+    # Extract Key flip cards -> table
     $keyCards = [regex]::Matches($HtmlContent, '(?s)<div class="key-flip-card">.*?<span class="key-flip-label">(.*?)</span>.*?<div class="key-flip-desc">(.*?)</div>')
     if ($keyCards.Count -gt 0) {
         $body += "`n<h2>Key to the Page</h2>"
@@ -1267,7 +1187,7 @@ function Convert-CcGuideToStorageFormat {
         $body += '</tbody></table>'
     }
 
-    # --- Extract Guide sections → expand macros ---
+    # Extract Guide sections -> expand macros
     if ($HtmlContent -match '(?s)<div class="cc-guide-content">(.*?)(?=\s*<div class="doc-footer")') {
         $ccGuideBlock = $Matches[1]
 
@@ -1311,7 +1231,7 @@ function Convert-CcGuideToStorageFormat {
             $sectionContent = $sectionContent -replace '<div[^>]*>', ''
             $sectionContent = $sectionContent -replace '</div>', ''
 
-            # XHTML compliance — self-close bare <br> tags
+            # XHTML compliance - self-close bare <br> tags
             $sectionContent = $sectionContent -replace '<br\s*(?!/)>', '<br/>'
 
             # Entity cleanup
@@ -1353,92 +1273,17 @@ function Convert-CcGuideToStorageFormat {
     return $body
 }
 
-# ============================================================================
-# CREDENTIAL RETRIEVAL (from dbo.Credentials via two-tier decryption)
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: CONFLUENCE REST API
+   ----------------------------------------------------------------------------
+   Confluence Server access: session login, page lookup, create and update,
+   edit-restriction application, and the publish wrapper that ties them together.
+   Prefix: (none)
+   ============================================================================ #>
 
-function Get-MasterPassphrase {
-    param(
-        [string]$SqlServer,
-        [string]$SqlDatabase
-    )
+# Establishes an authenticated Confluence Server session via form login.
 
-    $query = @"
-        SELECT setting_value
-        FROM dbo.GlobalConfig
-        WHERE module_name = 'Shared'
-          AND category = 'Credentials'
-          AND setting_name = 'master_passphrase'
-"@
-
-    try {
-        $result = Invoke-Sqlcmd -ServerInstance $SqlServer -Database $SqlDatabase -Query $query -QueryTimeout 30 -ApplicationName "xFACts Publish-ConfluenceDocumentation" -TrustServerCertificate
-        if ($result -and $result.setting_value) {
-            return $result.setting_value
-        }
-        throw "Master passphrase not found in GlobalConfig"
-    }
-    catch {
-        Write-Warning "Failed to retrieve master passphrase: $($_.Exception.Message)"
-        return $null
-    }
-}
-
-function Get-ConfluenceCredentials {
-    param(
-        [string]$SqlServer,
-        [string]$SqlDatabase,
-        [string]$MasterPass
-    )
-
-    $sqlQuery = @"
-DECLARE @MasterPassphrase VARCHAR(100) = '$MasterPass';
-DECLARE @ServicePassphrase VARCHAR(100);
-DECLARE @ConfluenceURL VARCHAR(500);
-DECLARE @ConfluenceUser VARCHAR(100);
-DECLARE @ConfluencePassword VARCHAR(500);
-
-SELECT @ServicePassphrase = CAST(DECRYPTBYPASSPHRASE(@MasterPassphrase, ConfigValue) AS VARCHAR(100))
-FROM dbo.Credentials
-WHERE Environment = 'PROD' AND ServiceName = 'Confluence' AND ConfigKey = 'Passphrase';
-
-SELECT @ConfluenceURL = CAST(DECRYPTBYPASSPHRASE(@ServicePassphrase, ConfigValue) AS VARCHAR(500))
-FROM dbo.Credentials
-WHERE Environment = 'PROD' AND ServiceName = 'Confluence' AND ConfigKey = 'ConfluenceURL';
-
-SELECT @ConfluenceUser = CAST(DECRYPTBYPASSPHRASE(@ServicePassphrase, ConfigValue) AS VARCHAR(100))
-FROM dbo.Credentials
-WHERE Environment = 'PROD' AND ServiceName = 'Confluence' AND ConfigKey = 'ConfluenceUser';
-
-SELECT @ConfluencePassword = CAST(DECRYPTBYPASSPHRASE(@ServicePassphrase, ConfigValue) AS VARCHAR(500))
-FROM dbo.Credentials
-WHERE Environment = 'PROD' AND ServiceName = 'Confluence' AND ConfigKey = 'ConfluencePassword';
-
-SELECT @ConfluenceURL AS ConfluenceURL, @ConfluenceUser AS ConfluenceUser, @ConfluencePassword AS ConfluencePassword;
-"@
-
-    try {
-        $result = Invoke-Sqlcmd -ServerInstance $SqlServer -Database $SqlDatabase -Query $sqlQuery -QueryTimeout 30 -ApplicationName "xFACts Publish-ConfluenceDocumentation" -TrustServerCertificate
-        if ($result -and $result.ConfluenceUser -and $result.ConfluencePassword) {
-            return @{
-                URL      = $result.ConfluenceURL
-                Username = $result.ConfluenceUser
-                Password = $result.ConfluencePassword
-            }
-        }
-        Write-Warning "Confluence credentials not found or could not be decrypted."
-        return $null
-    }
-    catch {
-        Write-Warning "Failed to retrieve Confluence credentials: $($_.Exception.Message)"
-        return $null
-    }
-}
-
-# ============================================================================
-# CONFLUENCE API HELPERS
-# ============================================================================
-
+# Establishes an authenticated Confluence Server session via form login.
 function Connect-Confluence {
     param(
         [string]$BaseUrl,
@@ -1454,7 +1299,7 @@ function Connect-Confluence {
         login          = 'Log In'
     }
 
-    Write-Host "  Authenticating to Confluence..." -ForegroundColor Cyan
+    Write-Console "  Authenticating to Confluence..." 'Cyan'
     $null = Invoke-WebRequest -Uri "$BaseUrl/dologin.action" -Method Post -Body $loginBody -WebSession $session -MaximumRedirection 0 -UseBasicParsing -ErrorAction SilentlyContinue
 
     # Verify session works
@@ -1463,9 +1308,9 @@ function Connect-Confluence {
         if ($null -eq $test.results -or $test.size -eq 0) {
             # Could be empty but valid - try space lookup
             $spaceTest = Invoke-RestMethod -Uri "$BaseUrl/rest/api/space/$SpaceKey" -WebSession $session -UseBasicParsing -ErrorAction Stop
-            Write-Host "  Authenticated. Space: $($spaceTest.name)" -ForegroundColor Green
+            Write-Console "  Authenticated. Space: $($spaceTest.name)" 'Green'
         } else {
-            Write-Host "  Authenticated. Space accessible." -ForegroundColor Green
+            Write-Console "  Authenticated. Space accessible." 'Green'
         }
     }
     catch {
@@ -1475,6 +1320,7 @@ function Connect-Confluence {
     return $session
 }
 
+# Looks up a Confluence page by space and title, returning it or null.
 function Get-ConfluencePage {
     param(
         [string]$BaseUrl,
@@ -1499,6 +1345,7 @@ function Get-ConfluencePage {
     return $null
 }
 
+# Creates a new Confluence page under an optional parent.
 function New-ConfluencePage {
     param(
         [string]$BaseUrl,
@@ -1543,6 +1390,7 @@ function New-ConfluencePage {
     }
 }
 
+# Updates an existing Confluence page to a new body and version.
 function Update-ConfluencePage {
     param(
         [string]$BaseUrl,
@@ -1569,7 +1417,7 @@ function Update-ConfluencePage {
         }
     }
 
-    # Always set ancestors to ensure correct parent — handles re-parenting
+    # Always set ancestors to ensure correct parent - handles re-parenting
     # when the page tree is recreated with new IDs
     if ($ParentPageId) {
         $pageData.ancestors = @( @{ id = $ParentPageId } )
@@ -1593,6 +1441,7 @@ function Update-ConfluencePage {
     }
 }
 
+# Applies edit restrictions to a page while leaving view open.
 function Set-ConfluencePageRestrictions {
     param(
         [string]$BaseUrl,
@@ -1623,7 +1472,7 @@ function Set-ConfluencePageRestrictions {
             # Try the experimental bulk endpoint first
             $url = "$BaseUrl/rest/experimental/content/$PageId/restriction"
             $null = Invoke-RestMethod -Uri $url -Method Put -Body $bytes -ContentType 'application/json; charset=utf-8' -WebSession $Session -UseBasicParsing -ErrorAction Stop
-            Write-Host "  Restrictions set (editors: $($Editors -join ', '))" -ForegroundColor Gray
+            Write-Console "  Restrictions set (editors: $($Editors -join ', '))" 'Gray'
             return
         }
         catch {
@@ -1631,7 +1480,7 @@ function Set-ConfluencePageRestrictions {
             try {
                 $url = "$BaseUrl/rest/api/content/$PageId/restriction/byOperation/update/user" + "?userName=$editor"
                 $null = Invoke-RestMethod -Uri $url -Method Put -ContentType 'application/json; charset=utf-8' -WebSession $Session -UseBasicParsing -ErrorAction Stop
-                Write-Host "  Edit restriction added for: $editor" -ForegroundColor Gray
+                Write-Console "  Edit restriction added for: $editor" 'Gray'
             }
             catch {
                 Write-Warning "  Could not set restrictions on page $PageId for $editor - $($_.Exception.Message)"
@@ -1642,6 +1491,7 @@ function Set-ConfluencePageRestrictions {
     }
 }
 
+# Creates or updates a page by title and applies edit restrictions.
 function Publish-ConfluencePage {
     param(
         [string]$BaseUrl,
@@ -1657,26 +1507,26 @@ function Publish-ConfluencePage {
     $existing = Get-ConfluencePage -BaseUrl $BaseUrl -Session $Session -SpaceKey $SpaceKey -Title $Title
 
     if ($existing) {
-        Write-Host "  Page exists (ID: $($existing.id), v$($existing.version.number)). Updating..." -ForegroundColor Yellow
+        Write-Console "  Page exists (ID: $($existing.id), v$($existing.version.number)). Updating..." 'Yellow'
         if ($Execute) {
             $result = Update-ConfluencePage -BaseUrl $BaseUrl -Session $Session -PageId $existing.id -Title $Title -SpaceKey $SpaceKey -CurrentVersion $existing.version.number -StorageBody $StorageBody -ParentPageId $ParentPageId
             if ($result) {
-                Write-Host "  Updated to v$($result.version.number)" -ForegroundColor Green
+                Write-Console "  Updated to v$($result.version.number)" 'Green'
             }
             if ($Editors) {
                 Set-ConfluencePageRestrictions -BaseUrl $BaseUrl -Session $Session -PageId $existing.id -Editors $Editors
             }
             return $existing.id
         } else {
-            Write-Host "  [PREVIEW] Would update to v$($existing.version.number + 1)" -ForegroundColor DarkYellow
+            Write-Console "  [PREVIEW] Would update to v$($existing.version.number + 1)" 'DarkYellow'
             return $existing.id
         }
     } else {
-        Write-Host "  Page does not exist. Creating..." -ForegroundColor Yellow
+        Write-Console "  Page does not exist. Creating..." 'Yellow'
         if ($Execute) {
             $result = New-ConfluencePage -BaseUrl $BaseUrl -Session $Session -SpaceKey $SpaceKey -Title $Title -StorageBody $StorageBody -ParentPageId $ParentPageId
             if ($result) {
-                Write-Host "  Created (ID: $($result.id))" -ForegroundColor Green
+                Write-Console "  Created (ID: $($result.id))" 'Green'
                 if ($Editors) {
                     Set-ConfluencePageRestrictions -BaseUrl $BaseUrl -Session $Session -PageId $result.id -Editors $Editors
                 }
@@ -1684,16 +1534,21 @@ function Publish-ConfluencePage {
             }
             return $null
         } else {
-            Write-Host "  [PREVIEW] Would create as child of $ParentPageId" -ForegroundColor DarkYellow
+            Write-Console "  [PREVIEW] Would create as child of $ParentPageId" 'DarkYellow'
             return 'preview-id'
         }
     }
 }
 
-# ============================================================================
-# MARKDOWN EXPORT CONVERTERS
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: MARKDOWN CONVERSION
+   ----------------------------------------------------------------------------
+   Converters that render the same documentation HTML and reference JSON into
+   markdown for the full and reference-only exports.
+   Prefix: (none)
+   ============================================================================ #>
 
+# Converts a narrative documentation HTML page into markdown.
 function Convert-HtmlToMarkdown {
     param([string]$HtmlContent)
 
@@ -1812,7 +1667,7 @@ function Convert-HtmlToMarkdown {
     # Strip all remaining HTML tags
     $body = $body -replace '<[^>]+>', ''
 
-    # Entity decode — named entities
+    # Entity decode - named entities
     $body = $body -replace '&mdash;', [char]0x2014
     $body = $body -replace '&ndash;', [char]0x2013
     $body = $body -replace '&rsquo;', [char]0x2019
@@ -1833,7 +1688,7 @@ function Convert-HtmlToMarkdown {
     $body = $body -replace '&amp;', '&'
     $body = $body -replace '&lt;', '<'
     $body = $body -replace '&gt;', '>'
-    # Entity decode — numeric entities
+    # Entity decode - numeric entities
     $body = $body -replace '&#8212;', [char]0x2014
     $body = $body -replace '&#8211;', [char]0x2013
     $body = $body -replace '&#8217;', [char]0x2019
@@ -1845,7 +1700,7 @@ function Convert-HtmlToMarkdown {
     $body = $body -replace '&#8230;', [char]0x2026
     $body = $body -replace '&#8226;', [char]0x2022
 
-    # Whitespace cleanup — strip leading spaces/tabs from each line (HTML indentation artifacts)
+    # Whitespace cleanup - strip leading spaces/tabs from each line (HTML indentation artifacts)
     $body = $body -replace '(?m)^[ \t]+', ''
     # Collapse 3+ consecutive newlines to 2
     $body = $body -replace '(?m)\n{3,}', "`n`n"
@@ -1859,6 +1714,7 @@ function Convert-HtmlToMarkdown {
     return $md
 }
 
+# Converts an architecture HTML page into markdown, rendering ERDs and panels as markdown.
 function Convert-ArchHtmlToMarkdown {
     param(
         [string]$HtmlContent,
@@ -2038,7 +1894,7 @@ function Convert-ArchHtmlToMarkdown {
     # Strip all remaining HTML tags
     $body = $body -replace '<[^>]+>', ''
 
-    # Entity decode — named entities
+    # Entity decode - named entities
     $body = $body -replace '&mdash;', [char]0x2014
     $body = $body -replace '&ndash;', [char]0x2013
     $body = $body -replace '&rsquo;', [char]0x2019
@@ -2059,7 +1915,7 @@ function Convert-ArchHtmlToMarkdown {
     $body = $body -replace '&amp;', '&'
     $body = $body -replace '&lt;', '<'
     $body = $body -replace '&gt;', '>'
-    # Entity decode — numeric entities
+    # Entity decode - numeric entities
     $body = $body -replace '&#8212;', [char]0x2014
     $body = $body -replace '&#8211;', [char]0x2013
     $body = $body -replace '&#8217;', [char]0x2019
@@ -2071,7 +1927,7 @@ function Convert-ArchHtmlToMarkdown {
     $body = $body -replace '&#8230;', [char]0x2026
     $body = $body -replace '&#8226;', [char]0x2022
 
-    # Whitespace cleanup — strip leading spaces/tabs from each line (HTML indentation artifacts)
+    # Whitespace cleanup - strip leading spaces/tabs from each line (HTML indentation artifacts)
     $body = $body -replace '(?m)^[ \t]+', ''
     # Collapse 3+ consecutive newlines to 2
     $body = $body -replace '(?m)\n{3,}', "`n`n"
@@ -2080,6 +1936,7 @@ function Convert-ArchHtmlToMarkdown {
     return $body
 }
 
+# Renders a schema JSON reference into markdown tables and sections.
 function Convert-JsonToMarkdown {
     param($JsonData)
 
@@ -2244,7 +2101,7 @@ function Convert-JsonToMarkdown {
         if ($p.relationshipNotes) { $md += "`n" }
     }
 
-    # Triggers (DML — from sys.triggers/sys.tables)
+    # Triggers (DML - from sys.triggers/sys.tables)
     foreach ($tr in @($JsonData.triggers)) {
         if (-not $tr) { continue }
         $md += "`n### $($tr.name)`n`n"
@@ -2385,24 +2242,18 @@ function Convert-JsonToMarkdown {
     return $md
 }
 
-# ============================================================================
-# GUIDE PAGE HTML-TO-MARKDOWN CONVERTER
-# ============================================================================
-# Converts standalone guide pages (pages/guides/) to markdown.
-# Strips guide-specific visual elements then delegates to the standard
-# narrative markdown converter.
-
+# Converts a standalone guide page to markdown, stripping guide-specific visual elements before delegating to the narrative markdown converter.
 function Convert-GuideToMarkdown {
     param([string]$HtmlContent)
 
     $body = $HtmlContent
 
-    # --- Strip guide-specific elements before standard conversion ---
+    # Strip guide-specific elements before standard conversion
 
     # Embedded <style> block
     $body = $body -replace '(?s)<style>.*?</style>', ''
 
-    # Guide mockup blocks — depth-counted removal
+    # Guide mockup blocks - depth-counted removal
     while ($body.Contains('<div class="guide-mock"')) {
         $gmStart = $body.IndexOf('<div class="guide-mock"')
         if ($gmStart -eq -1) { break }
@@ -2422,7 +2273,7 @@ function Convert-GuideToMarkdown {
     # Jump nav
     $body = $body -replace '(?s)<div class="guide-jump-nav">.*?</div>', ''
 
-    # Step number badges — convert to plain number
+    # Step number badges - convert to plain number
     $body = $body -replace '<span class="step-num-badge">(\d+)</span>\s*', '$1. '
 
     # Guide step wrapper divs
@@ -2443,30 +2294,29 @@ function Convert-GuideToMarkdown {
     $body = $body -replace '<span[^>]*>', ''
     $body = $body -replace '</span>', ''
 
-    # --- Extract page-wrapper content ---
+    # Extract page-wrapper content
     # Guide pages have no <script> tag, so the standard converter's extraction
     # regex won't match. Extract here before delegating.
     if ($body -match '(?s)<div class="page-wrapper">(.*)</div>\s*</body>') {
         $body = '<div class="page-wrapper">' + $Matches[1] + '</div>'
     }
 
-    # --- Delegate to standard narrative markdown converter ---
+    # Delegate to standard narrative markdown converter
     return Convert-HtmlToMarkdown -HtmlContent $body
 }
 
+# Converts a Control Center guide page to markdown with its own element handling.
 function Convert-CcGuideToMarkdown {
     param([string]$HtmlContent)
 
-    # =============================================
-    # Standalone markdown converter for CC guide pages.
-    # Extracts: About intro, Key flip cards, Guide sections.
-    # Strips: Header, nav, mockup, sidebar items, footer, slideout, scripts.
-    # Does NOT pass through Convert-HtmlToMarkdown.
-    # =============================================
+    # Standalone markdown converter for CC guide pages. Extracts the About
+    # intro, Key flip cards, and Guide sections; strips header, nav, mockup,
+    # sidebar items, footer, slideout, and scripts. Does not pass through
+    # Convert-HtmlToMarkdown.
 
     $md = ''
 
-    # --- Extract title ---
+    # Extract title
     $title = ''
     if ($HtmlContent -match '<h1>(.*?)</h1>') {
         $title = $Matches[1] -replace '<[^>]+>', ''
@@ -2476,7 +2326,7 @@ function Convert-CcGuideToMarkdown {
     }
     if ($title) { $md += "# $title`n`n" }
 
-    # --- Extract "About This Page" intro ---
+    # Extract "About This Page" intro
     if ($HtmlContent -match '(?s)<div class="sidebar-intro">\s*<h3>[^<]*</h3>\s*(.*?)\s*</div>') {
         $aboutIntro = $Matches[1].Trim()
         # Strip HTML tags, convert to plain text
@@ -2501,7 +2351,7 @@ function Convert-CcGuideToMarkdown {
         $md += "$aboutIntro`n`n"
     }
 
-    # --- Extract Key flip cards → markdown table ---
+    # Extract Key flip cards -> markdown table
     $keyCards = [regex]::Matches($HtmlContent, '(?s)<div class="key-flip-card">.*?<span class="key-flip-label">(.*?)</span>.*?<div class="key-flip-desc">(.*?)</div>')
     if ($keyCards.Count -gt 0) {
         $md += "## Key to the Page`n`n"
@@ -2533,7 +2383,7 @@ function Convert-CcGuideToMarkdown {
         $md += "`n"
     }
 
-    # --- Extract Guide sections → markdown headings ---
+    # Extract Guide sections -> markdown headings
     if ($HtmlContent -match '(?s)<div class="cc-guide-content">(.*?)(?=\s*<div class="doc-footer")') {
         $ccGuideBlock = $Matches[1]
 
@@ -2618,32 +2468,200 @@ function Convert-CcGuideToMarkdown {
     return $md
 }
 
-# ============================================================================
-# MAIN EXECUTION
-# ============================================================================
+<# ============================================================================
+   EXECUTION: SCRIPT EXECUTION
+   ----------------------------------------------------------------------------
+   Builds the page registry from doc-registry.json, discovers standalone guide
+   pages, then publishes to Confluence (unless -ExportOnly) and writes the full
+   and reference-only markdown exports.
+   Prefix: (none)
+   ============================================================================ #>
 
-Write-Host ""
-Write-Host "============================================" -ForegroundColor Cyan
-Write-Host " xFACts Documentation Publisher v2.0"  -ForegroundColor Cyan
-Write-Host "============================================" -ForegroundColor Cyan
-Write-Host ""
-Write-Host "  Docs Root:  $DocsRoot" -ForegroundColor Gray
-Write-Host "  Pages:      $PagesPath" -ForegroundColor Gray
-Write-Host "  Arch:       $ArchPath" -ForegroundColor Gray
-Write-Host "  Ref:        $RefPath" -ForegroundColor Gray
-Write-Host "  JSON:       $JsonPath" -ForegroundColor Gray
-Write-Host "  MD Export:  $ExportPath" -ForegroundColor Gray
-Write-Host ""
-
-if ($ExportOnly) {
-    Write-Host "[EXPORT ONLY] Markdown export - no Confluence publishing." -ForegroundColor DarkYellow
-    Write-Host ""
-} elseif (-not $Execute) {
-    Write-Host "[PREVIEW MODE] No changes will be made. Use -Execute to publish." -ForegroundColor DarkYellow
-    Write-Host ""
+if (-not (Test-Path $DocRegistryPath)) {
+    Write-Error "doc-registry.json not found at $DocRegistryPath. Run Generate-DDLReference.ps1 -Execute first."
+    exit 1
 }
 
-# --- Filter modules if -Module specified ---
+$registryJson = Get-Content -Path $DocRegistryPath -Raw -Encoding UTF8 | ConvertFrom-Json
+
+$PageRegistry = @()
+foreach ($entry in $registryJson) {
+    $isHub = ($entry.sortOrder -eq 0)
+    $htmlFile = "$($entry.pageId).html"
+    $archFile = "$($entry.pageId)-arch.html"
+
+    # Build per-section reference data pairs (schema + category filter)
+    # Each section maintains its own schema/category association so that
+    # multi-component pages like Engine Room can have dbo (unfiltered) and
+    # dbo (RBAC-filtered) as separate sections without cross-contamination.
+    $refSections = @()
+    # Flat list for JSON cache pre-loading only.
+    $allSchemas = @()
+    if ($entry.sections) {
+        foreach ($section in $entry.sections) {
+            if ($section.jsonSchema) {
+                $sectionSchemas = ($section.jsonSchema -split ',') | ForEach-Object { $_.Trim() }
+                $sectionCats = if ($section.jsonCategories) {
+                    @(($section.jsonCategories -split ',') | ForEach-Object { $_.Trim() })
+                } else { $null }
+
+                foreach ($schema in $sectionSchemas) {
+                    $refSections += @{ Schema = $schema; Categories = $sectionCats; ExcludeCategories = $null }
+                    $allSchemas += $schema
+                }
+            }
+        }
+    }
+
+    # When the same schema appears in multiple sections (e.g., dbo with no filter
+    # AND dbo with RBAC filter), the unfiltered section would show ALL objects
+    # including those claimed by the filtered section. Compute exclusion lists
+    # so each section shows only its own objects.
+    foreach ($rs in $refSections) {
+        if ($null -eq $rs.Categories) {
+            # This is an unfiltered section - find categories claimed by other
+            # sections of the same schema and exclude them
+            $claimed = @()
+            foreach ($other in $refSections) {
+                if ($other -ne $rs -and $other.Schema -eq $rs.Schema -and $null -ne $other.Categories) {
+                    $claimed += $other.Categories
+                }
+            }
+            if ($claimed.Count -gt 0) {
+                $rs.ExcludeCategories = @($claimed | Select-Object -Unique)
+            }
+        }
+    }
+
+    # Check for physical file existence to determine which child pages to publish
+    $archExists = Test-Path (Join-Path $ArchPath $archFile)
+    $refHasData = $refSections.Count -gt 0
+
+    # Detect CC guide pages - named slugs (from registry) or standard single file
+    $ccPages = @()
+    $ccSlugs = @()
+    if ($entry.sections) {
+        $ccSlugs = @($entry.sections | Where-Object { $_.ccSlug } | ForEach-Object {
+            @{ Slug = $_.ccSlug; Title = if ($_.ccTitle) { $_.ccTitle } else { $_.ccSlug } }
+        })
+    }
+    if ($ccSlugs.Count -gt 0) {
+        # Named CC guide pages - check each slug file
+        foreach ($cc in $ccSlugs) {
+            $ccFile = "$($entry.pageId)-cc-$($cc.Slug).html"
+            if (Test-Path (Join-Path $CcPath $ccFile)) {
+                $ccPages += @{ File = $ccFile; Title = $cc.Title }
+            }
+        }
+    } else {
+        # Standard single CC guide page
+        $ccFile = "$($entry.pageId)-cc.html"
+        if (Test-Path (Join-Path $CcPath $ccFile)) {
+            $ccPages += @{ File = $ccFile; Title = "$($entry.title) - Control Center Guide" }
+        }
+    }
+
+    $page = @{
+        Id             = $entry.pageId
+        Title          = $entry.title
+        HtmlFile       = $htmlFile
+        IsHub          = $isHub
+    }
+
+    if (-not $isHub) {
+        $page.ParentId = 'index'
+
+        if ($archExists) {
+            $page.ArchHtmlFile = $archFile
+            $page.ArchTitle    = "$($entry.title) - Architecture"
+        }
+
+        if ($ccPages.Count -gt 0) {
+            $page.CcPages = $ccPages
+        }
+
+        if ($refHasData) {
+            $page.RefTitle     = "$($entry.title) - Reference"
+            $page.RefSections  = $refSections
+            # Flat schema list for JSON cache pre-loading (deduplicated)
+            $page.JsonSchema   = @($allSchemas | Select-Object -Unique)
+        }
+    }
+
+    $PageRegistry += $page
+}
+
+Write-Console "Loaded $($PageRegistry.Count) pages from doc-registry.json" 'Cyan'
+Write-Console ""
+
+# Guide pages: standalone user guide pages discovered by scanning the guides
+# directory. Title and parent pageId are extracted from the HTML content (title
+# from the <h1> tag, parent from the breadcrumb link in <div class="doc-nav">).
+# No registry file needed - drop an HTML file in the folder and it is discovered.
+
+$GuideRegistry = @()
+if (Test-Path $GuidesPath) {
+    $guideFiles = Get-ChildItem -Path $GuidesPath -Filter "*.html" -File -ErrorAction SilentlyContinue
+    foreach ($guideFile in $guideFiles) {
+        $guideHtml = Get-Content -Path $guideFile.FullName -Raw -Encoding UTF8
+
+        # Extract title from <h1> tag
+        $guideTitle = ''
+        if ($guideHtml -match '<h1>(.*?)</h1>') {
+            $guideTitle = $Matches[1] -replace '<[^>]+>', ''
+            $guideTitle = $guideTitle -replace '&mdash;', [char]0x2014
+            $guideTitle = $guideTitle -replace '&rsquo;', [char]0x2019
+            $guideTitle = $guideTitle -replace '&amp;', '&'
+            $guideTitle = $guideTitle.Trim()
+        }
+
+        # Extract parent pageId from breadcrumb nav link
+        $guideParent = ''
+        if ($guideHtml -match '<div class="doc-nav">\s*<a href="[^"]*?([^/]+)\.html"') {
+            $guideParent = $Matches[1]
+        }
+
+        if ($guideTitle -and $guideParent) {
+            $GuideRegistry += @{
+                File         = $guideFile.Name
+                Title        = $guideTitle
+                ParentPageId = $guideParent
+                FullPath     = $guideFile.FullName
+            }
+        } else {
+            Write-Warning "Guide page missing title or breadcrumb parent: $($guideFile.Name)"
+        }
+    }
+    if ($GuideRegistry.Count -gt 0) {
+        Write-Console "Discovered $($GuideRegistry.Count) guide pages from $GuidesPath" 'Cyan'
+    }
+} else {
+    Write-Console "No guides directory found (guides will be skipped)" 'Gray'
+}
+Write-Console ""
+
+Write-Console ""
+Write-Console "============================================" 'Cyan'
+Write-Console " xFACts Documentation Publisher v2.0" 'Cyan'
+Write-Console "============================================" 'Cyan'
+Write-Console ""
+Write-Console "  Docs Root:  $DocsRoot" 'Gray'
+Write-Console "  Pages:      $PagesPath" 'Gray'
+Write-Console "  Arch:       $ArchPath" 'Gray'
+Write-Console "  Ref:        $RefPath" 'Gray'
+Write-Console "  JSON:       $JsonPath" 'Gray'
+Write-Console "  MD Export:  $ExportPath" 'Gray'
+Write-Console ""
+
+if ($ExportOnly) {
+    Write-Console "[EXPORT ONLY] Markdown export - no Confluence publishing." 'DarkYellow'
+    Write-Console ""
+} elseif (-not $Execute) {
+    Write-Console "[PREVIEW MODE] No changes will be made. Use -Execute to publish." 'DarkYellow'
+    Write-Console ""
+}
+
+# Filter modules if -Module specified
 $activePages = $PageRegistry
 if ($PageId) {
     $activePages = $PageRegistry | Where-Object { $_.Id -eq $PageId -or $_.IsHub }
@@ -2651,12 +2669,12 @@ if ($PageId) {
         Write-Error "PageId '$PageId' not found in PageRegistry."
         return
     }
-    Write-Host "Scope: Hub + $PageId" -ForegroundColor Cyan
+    Write-Console "Scope: Hub + $PageId" 'Cyan'
 } else {
-    Write-Host "Scope: All registered modules" -ForegroundColor Cyan
+    Write-Console "Scope: All registered modules" 'Cyan'
 }
 
-# --- Pre-load JSON data cache for architecture page ERD generation ---
+# Pre-load JSON data cache for architecture page ERD generation
 $JsonDataCache = @{}
 foreach ($page in $activePages) {
     if (-not $page.JsonSchema) { continue }
@@ -2669,53 +2687,40 @@ foreach ($page in $activePages) {
         }
     }
 }
-Write-Host "  JSON cache loaded: $($JsonDataCache.Count) schemas" -ForegroundColor Gray
-Write-Host ""
+Write-Console "  JSON cache loaded: $($JsonDataCache.Count) schemas" 'Gray'
+Write-Console ""
 
-# ============================================================================
-# CONFLUENCE PUBLISHING (Phases 1, 1.5, & 2) - skipped with -ExportOnly
-# ============================================================================
+# -- CONFLUENCE PUBLISHING (Phases 1, 1.5, 2) - skipped with -ExportOnly --
 
 if (-not $ExportOnly) {
 
-    # --- Resolve credentials: -Credential param > dbo.Credentials > manual prompt ---
+    # Resolve credentials: -Credential param > dbo.Credentials > manual prompt
     if (-not $Credential) {
-        Write-Host "  Attempting credential retrieval from dbo.Credentials..." -ForegroundColor Cyan
-        $masterPass = Get-MasterPassphrase -SqlServer $SqlServer -SqlDatabase $SqlDatabase
+        Write-Console "  Attempting credential retrieval from dbo.Credentials..." 'Cyan'
+        $dbCreds = Get-ServiceCredentials -ServiceName 'Confluence'
 
-        if ($masterPass) {
-            $dbCreds = Get-ConfluenceCredentials -SqlServer $SqlServer -SqlDatabase $SqlDatabase -MasterPass $masterPass
-
-            if ($dbCreds -and $dbCreds.Username -and $dbCreds.Password) {
-                $secPass = ConvertTo-SecureString $dbCreds.Password -AsPlainText -Force
-                $Credential = New-Object System.Management.Automation.PSCredential($dbCreds.Username, $secPass)
-                Write-Host "  Credentials loaded from database." -ForegroundColor Green
-
-                # Use stored URL as fallback if script default wasn't overridden
-                if ($dbCreds.URL -and $BaseUrl -eq 'http://confluence.fac.local:8090') {
-                    # BaseUrl already matches default - stored URL available if needed
-                }
-            } else {
-                Write-Host "  Database credentials not available. Falling back to manual entry." -ForegroundColor Yellow
-            }
+        if ($dbCreds -and $dbCreds.ConfluenceUser -and $dbCreds.ConfluencePassword) {
+            $secPass = ConvertTo-SecureString $dbCreds.ConfluencePassword -AsPlainText -Force
+            $Credential = New-Object System.Management.Automation.PSCredential($dbCreds.ConfluenceUser, $secPass)
+            Write-Console "  Credentials loaded from database." 'Green'
         } else {
-            Write-Host "  Master passphrase not available. Falling back to manual entry." -ForegroundColor Yellow
+            Write-Console "  Database credentials not available. Falling back to manual entry." 'Yellow'
         }
     }
 
     if (-not $Credential) {
-        Write-Host ""
-        Write-Host "Enter Confluence credentials (AD account):" -ForegroundColor Cyan
+        Write-Console ""
+        Write-Console "Enter Confluence credentials (AD account):" 'Cyan'
         $Credential = Get-Credential
     }
 
     $session = Connect-Confluence -BaseUrl $BaseUrl -Credential $Credential
-    Write-Host ""
+    Write-Console ""
 
-    # --- Look up root parent page ---
+    # Look up root parent page
     $rootParentId = $null
     if ($RootParentTitle) {
-        Write-Host "  Looking up root parent page: '$RootParentTitle'..." -ForegroundColor Cyan
+        Write-Console "  Looking up root parent page: '$RootParentTitle'..." 'Cyan'
         $rootParent = Get-ConfluencePage -BaseUrl $BaseUrl -Session $session -SpaceKey $SpaceKey -Title "$TitlePrefix$RootParentTitle"
         if (-not $rootParent) {
             # Try without prefix (the parent page likely doesn't have our test prefix)
@@ -2723,26 +2728,26 @@ if (-not $ExportOnly) {
         }
         if ($rootParent) {
             $rootParentId = $rootParent.id
-            Write-Host "  Found parent page: ID $rootParentId" -ForegroundColor Green
+            Write-Console "  Found parent page: ID $rootParentId" 'Green'
         } else {
             Write-Warning "Root parent page '$RootParentTitle' not found. Hub will be created at space root."
         }
-        Write-Host ""
+        Write-Console ""
     }
 
-    # --- Track page IDs for parent-child relationships ---
+    # Track page IDs for parent-child relationships
     $pageIds = @{}
 
-# --- Phase 1: Publish narrative pages (Hub first, then modules) ---
-Write-Host "--- Phase 1: Narrative Pages ---" -ForegroundColor Cyan
-Write-Host ""
+# Phase 1: Publish narrative pages (Hub first, then modules)
+Write-Console "--- Phase 1: Narrative Pages ---" 'Cyan'
+Write-Console ""
 
 # Process Hub first (hub index.html is in PagesPath)
 $hubPage = $activePages | Where-Object { $_.IsHub }
 if ($hubPage) {
     $htmlPath = Join-Path $PagesPath $hubPage.HtmlFile
     if (Test-Path $htmlPath) {
-        Write-Host "[$($hubPage.Title)]" -ForegroundColor White
+        Write-Console "[$($hubPage.Title)]" 'White'
         $htmlContent = Get-Content -Path $htmlPath -Raw -Encoding UTF8
         $storageBody = Convert-HtmlToStorageFormat -HtmlContent $htmlContent -PageTitle $hubPage.Title
 
@@ -2768,14 +2773,14 @@ if ($hubPage) {
             $storageBody = $storageBody -replace [regex]::Escape($Matches[1]), "$($Matches[1])`n$castTable"
         }
 
-        Write-Host "  Converted: $($storageBody.Length) chars" -ForegroundColor Gray
+        Write-Console "  Converted: $($storageBody.Length) chars" 'Gray'
 
         $pageId = Publish-ConfluencePage -BaseUrl $BaseUrl -Session $session -SpaceKey $SpaceKey -Title "$TitlePrefix$($hubPage.Title)" -StorageBody $storageBody -ParentPageId $rootParentId -Execute $Execute -Editors $Editors
         $pageIds[$hubPage.Id] = $pageId
     } else {
         Write-Warning "HTML file not found: $htmlPath"
     }
-    Write-Host ""
+    Write-Console ""
 }
 
 # Process module narrative pages
@@ -2783,10 +2788,10 @@ $modulePages = $activePages | Where-Object { -not $_.IsHub }
 foreach ($page in $modulePages) {
     $htmlPath = Join-Path $PagesPath $page.HtmlFile
     if (Test-Path $htmlPath) {
-        Write-Host "[$($page.Title)]" -ForegroundColor White
+        Write-Console "[$($page.Title)]" 'White'
         $htmlContent = Get-Content -Path $htmlPath -Raw -Encoding UTF8
         $storageBody = Convert-HtmlToStorageFormat -HtmlContent $htmlContent -PageTitle $page.Title
-        Write-Host "  Converted: $($storageBody.Length) chars" -ForegroundColor Gray
+        Write-Console "  Converted: $($storageBody.Length) chars" 'Gray'
 
         $parentId = $pageIds[$page.ParentId]
         $pageId = Publish-ConfluencePage -BaseUrl $BaseUrl -Session $session -SpaceKey $SpaceKey -Title "$TitlePrefix$($page.Title)" -StorageBody $storageBody -ParentPageId $parentId -Execute $Execute -Editors $Editors
@@ -2794,37 +2799,37 @@ foreach ($page in $modulePages) {
     } else {
         Write-Warning "HTML file not found: $htmlPath"
     }
-    Write-Host ""
+    Write-Console ""
 }
 
-# --- Phase 1.5: Publish architecture pages ---
-Write-Host "--- Phase 1.5: Architecture Pages ---" -ForegroundColor Cyan
-Write-Host ""
+# Phase 1.5: Publish architecture pages
+Write-Console "--- Phase 1.5: Architecture Pages ---" 'Cyan'
+Write-Console ""
 
 foreach ($page in $modulePages) {
     if (-not $page.ArchHtmlFile -or -not $page.ArchTitle) { continue }
 
     $archHtmlPath = Join-Path $ArchPath $page.ArchHtmlFile
     if (-not (Test-Path $archHtmlPath)) {
-        Write-Host "[$($page.ArchTitle)] Skipped - file not found: $($page.ArchHtmlFile)" -ForegroundColor DarkYellow
-        Write-Host ""
+        Write-Console "[$($page.ArchTitle)] Skipped - file not found: $($page.ArchHtmlFile)" 'DarkYellow'
+        Write-Console ""
         continue
     }
 
-    Write-Host "[$($page.ArchTitle)]" -ForegroundColor White
+    Write-Console "[$($page.ArchTitle)]" 'White'
     $htmlContent = Get-Content -Path $archHtmlPath -Raw -Encoding UTF8
     $storageBody = Convert-ArchHtmlToStorageFormat -HtmlContent $htmlContent -PageTitle $page.ArchTitle -JsonDataCache $JsonDataCache
-    Write-Host "  Converted: $($storageBody.Length) chars" -ForegroundColor Gray
+    Write-Console "  Converted: $($storageBody.Length) chars" 'Gray'
 
     $parentId = $pageIds[$page.Id]
     $null = Publish-ConfluencePage -BaseUrl $BaseUrl -Session $session -SpaceKey $SpaceKey -Title "$TitlePrefix$($page.ArchTitle)" -StorageBody $storageBody -ParentPageId $parentId -Execute $Execute -Editors $Editors
 
-    Write-Host ""
+    Write-Console ""
 }
 
-# --- Phase 1.6: Publish CC guide pages ---
-Write-Host "--- Phase 1.6: Control Center Guide Pages ---" -ForegroundColor Cyan
-Write-Host ""
+# Phase 1.6: Publish CC guide pages
+Write-Console "--- Phase 1.6: Control Center Guide Pages ---" 'Cyan'
+Write-Console ""
 
 foreach ($page in $modulePages) {
     if (-not $page.CcPages -or $page.CcPages.Count -eq 0) { continue }
@@ -2832,42 +2837,42 @@ foreach ($page in $modulePages) {
     foreach ($cc in $page.CcPages) {
         $ccHtmlPath = Join-Path $CcPath $cc.File
         if (-not (Test-Path $ccHtmlPath)) {
-            Write-Host "[$($cc.Title)] Skipped - file not found: $($cc.File)" -ForegroundColor DarkYellow
-            Write-Host ""
+            Write-Console "[$($cc.Title)] Skipped - file not found: $($cc.File)" 'DarkYellow'
+            Write-Console ""
             continue
         }
 
-        Write-Host "[$($cc.Title)]" -ForegroundColor White
+        Write-Console "[$($cc.Title)]" 'White'
         $htmlContent = Get-Content -Path $ccHtmlPath -Raw -Encoding UTF8
 
         $storageBody = Convert-CcGuideToStorageFormat -HtmlContent $htmlContent -PageTitle $cc.Title
-        Write-Host "  Converted: $($storageBody.Length) chars" -ForegroundColor Gray
+        Write-Console "  Converted: $($storageBody.Length) chars" 'Gray'
 
         $parentId = $pageIds[$page.Id]
         $null = Publish-ConfluencePage -BaseUrl $BaseUrl -Session $session -SpaceKey $SpaceKey -Title "$TitlePrefix$($cc.Title)" -StorageBody $storageBody -ParentPageId $parentId -Execute $Execute -Editors $Editors
 
-        Write-Host ""
+        Write-Console ""
     }
 }
 
-# --- Phase 1.7: Publish guide pages ---
-Write-Host "--- Phase 1.7: Guide Pages ---" -ForegroundColor Cyan
-Write-Host ""
+# Phase 1.7: Publish guide pages
+Write-Console "--- Phase 1.7: Guide Pages ---" 'Cyan'
+Write-Console ""
 
 foreach ($guide in $GuideRegistry) {
-    Write-Host "[$($guide.Title)]" -ForegroundColor White
+    Write-Console "[$($guide.Title)]" 'White'
     $htmlContent = Get-Content -Path $guide.FullPath -Raw -Encoding UTF8
     $storageBody = Convert-GuideToStorageFormat -HtmlContent $htmlContent -PageTitle $guide.Title
-    Write-Host "  Converted: $($storageBody.Length) chars" -ForegroundColor Gray
+    Write-Console "  Converted: $($storageBody.Length) chars" 'Gray'
 
     $parentId = $pageIds[$guide.ParentPageId]
     $null = Publish-ConfluencePage -BaseUrl $BaseUrl -Session $session -SpaceKey $SpaceKey -Title "$TitlePrefix$($guide.Title)" -StorageBody $storageBody -ParentPageId $parentId -Execute $Execute -Editors $Editors
-    Write-Host ""
+    Write-Console ""
 }
 
-# --- Phase 2: Publish reference pages ---
-Write-Host "--- Phase 2: Reference Pages ---" -ForegroundColor Cyan
-Write-Host ""
+# Phase 2: Publish reference pages
+Write-Console "--- Phase 2: Reference Pages ---" 'Cyan'
+Write-Console ""
 
 foreach ($page in $modulePages) {
     if (-not $page.RefTitle -or -not $page.RefSections) { continue }
@@ -2921,7 +2926,7 @@ foreach ($page in $modulePages) {
         }
 
         # Add schema header if multiple sections on one page
-        # Qualify with category when present to differentiate (e.g., "dbo" vs "dbo — RBAC")
+        # Qualify with category when present to differentiate (e.g., "dbo" vs "dbo - RBAC")
         if ($page.RefSections.Count -gt 1) {
             $sectionLabel = $schema
             if ($refSection.Categories) {
@@ -2939,28 +2944,26 @@ foreach ($page in $modulePages) {
 
     if (-not $allFound -and $page.RefSections.Count -eq 1) { continue }
 
-    Write-Host "[$($page.RefTitle)]" -ForegroundColor White
-    Write-Host "  Converted: $($combinedBody.Length) chars ($($schemaLabels -join ' + '))" -ForegroundColor Gray
+    Write-Console "[$($page.RefTitle)]" 'White'
+    Write-Console "  Converted: $($combinedBody.Length) chars ($($schemaLabels -join ' + '))" 'Gray'
 
     $parentId = $pageIds[$page.Id]
     $null = Publish-ConfluencePage -BaseUrl $BaseUrl -Session $session -SpaceKey $SpaceKey -Title "$TitlePrefix$($page.RefTitle)" -StorageBody $combinedBody -ParentPageId $parentId -Execute $Execute -Editors $Editors
 
-    Write-Host ""
+    Write-Console ""
 }
 
-} # End of Confluence publishing block
+}
 
-# ============================================================================
-# MARKDOWN EXPORT (Phase 3) - always runs
-# ============================================================================
+# -- MARKDOWN EXPORT (Phase 3) - always runs --
 
-Write-Host "--- Phase 3: Markdown Export ---" -ForegroundColor Cyan
-Write-Host ""
+Write-Console "--- Phase 3: Markdown Export ---" 'Cyan'
+Write-Console ""
 
 # Create export folder if needed
 if (-not (Test-Path $ExportPath)) {
     New-Item -Path $ExportPath -ItemType Directory -Force | Out-Null
-    Write-Host "  Created export folder: $ExportPath" -ForegroundColor Gray
+    Write-Console "  Created export folder: $ExportPath" 'Gray'
 }
 
 $modulePages = $activePages | Where-Object { -not $_.IsHub }
@@ -2970,7 +2973,7 @@ $hubPage = $activePages | Where-Object { $_.IsHub }
 if ($hubPage) {
     $htmlPath = Join-Path $PagesPath $hubPage.HtmlFile
     if (Test-Path $htmlPath) {
-        Write-Host "[xFACts_Hub.md]" -ForegroundColor White
+        Write-Console "[xFACts_Hub.md]" 'White'
         $htmlContent = Get-Content -Path $htmlPath -Raw -Encoding UTF8
         $md = Convert-HtmlToMarkdown -HtmlContent $htmlContent
 
@@ -2995,7 +2998,7 @@ if ($hubPage) {
 
         $outFile = Join-Path $ExportPath "xFACts_Hub.md"
         $md | Out-File -FilePath $outFile -Encoding UTF8 -Force
-        Write-Host "  Exported: $($md.Length) chars" -ForegroundColor Gray
+        Write-Console "  Exported: $($md.Length) chars" 'Gray'
     }
 }
 
@@ -3100,7 +3103,7 @@ foreach ($page in $modulePages) {
                 if ($page.RefSections.Count -gt 1) {
                     $mdLabel = $schema
                     if ($refSection.Categories) {
-                        $mdLabel = "$schema — $($refSection.Categories -join ', ')"
+                        $mdLabel = "$schema $([char]0x2014) $($refSection.Categories -join ', ')"
                     }
                     $md += "`n### $mdLabel`n"
                 }
@@ -3110,30 +3113,28 @@ foreach ($page in $modulePages) {
     }
 
     if ($md) {
-        Write-Host "[$fileName]" -ForegroundColor White
+        Write-Console "[$fileName]" 'White'
         $outFile = Join-Path $ExportPath $fileName
         $md | Out-File -FilePath $outFile -Encoding UTF8 -Force
-        Write-Host "  Exported: $($md.Length) chars" -ForegroundColor Gray
+        Write-Console "  Exported: $($md.Length) chars" 'Gray'
     }
-    Write-Host ""
+    Write-Console ""
 }
 
-# ============================================================================
-# EXPORT: Reference-only markdown files (for Claude project knowledge upload)
-# Produces one _Ref.md file per module containing only the Object_Metadata-driven
-# reference content — field descriptions, design notes, queries, status values.
-# These are compact alternatives to the full MD exports for AI context.
-# ============================================================================
+# Reference-only markdown export: produces one _Ref.md file per module
+# containing only the Object_Metadata-driven reference content (field
+# descriptions, design notes, queries, status values). These are compact
+# alternatives to the full markdown exports for downstream context upload.
 
 $RefExportPath = Join-Path $ExportPath 'ref'
 if (-not (Test-Path $RefExportPath)) {
     New-Item -Path $RefExportPath -ItemType Directory -Force | Out-Null
 }
 
-Write-Host ""
-Write-Host "============================================" -ForegroundColor Cyan
-Write-Host " Reference-Only Markdown Export" -ForegroundColor Cyan
-Write-Host "============================================" -ForegroundColor Cyan
+Write-Console ""
+Write-Console "============================================" 'Cyan'
+Write-Console " Reference-Only Markdown Export" 'Cyan'
+Write-Console "============================================" 'Cyan'
 
 foreach ($page in $modulePages) {
     if (-not $page.RefSections) { continue }
@@ -3141,7 +3142,7 @@ foreach ($page in $modulePages) {
     $moduleId = $page.Id -replace '-', '_'
     $moduleName = $page.Title -replace '[/\\]', '_' -replace '\s+', '_'
     $fileName = "xFACts_${moduleName}_Ref.md"
-    $md = "# $($page.Title) — Reference`n"
+    $md = "# $($page.Title) $([char]0x2014) Reference`n"
     $md += "Auto-generated from xFACts Object_Metadata and system catalog.`n"
     $hasContent = $false
 
@@ -3188,7 +3189,7 @@ foreach ($page in $modulePages) {
             if ($page.RefSections.Count -gt 1) {
                 $mdLabel = $schema
                 if ($refSection.Categories) {
-                    $mdLabel = "$schema — $($refSection.Categories -join ', ')"
+                    $mdLabel = "$schema $([char]0x2014) $($refSection.Categories -join ', ')"
                 }
                 $md += "`n## $mdLabel`n"
             }
@@ -3198,20 +3199,20 @@ foreach ($page in $modulePages) {
     }
 
     if ($hasContent) {
-        Write-Host "[$fileName]" -ForegroundColor White
+        Write-Console "[$fileName]" 'White'
         $outFile = Join-Path $RefExportPath $fileName
         $md | Out-File -FilePath $outFile -Encoding UTF8 -Force
-        Write-Host "  Exported: $($md.Length) chars" -ForegroundColor Gray
+        Write-Console "  Exported: $($md.Length) chars" 'Gray'
     }
-    Write-Host ""
+    Write-Console ""
 }
 
-# --- Summary ---
-Write-Host "============================================" -ForegroundColor Cyan
-Write-Host " Complete" -ForegroundColor Green
+# Summary
+Write-Console "============================================" 'Cyan'
+Write-Console " Complete" 'Green'
 if (-not $ExportOnly -and -not $Execute) {
-    Write-Host " (Preview only - use -Execute to publish)" -ForegroundColor DarkYellow
+    Write-Console " (Preview only - use -Execute to publish)" 'DarkYellow'
 }
-Write-Host "  Markdown exported to: $ExportPath" -ForegroundColor Gray
-Write-Host "  Ref-only markdown exported to: $RefExportPath" -ForegroundColor Gray
-Write-Host "============================================" -ForegroundColor Cyan
+Write-Console "  Markdown exported to: $ExportPath" 'Gray'
+Write-Console "  Ref-only markdown exported to: $RefExportPath" 'Gray'
+Write-Console "============================================" 'Cyan'
