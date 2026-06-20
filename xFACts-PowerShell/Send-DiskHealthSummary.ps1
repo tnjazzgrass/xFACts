@@ -3,12 +3,8 @@
     xFACts - Disk Health Summary Notification
 
 .DESCRIPTION
-    xFACts - ServerOps.Disk
-    Script: Send-DiskHealthSummary.ps1
-    Version: Tracked in dbo.System_Metadata (component: ServerOps.Disk)
-
-    Generates a disk health summary across all monitored servers and sends
-    a formatted Adaptive Card notification to Teams. Replaces sp_Disk_DailyHealth
+    Generates a disk health summary across all monitored servers and sends a
+    formatted Adaptive Card notification to Teams. Replaces sp_Disk_DailyHealth
     with richer card formatting and proper Unicode/emoji rendering.
 
     Key behaviors:
@@ -20,23 +16,6 @@
     - Updates Disk_Status with health check timestamp
     - Three-tier severity: green (all healthy), yellow (approaching), red (below threshold)
     - Unified server listing with inline drive details for problem drives
-
-    CHANGELOG
-    ---------
-    2026-04-28  Standardized Teams alerting via Send-TeamsAlert shared function
-                Converted direct INSERT to Send-TeamsAlert with -CardJson parameter
-                trigger_value changed from yyyy-MM-dd to yyyy-MM-dd-HH for future
-                schedule flexibility (orchestrator schedule still controls cadence)
-                Card severity logic and color mapping preserved
-    2026-03-11  Migrated to Initialize-XFActsScript shared infrastructure
-                Removed inline Write-Log, Get-SqlData, Invoke-SqlNonQuery
-                Updated header to component-level versioning format
-    2026-02-06  Initial implementation
-                Replaces sp_Disk_DailyHealth with PowerShell-driven Adaptive Card
-                Direct INSERT into Teams.AlertQueue with card_json
-                Three-tier severity (green/yellow/red)
-                Unified server listing with inline drive details for problem drives
-                Standard v2 orchestrator integration (-Execute, -TaskId, -ProcessId)
 
 .PARAMETER ServerInstance
     SQL Server instance name for xFACts database (default: AVG-PROD-LSNR)
@@ -55,15 +34,57 @@
     Orchestrator ProcessRegistry ID passed by the v2 engine at launch. Used for
     task completion callback. Default 0 (no callback when run manually).
 
-================================================================================
-DEPLOYMENT REMINDERS
-================================================================================
-1. Deploy to E:\xFACts-PowerShell on FA-SQLDBB.
-2. xFACts-OrchestratorFunctions.ps1 must be in the same directory.
-3. Register in Orchestrator.ProcessRegistry with scheduled_time for daily execution.
-4. Requires WebhookSubscription entry for ServerOps/INFO (and WARNING) routing.
-================================================================================
+.COMPONENT
+    ServerOps.Disk
+
+.NOTES
+    File Name : Send-DiskHealthSummary.ps1
+    Location  : E:\xFACts-PowerShell\Send-DiskHealthSummary.ps1
+
+    FILE ORGANIZATION
+    -----------------
+    CHANGELOG: CHANGE HISTORY
+    PARAMETERS: SCRIPT PARAMETERS
+    IMPORTS: SCRIPT DEPENDENCIES
+    INITIALIZATION: SCRIPT INITIALIZATION
+    FUNCTIONS: ADAPTIVE CARD
+    EXECUTION: SCRIPT EXECUTION
 #>
+
+<# ============================================================================
+   CHANGELOG: CHANGE HISTORY
+   ----------------------------------------------------------------------------
+   Dated change history for this file, most recent first. Authoritative
+   version tracking lives in dbo.System_Metadata (component ServerOps.Disk);
+   this section records what changed and when.
+   Prefix: (none)
+   ============================================================================ #>
+
+# 2026-06-19  Conformed to the PowerShell file format spec: header CHANGELOG and
+#             deployment block removed, redundant Script/Version description lines
+#             dropped, section banners added, functions renamed to approved verbs
+#             with the dsk prefix (Format-dsk_FreeSpace, New-dsk_AdaptiveCard),
+#             docblocks replaced with single-line purpose comments, divider
+#             comments regularized, and the parameter trailing comment relocated.
+# 2026-04-28  Standardized Teams alerting via the shared Send-TeamsAlert function.
+#             Converted the direct INSERT to Send-TeamsAlert with a -CardJson
+#             parameter. trigger_value changed from yyyy-MM-dd to yyyy-MM-dd-HH
+#             for future schedule flexibility (orchestrator schedule still
+#             controls cadence). Card severity logic and color mapping preserved.
+# 2026-03-11  Migrated to Initialize-XFActsScript shared infrastructure.
+#             Removed inline Write-Log, Get-SqlData, Invoke-SqlNonQuery.
+# 2026-02-06  Initial implementation. Replaces sp_Disk_DailyHealth with a
+#             PowerShell-driven Adaptive Card, three-tier severity (green/yellow/
+#             red), unified server listing with inline problem-drive details, and
+#             standard v2 orchestrator integration (-Execute, -TaskId, -ProcessId).
+
+<# ============================================================================
+   PARAMETERS: SCRIPT PARAMETERS
+   ----------------------------------------------------------------------------
+   Script-level parameters: connection target, the execute switch, and the
+   orchestrator callback identifiers.
+   Prefix: (none)
+   ============================================================================ #>
 
 [CmdletBinding()]
 param(
@@ -74,26 +95,40 @@ param(
     [int]$ProcessId = 0
 )
 
-# ============================================================================
-# STANDARD INITIALIZATION
-# ============================================================================
+<# ============================================================================
+   IMPORTS: SCRIPT DEPENDENCIES
+   ----------------------------------------------------------------------------
+   Dot-sourced shared infrastructure: orchestrator helpers, SQL data access,
+   logging, the shared Teams alert sender, and the orchestrator callback.
+   Prefix: (none)
+   ============================================================================ #>
 
 . "$PSScriptRoot\xFACts-OrchestratorFunctions.ps1"
+
+<# ============================================================================
+   INITIALIZATION: SCRIPT INITIALIZATION
+   ----------------------------------------------------------------------------
+   Establishes shared script context (application identity, connection target,
+   log path, Execute mode). This script is preview-capable: without -Execute it
+   runs in dry-run mode and every write is gated inline, so there is no hard exit.
+   Prefix: (none)
+   ============================================================================ #>
 
 Initialize-XFActsScript -ScriptName 'Send-DiskHealthSummary' `
     -ServerInstance $ServerInstance -Database $Database -Execute:$Execute
 
-# ============================================================================
-# FUNCTIONS
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: ADAPTIVE CARD
+   ----------------------------------------------------------------------------
+   Builds the Teams Adaptive Card payload for the disk health summary, plus the
+   free-space formatting helper it uses for per-drive detail lines.
+   Prefix: dsk
+   ============================================================================ #>
 
-function Format-FreeSpace {
-    <#
-    .SYNOPSIS
-        Formats free space in human-readable units (GB or TB)
-    #>
+# Formats a free-space value in human-readable units (GB, or TB at 1 TB and above).
+function Format-dsk_FreeSpace {
     param([long]$FreeMB)
-    
+
     if ($FreeMB -ge 1048576) {
         # 1 TB or more
         return "{0:N1} TB" -f ($FreeMB / 1048576.0)
@@ -103,56 +138,46 @@ function Format-FreeSpace {
     }
 }
 
-function Build-AdaptiveCard {
-    <#
-    .SYNOPSIS
-        Builds an Adaptive Card JSON payload for the disk health summary
-    .DESCRIPTION
-        Creates a unified server listing with inline drive details:
-        - Color-coded header based on overall severity
-        - Servers grouped by severity (below first, then approaching, then OK)
-        - Within each severity group, sorted by server_id
-        - Problem drives shown inline under their server
-        - Healthy servers show icon only, no drive detail
-        - Color-coded text matching drive status
-        - Footer with server/drive counts
-    #>
+# Builds the Adaptive Card JSON payload for the disk health summary and returns it.
+function New-dsk_AdaptiveCard {
     param(
         [array]$DriveData,
-        [string]$CardColor    # good, warning, or attention
+        # Card severity color: good, warning, or attention
+        [string]$CardColor
     )
-    
+
     $dateDisplay = Get-Date -Format "MMMM dd, yyyy - h:mm tt"
-    
-    # ----------------------------------------
+
+    # Middle-dot separator for the footer counts (ASCII source, renders as the Unicode glyph)
+    $midDot = [char]0x00B7
+
     # Build unified server listing
-    # ----------------------------------------
     $serverGroups = $DriveData | Group-Object -Property server_id
-    
+
     # Assign severity rank per server (worst drive wins), then sort by rank then server_id
     $rankedServers = $serverGroups | ForEach-Object {
         $hasBelowDrives = @($_.Group | Where-Object { $_.status -eq 'BELOW' }).Count -gt 0
         $hasApproachingDrives = @($_.Group | Where-Object { $_.status -eq 'APPROACHING' }).Count -gt 0
-        
+
         $severityRank = if ($hasBelowDrives) { 1 }
                         elseif ($hasApproachingDrives) { 2 }
                         else { 3 }
-        
+
         [PSCustomObject]@{
             ServerGroup = $_
             SeverityRank = $severityRank
             ServerId = [int]$_.Name
         }
     } | Sort-Object SeverityRank, ServerId
-    
+
     $serverListItems = @()
-    
+
     foreach ($ranked in $rankedServers) {
         $serverGroup = $ranked.ServerGroup
         $serverName = $serverGroup.Group[0].server_name
         $belowDrives = @($serverGroup.Group | Where-Object { $_.status -eq 'BELOW' })
         $approachingDrives = @($serverGroup.Group | Where-Object { $_.status -eq 'APPROACHING' })
-        
+
         # Determine server-level status (worst wins)
         if ($belowDrives.Count -gt 0) {
             $serverIcon = "{{FIRE}}"
@@ -166,7 +191,7 @@ function Build-AdaptiveCard {
             $serverIcon = "{{CHECK}}"
             $serverColor = "good"
         }
-        
+
         # Server row: name left, icon right
         $serverListItems += @{
             type = "ColumnSet"
@@ -200,15 +225,15 @@ function Build-AdaptiveCard {
             )
             spacing = "small"
         }
-        
+
         # Inline drive details for problem drives (below threshold first, then approaching)
         $problemDrives = @()
         $problemDrives += $belowDrives | Sort-Object percent_free
         $problemDrives += $approachingDrives | Sort-Object percent_free
-        
+
         foreach ($drive in $problemDrives) {
-            $freeDisplay = Format-FreeSpace -FreeMB $drive.free_space_mb
-            
+            $freeDisplay = Format-dsk_FreeSpace -FreeMB $drive.free_space_mb
+
             if ($drive.status -eq 'BELOW') {
                 $driveIcon = "{{FIRE}}"
                 $driveColor = "attention"
@@ -217,7 +242,7 @@ function Build-AdaptiveCard {
                 $driveIcon = "{{WARN}}"
                 $driveColor = "warning"
             }
-            
+
             # Drive row: icon | drive letter | right-justified free space
             $serverListItems += @{
                 type = "ColumnSet"
@@ -267,12 +292,10 @@ function Build-AdaptiveCard {
             }
         }
     }
-    
-    # ----------------------------------------
+
     # Build body
-    # ----------------------------------------
     $bodyItems = @()
-    
+
     # Header container with severity color
     $bodyItems += @{
         type = "Container"
@@ -295,7 +318,7 @@ function Build-AdaptiveCard {
             }
         )
     }
-    
+
     # Server listing in emphasis container for visibility
     $bodyItems += @{
         type = "Container"
@@ -303,13 +326,13 @@ function Build-AdaptiveCard {
         items = $serverListItems
         spacing = "medium"
     }
-    
+
     # Status summary
     $totalDrives = $DriveData.Count
     $totalServers = @($DriveData | Select-Object -Property server_name -Unique).Count
     $belowCount = @($DriveData | Where-Object { $_.status -eq 'BELOW' }).Count
     $approachingCount = @($DriveData | Where-Object { $_.status -eq 'APPROACHING' }).Count
-    
+
     if ($belowCount -eq 0 -and $approachingCount -eq 0) {
         $bodyItems += @{
             type = "TextBlock"
@@ -318,7 +341,7 @@ function Build-AdaptiveCard {
             spacing = "medium"
         }
     }
-    
+
     # Footer
     $bodyItems += @{
         type = "ColumnSet"
@@ -342,7 +365,7 @@ function Build-AdaptiveCard {
                 items = @(
                     @{
                         type = "TextBlock"
-                        text = "$totalServers servers · $totalDrives drives"
+                        text = "$totalServers servers $midDot $totalDrives drives"
                         size = "small"
                         isSubtle = $true
                         spacing = "none"
@@ -353,10 +376,8 @@ function Build-AdaptiveCard {
         )
         spacing = "medium"
     }
-    
-    # ----------------------------------------
+
     # Assemble full card payload
-    # ----------------------------------------
     $card = @{
         type = "message"
         attachments = @(
@@ -371,13 +392,19 @@ function Build-AdaptiveCard {
             }
         )
     }
-    
+
     return ($card | ConvertTo-Json -Depth 20)
 }
 
-# ============================================================================
-# MAIN SCRIPT
-# ============================================================================
+<# ============================================================================
+   EXECUTION: SCRIPT EXECUTION
+   ----------------------------------------------------------------------------
+   Main flow: load the warning-buffer config, query the latest snapshot per
+   drive with threshold classification, determine overall severity and card
+   color, build the Adaptive Card, send it via the shared Teams alert function,
+   update Disk_Status, and report completion to the orchestrator.
+   Prefix: (none)
+   ============================================================================ #>
 
 Write-Log "========================================"
 Write-Log "xFACts Disk Health Summary"
@@ -385,15 +412,14 @@ Write-Log "========================================"
 
 $scriptStart = Get-Date
 
-# ----------------------------------------
-# Step 1: Load configuration from GlobalConfig
-# ----------------------------------------
+# -- Step 1: Load configuration from GlobalConfig --
+
 Write-Log "Loading configuration..."
 
 $configResult = Get-SqlData -Query @"
 SELECT setting_name, setting_value
 FROM dbo.GlobalConfig
-WHERE module_name = 'ServerOps' 
+WHERE module_name = 'ServerOps'
   AND category = 'Disk'
   AND setting_name = 'warning_buffer_pct'
   AND is_active = 1
@@ -406,13 +432,12 @@ if ($configResult -and $configResult.setting_value) {
 
 Write-Log "  Warning buffer: ${warningBufferPct}%"
 
-# ----------------------------------------
-# Step 2: Query latest snapshots with threshold analysis
-# ----------------------------------------
+# -- Step 2: Query latest snapshots with threshold analysis --
+
 Write-Log "Querying disk snapshots and thresholds..."
 
 $driveData = Get-SqlData -Query @"
-SELECT 
+SELECT
     s.server_id,
     s.server_name,
     d.drive_letter,
@@ -420,7 +445,7 @@ SELECT
     d.free_space_mb,
     d.total_size_mb,
     t.threshold_pct,
-    CASE 
+    CASE
         WHEN d.percent_free < t.threshold_pct THEN 'BELOW'
         WHEN d.percent_free < (t.threshold_pct + $warningBufferPct) THEN 'APPROACHING'
         ELSE 'OK'
@@ -441,7 +466,7 @@ ORDER BY s.server_id, d.drive_letter
 
 if ($null -eq $driveData -or @($driveData).Count -eq 0) {
     Write-Log "No drive data found. Exiting." "WARN"
-    
+
     if ($TaskId -gt 0) {
         $totalMs = [int]((New-TimeSpan -Start $scriptStart -End (Get-Date)).TotalMilliseconds)
         Complete-OrchestratorTask -ServerInstance $ServerInstance -Database $Database `
@@ -465,9 +490,8 @@ Write-Log "  Drives: $totalDrives"
 Write-Log "  Below threshold: $belowCount"
 Write-Log "  Approaching threshold: $approachingCount"
 
-# ----------------------------------------
-# Step 3: Determine severity and card color
-# ----------------------------------------
+# -- Step 3: Determine severity and card color --
+
 if ($belowCount -gt 0) {
     $cardColor = "attention"
     $alertCategory = "WARNING"
@@ -484,21 +508,19 @@ else {
     Write-Log "  Severity: INFO - all healthy" "SUCCESS"
 }
 
-# ----------------------------------------
-# Step 4: Build Adaptive Card
-# ----------------------------------------
+# -- Step 4: Build Adaptive Card --
+
 Write-Log "Building Adaptive Card..."
 
-$cardJson = Build-AdaptiveCard -DriveData $driveData -CardColor $cardColor
+$cardJson = New-dsk_AdaptiveCard -DriveData $driveData -CardColor $cardColor
 
 if (-not $Execute) {
     Write-Log "[Preview] Card JSON:" "DEBUG"
     Write-Log $cardJson "DEBUG"
 }
 
-# ----------------------------------------
-# Step 5: Send Teams alert via shared function
-# ----------------------------------------
+# -- Step 5: Send Teams alert via shared function --
+
 if ($Execute) {
     Write-Log "Sending Teams alert..."
 
@@ -533,12 +555,11 @@ else {
     Write-Log "[Preview] Would send Teams alert with card_json" "WARN"
 }
 
-# ----------------------------------------
-# Step 6: Update Disk_Status
-# ----------------------------------------
+# -- Step 6: Update Disk_Status --
+
 if ($Execute) {
     Write-Log "Updating Disk_Status..."
-    
+
     $updateQuery = @"
 UPDATE ServerOps.Disk_Status
 SET last_health_check_dttm = GETDATE(),
@@ -546,16 +567,15 @@ SET last_health_check_dttm = GETDATE(),
     modified_dttm = GETDATE()
 WHERE status_id = 1
 "@
-    
+
     Invoke-SqlNonQuery -Query $updateQuery | Out-Null
 }
 else {
     Write-Log "[Preview] Would update Disk_Status.last_health_check_dttm" "WARN"
 }
 
-# ----------------------------------------
-# Summary
-# ----------------------------------------
+# -- Summary --
+
 $scriptEnd = Get-Date
 $scriptDuration = $scriptEnd - $scriptStart
 
@@ -569,9 +589,8 @@ Write-Log "  Card color: $cardColor"
 Write-Log "  Duration: $([int]$scriptDuration.TotalMilliseconds) ms"
 Write-Log "========================================"
 
-# ----------------------------------------
-# Orchestrator Callback
-# ----------------------------------------
+# -- Orchestrator Callback --
+
 if ($TaskId -gt 0) {
     $totalMs = [int]$scriptDuration.TotalMilliseconds
     $outputMsg = "Servers: $totalServers, Drives: $totalDrives, Below: $belowCount, Approaching: $approachingCount"
