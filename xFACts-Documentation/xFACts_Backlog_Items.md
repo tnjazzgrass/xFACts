@@ -1,5 +1,5 @@
 # xFACts Backlog Items
-## Updated: June 17, 2026
+## Updated: June 20, 2026
 ## Next ID: B-093
 
 A single punch list of open build, enhancement, and bug-fix items across the xFACts platform. **Open items only** -- when an item is finished it is removed from this file. Its history lives in git and the session record; once closed, an ID has no further meaning and is not reused (allocate the next number from the counter above).
@@ -24,7 +24,6 @@ Sectioned by **priority**. Within each section, **Refactor Initiative** items ar
 
 | ID | Initiative | Component | Type | Item | Notes |
 |----|-----------|-----------|------|------|-------|
-| B-001 | Refactor | Standalone scripts | Enhance | Refactor the standalone collection/monitoring script zone to spec | Second of the three zones (after CC, which is essentially complete). The populators are already converted; remaining standalone scripts get refactored one at a time against the four specs. Largely mechanical per file. The drift catalog is the burndown driver. |
 | B-002 | | Orchestrator | Bug | Stale FIRE_AND_FORGET task detection | Two-part fix: (1) **Startup orphan cleanup** -- on engine start, auto-fail any tasks in LAUNCHED/RUNNING (guaranteed orphans from prior crash/restart). (2) **Heartbeat timeout detection** -- each cycle, check for LAUNCHED tasks exceeding ProcessRegistry timeout_seconds, auto-fail with alert. timeout_seconds must account for worst-case catch-up (XE Events observed at 22 min after 8-hour backlog). Need per-process timeout values in ProcessRegistry. Recurred 2026-03-10: Collect-XEEvents and Collect-ReplicationHealth both hung at 20:44, blocked 8 hours until manual cleanup. |
 | B-003 | | Tools.BDLImport | Enhance | Endpoint authorization (Phase B) | `/api/bdl-import/execute` and related endpoints have no RBAC check -- only AD auth. A user with `/bdl-import` page access (any dept manager) can craft direct POSTs bypassing the UI content filter. Add server-side validation of the requester's `department_scope` against `Tools.AccessConfig` / `Tools.AccessFieldConfig` before executing imports. High-stakes gap from the 2026-05-15 RBAC audit. |
 | B-004 | | BatchOps | Enhance | DM concurrency cap investigation | Investigate all DM processing thread caps via env_prfl_cnfg_ovrrd and config_item tables. Findings impact stall detection for both PMT and NB collectors. |
