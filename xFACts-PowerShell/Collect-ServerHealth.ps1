@@ -3,10 +3,6 @@
     xFACts - Server Health Collection
 
 .DESCRIPTION
-    xFACts - ServerOps.Disk
-    Script: Collect-ServerHealth.ps1
-    Version: Tracked in dbo.System_Metadata (component: ServerOps.Disk)
-
     Collects disk space metrics from all registered servers via CIM/WinRM
     and inserts into xFACts.ServerOps.Disk_Snapshot for threshold monitoring.
 
@@ -17,29 +13,6 @@
     for IT Operations when drives fall below configured thresholds. Includes
     auto-creation of threshold config for new drives, deduplication via
     Disk_AlertHistory, and auto-resolution when drives recover.
-
-    CHANGELOG
-    ---------
-    2026-03-10  Migrated to Initialize-XFActsScript shared infrastructure
-                Removed inline Write-Log, Get-SqlData, Invoke-SqlNonQuery
-                Updated header to component-level versioning format
-    2026-02-06  Consolidated sp_Disk_Monitor functionality
-                Added threshold evaluation, auto-create Disk_ThresholdConfig
-                Added Jira ticket creation for threshold breaches
-                Added auto-resolution with hysteresis buffer
-                Added Disk_Status poll metrics update with daily counter reset
-    2026-02-03  Orchestrator v2 integration
-                Added -Execute, -TaskId, -ProcessId parameters
-                Added orchestrator callback for fire-and-forget tracking
-                Relocated to E:\xFACts-PowerShell
-    2026-01-23  Registry migrated to dbo.ServerRegistry
-                serverops_disk_enabled flag, Disk_Status rename
-    2025-12-28  Added SQL Server service start time capture
-                Added named instance support via instance_name column
-    2025-12-27  Updated table references to Disk_ prefix
-                Removed is_enabled check (ProcessRegistry handles this)
-    2025-12-23  Initial implementation
-                Centralized disk space collection via CIM
 
 .PARAMETER ServerInstance
     SQL Server instance name for xFACts database (default: AVG-PROD-LSNR)
@@ -64,16 +37,64 @@
     Orchestrator ProcessRegistry ID passed by the v2 engine at launch. Used for
     task completion callback. Default 0 (no callback when run manually).
 
-================================================================================
-DEPLOYMENT REMINDERS
-================================================================================
-1. This is deployed in an Availability Group - ensure this script is placed
-   on both servers in the appropriate folder.
-2. The SQL Agent service account must have admin rights on all monitored servers.
-3. The SQL Agent service account must have SQL access to all monitored SQL instances.
-4. xFACts-OrchestratorFunctions.ps1 must be in the same directory.
-================================================================================
+.COMPONENT
+    ServerOps.Disk
+
+.NOTES
+    File Name : Collect-ServerHealth.ps1
+    Location  : E:\xFACts-PowerShell\Collect-ServerHealth.ps1
+
+    FILE ORGANIZATION
+    -----------------
+    CHANGELOG: CHANGE HISTORY
+    PARAMETERS: SCRIPT PARAMETERS
+    IMPORTS: SCRIPT DEPENDENCIES
+    INITIALIZATION: SCRIPT INITIALIZATION
+    FUNCTIONS: SQL DATA ACCESS
+    EXECUTION: SCRIPT EXECUTION
 #>
+
+<# ============================================================================
+   CHANGELOG: CHANGE HISTORY
+   ----------------------------------------------------------------------------
+   Dated change history for this file, most recent first. Authoritative
+   version tracking lives in dbo.System_Metadata (component ServerOps.Disk);
+   this section records what changed and when.
+   Prefix: (none)
+   ============================================================================ #>
+
+# 2026-06-19  Conformed to the PowerShell file format spec: header CHANGELOG and
+#             deployment block removed, redundant Script/Version description lines
+#             dropped, section banners added, the local Get-SqlInstanceName copy
+#             deleted in favor of the shared one, Get-SqlServiceStartTime renamed
+#             to Get-dsk_SqlServiceStartTime with its docblock replaced by a
+#             single-line purpose comment, step dividers regularized to sub-section
+#             markers, trailing comments removed, and the threshold-evaluation
+#             block re-indented to its proper nesting depth.
+# 2026-03-10  Migrated to Initialize-XFActsScript shared infrastructure.
+#             Removed inline Write-Log, Get-SqlData, Invoke-SqlNonQuery.
+# 2026-02-06  Consolidated sp_Disk_Monitor functionality: threshold evaluation,
+#             auto-create Disk_ThresholdConfig, Jira ticket creation for breaches,
+#             auto-resolution with hysteresis buffer, Disk_Status poll metrics
+#             update with daily counter reset.
+# 2026-02-03  Orchestrator v2 integration: -Execute, -TaskId, -ProcessId, and the
+#             orchestrator callback for fire-and-forget tracking. Relocated to
+#             E:\xFACts-PowerShell.
+# 2026-01-23  Registry migrated to dbo.ServerRegistry: serverops_disk_enabled
+#             flag, Disk_Status rename.
+# 2025-12-28  Added SQL Server service start time capture and named-instance
+#             support via the instance_name column.
+# 2025-12-27  Updated table references to the Disk_ prefix. Removed is_enabled
+#             check (ProcessRegistry handles enablement).
+# 2025-12-23  Initial implementation. Centralized disk space collection via CIM.
+
+<# ============================================================================
+   PARAMETERS: SCRIPT PARAMETERS
+   ----------------------------------------------------------------------------
+   Script-level parameters: connection target, the frequency floor, the force
+   override, the execute switch, and the orchestrator callback identifiers.
+   Prefix: (none)
+   ============================================================================ #>
 
 [CmdletBinding()]
 param(
@@ -86,44 +107,38 @@ param(
     [int]$ProcessId = 0
 )
 
-# ============================================================================
-# STANDARD INITIALIZATION
-# ============================================================================
+<# ============================================================================
+   IMPORTS: SCRIPT DEPENDENCIES
+   ----------------------------------------------------------------------------
+   Dot-sourced shared infrastructure: orchestrator helpers, SQL data access,
+   logging, and the orchestrator callback.
+   Prefix: (none)
+   ============================================================================ #>
 
 . "$PSScriptRoot\xFACts-OrchestratorFunctions.ps1"
+
+<# ============================================================================
+   INITIALIZATION: SCRIPT INITIALIZATION
+   ----------------------------------------------------------------------------
+   Establishes shared script context (application identity, connection target,
+   log path, Execute mode). This script is preview-capable: without -Execute it
+   runs in dry-run mode and every write is gated inline, so there is no hard exit.
+   Prefix: (none)
+   ============================================================================ #>
 
 Initialize-XFActsScript -ScriptName 'Collect-ServerHealth' `
     -ServerInstance $ServerInstance -Database $Database -Execute:$Execute
 
-# ============================================================================
-# FUNCTIONS
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: SQL DATA ACCESS
+   ----------------------------------------------------------------------------
+   SQL data-access helpers local to this collector. Currently the SQL Server
+   service-start-time reader used to enrich ServerRegistry uptime tracking.
+   Prefix: dsk
+   ============================================================================ #>
 
-function Get-SqlInstanceName {
-    <#
-    .SYNOPSIS
-        Builds the SQL Server instance connection string from server name and optional instance name
-    #>
-    param(
-        [string]$ServerName,
-        [string]$InstanceName
-    )
-
-    if ([string]::IsNullOrWhiteSpace($InstanceName)) {
-        return $ServerName
-    }
-    else {
-        return "$ServerName\$InstanceName"
-    }
-}
-
-function Get-SqlServiceStartTime {
-    <#
-    .SYNOPSIS
-        Retrieves the SQL Server service start time from a remote instance
-    .RETURNS
-        DateTime if successful, $null if failed
-    #>
+# Retrieves the SQL Server service start time from a remote instance, or $null on failure.
+function Get-dsk_SqlServiceStartTime {
     param(
         [string]$SqlInstanceName
     )
@@ -142,24 +157,29 @@ function Get-SqlServiceStartTime {
     }
 }
 
-# ============================================================================
-# MAIN SCRIPT
-# ============================================================================
+<# ============================================================================
+   EXECUTION: SCRIPT EXECUTION
+   ----------------------------------------------------------------------------
+   Main collection flow. Resolve the server list, then per server collect disk
+   metrics via CIM/WinRM and capture SQL service start time. Update Disk_Status,
+   then evaluate thresholds (auto-create config, create Jira tickets for new
+   breaches, auto-resolve recovered drives, refresh poll metrics). Closes with
+   the summary and the orchestrator callback.
+   Prefix: (none)
+   ============================================================================ #>
 
 Write-Log "========================================"
 Write-Log "xFACts Server Health Collection"
 Write-Log "========================================"
 
-# ----------------------------------------
-# Step 1: Frequency managed by Orchestrator v2
-# ----------------------------------------
+# -- Step 1: Frequency managed by Orchestrator v2 --
+
 if ($Force) {
     Write-Log "Force flag set - manual execution."
 }
 
-# ----------------------------------------
-# Step 2: Get list of servers to monitor
-# ----------------------------------------
+# -- Step 2: Get list of servers to monitor --
+
 Write-Log "Retrieving server list..."
 
 $servers = Get-SqlData -Query @"
@@ -183,9 +203,8 @@ if ($null -eq $servers -or @($servers).Count -eq 0) {
 $serverCount = @($servers).Count
 Write-Log "Found $serverCount server(s) to monitor."
 
-# ----------------------------------------
-# Step 3: Collect disk space from each server
-# ----------------------------------------
+# -- Step 3: Collect disk space from each server --
+
 $collectionTime = Get-Date
 $totalDrives = 0
 $successServers = 0
@@ -203,9 +222,8 @@ foreach ($server in $servers) {
 
     Write-Log "Collecting from: $serverName (ID: $serverId, Type: $serverType)"
 
-    # ----------------------------------------
-    # Step 3a: Disk space collection (all servers)
-    # ----------------------------------------
+    # -- Step 3a: Disk space collection (all servers) --
+
     try {
         # Create CIM session (local or remote)
         $localHostNames = @($env:COMPUTERNAME, "localhost", ".")
@@ -272,14 +290,13 @@ VALUES ($serverId, '$driveLetter', '$volumeLabelSafe', $totalMB, $freeMB, $pctFr
         $failedServers += $serverName
     }
 
-    # ----------------------------------------
-    # Step 3b: SQL Server service start time (SQL Servers only)
-    # ----------------------------------------
+    # -- Step 3b: SQL Server service start time (SQL Servers only) --
+
     if ($serverType -eq "SQL_SERVER") {
         $sqlInstanceName = Get-SqlInstanceName -ServerName $serverName -InstanceName $instanceName
         Write-Log "  Checking SQL service start time ($sqlInstanceName)..."
 
-        $serviceStartTime = Get-SqlServiceStartTime -SqlInstanceName $sqlInstanceName
+        $serviceStartTime = Get-dsk_SqlServiceStartTime -SqlInstanceName $sqlInstanceName
 
         if ($null -ne $serviceStartTime) {
             $uptimeDays = [math]::Round((Get-Date).Subtract($serviceStartTime).TotalDays, 1)
@@ -311,9 +328,8 @@ WHERE server_id = $serverId
     }
 }
 
-# ----------------------------------------
-# Step 4: Update Disk_Status (collection timestamp)
-# ----------------------------------------
+# -- Step 4: Update Disk_Status (collection timestamp) --
+
 if ($Execute) {
     Write-Log "Updating Disk_Status (collection)..."
 
@@ -330,9 +346,8 @@ else {
     Write-Log "  [Preview] Would update Disk_Status.last_collection_dttm"
 }
 
-# ----------------------------------------
-# Collection Summary
-# ----------------------------------------
+# -- Collection Summary --
+
 Write-Log "========================================"
 Write-Log "  Collection Complete$(if (-not $Execute) { ' [PREVIEW]' })"
 Write-Log "  Servers attempted: $serverCount"
@@ -346,11 +361,10 @@ if ($failedServers.Count -gt 0) {
     Write-Log "Failed servers: $($failedServers -join ', ')" "WARN"
 }
 
-# ============================================================================
-# THRESHOLD EVALUATION (Steps 5-10)
+# -- Threshold Evaluation (Steps 5-10) --
+
 # Absorbed from sp_Disk_Monitor - evaluates against in-memory collection data
 # Wrapped in try/catch for error isolation: collection data is already committed
-# ============================================================================
 
 $pollStart = Get-Date
 $alertsDetected = 0
@@ -364,17 +378,16 @@ try {
     }
     else {
 
-    Write-Log ""
-    Write-Log "========================================"
-    Write-Log "Threshold Evaluation"
-    Write-Log "========================================"
+        Write-Log ""
+        Write-Log "========================================"
+        Write-Log "Threshold Evaluation"
+        Write-Log "========================================"
 
-    # ----------------------------------------
-    # Step 5: Load monitoring configuration
-    # ----------------------------------------
-    Write-Log "Loading monitoring configuration..."
+        # -- Step 5: Load monitoring configuration --
 
-    $configData = Get-SqlData -Query @"
+        Write-Log "Loading monitoring configuration..."
+
+        $configData = Get-SqlData -Query @"
 SELECT setting_name, setting_value
 FROM dbo.GlobalConfig
 WHERE module_name = 'ServerOps'
@@ -382,66 +395,76 @@ WHERE module_name = 'ServerOps'
   AND is_active = 1
 "@
 
-    # Parse config values with defaults
-    $defaultThresholdPct = 10.00
-    $spaceRequestBufferPct = 5.00
-    $warningBufferPct = 2.00
+        # Parse config values with defaults
+        $defaultThresholdPct = 10.00
+        $spaceRequestBufferPct = 5.00
+        $warningBufferPct = 2.00
 
-    if ($configData) {
-        foreach ($cfg in @($configData)) {
-            switch ($cfg.setting_name) {
-                'default_threshold_pct'    { $defaultThresholdPct = [decimal]$cfg.setting_value }
-                'space_request_buffer_pct' { $spaceRequestBufferPct = [decimal]$cfg.setting_value }
-                'warning_buffer_pct'       { $warningBufferPct = [decimal]$cfg.setting_value }
+        if ($configData) {
+            foreach ($cfg in @($configData)) {
+                switch ($cfg.setting_name) {
+                    'default_threshold_pct'    { $defaultThresholdPct = [decimal]$cfg.setting_value }
+                    'space_request_buffer_pct' { $spaceRequestBufferPct = [decimal]$cfg.setting_value }
+                    'warning_buffer_pct'       { $warningBufferPct = [decimal]$cfg.setting_value }
+                }
             }
         }
-    }
 
-    Write-Log "  Default threshold: ${defaultThresholdPct}%"
-    Write-Log "  Space request target: ${spaceRequestBufferPct}%"
-    Write-Log "  Warning buffer: ${warningBufferPct}%"
-    Write-Log "  Resolution threshold: $($defaultThresholdPct + $warningBufferPct)% (threshold + buffer)"
+        Write-Log "  Default threshold: ${defaultThresholdPct}%"
+        Write-Log "  Space request target: ${spaceRequestBufferPct}%"
+        Write-Log "  Warning buffer: ${warningBufferPct}%"
+        Write-Log "  Resolution threshold: $($defaultThresholdPct + $warningBufferPct)% (threshold + buffer)"
 
-    # ----------------------------------------
-    # Step 6: Auto-create thresholds for new drives
-    # ----------------------------------------
-    Write-Log "Checking for new drives needing threshold configuration..."
+        # -- Step 6: Auto-create thresholds for new drives --
 
-    # Get all existing threshold configs
-    $existingThresholds = Get-SqlData -Query @"
+        Write-Log "Checking for new drives needing threshold configuration..."
+
+        # Get all existing threshold configs
+        $existingThresholds = Get-SqlData -Query @"
 SELECT server_id, drive_letter, threshold_pct, alert_enabled
 FROM ServerOps.Disk_ThresholdConfig
 "@
 
-    # Build a lookup hashtable for fast comparison
-    $thresholdLookup = @{}
-    if ($existingThresholds) {
-        foreach ($t in @($existingThresholds)) {
-            $key = "$($t.server_id)_$($t.drive_letter)"
-            $thresholdLookup[$key] = $t
+        # Build a lookup hashtable for fast comparison
+        $thresholdLookup = @{}
+        if ($existingThresholds) {
+            foreach ($t in @($existingThresholds)) {
+                $key = "$($t.server_id)_$($t.drive_letter)"
+                $thresholdLookup[$key] = $t
+            }
         }
-    }
 
-    # Find drives without threshold config
-    $newDrives = $collectedDrives | Where-Object {
-        $key = "$($_.server_id)_$($_.drive_letter)"
-        -not $thresholdLookup.ContainsKey($key)
-    }
+        # Find drives without threshold config
+        $newDrives = $collectedDrives | Where-Object {
+            $key = "$($_.server_id)_$($_.drive_letter)"
+            -not $thresholdLookup.ContainsKey($key)
+        }
 
-    if ($newDrives -and @($newDrives).Count -gt 0) {
-        $newDriveCount = @($newDrives).Count
-        Write-Log "  Found $newDriveCount new drive(s) needing threshold config"
+        if ($newDrives -and @($newDrives).Count -gt 0) {
+            $newDriveCount = @($newDrives).Count
+            Write-Log "  Found $newDriveCount new drive(s) needing threshold config"
 
-        foreach ($nd in @($newDrives)) {
-            Write-Log "    $($nd.server_name) drive $($nd.drive_letter): creating with default ${defaultThresholdPct}%"
+            foreach ($nd in @($newDrives)) {
+                Write-Log "    $($nd.server_name) drive $($nd.drive_letter): creating with default ${defaultThresholdPct}%"
 
-            if ($Execute) {
-                $insertResult = Invoke-SqlNonQuery -Query @"
+                if ($Execute) {
+                    $insertResult = Invoke-SqlNonQuery -Query @"
 INSERT INTO ServerOps.Disk_ThresholdConfig (server_id, drive_letter, threshold_pct, alert_enabled, created_by, modified_by)
 VALUES ($($nd.server_id), '$($nd.drive_letter)', $defaultThresholdPct, 1, 'Collect-ServerHealth.ps1', 'Collect-ServerHealth.ps1')
 "@
-                if ($insertResult) {
-                    # Add to lookup so threshold evaluation can use it immediately
+                    if ($insertResult) {
+                        # Add to lookup so threshold evaluation can use it immediately
+                        $key = "$($nd.server_id)_$($nd.drive_letter)"
+                        $thresholdLookup[$key] = [PSCustomObject]@{
+                            server_id    = $nd.server_id
+                            drive_letter = $nd.drive_letter
+                            threshold_pct = $defaultThresholdPct
+                            alert_enabled = 1
+                        }
+                    }
+                }
+                else {
+                    # Add to lookup for preview evaluation
                     $key = "$($nd.server_id)_$($nd.drive_letter)"
                     $thresholdLookup[$key] = [PSCustomObject]@{
                         server_id    = $nd.server_id
@@ -451,140 +474,127 @@ VALUES ($($nd.server_id), '$($nd.drive_letter)', $defaultThresholdPct, 1, 'Colle
                     }
                 }
             }
-            else {
-                # Add to lookup for preview evaluation
-                $key = "$($nd.server_id)_$($nd.drive_letter)"
-                $thresholdLookup[$key] = [PSCustomObject]@{
-                    server_id    = $nd.server_id
-                    drive_letter = $nd.drive_letter
-                    threshold_pct = $defaultThresholdPct
-                    alert_enabled = 1
-                }
-            }
         }
-    }
-    else {
-        Write-Log "  All drives have threshold configuration."
-    }
+        else {
+            Write-Log "  All drives have threshold configuration."
+        }
 
-    # ----------------------------------------
-    # Step 7: Evaluate thresholds
-    # ----------------------------------------
-    Write-Log "Evaluating thresholds..."
+        # -- Step 7: Evaluate thresholds --
 
-    # Get active (unresolved) alerts from Disk_AlertHistory
-    $activeAlerts = Get-SqlData -Query @"
+        Write-Log "Evaluating thresholds..."
+
+        # Get active (unresolved) alerts from Disk_AlertHistory
+        $activeAlerts = Get-SqlData -Query @"
 SELECT alert_id, server_id, alert_key
 FROM ServerOps.Disk_AlertHistory
 WHERE alert_type = 'DISK_SPACE_LOW'
   AND is_resolved = 0
 "@
 
-    # Build active alert lookup
-    $activeAlertLookup = @{}
-    if ($activeAlerts) {
-        foreach ($a in @($activeAlerts)) {
-            $key = "$($a.server_id)_$($a.alert_key)"
-            $activeAlertLookup[$key] = $a
+        # Build active alert lookup
+        $activeAlertLookup = @{}
+        if ($activeAlerts) {
+            foreach ($a in @($activeAlerts)) {
+                $key = "$($a.server_id)_$($a.alert_key)"
+                $activeAlertLookup[$key] = $a
+            }
         }
-    }
 
-    # Evaluate each collected drive against its threshold
-    $drivesBelow = @()
-    $drivesToResolve = @()
+        # Evaluate each collected drive against its threshold
+        $drivesBelow = @()
+        $drivesToResolve = @()
 
-    foreach ($drive in $collectedDrives) {
-        $key = "$($drive.server_id)_$($drive.drive_letter)"
-        $threshold = $thresholdLookup[$key]
+        foreach ($drive in $collectedDrives) {
+            $key = "$($drive.server_id)_$($drive.drive_letter)"
+            $threshold = $thresholdLookup[$key]
 
-        if (-not $threshold) {
-            Write-Log "    WARNING: No threshold config for $($drive.server_name) drive $($drive.drive_letter) - skipping" "WARN"
+            if (-not $threshold) {
+                Write-Log "    WARNING: No threshold config for $($drive.server_name) drive $($drive.drive_letter) - skipping" "WARN"
+                continue
+            }
+
+            if (-not $threshold.alert_enabled) {
+                # Alerting is disabled for this drive
             continue
-        }
+            }
 
-        if (-not $threshold.alert_enabled) {
-            continue  # Alerting disabled for this drive
-        }
+            $thresholdPct = [decimal]$threshold.threshold_pct
+            $resolutionPct = $thresholdPct + $warningBufferPct
+            $hasActiveAlert = $activeAlertLookup.ContainsKey($key)
 
-        $thresholdPct = [decimal]$threshold.threshold_pct
-        $resolutionPct = $thresholdPct + $warningBufferPct
-        $hasActiveAlert = $activeAlertLookup.ContainsKey($key)
+            if ($drive.percent_free -lt $thresholdPct) {
+                # Drive is below threshold
+                $belowThresholdCount++
 
-        if ($drive.percent_free -lt $thresholdPct) {
-            # Drive is below threshold
-            $belowThresholdCount++
-
-            if (-not $hasActiveAlert) {
-                # New breach - needs ticket
-                $drivesBelow += [PSCustomObject]@{
-                    server_id     = $drive.server_id
-                    server_name   = $drive.server_name
-                    drive_letter  = $drive.drive_letter
-                    volume_label  = $drive.volume_label
-                    total_size_mb = $drive.total_size_mb
-                    free_space_mb = $drive.free_space_mb
-                    percent_free  = $drive.percent_free
-                    threshold_pct = $thresholdPct
+                if (-not $hasActiveAlert) {
+                    # New breach - needs ticket
+                    $drivesBelow += [PSCustomObject]@{
+                        server_id     = $drive.server_id
+                        server_name   = $drive.server_name
+                        drive_letter  = $drive.drive_letter
+                        volume_label  = $drive.volume_label
+                        total_size_mb = $drive.total_size_mb
+                        free_space_mb = $drive.free_space_mb
+                        percent_free  = $drive.percent_free
+                        threshold_pct = $thresholdPct
+                    }
+                    Write-Log "    BREACH: $($drive.server_name) drive $($drive.drive_letter) at $($drive.percent_free)% (threshold: ${thresholdPct}%)" "WARN"
                 }
-                Write-Log "    BREACH: $($drive.server_name) drive $($drive.drive_letter) at $($drive.percent_free)% (threshold: ${thresholdPct}%)" "WARN"
+                else {
+                    Write-Log "    BELOW: $($drive.server_name) drive $($drive.drive_letter) at $($drive.percent_free)% - active alert exists, no new ticket"
+                }
             }
-            else {
-                Write-Log "    BELOW: $($drive.server_name) drive $($drive.drive_letter) at $($drive.percent_free)% - active alert exists, no new ticket"
+            elseif ($hasActiveAlert -and $drive.percent_free -ge $resolutionPct) {
+                # Drive has recovered above threshold + buffer - resolve the alert
+                $drivesToResolve += [PSCustomObject]@{
+                    alert_id     = $activeAlertLookup[$key].alert_id
+                    server_name  = $drive.server_name
+                    drive_letter = $drive.drive_letter
+                    percent_free = $drive.percent_free
+                    resolution_pct = $resolutionPct
+                }
+                Write-Log "    RESOLVED: $($drive.server_name) drive $($drive.drive_letter) at $($drive.percent_free)% (above resolution threshold ${resolutionPct}%)" "SUCCESS"
+            }
+            elseif ($hasActiveAlert) {
+                # Drive is above threshold but below resolution threshold - hold the alert
+                Write-Log "    HOLDING: $($drive.server_name) drive $($drive.drive_letter) at $($drive.percent_free)% (above ${thresholdPct}% but below resolution ${resolutionPct}%)"
             }
         }
-        elseif ($hasActiveAlert -and $drive.percent_free -ge $resolutionPct) {
-            # Drive has recovered above threshold + buffer - resolve the alert
-            $drivesToResolve += [PSCustomObject]@{
-                alert_id     = $activeAlertLookup[$key].alert_id
-                server_name  = $drive.server_name
-                drive_letter = $drive.drive_letter
-                percent_free = $drive.percent_free
-                resolution_pct = $resolutionPct
-            }
-            Write-Log "    RESOLVED: $($drive.server_name) drive $($drive.drive_letter) at $($drive.percent_free)% (above resolution threshold ${resolutionPct}%)" "SUCCESS"
-        }
-        elseif ($hasActiveAlert) {
-            # Drive is above threshold but below resolution threshold - hold the alert
-            Write-Log "    HOLDING: $($drive.server_name) drive $($drive.drive_letter) at $($drive.percent_free)% (above ${thresholdPct}% but below resolution ${resolutionPct}%)"
-        }
-    }
 
-    Write-Log "  Drives below threshold: $belowThresholdCount"
-    Write-Log "  New breaches: $(@($drivesBelow).Count)"
-    Write-Log "  Alerts to resolve: $(@($drivesToResolve).Count)"
+        Write-Log "  Drives below threshold: $belowThresholdCount"
+        Write-Log "  New breaches: $(@($drivesBelow).Count)"
+        Write-Log "  Alerts to resolve: $(@($drivesToResolve).Count)"
 
-    # ----------------------------------------
-    # Step 8: Create Jira tickets for new breaches
-    # ----------------------------------------
-    if (@($drivesBelow).Count -gt 0) {
-        Write-Log "Creating Jira tickets for threshold breaches..."
+        # -- Step 8: Create Jira tickets for new breaches --
 
-        foreach ($breach in $drivesBelow) {
-            $alertsDetected++
+        if (@($drivesBelow).Count -gt 0) {
+            Write-Log "Creating Jira tickets for threshold breaches..."
 
-            # Calculate space needed to reach threshold + buffer
-            $driveTargetPct = $breach.threshold_pct + $spaceRequestBufferPct
-            $targetFreeMB = [math]::Ceiling(($driveTargetPct / 100) * $breach.total_size_mb)
-            $spaceNeededMB = $targetFreeMB - $breach.free_space_mb
-            $spaceNeededGB = [math]::Ceiling($spaceNeededMB / 1024)
+            foreach ($breach in $drivesBelow) {
+                $alertsDetected++
 
-            # Round up to nearest 10 GB
-            $spaceRequestGB = [math]::Ceiling($spaceNeededGB / 10) * 10
+                # Calculate space needed to reach threshold + buffer
+                $driveTargetPct = $breach.threshold_pct + $spaceRequestBufferPct
+                $targetFreeMB = [math]::Ceiling(($driveTargetPct / 100) * $breach.total_size_mb)
+                $spaceNeededMB = $targetFreeMB - $breach.free_space_mb
+                $spaceNeededGB = [math]::Ceiling($spaceNeededMB / 1024)
 
-            # Ensure minimum request of 10 GB
-            if ($spaceRequestGB -lt 10) { $spaceRequestGB = 10 }
+                # Round up to nearest 10 GB
+                $spaceRequestGB = [math]::Ceiling($spaceNeededGB / 10) * 10
 
-            $currentFreeGB = [math]::Round($breach.free_space_mb / 1024, 1)
-            $totalSizeGB = [math]::Round($breach.total_size_mb / 1024, 1)
+                # Ensure minimum request of 10 GB
+                if ($spaceRequestGB -lt 10) { $spaceRequestGB = 10 }
 
-            Write-Log "    $($breach.server_name) $($breach.drive_letter): requesting ${spaceRequestGB} GB (current: ${currentFreeGB} GB free of ${totalSizeGB} GB)"
+                $currentFreeGB = [math]::Round($breach.free_space_mb / 1024, 1)
+                $totalSizeGB = [math]::Round($breach.total_size_mb / 1024, 1)
 
-            # Build ticket summary
-            $ticketSummary = "Please add $spaceRequestGB GB of space to $($breach.server_name) drive $($breach.drive_letter):"
-            $ticketSummarySafe = $ticketSummary -replace "'", "''"
+                Write-Log "    $($breach.server_name) $($breach.drive_letter): requesting ${spaceRequestGB} GB (current: ${currentFreeGB} GB free of ${totalSizeGB} GB)"
 
-            # Build ticket description
-            $ticketDescription = @"
+                # Build ticket summary
+                $ticketSummary = "Please add $spaceRequestGB GB of space to $($breach.server_name) drive $($breach.drive_letter):"
+
+                # Build ticket description
+                $ticketDescription = @"
 Server: $($breach.server_name)
 Drive: $($breach.drive_letter):$(if ($breach.volume_label) { " ($($breach.volume_label))" })
 Total Size: $totalSizeGB GB
@@ -597,32 +607,36 @@ Requested: $spaceRequestGB GB to bring drive above ${driveTargetPct}% free space
 Detected: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
 Source: xFACts Automated Disk Monitoring (Collect-ServerHealth.ps1)
 "@
-            $ticketDescriptionSafe = $ticketDescription -replace "'", "''"
 
-            # Trigger values for deduplication
-            $triggerType = 'ServerOps_DiskSpace'
-            $triggerValue = "$($breach.server_name)_$($breach.drive_letter)"
+                # Trigger values for deduplication
+                $triggerType = 'ServerOps_DiskSpace'
+                $triggerValue = "$($breach.server_name)_$($breach.drive_letter)"
 
-            # Build alert details for Disk_AlertHistory
-            $alertDetails = "$($breach.server_name) - Drive $($breach.drive_letter): at $($breach.percent_free)% free (threshold: $($breach.threshold_pct)%) - Jira ticket requested for $spaceRequestGB GB"
-            $alertDetailsSafe = $alertDetails -replace "'", "''"
+                # Build alert details for Disk_AlertHistory
+                $alertDetails = "$($breach.server_name) - Drive $($breach.drive_letter): at $($breach.percent_free)% free (threshold: $($breach.threshold_pct)%) - Jira ticket requested for $spaceRequestGB GB"
 
-            if ($Execute) {
-                # Insert into Disk_AlertHistory
-                $alertInsert = Invoke-SqlNonQuery -Query @"
+                if ($Execute) {
+                    # Insert into Disk_AlertHistory
+                    $alertInsert = Invoke-SqlNonQuery -Query @"
 INSERT INTO ServerOps.Disk_AlertHistory (
     server_id, alert_type, alert_key, alert_details,
     threshold_value, actual_value, detected_dttm
 )
 VALUES (
-    $($breach.server_id), 'DISK_SPACE_LOW', '$($breach.drive_letter)', '$alertDetailsSafe',
-    $($breach.threshold_pct), $($breach.percent_free), GETDATE()
+    @ServerId, 'DISK_SPACE_LOW', @AlertKey, @AlertDetails,
+    @ThresholdValue, @ActualValue, GETDATE()
 )
-"@
+"@ -Parameters @{
+                        ServerId       = $breach.server_id
+                        AlertKey       = $breach.drive_letter
+                        AlertDetails   = $alertDetails
+                        ThresholdValue = $breach.threshold_pct
+                        ActualValue    = $breach.percent_free
+                    }
 
-                if ($alertInsert) {
-                    # Insert directly into Jira.TicketQueue
-                    $jiraInsert = Invoke-SqlNonQuery -Query @"
+                    if ($alertInsert) {
+                        # Insert into Jira.TicketQueue
+                        $jiraInsert = Invoke-SqlNonQuery -Query @"
 INSERT INTO Jira.TicketQueue (
     SourceModule, ProjectKey, Summary, TicketDescription,
     IssueType, TicketPriority, EmailRecipients,
@@ -633,54 +647,62 @@ INSERT INTO Jira.TicketQueue (
     TicketStatus, RequestedDate
 )
 VALUES (
-    'ServerOps', 'SD', '$ticketSummarySafe', '$ticketDescriptionSafe',
-    'Issue', 'High', 'sfitzpatrick@frost-arnett.com',
+    'ServerOps', 'SD', @Summary, @TicketDescription,
+    'Issue', 'High', @EmailRecipients,
     'customfield_18401', 'Computer/Software/Network Access', 'Hardware Issue',
     'customfield_10305', 'FAC INFORMATION TECHNOLOGY',
     'customfield_10009', 'sd/1b77b626-3ad4-4bee-8727-abc18b68c5fa',
-    '$triggerType', '$triggerValue',
+    @TriggerType, @TriggerValue,
     'Pending', GETDATE()
 )
-"@
+"@ -Parameters @{
+                            Summary           = $ticketSummary
+                            TicketDescription = $ticketDescription
+                            EmailRecipients   = 'sfitzpatrick@frost-arnett.com'
+                            TriggerType       = $triggerType
+                            TriggerValue      = $triggerValue
+                        }
 
-                    if ($jiraInsert) {
-                        # Update AlertHistory with alerted timestamp and method
-                        Invoke-SqlNonQuery -Query @"
+                        if ($jiraInsert) {
+                            # Update AlertHistory with alerted timestamp and method
+                            Invoke-SqlNonQuery -Query @"
 UPDATE ServerOps.Disk_AlertHistory
 SET alerted_dttm = GETDATE(),
     alert_method = 'JIRA'
-WHERE server_id = $($breach.server_id)
+WHERE server_id = @ServerId
   AND alert_type = 'DISK_SPACE_LOW'
-  AND alert_key = '$($breach.drive_letter)'
+  AND alert_key = @AlertKey
   AND is_resolved = 0
   AND alerted_dttm IS NULL
-"@ | Out-Null
-                        $alertsSent++
-                        Write-Log "      Jira ticket queued and alert recorded" "SUCCESS"
+"@ -Parameters @{
+                                ServerId = $breach.server_id
+                                AlertKey = $breach.drive_letter
+                            } | Out-Null
+                            $alertsSent++
+                            Write-Log "      Jira ticket queued and alert recorded" "SUCCESS"
+                        }
+                        else {
+                            Write-Log "      Alert recorded but Jira ticket insert FAILED" "ERROR"
+                        }
                     }
                     else {
-                        Write-Log "      Alert recorded but Jira ticket insert FAILED" "ERROR"
+                        Write-Log "      Failed to insert Disk_AlertHistory" "ERROR"
                     }
                 }
                 else {
-                    Write-Log "      Failed to insert Disk_AlertHistory" "ERROR"
+                    Write-Log "    [Preview] Would create alert and queue Jira ticket:"
+                    Write-Log "      Summary: $ticketSummary"
+                    Write-Log "      Space request: $spaceRequestGB GB"
+                    Write-Log "      Trigger: $triggerType / $triggerValue"
                 }
             }
-            else {
-                Write-Log "    [Preview] Would create alert and queue Jira ticket:"
-                Write-Log "      Summary: $ticketSummary"
-                Write-Log "      Space request: $spaceRequestGB GB"
-                Write-Log "      Trigger: $triggerType / $triggerValue"
-            }
         }
-    }
-    else {
-        Write-Log "  No new threshold breaches detected."
-    }
+        else {
+            Write-Log "  No new threshold breaches detected."
+        }
 
-    # ----------------------------------------
-    # Step 9: Auto-resolve recovered drives
-    # ----------------------------------------
+    # -- Step 9: Auto-resolve recovered drives --
+
     if (@($drivesToResolve).Count -gt 0) {
         Write-Log "Auto-resolving recovered drives..."
 
@@ -693,90 +715,87 @@ SET is_resolved = 1,
     resolved_by = 'Collect-ServerHealth.ps1'
 WHERE alert_id = $($resolved.alert_id)
 "@
-                if ($resolveResult) {
-                    Write-Log "    Resolved alert $($resolved.alert_id) for $($resolved.server_name) drive $($resolved.drive_letter)" "SUCCESS"
+                    if ($resolveResult) {
+                        Write-Log "    Resolved alert $($resolved.alert_id) for $($resolved.server_name) drive $($resolved.drive_letter)" "SUCCESS"
+                    }
+                    else {
+                        Write-Log "    Failed to resolve alert $($resolved.alert_id)" "ERROR"
+                    }
                 }
                 else {
-                    Write-Log "    Failed to resolve alert $($resolved.alert_id)" "ERROR"
+                    Write-Log "    [Preview] Would resolve alert $($resolved.alert_id) for $($resolved.server_name) drive $($resolved.drive_letter)"
                 }
             }
-            else {
-                Write-Log "    [Preview] Would resolve alert $($resolved.alert_id) for $($resolved.server_name) drive $($resolved.drive_letter)"
-            }
         }
-    }
-    else {
-        Write-Log "  No alerts to resolve."
-    }
+        else {
+            Write-Log "  No alerts to resolve."
+        }
 
-    # ----------------------------------------
-    # Step 10: Update Disk_Status (poll metrics)
-    # ----------------------------------------
-    $pollEnd = Get-Date
-    $pollDurationMs = [int]($pollEnd - $pollStart).TotalMilliseconds
+        # -- Step 10: Update Disk_Status (poll metrics) --
 
-    Write-Log "Updating Disk_Status (poll metrics)..."
+        $pollEnd = Get-Date
+        $pollDurationMs = [int]($pollEnd - $pollStart).TotalMilliseconds
 
-    if ($Execute) {
-        # Check if date changed (reset daily counters)
-        $lastPollDate = Get-SqlData -Query @"
+        Write-Log "Updating Disk_Status (poll metrics)..."
+
+        if ($Execute) {
+            # Check if date changed (reset daily counters)
+            $lastPollDate = Get-SqlData -Query @"
 SELECT CAST(last_poll_dttm AS DATE) AS last_poll_date
 FROM ServerOps.Disk_Status
 WHERE status_id = 1
 "@
 
-        $today = (Get-Date).Date
-        $isNewDay = $true
-        if ($lastPollDate -and $lastPollDate.last_poll_date -isnot [DBNull]) {
-            $lastDate = [DateTime]$lastPollDate.last_poll_date
-            $isNewDay = ($lastDate -lt $today)
-        }
+            $today = (Get-Date).Date
+            $isNewDay = $true
+            if ($lastPollDate -and $lastPollDate.last_poll_date -isnot [DBNull]) {
+                $lastDate = [DateTime]$lastPollDate.last_poll_date
+                $isNewDay = ($lastDate -lt $today)
+            }
 
-        if ($isNewDay) {
-            # New day - reset counters
-            Invoke-SqlNonQuery -Query @"
-UPDATE ServerOps.Disk_Status
-SET alerts_detected_today = $alertsDetected,
-    alerts_sent_today = $alertsSent,
-    last_poll_dttm = GETDATE(),
-    last_poll_duration_ms = $pollDurationMs,
-    last_poll_status = 'SUCCESS',
-    servers_monitored = $successServers,
-    drives_monitored = $totalDrives,
-    drives_below_threshold = $belowThresholdCount,
-    modified_dttm = GETDATE()
-WHERE status_id = 1
+            if ($isNewDay) {
+                # New day - reset counters
+                Invoke-SqlNonQuery -Query @"
+    UPDATE ServerOps.Disk_Status
+    SET alerts_detected_today = $alertsDetected,
+        alerts_sent_today = $alertsSent,
+        last_poll_dttm = GETDATE(),
+        last_poll_duration_ms = $pollDurationMs,
+        last_poll_status = 'SUCCESS',
+        servers_monitored = $successServers,
+        drives_monitored = $totalDrives,
+        drives_below_threshold = $belowThresholdCount,
+        modified_dttm = GETDATE()
+    WHERE status_id = 1
 "@ | Out-Null
+            }
+            else {
+                # Same day - increment counters
+                Invoke-SqlNonQuery -Query @"
+    UPDATE ServerOps.Disk_Status
+    SET alerts_detected_today = alerts_detected_today + $alertsDetected,
+        alerts_sent_today = alerts_sent_today + $alertsSent,
+        last_poll_dttm = GETDATE(),
+        last_poll_duration_ms = $pollDurationMs,
+        last_poll_status = 'SUCCESS',
+        servers_monitored = $successServers,
+        drives_monitored = $totalDrives,
+        drives_below_threshold = $belowThresholdCount,
+        modified_dttm = GETDATE()
+    WHERE status_id = 1
+"@ | Out-Null
+            }
         }
         else {
-            # Same day - increment counters
-            Invoke-SqlNonQuery -Query @"
-UPDATE ServerOps.Disk_Status
-SET alerts_detected_today = alerts_detected_today + $alertsDetected,
-    alerts_sent_today = alerts_sent_today + $alertsSent,
-    last_poll_dttm = GETDATE(),
-    last_poll_duration_ms = $pollDurationMs,
-    last_poll_status = 'SUCCESS',
-    servers_monitored = $successServers,
-    drives_monitored = $totalDrives,
-    drives_below_threshold = $belowThresholdCount,
-    modified_dttm = GETDATE()
-WHERE status_id = 1
-"@ | Out-Null
+            Write-Log "  [Preview] Would update Disk_Status poll metrics"
+            Write-Log "    Poll duration: $pollDurationMs ms"
+            Write-Log "    Servers monitored: $successServers"
+            Write-Log "    Drives monitored: $totalDrives"
+            Write-Log "    Below threshold: $belowThresholdCount"
+            Write-Log "    Alerts detected: $alertsDetected"
+            Write-Log "    Alerts sent: $alertsSent"
         }
     }
-    else {
-        Write-Log "  [Preview] Would update Disk_Status poll metrics"
-        Write-Log "    Poll duration: $pollDurationMs ms"
-        Write-Log "    Servers monitored: $successServers"
-        Write-Log "    Drives monitored: $totalDrives"
-        Write-Log "    Below threshold: $belowThresholdCount"
-        Write-Log "    Alerts detected: $alertsDetected"
-        Write-Log "    Alerts sent: $alertsSent"
-    }
-
-    }  # end if ($collectedDrives.Count -eq 0) else block
-
 }
 catch {
     Write-Log "THRESHOLD EVALUATION ERROR: $($_.Exception.Message)" "ERROR"
@@ -795,9 +814,8 @@ WHERE status_id = 1
     }
 }
 
-# ----------------------------------------
-# Final Summary
-# ----------------------------------------
+# -- Final Summary --
+
 $scriptEnd = Get-Date
 $totalDurationMs = [int]($scriptEnd - $collectionTime).TotalMilliseconds
 
@@ -812,9 +830,8 @@ Write-Log "  Jira tickets queued: $alertsSent"
 Write-Log "  Below threshold: $belowThresholdCount"
 Write-Log "========================================"
 
-# ----------------------------------------
-# Orchestrator Callback
-# ----------------------------------------
+# -- Orchestrator Callback --
+
 if ($TaskId -gt 0) {
     $outputMsg = "Servers: $successServers/$serverCount, Drives: $totalDrives, SQL: $sqlServersUpdated, Breaches: $alertsDetected, Tickets: $alertsSent"
     Complete-OrchestratorTask -ServerInstance $ServerInstance -Database $Database `
