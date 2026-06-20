@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-06-20 04:40:18
+Generated: 2026-06-20 07:10:53
 
 ## Module Registry
 
@@ -150,6 +150,7 @@ Generated: 2026-06-20 04:40:18
 | Documentation.Pipeline | Invoke-DocPipeline.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Invoke-DocPipeline.ps1 | Orchestrates the full documentation pipeline |
 | Documentation.Pipeline | Publish-ConfluenceDocumentation.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Publish-ConfluenceDocumentation.ps1 | Publishes HTML docs to Confluence and exports markdown |
 | Documentation.Pipeline | Publish-GitHubRepository.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Publish-GitHubRepository.ps1 | Publishes all xFACts platform files to GitHub repository via REST API with manifest generation |
+| Documentation.Pipeline | xFACts-DocPipelineFunctions.ps1 | PowerShell | Script | E:\xFACts-PowerShell\xFACts-DocPipelineFunctions.ps1 | Shared function library for the Documentation.Pipeline scripts. Shared functions: user SQL object definition extraction and Platform Registry markdown generation. Dot-sourced by the documentation-pipeline scripts. |
 | Documentation.Site | docs-architecture.css | Documentation | CSS | E:\xFACts-ControlCenter\public\docs\css\docs-architecture.css | Architecture page styles |
 | Documentation.Site | docs-base.css | Documentation | CSS | E:\xFACts-ControlCenter\public\docs\css\docs-base.css | Documentation site base styles |
 | Documentation.Site | docs-controlcenter.css | Documentation | CSS | E:\xFACts-ControlCenter\public\docs\css\docs-controlcenter.css | Module Control Center page styles |
