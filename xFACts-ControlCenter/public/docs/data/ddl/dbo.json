@@ -992,7 +992,7 @@
                        "checkConstraints":  [
                                                 {
                                                     "name":  "CK_Component_Registry_cc_prefix",
-                                                    "definition":  "([cc_prefix] IS NULL OR ([cc_prefix]) collate SQL_Latin1_General_CP1_CS_AS like \u0027[a-z][a-z][a-z]\u0027)"
+                                                    "definition":  "([cc_prefix] IS NULL OR ([cc_prefix]) collate SQL_Latin1_General_CP1_CS_AS like \u0027[a-z][a-z0-9][a-z]\u0027)"
                                                 }
                                             ],
                        "foreignKeys":  [
