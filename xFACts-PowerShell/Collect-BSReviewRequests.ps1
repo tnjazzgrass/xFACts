@@ -3,78 +3,96 @@
     xFACts - Business Services Review Request Collection
 
 .DESCRIPTION
-    xFACts - DeptOps.BusinessServices
-    Script: Collect-BSReviewRequests.ps1
-    Version: Tracked in dbo.System_Metadata (component: DeptOps.BusinessServices)
+    Collects and synchronizes Business Services review request data from Debt
+    Manager (CRS5) into the DeptOps.BS_ReviewRequest_Tracking table. Supports
+    incremental sync using CRS5 transaction numbers to minimize source load.
+    Reads from a configurable AG replica (PRIMARY or SECONDARY) for CRS5 queries,
+    writes to xFACts via the AG listener, detects PRIMARY/SECONDARY roles
+    automatically, and supports a preview mode for safe testing.
 
-    Collects and synchronizes Business Services review request data from
-    Debt Manager (CRS5) into the DeptOps.BS_ReviewRequest_Tracking table.
-    Supports incremental sync using CRS5 transaction numbers to minimize
-    source database load.
+    Step 1 collects new review requests not yet in the tracking table. Step 2
+    updates existing records where the CRS5 transaction number has changed.
 
-    Follows the xFACts collect pattern:
-    - Reads from configurable AG replica (PRIMARY or SECONDARY) for CRS5 queries
-    - Writes to xFACts via the AG listener
-    - AG-aware: automatically detects current PRIMARY/SECONDARY roles
-    - Supports preview mode for safe testing
-
-    Step 1: Collect new review requests not yet in the tracking table
-    Step 2: Update existing records where the CRS5 transaction number has changed
-
-    CRS5 Field Mapping Notes (vendor naming is misleading):
+    CRS5 field mapping notes (vendor naming is misleading):
       cnsmr_rvw_rqst_cmplt_usr_id  = Requesting user (submitted the request)
       cnsmr_rvw_rqst_assgn_dt      = Request date (not assignment date)
       cnsmr_rvw_rqst_assgn_usr_id  = Assigned user
       upsrt_usr_id                 = Completing user (only when sft_dlt_flg = Y)
       upsrt_dttm                   = Completion date (only when sft_dlt_flg = Y)
 
-    CHANGELOG
-    ---------
-    2026-03-11  Migrated to Initialize-XFActsScript shared infrastructure
-                Removed inline Write-Log, Get-xFACtsData, Invoke-xFACtsWrite
-                Renamed $xFACtsServer/$xFACtsDB to $ServerInstance/$Database
-                Updated header to component-level versioning format
-    2026-02-13  Initial implementation
-                Incremental sync using CRS5 upsrt_trnsctn_nmbr
-                AG-aware replica detection for read operations
-                Conditional completion field population
-                Preview mode support, Orchestrator v2 integration
-
 .PARAMETER ServerInstance
-    SQL Server instance hosting xFACts database (default: AVG-PROD-LSNR)
+    SQL Server instance hosting the xFACts database (default: AVG-PROD-LSNR).
 
 .PARAMETER Database
-    xFACts database name (default: xFACts)
+    xFACts database name (default: xFACts).
 
 .PARAMETER SourceDB
-    Source database for Debt Manager data (default: crs5_oltp)
+    Source database for Debt Manager data (default: crs5_oltp).
 
 .PARAMETER Execute
     Perform writes. Without this flag, runs in preview/dry-run mode.
 
 .PARAMETER ForceSourceServer
-    Override the GlobalConfig replica setting and connect to specific server for reads.
-    Useful for testing or when AG detection fails.
+    Override the GlobalConfig replica setting and connect to a specific server for
+    reads. Useful for testing or when AG detection fails.
 
 .PARAMETER TaskId
-    Orchestrator TaskLog ID passed by the v2 engine at launch. Used for task
+    Orchestrator TaskLog ID passed by the engine at launch, used for the task
     completion callback. Default 0 (no callback when run manually).
 
 .PARAMETER ProcessId
-    Orchestrator ProcessRegistry ID passed by the v2 engine at launch. Used for
+    Orchestrator ProcessRegistry ID passed by the engine at launch, used for the
     task completion callback. Default 0 (no callback when run manually).
 
-================================================================================
-DEPLOYMENT REMINDERS
-================================================================================
-1. The service account running this script needs:
-   - Read access to crs5_oltp on both DM-PROD-DB and DM-PROD-REP
-   - Read/Write access to xFACts database
-2. Required GlobalConfig entries:
-   - Shared.AGName (default: DMPRODAG)
-   - Shared.SourceReplica (PRIMARY or SECONDARY, default: SECONDARY)
-================================================================================
+.COMPONENT
+    DeptOps.BusinessServices
+
+.NOTES
+    File Name : Collect-BSReviewRequests.ps1
+    Location  : E:\xFACts-PowerShell
+
+    FILE ORGANIZATION
+    -----------------
+    CHANGELOG: CHANGE HISTORY
+    PARAMETERS: SCRIPT PARAMETERS
+    IMPORTS: SCRIPT DEPENDENCIES
+    INITIALIZATION: SCRIPT INITIALIZATION
+    VARIABLES: SERVER AND CONFIG STATE
+    FUNCTIONS: CONFIGURATION
+    FUNCTIONS: COLLECTION STEPS
+    EXECUTION: SCRIPT EXECUTION
 #>
+
+<# ============================================================================
+   CHANGELOG: CHANGE HISTORY
+   ----------------------------------------------------------------------------
+   Dated change history, most recent first. Authoritative version tracking lives
+   in dbo.System_Metadata (component DeptOps.BusinessServices).
+   Prefix: (none)
+   ============================================================================ #>
+
+# 2026-06-19  Conformed to the xFACts PowerShell file format spec: section banners,
+#             comment-based-help header with .COMPONENT, dedicated CHANGELOG section,
+#             bsv-prefixed local functions, and single-line purpose comments. Deleted
+#             the local Get-AGReplicaRoles and Get-SourceData copies and switched to the
+#             shared orchestrator versions (Get-AGReplicaRoles -AGName, Get-SourceData
+#             with explicit -ReadServer/-SourceDB). Renamed Initialize-Configuration to
+#             Initialize-bsv_CollectConfig and ConvertTo-SafeSQL to ConvertTo-bsv_SafeSQL.
+#             Converted Write-Host output to the shared Write-Console family.
+# 2026-03-11  Migrated to Initialize-XFActsScript shared infrastructure. Removed inline
+#             Write-Log, Get-xFACtsData, Invoke-xFACtsWrite. Renamed $xFACtsServer/$xFACtsDB
+#             to $ServerInstance/$Database. Updated the header to component-level versioning.
+# 2026-02-13  Initial implementation. Incremental sync using CRS5 upsrt_trnsctn_nmbr,
+#             AG-aware replica detection for reads, conditional completion-field population,
+#             preview mode support, and Orchestrator v2 integration.
+
+<# ============================================================================
+   PARAMETERS: SCRIPT PARAMETERS
+   ----------------------------------------------------------------------------
+   Connection targets, the source database, the Execute write-guard, an optional
+   read-server override, and the orchestrator TaskId/ProcessId callback identifiers.
+   Prefix: (none)
+   ============================================================================ #>
 
 [CmdletBinding()]
 param(
@@ -87,99 +105,61 @@ param(
     [int]$ProcessId = 0
 )
 
-# ============================================================================
-# STANDARD INITIALIZATION
-# ============================================================================
+<# ============================================================================
+   IMPORTS: SCRIPT DEPENDENCIES
+   ----------------------------------------------------------------------------
+   Shared orchestrator and script-infrastructure functions: initialization, logging,
+   SQL access, AG replica resolution, source-data access, and the completion callback.
+   Prefix: (none)
+   ============================================================================ #>
 
 . "$PSScriptRoot\xFACts-OrchestratorFunctions.ps1"
+
+<# ============================================================================
+   INITIALIZATION: SCRIPT INITIALIZATION
+   ----------------------------------------------------------------------------
+   One-time startup: loads the SQL module, sets application identity and log path,
+   stores default connection targets, and applies the preview-mode execute guard.
+   Prefix: (none)
+   ============================================================================ #>
 
 Initialize-XFActsScript -ScriptName 'Collect-BSReviewRequests' `
     -ServerInstance $ServerInstance -Database $Database -Execute:$Execute
 
-# ============================================================================
-# GLOBAL VARIABLES
-# ============================================================================
+<# ============================================================================
+   VARIABLES: SERVER AND CONFIG STATE
+   ----------------------------------------------------------------------------
+   Script-scope state populated by Initialize-bsv_CollectConfig and read across the
+   collection steps: resolved AG replica names, read/write targets, the loaded
+   GlobalConfig hashtable, and the active review-request groups.
+   Prefix: bsv
+   ============================================================================ #>
 
-$Script:AGPrimary = $null
-$Script:AGSecondary = $null
-$Script:ReadServer = $null
-$Script:WriteServer = $null
-$Script:Config = @{}
-$Script:Groups = $null
+# Current AG primary server (physical name).
+$script:AGPrimary = $null
+# Current AG secondary server (physical name).
+$script:AGSecondary = $null
+# Server for crs5_oltp reads (determined by GlobalConfig).
+$script:ReadServer = $null
+# Server for xFACts writes (AG listener).
+$script:WriteServer = $null
+# Loaded GlobalConfig settings (AGName, SourceReplica).
+$script:Config = @{}
+# Active review-request groups loaded from DeptOps.BS_ReviewRequest_Group.
+$script:Groups = $null
 
-# ============================================================================
-# FUNCTIONS
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: CONFIGURATION
+   ----------------------------------------------------------------------------
+   Loads collection configuration from GlobalConfig, resolves the read and write SQL
+   targets via shared AG detection, and loads the active review-request groups.
+   Prefix: bsv
+   ============================================================================ #>
 
-function Get-SourceData {
-    param(
-        [string]$Query,
-        [int]$Timeout = 60
-    )
+# Loads BS review collection config, resolves read/write servers, and loads active groups.
+function Initialize-bsv_CollectConfig {
+param()
 
-    if (-not $Script:ReadServer) {
-        Write-Log "ReadServer not configured - cannot query source" "ERROR"
-        return $null
-    }
-
-    try {
-        Invoke-Sqlcmd -ServerInstance $Script:ReadServer -Database $SourceDB -Query $Query -QueryTimeout $Timeout -ApplicationName $script:XFActsAppName -ErrorAction Stop -SuppressProviderContextWarning -TrustServerCertificate
-    }
-    catch {
-        Write-Log "Source query failed on $($Script:ReadServer): $($_.Exception.Message)" "ERROR"
-        return $null
-    }
-}
-
-# ============================================================================
-# CONFIGURATION
-# ============================================================================
-
-function Get-AGReplicaRoles {
-    $agName = $Script:Config.AGName
-
-    if (-not $agName) {
-        Write-Log "AGName not configured - cannot query replica states" "ERROR"
-        return $null
-    }
-
-    $query = @"
-        SELECT
-            ar.replica_server_name,
-            ars.role_desc
-        FROM sys.dm_hadr_availability_replica_states ars
-        INNER JOIN sys.availability_replicas ar
-            ON ars.replica_id = ar.replica_id
-        INNER JOIN sys.availability_groups ag
-            ON ar.group_id = ag.group_id
-        WHERE ag.name = '$agName'
-"@
-
-    $results = Get-SqlData -Query $query
-
-    if (-not $results) {
-        Write-Log "Failed to query AG replica states" "ERROR"
-        return $null
-    }
-
-    $roles = @{
-        PRIMARY = $null
-        SECONDARY = $null
-    }
-
-    foreach ($row in $results) {
-        if ($row.role_desc -eq 'PRIMARY') {
-            $roles.PRIMARY = $row.replica_server_name
-        }
-        elseif ($row.role_desc -eq 'SECONDARY') {
-            $roles.SECONDARY = $row.replica_server_name
-        }
-    }
-
-    return $roles
-}
-
-function Initialize-Configuration {
     Write-Log "Loading configuration..." "INFO"
 
     # Load GlobalConfig settings
@@ -193,7 +173,7 @@ function Initialize-Configuration {
     $configResults = Get-SqlData -Query $configQuery
 
     # Set defaults
-    $Script:Config = @{
+    $script:Config = @{
         AGName              = "DMPRODAG"
         SourceReplica       = "SECONDARY"
     }
@@ -202,83 +182,83 @@ function Initialize-Configuration {
     if ($configResults) {
         foreach ($row in $configResults) {
             switch ($row.setting_name) {
-                "AGName"          { $Script:Config.AGName = $row.setting_value }
-                "SourceReplica"   { $Script:Config.SourceReplica = $row.setting_value }
+                "AGName"          { $script:Config.AGName = $row.setting_value }
+                "SourceReplica"   { $script:Config.SourceReplica = $row.setting_value }
             }
         }
     }
 
-    Write-Log "  AGName: $($Script:Config.AGName)" "INFO"
-    Write-Log "  SourceReplica: $($Script:Config.SourceReplica)" "INFO"
+    Write-Log "  AGName: $($script:Config.AGName)" "INFO"
+    Write-Log "  SourceReplica: $($script:Config.SourceReplica)" "INFO"
 
     # Set write server (always the listener)
-    $Script:WriteServer = $ServerInstance
+    $script:WriteServer = $ServerInstance
 
     # Determine read server
     if ($ForceSourceServer) {
-        $Script:ReadServer = $ForceSourceServer
-        Write-Log "  ReadServer: $($Script:ReadServer) (forced via parameter)" "WARN"
+        $script:ReadServer = $ForceSourceServer
+        Write-Log "  ReadServer: $($script:ReadServer) (forced via parameter)" "WARN"
     }
     else {
         Write-Log "Detecting AG replica roles..." "INFO"
-        $agRoles = Get-AGReplicaRoles
+        $agRoles = Get-AGReplicaRoles -AGName $script:Config.AGName
 
         if (-not $agRoles) {
             Write-Log "AG detection failed - cannot determine read server" "ERROR"
             return $false
         }
 
-        $Script:AGPrimary = $agRoles.PRIMARY
-        $Script:AGSecondary = $agRoles.SECONDARY
+        $script:AGPrimary = $agRoles.PRIMARY
+        $script:AGSecondary = $agRoles.SECONDARY
 
-        Write-Log "  AG PRIMARY: $($Script:AGPrimary)" "INFO"
-        Write-Log "  AG SECONDARY: $($Script:AGSecondary)" "INFO"
+        Write-Log "  AG PRIMARY: $($script:AGPrimary)" "INFO"
+        Write-Log "  AG SECONDARY: $($script:AGSecondary)" "INFO"
 
-        if ($Script:Config.SourceReplica -eq "PRIMARY") {
-            $Script:ReadServer = $Script:AGPrimary
+        if ($script:Config.SourceReplica -eq "PRIMARY") {
+            $script:ReadServer = $script:AGPrimary
         }
         else {
-            $Script:ReadServer = $Script:AGSecondary
+            $script:ReadServer = $script:AGSecondary
         }
 
-        if (-not $Script:ReadServer) {
+        if (-not $script:ReadServer) {
             Write-Log "Could not determine ReadServer from AG roles" "ERROR"
             return $false
         }
 
-        Write-Log "  ReadServer: $($Script:ReadServer) (from GlobalConfig: $($Script:Config.SourceReplica))" "SUCCESS"
+        Write-Log "  ReadServer: $($script:ReadServer) (from GlobalConfig: $($script:Config.SourceReplica))" "SUCCESS"
     }
 
-    Write-Log "  WriteServer: $($Script:WriteServer)" "INFO"
+    Write-Log "  WriteServer: $($script:WriteServer)" "INFO"
 
     # Load active group IDs from xFACts
     $groupQuery = "SELECT group_id, dm_group_id, group_name, group_short_name FROM DeptOps.BS_ReviewRequest_Group WHERE is_active = 1"
-    $Script:Groups = Get-SqlData -Query $groupQuery
+    $script:Groups = Get-SqlData -Query $groupQuery
 
-    if (-not $Script:Groups) {
+    if (-not $script:Groups) {
         Write-Log "No active groups found in BS_ReviewRequest_Group" "ERROR"
         return $false
     }
 
-    $groupCount = @($Script:Groups).Count
+    $groupCount = @($script:Groups).Count
     Write-Log "  Active groups: $groupCount" "INFO"
-    foreach ($g in @($Script:Groups)) {
+    foreach ($g in @($script:Groups)) {
         Write-Log "    [$($g.dm_group_id)] $($g.group_name) ($($g.group_short_name))" "DEBUG"
     }
 
     return $true
 }
 
-# ============================================================================
-# HELPER FUNCTIONS
-# ============================================================================
+<# ============================================================================
+   FUNCTIONS: COLLECTION STEPS
+   ----------------------------------------------------------------------------
+   The collection pipeline: a SQL value-safety helper, new-request discovery against
+   the CRS5 high-water mark, and per-row change detection via transaction numbers.
+   Prefix: bsv
+   ============================================================================ #>
 
-function ConvertTo-SafeSQL {
-    <#
-    .SYNOPSIS
-        Converts a value to a safe SQL string representation.
-        Handles DBNull, escapes single quotes, and wraps strings in quotes.
-    #>
+# Converts a value to a safe SQL literal, handling DBNull and escaping single quotes.
+function ConvertTo-bsv_SafeSQL {
     param(
         $Value,
         [string]$Type = "string"
@@ -296,17 +276,8 @@ function ConvertTo-SafeSQL {
     }
 }
 
-# ============================================================================
-# STEP FUNCTIONS
-# ============================================================================
-
-function Step-CollectNewRequests {
-    <#
-    .SYNOPSIS
-        Discovers new review requests in CRS5 not yet tracked in xFACts and inserts them.
-        Uses MAX(dm_request_id) as the high-water mark — cnsmr_rvw_rqst_id is an
-        incrementing BIGINT in CRS5, so any ID above our max is a new record.
-    #>
+# Discovers CRS5 review requests above the xFACts high-water mark and inserts them.
+function Step-bsv_CollectNewRequests {
     param([bool]$PreviewOnly = $true)
 
     Write-Log "Step 1: Collect New Review Requests" "STEP"
@@ -322,11 +293,11 @@ function Step-CollectNewRequests {
         Write-Log "  High-water mark: dm_request_id > $maxRequestId" "INFO"
 
         # Build the DM group ID list for the WHERE clause
-        $dmGroupIds = @($Script:Groups | ForEach-Object { $_.dm_group_id }) -join ','
+        $dmGroupIds = @($script:Groups | ForEach-Object { $_.dm_group_id }) -join ','
 
         # Build a lookup from dm_group_id to xFACts group_id (cast key to [long] for type safety)
         $groupMap = @{}
-        foreach ($g in @($Script:Groups)) {
+        foreach ($g in @($script:Groups)) {
             $groupMap[[long]$g.dm_group_id] = $g.group_id
         }
 
@@ -368,7 +339,7 @@ function Step-CollectNewRequests {
 "@
 
         Write-Log "  Querying CRS5 for new requests in groups: $dmGroupIds" "INFO"
-        $sourceData = Get-SourceData -Query $sourceQuery -Timeout 120
+        $sourceData = Get-SourceData -Query $sourceQuery -ReadServer $script:ReadServer -SourceDB $SourceDB -Timeout 120
 
         if (-not $sourceData) {
             Write-Log "  No new requests found" "INFO"
@@ -385,29 +356,29 @@ function Step-CollectNewRequests {
             $isSoftDeleted = ($req.cnsmr_Rvw_rqst_sft_dlt_flg -ne [DBNull] -and $req.cnsmr_Rvw_rqst_sft_dlt_flg -eq 'Y')
 
             # Consumer fields
-            $consumerId   = ConvertTo-SafeSQL $req.cnsmr_id "int"
-            $consumerNum  = ConvertTo-SafeSQL $req.cnsmr_idntfr_agncy_id "string"
-            $lastName     = ConvertTo-SafeSQL $req.cnsmr_nm_lst_txt "string"
-            $firstName    = ConvertTo-SafeSQL $req.cnsmr_nm_frst_txt "string"
-            $workgroup    = ConvertTo-SafeSQL $req.wrkgrp_shrt_nm "string"
-            $comment      = ConvertTo-SafeSQL $req.cnsmr_rvw_rqst_cmmnt "string"
-            $statusCode   = ConvertTo-SafeSQL $req.cnsmr_rvw_rqst_stts_cd "int"
+            $consumerId   = ConvertTo-bsv_SafeSQL $req.cnsmr_id "int"
+            $consumerNum  = ConvertTo-bsv_SafeSQL $req.cnsmr_idntfr_agncy_id "string"
+            $lastName     = ConvertTo-bsv_SafeSQL $req.cnsmr_nm_lst_txt "string"
+            $firstName    = ConvertTo-bsv_SafeSQL $req.cnsmr_nm_frst_txt "string"
+            $workgroup    = ConvertTo-bsv_SafeSQL $req.wrkgrp_shrt_nm "string"
+            $comment      = ConvertTo-bsv_SafeSQL $req.cnsmr_rvw_rqst_cmmnt "string"
+            $statusCode   = ConvertTo-bsv_SafeSQL $req.cnsmr_rvw_rqst_stts_cd "int"
             $sftDlt       = if ($req.cnsmr_Rvw_rqst_sft_dlt_flg -is [DBNull]) { "'N'" } else { "'" + $req.cnsmr_Rvw_rqst_sft_dlt_flg + "'" }
 
             # Requesting user (CRS5: cnsmr_rvw_rqst_cmplt_usr_id)
-            $reqUserId    = ConvertTo-SafeSQL $req.cnsmr_rvw_rqst_cmplt_usr_id "int"
-            $reqUsername   = ConvertTo-SafeSQL $req.requesting_username "string"
-            $reqDate       = ConvertTo-SafeSQL $req.cnsmr_rvw_rqst_assgn_dt "datetime"
+            $reqUserId    = ConvertTo-bsv_SafeSQL $req.cnsmr_rvw_rqst_cmplt_usr_id "int"
+            $reqUsername   = ConvertTo-bsv_SafeSQL $req.requesting_username "string"
+            $reqDate       = ConvertTo-bsv_SafeSQL $req.cnsmr_rvw_rqst_assgn_dt "datetime"
 
             # Assigned user
-            $asgnUserId   = ConvertTo-SafeSQL $req.cnsmr_rvw_rqst_assgn_usr_id "int"
-            $asgnUsername  = ConvertTo-SafeSQL $req.assigned_username "string"
+            $asgnUserId   = ConvertTo-bsv_SafeSQL $req.cnsmr_rvw_rqst_assgn_usr_id "int"
+            $asgnUsername  = ConvertTo-bsv_SafeSQL $req.assigned_username "string"
 
             # Completion fields - only populated when soft deleted
             if ($isSoftDeleted) {
-                $cmpltUserId  = ConvertTo-SafeSQL $req.upsrt_usr_id "int"
-                $cmpltUsername = ConvertTo-SafeSQL $req.completed_username "string"
-                $cmpltDate     = ConvertTo-SafeSQL $req.upsrt_dttm "datetime"
+                $cmpltUserId  = ConvertTo-bsv_SafeSQL $req.upsrt_usr_id "int"
+                $cmpltUsername = ConvertTo-bsv_SafeSQL $req.completed_username "string"
+                $cmpltDate     = ConvertTo-bsv_SafeSQL $req.upsrt_dttm "datetime"
             }
             else {
                 $cmpltUserId  = "NULL"
@@ -416,8 +387,8 @@ function Step-CollectNewRequests {
             }
 
             # Source sync fields
-            $tranNum   = ConvertTo-SafeSQL $req.upsrt_trnsctn_nmbr "int"
-            $upsrtDttm = ConvertTo-SafeSQL $req.upsrt_dttm "datetime"
+            $tranNum   = ConvertTo-bsv_SafeSQL $req.upsrt_trnsctn_nmbr "int"
+            $upsrtDttm = ConvertTo-bsv_SafeSQL $req.upsrt_dttm "datetime"
 
             if ($PreviewOnly) {
                 Write-Log "  [Preview] Would insert request $reqId (group $dmGroupId, sftDlt=$($req.cnsmr_Rvw_rqst_sft_dlt_flg))" "DEBUG"
@@ -464,20 +435,8 @@ function Step-CollectNewRequests {
     }
 }
 
-function Step-UpdateChangedRequests {
-    <#
-    .SYNOPSIS
-        Updates existing tracking records where the CRS5 transaction number has changed.
-        Compares upsrt_trnsctn_nmbr per-row between CRS5 and xFACts to detect changes.
-        This field increments every time a record is touched in the UI.
-
-        Fields that can change over the lifecycle:
-        - status_code, soft_delete_flag
-        - assigned_user_id, assigned_username (distribution assigns)
-        - completed_user_id, completed_username, completion_date (on soft delete)
-        - workgroup (consumer workgroup can change)
-        - dm_transaction_number, dm_last_updated (always updated)
-    #>
+# Updates tracked records whose CRS5 transaction number has changed since last sync.
+function Step-bsv_UpdateChangedRequests {
     param([bool]$PreviewOnly = $true)
 
     Write-Log "Step 2: Update Changed Review Requests" "STEP"
@@ -503,7 +462,7 @@ function Step-UpdateChangedRequests {
         Write-Log "  Loaded $($trackedTrans.Count) tracked records for comparison" "INFO"
 
         # Build the DM group ID list
-        $dmGroupIds = @($Script:Groups | ForEach-Object { $_.dm_group_id }) -join ','
+        $dmGroupIds = @($script:Groups | ForEach-Object { $_.dm_group_id }) -join ','
 
         # Get the high-water mark so we only look at existing records (not new ones Step 1 handles)
         $maxRequestId = ($trackedTrans.Keys | Measure-Object -Maximum).Maximum
@@ -535,7 +494,7 @@ function Step-UpdateChangedRequests {
 "@
 
         Write-Log "  Querying CRS5 for existing records (id <= $maxRequestId) in groups: $dmGroupIds" "INFO"
-        $sourceData = Get-SourceData -Query $sourceQuery -Timeout 120
+        $sourceData = Get-SourceData -Query $sourceQuery -ReadServer $script:ReadServer -SourceDB $SourceDB -Timeout 120
 
         if (-not $sourceData) {
             Write-Log "  No source data returned for update check" "WARN"
@@ -561,20 +520,20 @@ function Step-UpdateChangedRequests {
             $sftDlt = if ($row.cnsmr_Rvw_rqst_sft_dlt_flg -is [DBNull]) { "'N'" } else { "'" + $row.cnsmr_Rvw_rqst_sft_dlt_flg + "'" }
 
             # Status
-            $statusCode   = ConvertTo-SafeSQL $row.cnsmr_rvw_rqst_stts_cd "int"
+            $statusCode   = ConvertTo-bsv_SafeSQL $row.cnsmr_rvw_rqst_stts_cd "int"
 
             # Assigned user
-            $asgnUserId   = ConvertTo-SafeSQL $row.cnsmr_rvw_rqst_assgn_usr_id "int"
-            $asgnUsername  = ConvertTo-SafeSQL $row.assigned_username "string"
+            $asgnUserId   = ConvertTo-bsv_SafeSQL $row.cnsmr_rvw_rqst_assgn_usr_id "int"
+            $asgnUsername  = ConvertTo-bsv_SafeSQL $row.assigned_username "string"
 
             # Workgroup (may have changed)
-            $workgroup    = ConvertTo-SafeSQL $row.wrkgrp_shrt_nm "string"
+            $workgroup    = ConvertTo-bsv_SafeSQL $row.wrkgrp_shrt_nm "string"
 
             # Completion fields - only populated when soft deleted
             if ($isSoftDeleted) {
-                $cmpltUserId  = ConvertTo-SafeSQL $row.upsrt_usr_id "int"
-                $cmpltUsername = ConvertTo-SafeSQL $row.completed_username "string"
-                $cmpltDate     = ConvertTo-SafeSQL $row.upsrt_dttm "datetime"
+                $cmpltUserId  = ConvertTo-bsv_SafeSQL $row.upsrt_usr_id "int"
+                $cmpltUsername = ConvertTo-bsv_SafeSQL $row.completed_username "string"
+                $cmpltDate     = ConvertTo-bsv_SafeSQL $row.upsrt_dttm "datetime"
             }
             else {
                 $cmpltUserId  = "NULL"
@@ -583,8 +542,8 @@ function Step-UpdateChangedRequests {
             }
 
             # Sync fields
-            $tranNum   = ConvertTo-SafeSQL $row.upsrt_trnsctn_nmbr "int"
-            $upsrtDttm = ConvertTo-SafeSQL $row.upsrt_dttm "datetime"
+            $tranNum   = ConvertTo-bsv_SafeSQL $row.upsrt_trnsctn_nmbr "int"
+            $upsrtDttm = ConvertTo-bsv_SafeSQL $row.upsrt_dttm "datetime"
 
             if ($PreviewOnly) {
                 $previewNote = if ($isSoftDeleted) { "COMPLETED" } else { "updated" }
@@ -626,17 +585,18 @@ function Step-UpdateChangedRequests {
     }
 }
 
-# ============================================================================
-# MAIN EXECUTION
-# ============================================================================
+<# ============================================================================
+   EXECUTION: SCRIPT EXECUTION
+   ----------------------------------------------------------------------------
+   The collection run: initialize configuration, collect new requests, update changed
+   records, print the summary, and fire the orchestrator completion callback.
+   Prefix: (none)
+   ============================================================================ #>
 
 $scriptStart = Get-Date
 
-Write-Host ""
-Write-Host "================================================================" -ForegroundColor Cyan
-Write-Host "  xFACts BS Review Request Collection v1.0.0" -ForegroundColor Cyan
-Write-Host "================================================================" -ForegroundColor Cyan
-Write-Host ""
+Write-Console
+Write-ConsoleBanner -Label "xFACts BS Review Request Collection" -Color Cyan
 
 if ($Execute) {
     Write-Log "Mode: EXECUTE (changes will be applied)" "WARN"
@@ -645,10 +605,10 @@ else {
     Write-Log "Mode: PREVIEW (no changes will be made)" "INFO"
 }
 
-Write-Host ""
+Write-Console
 
 # Initialize configuration and server connections
-if (-not (Initialize-Configuration)) {
+if (-not (Initialize-bsv_CollectConfig)) {
     Write-Log "Configuration initialization failed - exiting" "ERROR"
 
     if ($TaskId -gt 0) {
@@ -662,25 +622,20 @@ if (-not (Initialize-Configuration)) {
     exit 1
 }
 
-Write-Host ""
+Write-Console
 
 $previewOnly = -not $Execute
 $stepResults = @{}
 
-Write-Host "----------------------------------------------------------------" -ForegroundColor DarkGray
-Write-Host "  Executing Steps" -ForegroundColor DarkGray
-Write-Host "----------------------------------------------------------------" -ForegroundColor DarkGray
-Write-Host ""
+Write-ConsoleBanner -Label "Executing Steps" -Color DarkGray -RuleChar '-'
 
 # Step 1: Collect new requests from CRS5
-$stepResults.Collect = Step-CollectNewRequests -PreviewOnly $previewOnly
+$stepResults.Collect = Step-bsv_CollectNewRequests -PreviewOnly $previewOnly
 
 # Step 2: Update changed requests
-$stepResults.Update = Step-UpdateChangedRequests -PreviewOnly $previewOnly
+$stepResults.Update = Step-bsv_UpdateChangedRequests -PreviewOnly $previewOnly
 
-# ============================================================================
 # SUMMARY
-# ============================================================================
 
 $scriptEnd = Get-Date
 $scriptDuration = $scriptEnd - $scriptStart
@@ -691,31 +646,25 @@ if ($stepResults.Collect.Error -or $stepResults.Update.Error) {
     $finalStatus = "FAILED"
 }
 
-Write-Host ""
-Write-Host "================================================================" -ForegroundColor Cyan
-Write-Host "  Execution Summary" -ForegroundColor Cyan
-Write-Host "================================================================" -ForegroundColor Cyan
-Write-Host ""
-Write-Host "  Read Server:  $($Script:ReadServer)"
-Write-Host "  Write Server: $($Script:WriteServer)"
-Write-Host ""
-Write-Host "  Results:"
-Write-Host "    New Requests:      $($stepResults.Collect.New)"
-Write-Host "    Requests Updated:  $($stepResults.Update.Updated)"
-Write-Host ""
-Write-Host "  Duration: $totalMs ms"
-Write-Host ""
+Write-Console
+Write-ConsoleBanner -Label "Execution Summary" -Color Cyan
+Write-Console "  Read Server:  $($script:ReadServer)"
+Write-Console "  Write Server: $($script:WriteServer)"
+Write-Console
+Write-Console "  Results:"
+Write-Console "    New Requests:      $($stepResults.Collect.New)"
+Write-Console "    Requests Updated:  $($stepResults.Update.Updated)"
+Write-Console
+Write-Console "  Duration: $totalMs ms"
+Write-Console
 
 if (-not $Execute) {
-    Write-Host "  *** PREVIEW MODE - No changes were made ***" -ForegroundColor Yellow
-    Write-Host "  Run with -Execute to perform actual updates" -ForegroundColor Yellow
-    Write-Host ""
+    Write-Console "  *** PREVIEW MODE - No changes were made ***" Yellow
+    Write-Console "  Run with -Execute to perform actual updates" Yellow
+    Write-Console
 }
 
-Write-Host "================================================================" -ForegroundColor Cyan
-Write-Host "  BS Review Request Collection Complete" -ForegroundColor Cyan
-Write-Host "================================================================" -ForegroundColor Cyan
-Write-Host ""
+Write-ConsoleBanner -Label "BS Review Request Collection Complete" -Color Cyan
 
 # Orchestrator callback
 if ($TaskId -gt 0) {
@@ -726,5 +675,3 @@ if ($TaskId -gt 0) {
         -Status $finalStatus -DurationMs $totalMs `
         -Output $outputSummary
 }
-
-if ($finalStatus -eq "FAILED") { exit 1 } else { exit 0 }
