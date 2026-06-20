@@ -42,7 +42,12 @@
    Prefix: (none)
    ============================================================================ #>
 
-# 2026-06-19  Added Get-SqlInstanceName (FUNCTIONS: SQL DATA ACCESS), the
+# 2026-06-19  Added Get-SourceData (FUNCTIONS: SQL DATA ACCESS), the shared
+#             source-database read wrapper. Takes -ReadServer and -SourceDB
+#             explicitly rather than reading caller script-scope state. Lifted
+#             from a per-script local copy in Monitor-JobFlow; the BS-review
+#             collectors still carry their own copies pending their refactors.
+#             Added Get-SqlInstanceName (FUNCTIONS: SQL DATA ACCESS), the
 #             server-plus-optional-instance connection-target builder. Lifted
 #             from a per-script local copy in Collect-BackupStatus into one
 #             shared definition; the ServerHealth-zone collectors still carry
@@ -404,6 +409,67 @@ function Get-SqlInstanceName {
     }
     else {
         return "$ServerName\$InstanceName"
+    }
+}
+
+function Get-SourceData {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$Query,
+
+        [Parameter(Mandatory)]
+        [string]$ReadServer,
+
+        [Parameter(Mandatory)]
+        [string]$SourceDB,
+
+        [int]$Timeout = 60
+    )
+
+    <#
+    .SYNOPSIS
+        Executes a read query against a source database on a specific replica server.
+
+    .DESCRIPTION
+        Wrapper around Invoke-Sqlcmd for read queries against a source database
+        (e.g., crs5_oltp) on an explicitly supplied replica server, used by the
+        collect/monitor scripts that read Debt Manager data from a chosen AG
+        replica rather than the default xFACts connection target. Applies the
+        script's application identity for DMV/XE attribution and the standard
+        Invoke-Sqlcmd flags (-SuppressProviderContextWarning,
+        -TrustServerCertificate). Returns the result set on success and $null on
+        failure, logging the error. The read server and source database are
+        passed explicitly so the function carries no dependency on caller
+        script-scope state.
+
+    .PARAMETER Query
+        The SQL query to execute.
+
+    .PARAMETER ReadServer
+        The SQL Server instance to read from, typically the AG replica resolved
+        by Get-AGReplicaRoles for the caller's configured SourceReplica role.
+
+    .PARAMETER SourceDB
+        The source database name to query (e.g., crs5_oltp).
+
+    .PARAMETER Timeout
+        Query timeout in seconds. Default: 60.
+    #>
+
+    if (-not $ReadServer) {
+        Write-Log "ReadServer not configured - cannot query source" "ERROR"
+        return $null
+    }
+
+    try {
+        Invoke-Sqlcmd -ServerInstance $ReadServer -Database $SourceDB -Query $Query `
+            -QueryTimeout $Timeout -ApplicationName $script:XFActsAppName `
+            -ErrorAction Stop -SuppressProviderContextWarning -TrustServerCertificate
+    }
+    catch {
+        Write-Log "Source query failed on ${ReadServer}: $($_.Exception.Message)" "ERROR"
+        return $null
     }
 }
 
