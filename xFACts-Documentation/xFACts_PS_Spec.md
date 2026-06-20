@@ -170,7 +170,7 @@ Two forms, no others:
 ### 5.3 Identifier prefix rules
 
 - In prefixable files (files whose component has a non-NULL `cc_prefix`), top-level identifiers in CONSTANTS, VARIABLES, and FUNCTIONS sections begin with the file's registered prefix followed by an underscore.
-- In files whose component has `cc_prefix = NULL`, top-level identifiers are not prefix-constrained. This applies regardless of file role, including standalone scripts (e.g., engine collectors and monitors), the `cc-bootstrap` file, shared-library files, and modules whose components are platform-wide buckets. Function-naming rules in these files are governed by §8.1.
+- In files whose component has `cc_prefix = NULL`, top-level identifiers are not prefix-constrained. This applies regardless of file role, and includes standalone scripts unassociated with a module, the `cc-bootstrap` file, shared-library files, and modules whose components are platform-wide buckets. Function-naming rules in these files are governed by §8.1.
 
 ---
 
