@@ -1,14 +1,11 @@
 <#
 .SYNOPSIS
     xFACts - Extended Events Collection
-    
-.DESCRIPTION
-    xFACts - ServerOps.ServerHealth
-    Script: Collect-XEEvents.ps1
-    Version: Tracked in dbo.System_Metadata (component: ServerOps.ServerHealth)
 
-    Collects Extended Events from all registered servers and imports them into xFACts.
-    
+.DESCRIPTION
+    Collects Extended Events from all registered servers and imports them into
+    xFACts Activity_XE_* tables.
+
     Supported sessions:
     - xFACts_LongQueries -> Activity_XE_LRQ
     - xFACts_BlockedProcess -> Activity_XE_BlockedProcess
@@ -18,80 +15,111 @@
     - xFACts_Tracking -> Activity_XE_xFACts (self-impact tracking)
     - system_health -> Activity_XE_SystemHealth (Microsoft built-in)
     - AlwaysOn_health -> Activity_XE_AGHealth (AG servers only)
-    
+
     Uses incremental collection via file_offset tracking to avoid re-reading
-    events that have already been processed.
-    
-    Linked Server sessions use aggregated collection - events are grouped by
-    session_id and sql_text to reduce row counts while preserving all detail.
-
-    NOTE: This script uses -MaxCharLength 2147483647 on the XE file target read
-    queries (sys.fn_xe_file_target_read_file) because event_data contains full
-    XML event payloads that can be very large. Other queries in this script
-    (file path lookups, config reads, inserts) use default MaxCharLength.
-
-    CHANGELOG
-    ---------
-    2026-03-11  Migrated to Initialize-XFActsScript shared infrastructure
-                Removed inline Write-Log, Get-SqlData, Invoke-SqlNonQuery
-                Updated -DB parameter refs to -DatabaseName for cross-server calls
-                Added explicit -MaxCharLength on XE file target read queries
-                Updated header to component-level versioning format
-    2026-02-19  Added xFACts_Tracking session collection
-                New Parse-xFACtsEvent and Insert-xFACtsEvent functions
-                Captures all completed xFACts queries for impact analysis
-    2026-02-05  Orchestrator v2 integration
-                Added -Execute safeguard, TaskId/ProcessId, orchestrator callback
-                Relocated to E:\xFACts-PowerShell on FA-SQLDBB
-    2026-01-23  Refactoring standardization
-                Added master switch check (serverops_activity_enabled)
-                ServerOps.ServerRegistry -> dbo.ServerRegistry
-                ServerOps.Activity_Config -> dbo.GlobalConfig
-                Renamed Activity_XE_LS_Inbound/Outbound -> LinkedServerIn/Out
-    2026-01-18  Added LS Inbound/Outbound session collection (aggregated)
-                Aggregate by session_id + sql_text to reduce rows
-    2026-01-04  Fixed Insert-SystemHealthEvent to match actual table schema
-                Fixed Parse-DeadlockEvent for multi-victim deadlocks
-                Added victim_count and deadlock_category to deadlock parsing
-    2026-01-03  Added system_health session collection (Microsoft built-in)
-                Skips QUERY_PROCESSING diagnostic events (too large to parse)
-    2026-01-02  Added AlwaysOn_health collection (AG servers only)
-                Added first_file_offset column for batch boundary alerting
-    2026-01-01  Initial implementation
-                LRQ, BlockedProcess, Deadlock session collection
-                Incremental collection via file_offset tracking
+    events that have already been processed. Linked Server sessions use
+    aggregated collection - events are grouped by session_id and sql_text to
+    reduce row counts while preserving all detail. XE file target reads pass an
+    extended MaxCharLength because event_data carries full XML event payloads.
 
 .PARAMETER ServerInstance
     SQL Server instance name for xFACts database (default: AVG-PROD-LSNR)
-    
+
 .PARAMETER Database
     Database name (default: xFACts)
-    
+
 .PARAMETER Execute
     Perform writes. Without this flag, the script exits immediately.
-    No preview mode — this is a high-frequency collector with no dry-run path.
+    No preview mode - this is a high-frequency collector with no dry-run path.
 
 .PARAMETER Force
     Bypass any checks and run immediately
 
 .PARAMETER TaskId
-    Orchestrator TaskLog ID passed by the v2 engine at launch. Used for task 
+    Orchestrator TaskLog ID passed by the v2 engine at launch. Used for task
     completion callback. Default 0 (no callback when run manually).
 
 .PARAMETER ProcessId
-    Orchestrator ProcessRegistry ID passed by the v2 engine at launch. Used for 
+    Orchestrator ProcessRegistry ID passed by the v2 engine at launch. Used for
     task completion callback. Default 0 (no callback when run manually).
 
-================================================================================
-DEPLOYMENT REMINDERS
-================================================================================
-1. Deployed to E:\xFACts-PowerShell on FA-SQLDBB.
-2. The service account running this script must have SQL access to all 
-   monitored servers.
-3. XE sessions must be deployed and running on target servers.
-4. xFACts-OrchestratorFunctions.ps1 must be in the same directory.
-================================================================================
+.COMPONENT
+    ServerOps.ServerHealth
+
+.NOTES
+    File Name : Collect-XEEvents.ps1
+    Location  : E:\xFACts-PowerShell\Collect-XEEvents.ps1
+
+    FILE ORGANIZATION
+    -----------------
+    CHANGELOG: CHANGE HISTORY
+    PARAMETERS: SCRIPT PARAMETERS
+    IMPORTS: SCRIPT DEPENDENCIES
+    INITIALIZATION: SCRIPT INITIALIZATION
+    CONSTANTS: XE SESSION TABLE
+    FUNCTIONS: XE FILE PATH HELPERS
+    FUNCTIONS: LONG-RUNNING QUERY EVENTS
+    FUNCTIONS: BLOCKED PROCESS EVENTS
+    FUNCTIONS: DEADLOCK EVENTS
+    FUNCTIONS: LINKED SERVER EVENTS
+    FUNCTIONS: XFACTS TRACKING EVENTS
+    FUNCTIONS: SYSTEM HEALTH EVENTS
+    FUNCTIONS: AVAILABILITY GROUP HEALTH EVENTS
+    EXECUTION: SCRIPT EXECUTION
 #>
+
+<# ============================================================================
+   CHANGELOG: CHANGE HISTORY
+   ----------------------------------------------------------------------------
+   Dated change history for this file, most recent first. Authoritative
+   version tracking lives in dbo.System_Metadata (component
+   ServerOps.ServerHealth); this section records what changed and when.
+   Prefix: (none)
+   ============================================================================ #>
+
+# 2026-06-19  Conformed to the PowerShell file format spec: header CHANGELOG and
+#             deployment block removed, section banners added (event-sectioned
+#             FUNCTIONS), functions renamed to approved verbs with the srv prefix,
+#             docblocks replaced with single-line purpose comments, sub-section
+#             markers and trailing comments regularized. Deleted the local
+#             Get-SqlInstanceName and Get-ConfigValue copies in favor of the
+#             shared Get-SqlInstanceName and Get-GlobalConfigValue. Moved the XE
+#             session table into a CONSTANTS section as $script:srv_XESessions and
+#             dropped its unused TargetTable/ParseFunction/InsertFunction/IsBuiltIn
+#             fields. Send-srv_AGHealthAlert now takes its alert routing values as
+#             explicit parameters instead of reading script scope.
+# 2026-03-11  Migrated to Initialize-XFActsScript shared infrastructure.
+#             Removed inline Write-Log, Get-SqlData, Invoke-SqlNonQuery.
+#             Updated -DB parameter refs to -DatabaseName for cross-server calls.
+#             Added explicit -MaxCharLength on XE file target read queries.
+# 2026-02-19  Added xFACts_Tracking session collection. New parse/insert
+#             functions. Captures all completed xFACts queries for impact analysis.
+# 2026-02-05  Orchestrator v2 integration. Added -Execute safeguard,
+#             TaskId/ProcessId, orchestrator callback. Relocated to
+#             E:\xFACts-PowerShell on FA-SQLDBB.
+# 2026-01-23  Refactoring standardization. Added master switch check
+#             (serverops_activity_enabled). ServerOps.ServerRegistry ->
+#             dbo.ServerRegistry. ServerOps.Activity_Config -> dbo.GlobalConfig.
+#             Renamed Activity_XE_LS_Inbound/Outbound -> LinkedServerIn/Out.
+# 2026-01-18  Added LS Inbound/Outbound session collection (aggregated).
+#             Aggregate by session_id + sql_text to reduce rows.
+# 2026-01-04  Fixed system_health insert to match actual table schema. Fixed
+#             deadlock parsing for multi-victim deadlocks. Added victim_count
+#             and deadlock_category to deadlock parsing.
+# 2026-01-03  Added system_health session collection (Microsoft built-in).
+#             Skips QUERY_PROCESSING diagnostic events (too large to parse).
+# 2026-01-02  Added AlwaysOn_health collection (AG servers only). Added
+#             first_file_offset column for batch boundary alerting.
+# 2026-01-01  Initial implementation. LRQ, BlockedProcess, Deadlock session
+#             collection. Incremental collection via file_offset tracking.
+
+<# ============================================================================
+   PARAMETERS: SCRIPT PARAMETERS
+   ----------------------------------------------------------------------------
+   Script-level parameters: connection target, the execute switch, the force
+   override, and the orchestrator callback identifiers.
+   Prefix: (none)
+   ============================================================================ #>
 
 [CmdletBinding()]
 param(
@@ -103,109 +131,97 @@ param(
     [int]$ProcessId = 0
 )
 
-# ============================================================================
-# STANDARD INITIALIZATION
-# ============================================================================
+<# ============================================================================
+   IMPORTS: SCRIPT DEPENDENCIES
+   ----------------------------------------------------------------------------
+   Dot-sourced shared infrastructure: orchestrator helpers, SQL data access,
+   logging, the GlobalConfig reader, Teams alerting, and the orchestrator callback.
+   Prefix: (none)
+   ============================================================================ #>
 
 . "$PSScriptRoot\xFACts-OrchestratorFunctions.ps1"
+
+<# ============================================================================
+   INITIALIZATION: SCRIPT INITIALIZATION
+   ----------------------------------------------------------------------------
+   Establishes shared script context (application identity, connection target,
+   log path, Execute mode) and enforces the hard -Execute guard: this
+   high-frequency collector has no preview path and exits without -Execute.
+   Prefix: (none)
+   ============================================================================ #>
 
 Initialize-XFActsScript -ScriptName 'Collect-XEEvents' `
     -ServerInstance $ServerInstance -Database $Database -Execute:$Execute
 
-# Hard exit without -Execute — no preview mode for this collector
+# Hard exit without -Execute - no preview mode for this collector
 if (-not $Execute) {
     exit 0
 }
 
-# ========================================
-# SESSION DEFINITIONS
-# ========================================
-# Each session we collect from, with its target table
+<# ============================================================================
+   CONSTANTS: XE SESSION TABLE
+   ----------------------------------------------------------------------------
+   The xFACts XE sessions collected each cycle in Step 3. Name matches the
+   Extended Events session; IsAggregated marks sessions whose events are grouped
+   by session_id and sql_text before insert. AlwaysOn_health is collected
+   separately in Step 4 and is not part of this table.
+   Prefix: srv
+   ============================================================================ #>
 
-$XESessions = @(
+# Per-cycle XE session definitions consumed by the Step 3 collection loop
+$script:srv_XESessions = @(
     @{
         Name = "xFACts_LongQueries"
-        TargetTable = "Activity_XE_LRQ"
-        ParseFunction = "Parse-LRQEvent"
-        InsertFunction = "Insert-LRQEvent"
     },
     @{
         Name = "xFACts_BlockedProcess"
-        TargetTable = "Activity_XE_BlockedProcess"
-        ParseFunction = "Parse-BlockedProcessEvent"
-        InsertFunction = "Insert-BlockedProcessEvent"
     },
     @{
         Name = "xFACts_Deadlock"
-        TargetTable = "Activity_XE_Deadlock"
-        ParseFunction = "Parse-DeadlockEvent"
-        InsertFunction = "Insert-DeadlockEvent"
     },
     @{
         Name = "xFACts_LS_Inbound"
-        TargetTable = "Activity_XE_LinkedServerIn"
-        ParseFunction = "Parse-LSInboundEvent"
-        InsertFunction = "Insert-LSInboundEventAggregated"
         IsAggregated = $true
     },
     @{
         Name = "xFACts_LS_Outbound"
-        TargetTable = "Activity_XE_LinkedServerOut"
-        ParseFunction = "Parse-LSOutboundEvent"
-        InsertFunction = "Insert-LSOutboundEventAggregated"
         IsAggregated = $true
     },
     @{
         Name = "xFACts_Tracking"
-        TargetTable = "Activity_XE_xFACts"
-        ParseFunction = "Parse-xFACtsEvent"
-        InsertFunction = "Insert-xFACtsEvent"
     },
     @{
         Name = "system_health"
-        TargetTable = "Activity_XE_SystemHealth"
-        ParseFunction = "Parse-SystemHealthEvent"
-        InsertFunction = "Insert-SystemHealthEvent"
-        IsBuiltIn = $true
     }
 )
 
-# ========================================
-# FUNCTIONS
-# ========================================
+<# ============================================================================
+   FUNCTIONS: XE FILE PATH HELPERS
+   ----------------------------------------------------------------------------
+   Resolvers for the XE event-file wildcard patterns used by the collection
+   loop, plus a shared XML node-text extraction helper.
+   Prefix: srv
+   ============================================================================ #>
 
-function Get-SqlInstanceName {
-    param(
-        [string]$ServerName,
-        [string]$InstanceName
-    )
-    
-    if ([string]::IsNullOrWhiteSpace($InstanceName)) {
-        return $ServerName
-    }
-    else {
-        return "$ServerName\$InstanceName"
-    }
-}
-
-function Get-XEFilePath {
+# Resolves the XE event-file wildcard pattern for a session on one instance.
+function Get-srv_XEFilePath {
     param(
         [string]$Instance,
         [string]$SessionName
     )
-    
+
     # Query the XE session to get the actual file path
     $query = @"
-SELECT 
+SELECT
     CAST(target_data AS XML).value('(EventFileTarget/File/@name)[1]', 'varchar(500)') AS file_path
 FROM sys.dm_xe_session_targets st
 JOIN sys.dm_xe_sessions s ON st.event_session_address = s.address
 WHERE s.name = '$SessionName'
   AND st.target_name = 'event_file'
 "@
-    
+
     $result = Get-SqlData -Query $query -Instance $Instance -DatabaseName "master"
-    
+
     if ($null -ne $result -and $result.file_path) {
         # Convert specific file path to wildcard pattern
         $filePath = $result.file_path
@@ -213,75 +229,83 @@ WHERE s.name = '$SessionName'
         $pattern = "$directory\$SessionName*.xel"
         return $pattern
     }
-    
+
     return $null
 }
 
-function Get-XmlNodeText {
-    <#
-    .SYNOPSIS
-        Safely extracts text value from an XML node, handling both simple text and CDATA
-    #>
+# Resolves the system_health XE file wildcard pattern (default LOG folder) on one instance.
+function Get-srv_SystemHealthFilePath {
+    param(
+        [string]$Instance
+    )
+
+    $query = @"
+SELECT
+    CAST(target_data AS XML).value('(EventFileTarget/File/@name)[1]', 'varchar(500)') AS file_path
+FROM sys.dm_xe_session_targets st
+JOIN sys.dm_xe_sessions s ON st.event_session_address = s.address
+WHERE s.name = 'system_health'
+  AND st.target_name = 'event_file'
+"@
+
+    $result = Get-SqlData -Query $query -Instance $Instance -DatabaseName "master"
+
+    if ($null -ne $result -and $result.file_path) {
+        $filePath = $result.file_path
+        $directory = [System.IO.Path]::GetDirectoryName($filePath)
+        $pattern = "$directory\system_health*.xel"
+        return $pattern
+    }
+
+    return $null
+}
+
+# Safely extracts text from an XML node, handling string, element, and CDATA forms.
+function Get-srv_XmlNodeText {
     param($Node)
-    
+
     if ($null -eq $Node) {
         return $null
     }
-    
+
     # If it's already a string, return it
     if ($Node -is [string]) {
         return $Node
     }
-    
+
     # If it's an XmlElement, get the InnerText
     if ($Node -is [System.Xml.XmlElement]) {
         return $Node.InnerText
     }
-    
+
     # Try to get #text property
     if ($Node.'#text') {
         return $Node.'#text'
     }
-    
+
     # Last resort - convert to string
     return $Node.ToString()
 }
 
-function Get-ConfigValue {
-    <#
-    .SYNOPSIS
-        Retrieves a configuration value from dbo.GlobalConfig
-    #>
-    param([string]$SettingName)
-    
-    $query = "SELECT setting_value FROM dbo.GlobalConfig WHERE module_name = 'ServerOps' AND category = 'Activity_XE' AND setting_name = '$SettingName' AND is_active = 1"
-    $result = Get-SqlData -Query $query
-    
-    if ($null -ne $result) {
-        return $result.setting_value
-    }
-    return $null
-}
+<# ============================================================================
+   FUNCTIONS: LONG-RUNNING QUERY EVENTS
+   ----------------------------------------------------------------------------
+   Parse and persist for the xFACts_LongQueries session (Activity_XE_LRQ).
+   Prefix: srv
+   ============================================================================ #>
 
-# ========================================
-# LRQ FUNCTIONS (Long Running Queries)
-# ========================================
-
-function Parse-LRQEvent {
-    <#
-    .SYNOPSIS
-        Parses an XE LongQueries event XML into a hashtable of values
-    #>
+# Converts an XE LongQueries event XML into a metrics/context hashtable.
+function Convert-srv_LRQEvent {
     param([string]$EventXml)
-    
+
     try {
         $xml = [xml]$EventXml
         $event = $xml.event
-        
+
         $parsed = @{
             event_timestamp = [DateTime]::Parse($event.timestamp)
             event_type = $event.name
-            
+
             # Data elements (metrics)
             duration_ms = $null
             cpu_time_ms = $null
@@ -289,7 +313,7 @@ function Parse-LRQEvent {
             physical_reads = $null
             writes = $null
             row_count = $null
-            
+
             # Action elements (context)
             database_name = $null
             username = $null
@@ -300,67 +324,67 @@ function Parse-LRQEvent {
             query_hash = $null
             query_plan_hash = $null
         }
-        
+
         # Parse data elements
         foreach ($data in $event.data) {
             # Use SelectSingleNode to get the <value> child element
             $valueNode = $data.SelectSingleNode("value")
             $textValue = if ($valueNode) { $valueNode.InnerText } else { $null }
-            
+
             switch ($data.name) {
-                "duration" { 
+                "duration" {
                     if ($textValue) {
                         $parsed.duration_ms = [math]::Round([long]$textValue / 1000, 0)
                     }
                 }
-                "cpu_time" { 
+                "cpu_time" {
                     if ($textValue) {
                         $parsed.cpu_time_ms = [math]::Round([long]$textValue / 1000, 0)
                     }
                 }
-                "logical_reads" { 
+                "logical_reads" {
                     if ($textValue) { $parsed.logical_reads = [long]$textValue }
                 }
-                "physical_reads" { 
+                "physical_reads" {
                     if ($textValue) { $parsed.physical_reads = [long]$textValue }
                 }
-                "writes" { 
+                "writes" {
                     if ($textValue) { $parsed.writes = [long]$textValue }
                 }
-                "row_count" { 
+                "row_count" {
                     if ($textValue) { $parsed.row_count = [long]$textValue }
                 }
             }
         }
-        
+
         # Parse action elements
         foreach ($action in $event.action) {
             # Use SelectSingleNode to get the <value> child element
             $valueNode = $action.SelectSingleNode("value")
             $textValue = if ($valueNode) { $valueNode.InnerText } else { $null }
-            
+
             switch ($action.name) {
                 "database_name" { $parsed.database_name = $textValue }
                 "username" { $parsed.username = $textValue }
                 "client_hostname" { $parsed.client_hostname = $textValue }
                 "client_app_name" { $parsed.client_app_name = $textValue }
-                "session_id" { 
+                "session_id" {
                     if ($textValue) { $parsed.session_id = [int]$textValue }
                 }
                 "sql_text" { $parsed.sql_text = $textValue }
-                "query_hash" { 
-                    if ($textValue -and $textValue -ne "0") { 
-                        $parsed.query_hash = $textValue 
+                "query_hash" {
+                    if ($textValue -and $textValue -ne "0") {
+                        $parsed.query_hash = $textValue
                     }
                 }
-                "query_plan_hash" { 
-                    if ($textValue -and $textValue -ne "0") { 
-                        $parsed.query_plan_hash = $textValue 
+                "query_plan_hash" {
+                    if ($textValue -and $textValue -ne "0") {
+                        $parsed.query_plan_hash = $textValue
                     }
                 }
             }
         }
-        
+
         return $parsed
     }
     catch {
@@ -369,7 +393,8 @@ function Parse-LRQEvent {
     }
 }
 
-function Insert-LRQEvent {
+# Inserts one parsed LongQueries event row into Activity_XE_LRQ.
+function Write-srv_LRQEvent {
     param(
         [int]$ServerId,
         [string]$ServerName,
@@ -378,7 +403,7 @@ function Insert-LRQEvent {
         [string]$SourceFile,
         [long]$SourceOffset
     )
-    
+
     # Escape single quotes for SQL
     $dbName = if ($Event.database_name) { $Event.database_name -replace "'", "''" } else { $null }
     $userName = if ($Event.username) { $Event.username -replace "'", "''" } else { $null }
@@ -387,7 +412,7 @@ function Insert-LRQEvent {
     $sqlText = if ($Event.sql_text) { $Event.sql_text -replace "'", "''" } else { $null }
     $sourceFileSafe = if ($SourceFile) { $SourceFile -replace "'", "''" } else { $null }
     $serverNameSafe = $ServerName -replace "'", "''"
-    
+
     $query = @"
 INSERT INTO ServerOps.Activity_XE_LRQ (
     server_id, server_name, event_timestamp, event_type, session_name,
@@ -417,29 +442,30 @@ VALUES (
     $SourceOffset
 )
 "@
-    
+
     return Invoke-SqlNonQuery -Query $query
 }
 
-# ========================================
-# BLOCKED PROCESS FUNCTIONS
-# ========================================
+<# ============================================================================
+   FUNCTIONS: BLOCKED PROCESS EVENTS
+   ----------------------------------------------------------------------------
+   Parse and persist for the xFACts_BlockedProcess session
+   (Activity_XE_BlockedProcess).
+   Prefix: srv
+   ============================================================================ #>
 
-function Parse-BlockedProcessEvent {
-    <#
-    .SYNOPSIS
-        Parses an XE blocked_process_report event XML into a hashtable of values
-    #>
+# Converts an XE blocked_process_report event XML into a victim/blocker hashtable.
+function Convert-srv_BlockedProcessEvent {
     param([string]$EventXml)
-    
+
     try {
         $xml = [xml]$EventXml
         $event = $xml.event
-        
+
         $parsed = @{
             event_timestamp = [DateTime]::Parse($event.timestamp)
             event_type = $event.name
-            
+
             # Blocked process (victim)
             blocked_spid = $null
             blocked_database = $null
@@ -450,7 +476,7 @@ function Parse-BlockedProcessEvent {
             blocked_wait_type = $null
             blocked_wait_resource = $null
             blocked_query_text = $null
-            
+
             # Blocking process (culprit)
             blocked_by_spid = $null
             blocked_by_database = $null
@@ -459,11 +485,11 @@ function Parse-BlockedProcessEvent {
             blocked_by_host_name = $null
             blocked_by_status = $null
             blocked_by_query_text = $null
-            
+
             # Raw XML
             raw_event_xml = $EventXml
         }
-        
+
         # Find the blocked_process data element which contains both sides
         foreach ($data in $event.data) {
             switch ($data.name) {
@@ -472,10 +498,10 @@ function Parse-BlockedProcessEvent {
                     # Structure: <value><blocked-process-report><blocked-process><process>...
                     #                                          <blocking-process><process>...
                     $valueNode = $data.SelectSingleNode("value")
-                    
+
                     if ($valueNode) {
                         $report = $valueNode.'blocked-process-report'
-                        
+
                         if ($report) {
                             # Parse blocked process (victim)
                             $blockedProc = $report.'blocked-process'.process
@@ -487,16 +513,16 @@ function Parse-BlockedProcessEvent {
                                 $parsed.blocked_host_name = $blockedProc.hostname
                                 $parsed.blocked_wait_resource = $blockedProc.waitresource
                                 $parsed.blocked_wait_type = $blockedProc.lockMode
-                                
+
                                 if ($blockedProc.waittime) {
                                     $parsed.blocked_wait_time_ms = [long]$blockedProc.waittime
                                 }
-                                
+
                                 if ($blockedProc.inputbuf) {
                                     $parsed.blocked_query_text = $blockedProc.inputbuf.Trim()
                                 }
                             }
-                            
+
                             # Parse blocking process (culprit)
                             $blockingProc = $report.'blocking-process'.process
                             if ($blockingProc) {
@@ -506,7 +532,7 @@ function Parse-BlockedProcessEvent {
                                 $parsed.blocked_by_client_app = $blockingProc.clientapp
                                 $parsed.blocked_by_host_name = $blockingProc.hostname
                                 $parsed.blocked_by_status = $blockingProc.status
-                                
+
                                 if ($blockingProc.inputbuf) {
                                     $parsed.blocked_by_query_text = $blockingProc.inputbuf.Trim()
                                 }
@@ -525,7 +551,7 @@ function Parse-BlockedProcessEvent {
                 }
             }
         }
-        
+
         return $parsed
     }
     catch {
@@ -534,7 +560,8 @@ function Parse-BlockedProcessEvent {
     }
 }
 
-function Insert-BlockedProcessEvent {
+# Inserts one parsed blocked-process event row into Activity_XE_BlockedProcess.
+function Write-srv_BlockedProcessEvent {
     param(
         [int]$ServerId,
         [string]$ServerName,
@@ -544,7 +571,7 @@ function Insert-BlockedProcessEvent {
         [long]$SourceOffset,
         [bool]$RetainRawXml
     )
-    
+
     # Escape single quotes for SQL
     $serverNameSafe = $ServerName -replace "'", "''"
     $blockedDb = if ($Event.blocked_database) { $Event.blocked_database -replace "'", "''" } else { $null }
@@ -554,23 +581,23 @@ function Insert-BlockedProcessEvent {
     $blockedWaitType = if ($Event.blocked_wait_type) { $Event.blocked_wait_type -replace "'", "''" } else { $null }
     $blockedWaitResource = if ($Event.blocked_wait_resource) { $Event.blocked_wait_resource -replace "'", "''" } else { $null }
     $blockedQuery = if ($Event.blocked_query_text) { $Event.blocked_query_text -replace "'", "''" } else { $null }
-    
+
     $blockedByDb = if ($Event.blocked_by_database) { $Event.blocked_by_database -replace "'", "''" } else { $null }
     $blockedByLogin = if ($Event.blocked_by_login) { $Event.blocked_by_login -replace "'", "''" } else { $null }
     $blockedByApp = if ($Event.blocked_by_client_app) { $Event.blocked_by_client_app -replace "'", "''" } else { $null }
     $blockedByHost = if ($Event.blocked_by_host_name) { $Event.blocked_by_host_name -replace "'", "''" } else { $null }
     $blockedByStatus = if ($Event.blocked_by_status) { $Event.blocked_by_status -replace "'", "''" } else { $null }
     $blockedByQuery = if ($Event.blocked_by_query_text) { $Event.blocked_by_query_text -replace "'", "''" } else { $null }
-    
+
     $sourceFileSafe = if ($SourceFile) { $SourceFile -replace "'", "''" } else { $null }
-    
+
     # Handle raw XML based on config flag
     $rawXmlValue = "NULL"
     if ($RetainRawXml -and $Event.raw_event_xml) {
         $rawXmlSafe = $Event.raw_event_xml -replace "'", "''"
         $rawXmlValue = "'$rawXmlSafe'"
     }
-    
+
     $query = @"
 INSERT INTO ServerOps.Activity_XE_BlockedProcess (
     server_id, server_name, event_timestamp, event_type, session_name,
@@ -607,30 +634,30 @@ VALUES (
     $SourceOffset
 )
 "@
-    
+
     return Invoke-SqlNonQuery -Query $query
 }
 
-# ========================================
-# DEADLOCK FUNCTIONS (v1.6 improvements)
-# ========================================
+<# ============================================================================
+   FUNCTIONS: DEADLOCK EVENTS
+   ----------------------------------------------------------------------------
+   Parse and persist for the xFACts_Deadlock session (Activity_XE_Deadlock),
+   including multi-victim deadlock handling.
+   Prefix: srv
+   ============================================================================ #>
 
-function Parse-DeadlockEvent {
-    <#
-    .SYNOPSIS
-        Parses an XE xml_deadlock_report event XML into a hashtable of values.
-        Handles multi-victim deadlocks (e.g., intra-query parallelism).
-    #>
+# Converts an XE xml_deadlock_report event XML into a hashtable, handling multi-victim deadlocks.
+function Convert-srv_DeadlockEvent {
     param([string]$EventXml)
-    
+
     try {
         $xml = [xml]$EventXml
         $event = $xml.event
-        
+
         $parsed = @{
             event_timestamp = [DateTime]::Parse($event.timestamp)
             event_type = $event.name
-            
+
             # Victim (killed process) - first victim if multiple
             victim_spid = $null
             victim_database = $null
@@ -638,7 +665,7 @@ function Parse-DeadlockEvent {
             victim_client_app = $null
             victim_host_name = $null
             victim_query_text = $null
-            
+
             # Survivor (winning process) - first non-victim
             survivor_spid = $null
             survivor_database = $null
@@ -646,36 +673,36 @@ function Parse-DeadlockEvent {
             survivor_client_app = $null
             survivor_host_name = $null
             survivor_query_text = $null
-            
+
             # Counts and classification
             process_count = 0
             victim_count = 0
             deadlock_category = 'STANDARD'
-            
+
             raw_deadlock_xml = $null
         }
-        
+
         # Get the deadlock report XML using SelectSingleNode for robust navigation
         foreach ($data in $event.data) {
             if ($data.name -eq "xml_report") {
                 $valueNode = $data.SelectSingleNode("value")
-                
+
                 if ($null -eq $valueNode) {
                     Write-Log "    Deadlock parse: No value node found" "WARN"
                     continue
                 }
-                
+
                 # Get the deadlock element using SelectSingleNode
                 $deadlock = $valueNode.SelectSingleNode("deadlock")
-                
+
                 if ($null -eq $deadlock) {
                     Write-Log "    Deadlock parse: No deadlock element found" "WARN"
                     continue
                 }
-                
+
                 # Store raw deadlock XML (just the deadlock portion)
                 $parsed.raw_deadlock_xml = $deadlock.OuterXml
-                
+
                 # Collect all victim process IDs into an array
                 $victimIds = @()
                 $victimList = $deadlock.SelectSingleNode("victim-list")
@@ -688,10 +715,10 @@ function Parse-DeadlockEvent {
                         }
                     }
                 }
-                
+
                 $parsed.victim_count = $victimIds.Count
                 $parsed.deadlock_category = if ($victimIds.Count -gt 1) { 'COMPLEX' } else { 'STANDARD' }
-                
+
                 # Parse process list
                 $processes = @()
                 $processList = $deadlock.SelectSingleNode("process-list")
@@ -701,35 +728,35 @@ function Parse-DeadlockEvent {
                         $processes += $procNode
                     }
                 }
-                
+
                 $parsed.process_count = $processes.Count
-                
+
                 # Track if we've captured first victim and first survivor
                 $firstVictimCaptured = $false
                 $firstSurvivorCaptured = $false
-                
+
                 foreach ($proc in $processes) {
                     $procId = $proc.GetAttribute("id")
                     $isVictim = $victimIds -contains $procId
-                    
+
                     # Extract process details
                     $spid = $null
                     $spidAttr = $proc.GetAttribute("spid")
-                    if ($spidAttr) { 
+                    if ($spidAttr) {
                         try { $spid = [int]$spidAttr } catch { $spid = $null }
                     }
-                    
+
                     $database = $proc.GetAttribute("currentdbname")
                     $login = $proc.GetAttribute("loginname")
                     $clientApp = $proc.GetAttribute("clientapp")
                     $hostName = $proc.GetAttribute("hostname")
-                    
+
                     $queryText = $null
                     $inputBuf = $proc.SelectSingleNode("inputbuf")
                     if ($inputBuf) {
                         $queryText = $inputBuf.InnerText.Trim()
                     }
-                    
+
                     if ($isVictim -and -not $firstVictimCaptured) {
                         # Capture first victim
                         $parsed.victim_spid = $spid
@@ -750,7 +777,7 @@ function Parse-DeadlockEvent {
                         $parsed.survivor_query_text = $queryText
                         $firstSurvivorCaptured = $true
                     }
-                    
+
                     # Exit early if we have both
                     if ($firstVictimCaptured -and $firstSurvivorCaptured) {
                         break
@@ -758,7 +785,7 @@ function Parse-DeadlockEvent {
                 }
             }
         }
-        
+
         return $parsed
     }
     catch {
@@ -767,7 +794,8 @@ function Parse-DeadlockEvent {
     }
 }
 
-function Insert-DeadlockEvent {
+# Inserts one parsed deadlock event row into Activity_XE_Deadlock.
+function Write-srv_DeadlockEvent {
     param(
         [int]$ServerId,
         [string]$ServerName,
@@ -776,32 +804,32 @@ function Insert-DeadlockEvent {
         [string]$SourceFile,
         [long]$SourceOffset
     )
-    
+
     # Escape single quotes for SQL
     $serverNameSafe = $ServerName -replace "'", "''"
-    
+
     $victimDb = if ($Event.victim_database) { $Event.victim_database -replace "'", "''" } else { $null }
     $victimLogin = if ($Event.victim_login) { $Event.victim_login -replace "'", "''" } else { $null }
     $victimApp = if ($Event.victim_client_app) { $Event.victim_client_app -replace "'", "''" } else { $null }
     $victimHost = if ($Event.victim_host_name) { $Event.victim_host_name -replace "'", "''" } else { $null }
     $victimQuery = if ($Event.victim_query_text) { $Event.victim_query_text -replace "'", "''" } else { $null }
-    
+
     $survivorDb = if ($Event.survivor_database) { $Event.survivor_database -replace "'", "''" } else { $null }
     $survivorLogin = if ($Event.survivor_login) { $Event.survivor_login -replace "'", "''" } else { $null }
     $survivorApp = if ($Event.survivor_client_app) { $Event.survivor_client_app -replace "'", "''" } else { $null }
     $survivorHost = if ($Event.survivor_host_name) { $Event.survivor_host_name -replace "'", "''" } else { $null }
     $survivorQuery = if ($Event.survivor_query_text) { $Event.survivor_query_text -replace "'", "''" } else { $null }
-    
+
     $sourceFileSafe = if ($SourceFile) { $SourceFile -replace "'", "''" } else { $null }
     $deadlockCategory = if ($Event.deadlock_category) { $Event.deadlock_category } else { 'STANDARD' }
-    
+
     # Raw XML
     $rawXmlValue = "NULL"
     if ($Event.raw_deadlock_xml) {
         $rawXmlSafe = $Event.raw_deadlock_xml -replace "'", "''"
         $rawXmlValue = "'$rawXmlSafe'"
     }
-    
+
     $query = @"
 INSERT INTO ServerOps.Activity_XE_Deadlock (
     server_id, server_name, event_timestamp, event_type, session_name,
@@ -835,29 +863,30 @@ VALUES (
     $SourceOffset
 )
 "@
-    
+
     return Invoke-SqlNonQuery -Query $query
 }
 
-# ========================================
-# LS INBOUND FUNCTIONS (Linked Server Inbound)
-# ========================================
+<# ============================================================================
+   FUNCTIONS: LINKED SERVER EVENTS
+   ----------------------------------------------------------------------------
+   Parse, group, and persist for the xFACts_LS_Inbound and xFACts_LS_Outbound
+   sessions, aggregated by session_id and sql_text into linked-server tables.
+   Prefix: srv
+   ============================================================================ #>
 
-function Parse-LSInboundEvent {
-    <#
-    .SYNOPSIS
-        Parses an XE LS_Inbound event XML into a hashtable of values
-    #>
+# Converts an XE LS_Inbound event XML into a metrics/context hashtable.
+function Convert-srv_LSInboundEvent {
     param([string]$EventXml)
-    
+
     try {
         $xml = [xml]$EventXml
         $event = $xml.event
-        
+
         $parsed = @{
             event_timestamp = [DateTime]::Parse($event.timestamp)
             event_type = $event.name
-            
+
             # Data elements (metrics)
             duration_ms = 0
             cpu_time_ms = $null
@@ -865,7 +894,7 @@ function Parse-LSInboundEvent {
             physical_reads = $null
             writes = $null
             row_count = $null
-            
+
             # Action elements (context)
             database_name = $null
             username = $null
@@ -878,69 +907,69 @@ function Parse-LSInboundEvent {
             query_hash = $null
             query_plan_hash = $null
         }
-        
+
         # Parse data elements
         foreach ($data in $event.data) {
             $valueNode = $data.SelectSingleNode("value")
             $textValue = if ($valueNode) { $valueNode.InnerText } else { $null }
-            
+
             switch ($data.name) {
-                "duration" { 
+                "duration" {
                     if ($textValue) {
                         $parsed.duration_ms = [math]::Round([long]$textValue / 1000, 0)
                     }
                 }
-                "cpu_time" { 
+                "cpu_time" {
                     if ($textValue) {
                         $parsed.cpu_time_ms = [math]::Round([long]$textValue / 1000, 0)
                     }
                 }
-                "logical_reads" { 
+                "logical_reads" {
                     if ($textValue) { $parsed.logical_reads = [long]$textValue }
                 }
-                "physical_reads" { 
+                "physical_reads" {
                     if ($textValue) { $parsed.physical_reads = [long]$textValue }
                 }
-                "writes" { 
+                "writes" {
                     if ($textValue) { $parsed.writes = [long]$textValue }
                 }
-                "row_count" { 
+                "row_count" {
                     if ($textValue) { $parsed.row_count = [long]$textValue }
                 }
             }
         }
-        
+
         # Parse action elements
         foreach ($action in $event.action) {
             $valueNode = $action.SelectSingleNode("value")
             $textValue = if ($valueNode) { $valueNode.InnerText } else { $null }
-            
+
             switch ($action.name) {
                 "database_name" { $parsed.database_name = $textValue }
                 "username" { $parsed.username = $textValue }
                 "nt_username" { $parsed.nt_username = $textValue }
                 "client_hostname" { $parsed.client_hostname = $textValue }
                 "client_app_name" { $parsed.client_app_name = $textValue }
-                "client_pid" { 
+                "client_pid" {
                     if ($textValue) { $parsed.client_pid = [int]$textValue }
                 }
-                "session_id" { 
+                "session_id" {
                     if ($textValue) { $parsed.session_id = [int]$textValue }
                 }
                 "sql_text" { $parsed.sql_text = $textValue }
-                "query_hash" { 
-                    if ($textValue -and $textValue -ne "0") { 
-                        $parsed.query_hash = $textValue 
+                "query_hash" {
+                    if ($textValue -and $textValue -ne "0") {
+                        $parsed.query_hash = $textValue
                     }
                 }
-                "query_plan_hash" { 
-                    if ($textValue -and $textValue -ne "0") { 
-                        $parsed.query_plan_hash = $textValue 
+                "query_plan_hash" {
+                    if ($textValue -and $textValue -ne "0") {
+                        $parsed.query_plan_hash = $textValue
                     }
                 }
             }
         }
-        
+
         return $parsed
     }
     catch {
@@ -949,18 +978,15 @@ function Parse-LSInboundEvent {
     }
 }
 
-function Insert-LSInboundEventAggregated {
-    <#
-    .SYNOPSIS
-        Inserts aggregated LS_Inbound events (one row per session_id + sql_text combination)
-    #>
+# Inserts one aggregated LS_Inbound record into Activity_XE_LinkedServerIn.
+function Write-srv_LSInboundEventAggregated {
     param(
         [int]$ServerId,
         [string]$ServerName,
         [string]$SessionName,
         [hashtable]$AggregatedEvent
     )
-    
+
     # Escape single quotes for SQL
     $dbName = if ($AggregatedEvent.database_name) { $AggregatedEvent.database_name -replace "'", "''" } else { $null }
     $userName = if ($AggregatedEvent.username) { $AggregatedEvent.username -replace "'", "''" } else { $null }
@@ -971,7 +997,7 @@ function Insert-LSInboundEventAggregated {
     $serverNameSafe = $ServerName -replace "'", "''"
     $queryHash = if ($AggregatedEvent.query_hash) { $AggregatedEvent.query_hash } else { $null }
     $queryPlanHash = if ($AggregatedEvent.query_plan_hash) { $AggregatedEvent.query_plan_hash } else { $null }
-    
+
     $query = @"
 INSERT INTO ServerOps.Activity_XE_LinkedServerIn (
     server_id, server_name, session_id, client_pid, client_hostname, client_app_name,
@@ -1006,29 +1032,22 @@ VALUES (
     '$SessionName'
 )
 "@
-    
+
     return Invoke-SqlNonQuery -Query $query
 }
 
-# ========================================
-# LS OUTBOUND FUNCTIONS (Linked Server Outbound)
-# ========================================
-
-function Parse-LSOutboundEvent {
-    <#
-    .SYNOPSIS
-        Parses an XE LS_Outbound event XML into a hashtable of values
-    #>
+# Converts an XE LS_Outbound event XML into a metrics/context hashtable.
+function Convert-srv_LSOutboundEvent {
     param([string]$EventXml)
-    
+
     try {
         $xml = [xml]$EventXml
         $event = $xml.event
-        
+
         $parsed = @{
             event_timestamp = [DateTime]::Parse($event.timestamp)
             event_type = $event.name
-            
+
             # Data elements (metrics)
             duration_ms = 0
             cpu_time_ms = $null
@@ -1036,7 +1055,7 @@ function Parse-LSOutboundEvent {
             physical_reads = $null
             writes = $null
             row_count = $null
-            
+
             # Action elements (context)
             database_name = $null
             username = $null
@@ -1049,69 +1068,69 @@ function Parse-LSOutboundEvent {
             query_hash = $null
             query_plan_hash = $null
         }
-        
+
         # Parse data elements
         foreach ($data in $event.data) {
             $valueNode = $data.SelectSingleNode("value")
             $textValue = if ($valueNode) { $valueNode.InnerText } else { $null }
-            
+
             switch ($data.name) {
-                "duration" { 
+                "duration" {
                     if ($textValue) {
                         $parsed.duration_ms = [math]::Round([long]$textValue / 1000, 0)
                     }
                 }
-                "cpu_time" { 
+                "cpu_time" {
                     if ($textValue) {
                         $parsed.cpu_time_ms = [math]::Round([long]$textValue / 1000, 0)
                     }
                 }
-                "logical_reads" { 
+                "logical_reads" {
                     if ($textValue) { $parsed.logical_reads = [long]$textValue }
                 }
-                "physical_reads" { 
+                "physical_reads" {
                     if ($textValue) { $parsed.physical_reads = [long]$textValue }
                 }
-                "writes" { 
+                "writes" {
                     if ($textValue) { $parsed.writes = [long]$textValue }
                 }
-                "row_count" { 
+                "row_count" {
                     if ($textValue) { $parsed.row_count = [long]$textValue }
                 }
             }
         }
-        
+
         # Parse action elements
         foreach ($action in $event.action) {
             $valueNode = $action.SelectSingleNode("value")
             $textValue = if ($valueNode) { $valueNode.InnerText } else { $null }
-            
+
             switch ($action.name) {
                 "database_name" { $parsed.database_name = $textValue }
                 "username" { $parsed.username = $textValue }
                 "nt_username" { $parsed.nt_username = $textValue }
                 "client_hostname" { $parsed.client_hostname = $textValue }
                 "client_app_name" { $parsed.client_app_name = $textValue }
-                "client_pid" { 
+                "client_pid" {
                     if ($textValue) { $parsed.client_pid = [int]$textValue }
                 }
-                "session_id" { 
+                "session_id" {
                     if ($textValue) { $parsed.session_id = [int]$textValue }
                 }
                 "sql_text" { $parsed.sql_text = $textValue }
-                "query_hash" { 
-                    if ($textValue -and $textValue -ne "0") { 
-                        $parsed.query_hash = $textValue 
+                "query_hash" {
+                    if ($textValue -and $textValue -ne "0") {
+                        $parsed.query_hash = $textValue
                     }
                 }
-                "query_plan_hash" { 
-                    if ($textValue -and $textValue -ne "0") { 
-                        $parsed.query_plan_hash = $textValue 
+                "query_plan_hash" {
+                    if ($textValue -and $textValue -ne "0") {
+                        $parsed.query_plan_hash = $textValue
                     }
                 }
             }
         }
-        
+
         return $parsed
     }
     catch {
@@ -1120,18 +1139,15 @@ function Parse-LSOutboundEvent {
     }
 }
 
-function Insert-LSOutboundEventAggregated {
-    <#
-    .SYNOPSIS
-        Inserts aggregated LS_Outbound events (one row per session_id + sql_text combination)
-    #>
+# Inserts one aggregated LS_Outbound record into Activity_XE_LinkedServerOut.
+function Write-srv_LSOutboundEventAggregated {
     param(
         [int]$ServerId,
         [string]$ServerName,
         [string]$SessionName,
         [hashtable]$AggregatedEvent
     )
-    
+
     # Escape single quotes for SQL
     $dbName = if ($AggregatedEvent.database_name) { $AggregatedEvent.database_name -replace "'", "''" } else { $null }
     $userName = if ($AggregatedEvent.username) { $AggregatedEvent.username -replace "'", "''" } else { $null }
@@ -1142,7 +1158,7 @@ function Insert-LSOutboundEventAggregated {
     $serverNameSafe = $ServerName -replace "'", "''"
     $queryHash = if ($AggregatedEvent.query_hash) { $AggregatedEvent.query_hash } else { $null }
     $queryPlanHash = if ($AggregatedEvent.query_plan_hash) { $AggregatedEvent.query_plan_hash } else { $null }
-    
+
     $query = @"
 INSERT INTO ServerOps.Activity_XE_LinkedServerOut (
     server_id, server_name, session_id, client_pid, client_hostname, client_app_name,
@@ -1177,33 +1193,24 @@ VALUES (
     '$SessionName'
 )
 "@
-    
+
     return Invoke-SqlNonQuery -Query $query
 }
 
-# ========================================
-# LS AGGREGATION HELPER FUNCTION
-# ========================================
-
-function Aggregate-LSEvents {
-    <#
-    .SYNOPSIS
-        Aggregates parsed LS events by session_id + sql_text combination
-    .DESCRIPTION
-        Takes an array of parsed events and groups them, returning aggregated records
-    #>
+# Groups parsed LS events by session_id + sql_text, returning aggregated records.
+function Group-srv_LSEvents {
     param(
         [array]$ParsedEvents
     )
-    
+
     $aggregated = @{}
-    
+
     foreach ($event in $ParsedEvents) {
         # Create a composite key from session_id and sql_text
         $sessionId = if ($event.session_id) { $event.session_id } else { "NULL" }
         $sqlText = if ($event.sql_text) { $event.sql_text } else { "(NULL)" }
         $key = "$sessionId|$sqlText"
-        
+
         if (-not $aggregated.ContainsKey($key)) {
             # Initialize aggregation record
             $aggregated[$key] = @{
@@ -1229,12 +1236,12 @@ function Aggregate-LSEvents {
                 total_row_count = $null
             }
         }
-        
+
         $agg = $aggregated[$key]
-        
+
         # Increment execution count
         $agg.execution_count++
-        
+
         # Update timestamps
         if ($event.event_timestamp -lt $agg.first_event_timestamp) {
             $agg.first_event_timestamp = $event.event_timestamp
@@ -1242,14 +1249,14 @@ function Aggregate-LSEvents {
         if ($event.event_timestamp -gt $agg.last_event_timestamp) {
             $agg.last_event_timestamp = $event.event_timestamp
         }
-        
+
         # Aggregate duration
         $duration = if ($event.duration_ms) { $event.duration_ms } else { 0 }
         $agg.total_duration_ms += $duration
         if ($duration -gt $agg.max_duration_ms) {
             $agg.max_duration_ms = $duration
         }
-        
+
         # Aggregate other metrics (sum, handling nulls)
         if ($event.cpu_time_ms) {
             if ($null -eq $agg.total_cpu_time_ms) { $agg.total_cpu_time_ms = 0 }
@@ -1272,30 +1279,29 @@ function Aggregate-LSEvents {
             $agg.total_row_count += $event.row_count
         }
     }
-    
+
     return $aggregated.Values
 }
 
-# ========================================
-# xFACts SELF-MONITORING FUNCTIONS
-# ========================================
+<# ============================================================================
+   FUNCTIONS: XFACTS TRACKING EVENTS
+   ----------------------------------------------------------------------------
+   Parse and persist for the xFACts_Tracking session (Activity_XE_xFACts).
+   Prefix: srv
+   ============================================================================ #>
 
-function Parse-xFACtsEvent {
-    <#
-    .SYNOPSIS
-        Parses an XE xFACts_Tracking event XML into a hashtable.
-        Same structure as LRQ but no duration threshold filtering.
-    #>
+# Converts an XE xFACts_Tracking event XML into a metrics/context hashtable.
+function Convert-srv_xFACtsEvent {
     param([string]$EventXml)
-    
+
     try {
         $xml = [xml]$EventXml
         $event = $xml.event
-        
+
         $parsed = @{
             event_timestamp = [DateTime]::Parse($event.timestamp)
             event_type = $event.name
-            
+
             # Data elements (metrics)
             duration_ms = $null
             cpu_time_ms = $null
@@ -1303,7 +1309,7 @@ function Parse-xFACtsEvent {
             physical_reads = $null
             writes = $null
             row_count = $null
-            
+
             # Action elements (context)
             database_name = $null
             username = $null
@@ -1311,54 +1317,54 @@ function Parse-xFACtsEvent {
             session_id = $null
             sql_text = $null
         }
-        
+
         # Parse data elements
         foreach ($data in $event.data) {
             $valueNode = $data.SelectSingleNode("value")
             $textValue = if ($valueNode) { $valueNode.InnerText } else { $null }
-            
+
             switch ($data.name) {
-                "duration" { 
+                "duration" {
                     if ($textValue) {
                         $parsed.duration_ms = [math]::Round([long]$textValue / 1000, 0)
                     }
                 }
-                "cpu_time" { 
+                "cpu_time" {
                     if ($textValue) {
                         $parsed.cpu_time_ms = [math]::Round([long]$textValue / 1000, 0)
                     }
                 }
-                "logical_reads" { 
+                "logical_reads" {
                     if ($textValue) { $parsed.logical_reads = [long]$textValue }
                 }
-                "physical_reads" { 
+                "physical_reads" {
                     if ($textValue) { $parsed.physical_reads = [long]$textValue }
                 }
-                "writes" { 
+                "writes" {
                     if ($textValue) { $parsed.writes = [long]$textValue }
                 }
-                "row_count" { 
+                "row_count" {
                     if ($textValue) { $parsed.row_count = [long]$textValue }
                 }
             }
         }
-        
+
         # Parse action elements
         foreach ($action in $event.action) {
             $valueNode = $action.SelectSingleNode("value")
             $textValue = if ($valueNode) { $valueNode.InnerText } else { $null }
-            
+
             switch ($action.name) {
                 "database_name" { $parsed.database_name = $textValue }
                 "username" { $parsed.username = $textValue }
                 "client_app_name" { $parsed.client_app_name = $textValue }
-                "session_id" { 
+                "session_id" {
                     if ($textValue) { $parsed.session_id = [int]$textValue }
                 }
                 "sql_text" { $parsed.sql_text = $textValue }
             }
         }
-        
+
         return $parsed
     }
     catch {
@@ -1367,7 +1373,8 @@ function Parse-xFACtsEvent {
     }
 }
 
-function Insert-xFACtsEvent {
+# Inserts one parsed xFACts_Tracking event row into Activity_XE_xFACts.
+function Write-srv_xFACtsEvent {
     param(
         [int]$ServerId,
         [string]$ServerName,
@@ -1376,14 +1383,14 @@ function Insert-xFACtsEvent {
         [string]$SourceFile,
         [long]$SourceOffset
     )
-    
+
     $dbName = if ($Event.database_name) { $Event.database_name -replace "'", "''" } else { $null }
     $userName = if ($Event.username) { $Event.username -replace "'", "''" } else { $null }
     $clientApp = if ($Event.client_app_name) { $Event.client_app_name -replace "'", "''" } else { $null }
     $sqlText = if ($Event.sql_text) { $Event.sql_text -replace "'", "''" } else { $null }
     $sourceFileSafe = if ($SourceFile) { $SourceFile -replace "'", "''" } else { $null }
     $serverNameSafe = $ServerName -replace "'", "''"
-    
+
     $query = @"
 INSERT INTO ServerOps.Activity_XE_xFACts (
     server_id, server_name, event_timestamp, event_type, session_name,
@@ -1412,86 +1419,22 @@ VALUES (
     $SourceOffset
 )
 "@
-    
+
     return Invoke-SqlNonQuery -Query $query
 }
 
-# ========================================
-# SYSTEM HEALTH FUNCTIONS (v1.5 - working)
-# ========================================
+<# ============================================================================
+   FUNCTIONS: SYSTEM HEALTH EVENTS
+   ----------------------------------------------------------------------------
+   Parse and persist for the built-in system_health session
+   (Activity_XE_SystemHealth), dropping high-volume noise event types.
+   Prefix: srv
+   ============================================================================ #>
 
-function Get-SystemHealthFilePath {
-    <#
-    .SYNOPSIS
-        Gets the file path for system_health XE session on a given server.
-        Unlike xFACts sessions, system_health uses the default SQL Server Log folder.
-    #>
-    param(
-        [string]$Instance
-    )
-    
-    $query = @"
-SELECT 
-    CAST(target_data AS XML).value('(EventFileTarget/File/@name)[1]', 'varchar(500)') AS file_path
-FROM sys.dm_xe_session_targets st
-JOIN sys.dm_xe_sessions s ON st.event_session_address = s.address
-WHERE s.name = 'system_health'
-  AND st.target_name = 'event_file'
-"@
-    
-    $result = Get-SqlData -Query $query -Instance $Instance -DatabaseName "master"
-    
-    if ($null -ne $result -and $result.file_path) {
-        $filePath = $result.file_path
-        $directory = [System.IO.Path]::GetDirectoryName($filePath)
-        $pattern = "$directory\system_health*.xel"
-        return $pattern
-    }
-    
-    return $null
-}
-
-function Parse-SystemHealthEvent {
-    <#
-    .SYNOPSIS
-        Parses a system_health XE event XML into a hashtable of values.
-        Handles all event types: security_error, connectivity, wait_info, 
-        scheduler_monitor, sp_server_diagnostics, xml_deadlock_report, etc.
-
-    .DESCRIPTION
-        DENY-LIST FILTERING
-        -------------------
-        Several built-in system_health event types are high-volume noise that
-        carry no actionable signal for us, and they dominate the collected row
-        count (together ~91% of all stored rows). They are dropped here by
-        returning $null BEFORE parsing/inserting, so they are never persisted.
-        The built-in system_health XE session itself is NOT modified - we simply
-        choose not to store these event types.
-
-        Denied (noise):
-          - security_error_ring_buffer_recorded
-                Internal permission/security checks; error_code is 0 (no real
-                error). Highest-volume noise. No diagnostic value.
-          - connectivity_ring_buffer_recorded
-                Dominated by routine connection churn (app pool / JDBC
-                reconnects). Real network/AG issues surface via the AG DMVs,
-                sp_server_diagnostics, and error_reported instead.
-          - scheduler_monitor_system_health_ring_buffer_recorded
-                Routine periodic health snapshot. NOTE: the genuinely useful
-                scheduler signal is the SEPARATE event
-                scheduler_monitor_non_yielding_ring_buffer_recorded, which is
-                NOT denied and continues to be collected.
-
-        Kept (valuable): sp_server_diagnostics_component_result,
-        scheduler_monitor_non_yielding_ring_buffer_recorded, xml_deadlock_report,
-        error_reported, memory_broker_ring_buffer_recorded, wait_info,
-        wait_info_external, clr_virtual_alloc_failure, and any unrecognized type.
-
-        To adjust the filter, edit $deniedSystemHealthEvents below. This is a
-        hardcoded deny-list by design (no new config dependency).
-    #>
+# Converts a system_health XE event XML into a hashtable, dropping high-volume noise event types.
+function Convert-srv_SystemHealthEvent {
     param([string]$EventXml)
-    
+
     # Early extraction of event name for skip logic
     $eventName = if ($EventXml -match 'event name="([^"]+)"') { $matches[1] } else { "unknown" }
 
@@ -1504,44 +1447,44 @@ function Parse-SystemHealthEvent {
     if ($deniedSystemHealthEvents -contains $eventName) {
         return $null
     }
-    
+
     # Skip QUERY_PROCESSING diagnostic events - XML is too large to parse reliably
     if ($eventName -eq 'sp_server_diagnostics_component_result' -and $EventXml -match 'QUERY_PROCESSING') {
         return $null
     }
-    
+
     try {
         $xml = [xml]$EventXml
         $event = $xml.event
-        
+
         $parsed = @{
             event_timestamp = [DateTime]::Parse($event.timestamp)
             event_type = $event.name
-            
+
             # Session/Error Context
             session_id = $null
             error_code = $null
             calling_api_name = $null
-            
+
             # Connectivity
             client_hostname = $null
             client_app_name = $null
             os_error = $null
             login_time_ms = $null
-            
+
             # Wait Stats
             wait_type = $null
             duration_ms = $null
             signal_duration_ms = $null
-            
+
             # Diagnostics
             component_type = $null
             component_state = $null
-            
+
             # Raw XML (always stored for system_health)
             raw_event_xml = $EventXml
         }
-        
+
         # Parse based on event type
         switch ($event.name) {
             { $_ -in "wait_info", "wait_info_external" } {
@@ -1550,58 +1493,58 @@ function Parse-SystemHealthEvent {
                     $textNode = $data.SelectSingleNode("text")
                     $textValue = if ($valueNode) { $valueNode.InnerText } else { $null }
                     $textDesc = if ($textNode) { $textNode.InnerText } else { $null }
-                    
+
                     switch ($data.name) {
-                        "wait_type" { 
+                        "wait_type" {
                             $parsed.wait_type = if ($textDesc) { $textDesc } else { $textValue }
                         }
-                        "duration" { 
+                        "duration" {
                             if ($textValue) { $parsed.duration_ms = [long]$textValue }
                         }
-                        "signal_duration" { 
+                        "signal_duration" {
                             if ($textValue) { $parsed.signal_duration_ms = [long]$textValue }
                         }
-                        "session_id" { 
+                        "session_id" {
                             if ($textValue) { $parsed.session_id = [int]$textValue }
                         }
                     }
                 }
             }
-            
+
             "sp_server_diagnostics_component_result" {
                 foreach ($data in $event.data) {
                     $valueNode = $data.SelectSingleNode("value")
                     $textNode = $data.SelectSingleNode("text")
                     $textValue = if ($valueNode) { $valueNode.InnerText } else { $null }
                     $textDesc = if ($textNode) { $textNode.InnerText } else { $null }
-                    
+
                     switch ($data.name) {
-                        "component" { 
+                        "component" {
                             $parsed.component_type = if ($textDesc) { $textDesc } else { $textValue }
                         }
-                        "state" { 
+                        "state" {
                             $parsed.component_state = if ($textDesc) { $textDesc } else { $textValue }
                         }
-                        "duration" { 
+                        "duration" {
                             if ($textValue) { $parsed.duration_ms = [long]$textValue }
                         }
                     }
                 }
             }
-            
+
             "xml_deadlock_report" {
                 # Deadlock XML is in the data - raw XML preserved
             }
-            
+
             "memory_broker_ring_buffer_recorded" {
                 # Memory events - raw XML has details
             }
-            
+
             default {
                 # Unknown event type - still capture with raw XML
             }
         }
-        
+
         return $parsed
     }
     catch {
@@ -1609,7 +1552,8 @@ function Parse-SystemHealthEvent {
     }
 }
 
-function Insert-SystemHealthEvent {
+# Inserts one parsed system_health event row into Activity_XE_SystemHealth.
+function Write-srv_SystemHealthEvent {
     param(
         [int]$ServerId,
         [string]$ServerName,
@@ -1618,7 +1562,7 @@ function Insert-SystemHealthEvent {
         [string]$SourceFile,
         [long]$SourceOffset
     )
-    
+
     $serverNameSafe = $ServerName -replace "'", "''"
     $callingApi = if ($Event.calling_api_name) { $Event.calling_api_name -replace "'", "''" } else { $null }
     $clientHost = if ($Event.client_hostname) { $Event.client_hostname -replace "'", "''" } else { $null }
@@ -1627,9 +1571,9 @@ function Insert-SystemHealthEvent {
     $compType = if ($Event.component_type) { $Event.component_type -replace "'", "''" } else { $null }
     $compState = if ($Event.component_state) { $Event.component_state -replace "'", "''" } else { $null }
     $sourceFileSafe = if ($SourceFile) { $SourceFile -replace "'", "''" } else { $null }
-    
+
     $rawXmlSafe = $Event.raw_event_xml -replace "'", "''"
-    
+
     $query = @"
 INSERT INTO ServerOps.Activity_XE_SystemHealth (
     server_id, server_name, event_timestamp, event_type,
@@ -1661,98 +1605,98 @@ VALUES (
     $SourceOffset
 )
 "@
-    
+
     return Invoke-SqlNonQuery -Query $query
 }
 
-# ========================================
-# AG HEALTH FUNCTIONS (AlwaysOn_health)
-# ========================================
+<# ============================================================================
+   FUNCTIONS: AVAILABILITY GROUP HEALTH EVENTS
+   ----------------------------------------------------------------------------
+   Parse and persist for the AlwaysOn_health session (Activity_XE_AGHealth),
+   plus the alertability test and the Teams alert dispatcher.
+   Prefix: srv
+   ============================================================================ #>
 
-function Parse-AGHealthEvent {
-    <#
-    .SYNOPSIS
-        Parses an AlwaysOn_health XE event XML into a hashtable of values.
-        Handles multiple event types: state changes, errors, DDL operations.
-    #>
+# Converts an AlwaysOn_health XE event XML into a hashtable (state changes, errors, DDL).
+function Convert-srv_AGHealthEvent {
     param([string]$EventXml)
-    
+
     try {
         $xml = [xml]$EventXml
         $event = $xml.event
-        
+
         $parsed = @{
             event_timestamp = [DateTime]::Parse($event.timestamp)
             event_type = $event.name
-            
+
             # State change fields
             previous_state = $null
             current_state = $null
-            
+
             # AG/Replica/Database context
             availability_group_name = $null
             availability_replica_name = $null
             database_name = $null
-            
+
             # Error fields
             error_number = $null
             error_severity = $null
             error_message = $null
-            
+
             # DDL fields
             ddl_action = $null
             ddl_phase = $null
             ddl_statement = $null
-            
+
             # Raw XML
             raw_event_xml = $EventXml
         }
-        
+
         # Parse data elements based on event type
         foreach ($data in $event.data) {
             $valueNode = $data.SelectSingleNode("value")
             $textNode = $data.SelectSingleNode("text")
             $textValue = if ($valueNode) { $valueNode.InnerText } else { $null }
             $textDesc = if ($textNode) { $textNode.InnerText } else { $null }
-            
+
             switch ($data.name) {
                 # State change events
-                "previous_state" { 
+                "previous_state" {
                     $parsed.previous_state = if ($textDesc) { $textDesc } else { $textValue }
                 }
-                "current_state" { 
+                "current_state" {
                     $parsed.current_state = if ($textDesc) { $textDesc } else { $textValue }
                 }
-                
+
                 # AG/Replica context
                 "availability_group_name" { $parsed.availability_group_name = $textValue }
                 "availability_replica_name" { $parsed.availability_replica_name = $textValue }
                 "database_name" { $parsed.database_name = $textValue }
-                
+
                 # Error events
-                "error_number" { 
-                    if ($textValue) { 
-                        $parsed.error_number = [long]$textValue 
+                "error_number" {
+                    if ($textValue) {
+                        $parsed.error_number = [long]$textValue
                     }
                 }
-                "severity" { 
-                    if ($textValue) { 
-                        $parsed.error_severity = [int]$textValue 
+                "severity" {
+                    if ($textValue) {
+                        $parsed.error_severity = [int]$textValue
                     }
                 }
                 "message" { $parsed.error_message = $textValue }
-                
+
                 # DDL events
-                "ddl_action" { 
+                "ddl_action" {
                     $parsed.ddl_action = if ($textDesc) { $textDesc } else { $textValue }
                 }
-                "ddl_phase" { 
+                "ddl_phase" {
                     $parsed.ddl_phase = if ($textDesc) { $textDesc } else { $textValue }
                 }
                 "statement" { $parsed.ddl_statement = $textValue }
             }
         }
-        
+
         return $parsed
     }
     catch {
@@ -1761,17 +1705,8 @@ function Parse-AGHealthEvent {
     }
 }
 
-function Insert-AGHealthEvent {
-    <#
-    .SYNOPSIS
-        Inserts a parsed AGHealth event into Activity_XE_AGHealth and returns
-        the new event_id, or $null on failure.
-
-    .DESCRIPTION
-        Returns the IDENTITY value of the inserted row so the caller can pass
-        it to Send-AGHealthAlert for alerting and to UPDATE alert_sent later.
-        Replaces an earlier version that returned $true/$false.
-    #>
+# Inserts one parsed AGHealth event into Activity_XE_AGHealth and returns the new event_id.
+function Write-srv_AGHealthEvent {
     param(
         [int]$ServerId,
         [string]$ServerName,
@@ -1843,33 +1778,8 @@ VALUES (
     return $null
 }
 
-# ========================================
-# AG HEALTH ALERTING
-# ========================================
-# Pattern note: This section is the prototype for future broader XE alerting.
-# When alerting is added for SystemHealth, BlockedProcess, or Deadlock, follow
-# the same pattern: a Test-* function that decides if the event is alertable,
-# and a Send-* function that builds the Teams payload, calls Send-TeamsAlert,
-# and updates alert_sent on the source table. Each session type gets its own
-# pair so the decision logic stays clear and the alert text can be tailored.
-
-function Test-AGHealthAlertable {
-    <#
-    .SYNOPSIS
-        Decides whether a parsed AGHealth event warrants a Teams alert.
-
-    .DESCRIPTION
-        Returns $true when ANY of the following are true:
-          - availability_replica_state_change to PRIMARY_NORMAL or NOT_AVAILABLE
-          - availability_replica_state_change where previous role was PRIMARY*
-            and current role is not PRIMARY* (a primary stepping down)
-          - availability_replica_manager_state_change with current_state = OFFLINE
-          - error_reported with error_severity >= 16
-
-        Returns $false otherwise. The decision logic intentionally excludes the
-        flurry of severity-10 informational role-change messages (Error 1480)
-        that accompany every failover.
-    #>
+# Decides whether a parsed AGHealth event warrants a Teams alert.
+function Test-srv_AGHealthAlertable {
     param([hashtable]$Event)
 
     if ($null -eq $Event) { return $false }
@@ -1909,127 +1819,66 @@ function Test-AGHealthAlertable {
     return $false
 }
 
-function Send-AGHealthAlert {
-    <#
-    .SYNOPSIS
-        Sends a Teams alert for an alertable AGHealth event and marks the
-        source row as alerted.
-
-    .DESCRIPTION
-        Called immediately after a successful Insert-AGHealthEvent when
-        Test-AGHealthAlertable returned $true. Selects the appropriate routing
-        value based on event type, decodes the bitmask (0=None, 1=Teams, 2=Jira,
-        3=Both), and queues the alert through Send-TeamsAlert. Updates
-        Activity_XE_AGHealth.alert_sent on confirmed queue.
-
-        Routing values are read from script scope ($aghealthStateChangeRouting
-        and $aghealthCriticalErrorRouting) which are populated in Step 1 from
-        GlobalConfig.
-
-        DEDUP KEY (TriggerValue)
-        ------------------------
-        The dedup TriggerValue is an event-identity key, NOT the row event_id.
-        It is built from the stable identity of the event plus a coarse
-        date+hour occurrence window:
-
-            <event_type>|<server>|<prev>-><curr>|<error_number>|<yyyy-MM-dd HH>
-
-        Send-TeamsAlert dedups on (TriggerType, TriggerValue) against
-        Teams.RequestLog with no time limit ("once ever"). Keying on event
-        identity collapses repeated captures of the same logical event into a
-        single alert, while the date+hour window lets a genuinely separate
-        later occurrence re-alert.
-
-        Rationale: a failover can cause the same logical event to be collected
-        many times (e.g. an XE file offset that fails to advance re-reads the
-        same position repeatedly). Each captured row gets a unique event_id, so
-        keying on event_id never collapsed those duplicates and produced an
-        alert storm. Keying on event identity collapses them to one alert per
-        distinct transition. event_timestamp is bucketed to the hour (not the
-        second) so a burst that spans a second boundary does not split into
-        multiple alerts; the only suppressed case is the identical transition
-        on the same server recurring within the same clock hour, which is the
-        flapping scenario already under active observation from the first alert.
-
-        NOTE: This dedup key is a defense-in-depth layer against duplicate
-        captures. The underlying offset-advancement behavior that allows the
-        same event to be re-collected is a separate concern flagged for the
-        collector refactor.
-
-        Jira routing (-band 2) is reserved for a future Send-JiraTicket
-        wrapper. Today it logs a placeholder message but does not dispatch.
-
-    .PARAMETER EventId
-        The event_id returned by Insert-AGHealthEvent. Used for the alert_sent
-        UPDATE and for log lines; no longer used as the dedup TriggerValue.
-
-    .PARAMETER ServerName
-        The server the event was captured on (DM-PROD-DB or DM-PROD-REP).
-
-    .PARAMETER Event
-        The parsed event hashtable from Parse-AGHealthEvent.
-    #>
+# Sends a Teams alert for an alertable AGHealth event and marks the source row alerted.
+function Send-srv_AGHealthAlert {
     param(
         [Parameter(Mandatory)][long]$EventId,
         [Parameter(Mandatory)][string]$ServerName,
-        [Parameter(Mandatory)][hashtable]$Event
+        [Parameter(Mandatory)][hashtable]$Event,
+        [Parameter(Mandatory)][int]$StateChangeRouting,
+        [Parameter(Mandatory)][int]$CriticalErrorRouting
     )
 
-    # ----------------------------------------------------------
     # Determine alert category, title, and applicable routing
-    # ----------------------------------------------------------
     $title = $null
     $triggerType = $null
     $routing = 0
-    $alertCategory = 'CRITICAL'  # default for state changes and severity 16+
+    # Default category for state changes and severity 16+ errors
+    $alertCategory = 'CRITICAL'
 
     if ($Event.event_type -eq 'availability_replica_state_change' -and
         $Event.current_state -eq 'PRIMARY_NORMAL') {
         $title = "Availability Group Failover: $ServerName is now PRIMARY"
         $triggerType = 'AG_STATE_CHANGE'
-        $routing = $aghealthStateChangeRouting
+        $routing = $StateChangeRouting
     }
     elseif ($Event.event_type -eq 'availability_replica_state_change' -and
             $Event.previous_state -like 'PRIMARY*' -and
             $Event.current_state -notlike 'PRIMARY*') {
         $title = "Availability Group Event: $ServerName is no longer PRIMARY"
         $triggerType = 'AG_STATE_CHANGE'
-        $routing = $aghealthStateChangeRouting
+        $routing = $StateChangeRouting
     }
     elseif ($Event.event_type -eq 'availability_replica_state_change' -and
             $Event.current_state -eq 'NOT_AVAILABLE') {
         $title = "Availability Group Event: $ServerName replica is unavailable"
         $triggerType = 'AG_STATE_CHANGE'
-        $routing = $aghealthStateChangeRouting
+        $routing = $StateChangeRouting
     }
     elseif ($Event.event_type -eq 'availability_replica_manager_state_change' -and
             $Event.current_state -eq 'OFFLINE') {
         $title = "Availability Group Event: $ServerName has gone offline"
         $triggerType = 'AG_STATE_CHANGE'
-        $routing = $aghealthStateChangeRouting
+        $routing = $StateChangeRouting
     }
     elseif ($Event.event_type -eq 'error_reported') {
         $title = "Availability Group Critical Error on $ServerName"
         $triggerType = 'AG_CRITICAL_ERROR'
-        $routing = $aghealthCriticalErrorRouting
+        $routing = $CriticalErrorRouting
     }
     else {
-        # Defensive: shouldn't reach here if Test-AGHealthAlertable was the gate.
+        # Defensive: shouldn't reach here if Test-srv_AGHealthAlertable was the gate.
         Write-Log "  AGHealth alert: no title mapping for event_type=$($Event.event_type) - skipping" "WARN"
         return
     }
 
-    # ----------------------------------------------------------
     # Honor routing value: 0 = silenced for this category
-    # ----------------------------------------------------------
     if ($routing -le 0) {
         Write-Log "  AGHealth event detected but routing=0, skipped (event_id=$EventId, $triggerType)" "INFO"
         return
     }
 
-    # ----------------------------------------------------------
     # Build the dedup TriggerValue from event identity + date/hour window
-    # ----------------------------------------------------------
     # Stable identity components. NULL states render as '(none)' so the key is
     # consistent for manager_state_change events (which have no previous_state).
     $prevKey = if ($Event.previous_state) { $Event.previous_state } else { '(none)' }
@@ -2043,9 +1892,7 @@ function Send-AGHealthAlert {
 
     $triggerValue = "$($Event.event_type)|$ServerName|$prevKey->$currKey|$errKey|$hourBucket"
 
-    # ----------------------------------------------------------
     # Build alert body (used by all destinations)
-    # ----------------------------------------------------------
     $bodyLines = @()
     $bodyLines += "**Server:** $ServerName"
     if ($Event.availability_group_name) {
@@ -2071,9 +1918,7 @@ function Send-AGHealthAlert {
     }
     $body = $bodyLines -join "`n"
 
-    # ----------------------------------------------------------
     # Dispatch to enabled destinations (bitmask: 1=Teams, 2=Jira)
-    # ----------------------------------------------------------
     $anyQueued = $false
 
     # Teams branch
@@ -2100,9 +1945,7 @@ function Send-AGHealthAlert {
         Write-Log "    AGHealth alert: Jira routing requested but Send-JiraTicket not yet implemented (event_id=$EventId, $triggerType)" "WARN"
     }
 
-    # ----------------------------------------------------------
     # Mark source row as alerted only when something actually queued
-    # ----------------------------------------------------------
     if ($anyQueued) {
         $updateQuery = @"
 UPDATE ServerOps.Activity_XE_AGHealth
@@ -2113,9 +1956,15 @@ WHERE event_id = $EventId
     }
 }
 
-# ========================================
-# MAIN SCRIPT
-# ========================================
+<# ============================================================================
+   EXECUTION: SCRIPT EXECUTION
+   ----------------------------------------------------------------------------
+   Main collection flow. Verify the master switch, load configuration, resolve
+   the server list, then per server collect each XE session in Step 3. Step 4
+   collects AlwaysOn_health from AG servers and dispatches alerts. Closes with
+   the summary and the orchestrator callback.
+   Prefix: (none)
+   ============================================================================ #>
 
 $scriptStart = Get-Date
 
@@ -2123,9 +1972,8 @@ Write-Log "========================================"
 Write-Log "xFACts XE Event Collection"
 Write-Log "========================================"
 
-# ----------------------------------------
-# Step 0: Check master switch
-# ----------------------------------------
+# -- Step 0: Check master switch --
+
 Write-Log "Checking server-level Activity enable flag..."
 
 $serverCheck = Get-SqlData -Query @"
@@ -2143,17 +1991,16 @@ if (-not $serverCheck -or $serverCheck.enabled_count -eq 0) {
 
 Write-Log "  Found $($serverCheck.enabled_count) server(s) with Activity monitoring enabled."
 
-# ----------------------------------------
-# Step 1: Get configuration values
-# ----------------------------------------
-$retainBlockedProcessXml = (Get-ConfigValue -SettingName "blocked_process_retain_raw_xml") -eq "1"
-$retainAGHealthXml = (Get-ConfigValue -SettingName "aghealth_retain_raw_xml") -eq "1"
+# -- Step 1: Get configuration values --
+
+$retainBlockedProcessXml = (Get-GlobalConfigValue -Module 'ServerOps' -Category 'Activity_XE' -SettingName 'blocked_process_retain_raw_xml') -eq "1"
+$retainAGHealthXml = (Get-GlobalConfigValue -Module 'ServerOps' -Category 'Activity_XE' -SettingName 'aghealth_retain_raw_xml') -eq "1"
 
 # Alerting config: master switch + per-condition routing.
-# Routing values: 0=None, 1=Teams, 2=Jira, 3=Both. Decoded with -band in Send-AGHealthAlert.
-$alertsEnabled = (Get-ConfigValue -SettingName "xe_alerting_enabled") -eq "1"
-$aghealthStateChangeRouting   = [int](Get-ConfigValue -SettingName "aghealth_alert_state_change_routing")
-$aghealthCriticalErrorRouting = [int](Get-ConfigValue -SettingName "aghealth_alert_critical_error_routing")
+# Routing values: 0=None, 1=Teams, 2=Jira, 3=Both. Decoded with -band in Send-srv_AGHealthAlert.
+$alertsEnabled = (Get-GlobalConfigValue -Module 'ServerOps' -Category 'Activity_XE' -SettingName 'xe_alerting_enabled') -eq "1"
+$aghealthStateChangeRouting   = [int](Get-GlobalConfigValue -Module 'ServerOps' -Category 'Activity_XE' -SettingName 'aghealth_alert_state_change_routing')
+$aghealthCriticalErrorRouting = [int](Get-GlobalConfigValue -Module 'ServerOps' -Category 'Activity_XE' -SettingName 'aghealth_alert_critical_error_routing')
 
 Write-Log "Config: blocked_process_retain_raw_xml = $retainBlockedProcessXml"
 Write-Log "Config: aghealth_retain_raw_xml = $retainAGHealthXml"
@@ -2161,19 +2008,18 @@ Write-Log "Config: xe_alerting_enabled = $alertsEnabled"
 Write-Log "Config: aghealth_alert_state_change_routing = $aghealthStateChangeRouting"
 Write-Log "Config: aghealth_alert_critical_error_routing = $aghealthCriticalErrorRouting"
 
-# ----------------------------------------
-# Step 2: Get list of servers to collect from
-# ----------------------------------------
+# -- Step 2: Get list of servers to collect from --
+
 Write-Log "Retrieving server list..."
 
 $servers = Get-SqlData -Query @"
-SELECT 
-    sr.server_id, 
-    sr.server_name, 
+SELECT
+    sr.server_id,
+    sr.server_name,
     sr.instance_name,
     sr.server_type
 FROM dbo.ServerRegistry sr
-WHERE sr.is_active = 1 
+WHERE sr.is_active = 1
   AND sr.serverops_activity_enabled = 1
   AND sr.server_type = 'SQL_SERVER'
 ORDER BY sr.server_id
@@ -2187,9 +2033,8 @@ if ($null -eq $servers -or @($servers).Count -eq 0) {
 $serverCount = @($servers).Count
 Write-Log "Found $serverCount server(s) to collect from."
 
-# ----------------------------------------
-# Step 3: Collect xFACts XE sessions from each server
-# ----------------------------------------
+# -- Step 3: Collect xFACts XE sessions from each server --
+
 $totalEvents = 0
 $successCount = 0
 $failedServers = @()
@@ -2199,22 +2044,21 @@ foreach ($server in $servers) {
     $serverId = $server.server_id
     $serverNameSafe = $serverName -replace "'", "''"
     $instanceName = if ($server.instance_name -isnot [DBNull]) { $server.instance_name } else { $null }
-    
+
     $sqlInstance = Get-SqlInstanceName -ServerName $serverName -InstanceName $instanceName
-    
+
     Write-Log "----------------------------------------"
     Write-Log "Server: $serverName (ID: $serverId)"
-    
+
     $serverSuccess = $true
-    
+
     # Process each XE session for this server
-    foreach ($session in $XESessions) {
+    foreach ($session in $script:srv_XESessions) {
         $sessionName = $session.Name
-        $targetTable = $session.TargetTable
         $isAggregated = if ($session.IsAggregated) { $true } else { $false }
-        
+
         Write-Log "  Session: $sessionName$(if ($isAggregated) { ' (aggregated)' } else { '' })"
-        
+
         # Get last collection state for this server/session
         $stateQuery = @"
 SELECT last_file_name, last_file_offset
@@ -2224,26 +2068,26 @@ WHERE server_id = $serverId AND session_name = '$sessionName'
         $state = Get-SqlData -Query $stateQuery
         $lastFileName = if ($state -and $state.last_file_name -isnot [DBNull]) { $state.last_file_name } else { $null }
         $lastOffset = if ($state -and $state.last_file_offset -isnot [DBNull]) { $state.last_file_offset } else { $null }
-        
+
         # Get the XE file path pattern
         # system_health uses a different function since it's a built-in session
         if ($sessionName -eq "system_health") {
-            $filePath = Get-SystemHealthFilePath -Instance $sqlInstance
+            $filePath = Get-srv_SystemHealthFilePath -Instance $sqlInstance
         }
         else {
-            $filePath = Get-XEFilePath -Instance $sqlInstance -SessionName $sessionName
+            $filePath = Get-srv_XEFilePath -Instance $sqlInstance -SessionName $sessionName
         }
-        
+
         if ($null -eq $filePath) {
             Write-Log "    Could not determine XE file path - session may not be running" "WARN"
-            
+
             # Update state as failed
             $updateQuery = @"
 MERGE ServerOps.Activity_XE_CollectionState AS target
 USING (SELECT $serverId AS server_id, '$sessionName' AS session_name) AS source
 ON target.server_id = source.server_id AND target.session_name = source.session_name
 WHEN MATCHED THEN
-    UPDATE SET 
+    UPDATE SET
         last_collection_dttm = GETDATE(),
         last_collection_status = 'FAILED',
         events_collected = 0,
@@ -2256,14 +2100,14 @@ WHEN NOT MATCHED THEN
             Invoke-SqlNonQuery -Query $updateQuery | Out-Null
             continue
         }
-        
+
         Write-Log "    File pattern: $filePath"
         Write-Log "    Last offset: $(if ($lastOffset) { $lastOffset } else { 'None (initial collection)' })"
-        
+
         # Build query to read XE events
         if ($lastFileName -and $lastOffset) {
             $xeQuery = @"
-SELECT 
+SELECT
     event_data,
     file_name,
     file_offset
@@ -2273,7 +2117,7 @@ ORDER BY file_name, file_offset
         }
         else {
             $xeQuery = @"
-SELECT 
+SELECT
     event_data,
     file_name,
     file_offset
@@ -2281,20 +2125,20 @@ FROM sys.fn_xe_file_target_read_file('$filePath', NULL, NULL, NULL)
 ORDER BY file_name, file_offset
 "@
         }
-        
+
         try {
             $events = Get-SqlData -Query $xeQuery -Instance $sqlInstance -DatabaseName "master" -MaxCharLength 2147483647
-            
+
             if ($null -eq $events -or @($events).Count -eq 0) {
                 Write-Log "    No new events found"
-                
+
                 # Update collection state
                 $updateQuery = @"
 MERGE ServerOps.Activity_XE_CollectionState AS target
 USING (SELECT $serverId AS server_id, '$sessionName' AS session_name) AS source
 ON target.server_id = source.server_id AND target.session_name = source.session_name
 WHEN MATCHED THEN
-    UPDATE SET 
+    UPDATE SET
         last_collection_dttm = GETDATE(),
         last_collection_status = 'NO_DATA',
         events_collected = 0,
@@ -2307,39 +2151,39 @@ WHEN NOT MATCHED THEN
                 Invoke-SqlNonQuery -Query $updateQuery | Out-Null
                 continue
             }
-            
+
             $eventCount = @($events).Count
             Write-Log "    Found $eventCount event(s) to process"
-            
+
             $sessionEvents = 0
             $parseErrors = 0
             $lastFile = $null
             $lastOff = $null
-            
+
             # For aggregated sessions, collect all parsed events first
             if ($isAggregated) {
                 $parsedEvents = @()
-                
+
                 foreach ($event in $events) {
                     $eventData = $event.event_data
                     $fileName = $event.file_name
                     $fileOffset = $event.file_offset
-                    
+
                     # Always track position
                     $lastFile = $fileName
                     $lastOff = $fileOffset
-                    
+
                     # Parse event
                     $parsed = $null
                     switch ($sessionName) {
                         "xFACts_LS_Inbound" {
-                            $parsed = Parse-LSInboundEvent -EventXml $eventData
+                            $parsed = Convert-srv_LSInboundEvent -EventXml $eventData
                         }
                         "xFACts_LS_Outbound" {
-                            $parsed = Parse-LSOutboundEvent -EventXml $eventData
+                            $parsed = Convert-srv_LSOutboundEvent -EventXml $eventData
                         }
                     }
-                    
+
                     if ($null -ne $parsed) {
                         $parsedEvents += $parsed
                     }
@@ -2347,26 +2191,26 @@ WHEN NOT MATCHED THEN
                         $parseErrors++
                     }
                 }
-                
+
                 # Aggregate and insert
                 if ($parsedEvents.Count -gt 0) {
-                    $aggregatedRecords = Aggregate-LSEvents -ParsedEvents $parsedEvents
-                    
+                    $aggregatedRecords = Group-srv_LSEvents -ParsedEvents $parsedEvents
+
                     foreach ($aggRecord in $aggregatedRecords) {
                         $result = $false
                         switch ($sessionName) {
                             "xFACts_LS_Inbound" {
-                                $result = Insert-LSInboundEventAggregated -ServerId $serverId -ServerName $serverName -SessionName $sessionName -AggregatedEvent $aggRecord
+                                $result = Write-srv_LSInboundEventAggregated -ServerId $serverId -ServerName $serverName -SessionName $sessionName -AggregatedEvent $aggRecord
                             }
                             "xFACts_LS_Outbound" {
-                                $result = Insert-LSOutboundEventAggregated -ServerId $serverId -ServerName $serverName -SessionName $sessionName -AggregatedEvent $aggRecord
+                                $result = Write-srv_LSOutboundEventAggregated -ServerId $serverId -ServerName $serverName -SessionName $sessionName -AggregatedEvent $aggRecord
                             }
                         }
                         if ($result) {
                             $sessionEvents++
                         }
                     }
-                    
+
                     Write-Log "    Aggregated $eventCount events into $sessionEvents record(s)"
                 }
             }
@@ -2376,47 +2220,47 @@ WHEN NOT MATCHED THEN
                     $eventData = $event.event_data
                     $fileName = $event.file_name
                     $fileOffset = $event.file_offset
-                    
+
                     # Always track position
                     $lastFile = $fileName
                     $lastOff = $fileOffset
-                    
+
                     # Parse and insert based on session type
                     $result = $false
-                    
+
                     switch ($sessionName) {
                         "xFACts_LongQueries" {
-                            $parsed = Parse-LRQEvent -EventXml $eventData
+                            $parsed = Convert-srv_LRQEvent -EventXml $eventData
                             if ($null -ne $parsed) {
-                                $result = Insert-LRQEvent -ServerId $serverId -ServerName $serverName -SessionName $sessionName -Event $parsed -SourceFile $fileName -SourceOffset $fileOffset
+                                $result = Write-srv_LRQEvent -ServerId $serverId -ServerName $serverName -SessionName $sessionName -Event $parsed -SourceFile $fileName -SourceOffset $fileOffset
                             }
                         }
                         "xFACts_BlockedProcess" {
-                            $parsed = Parse-BlockedProcessEvent -EventXml $eventData
+                            $parsed = Convert-srv_BlockedProcessEvent -EventXml $eventData
                             if ($null -ne $parsed) {
-                                $result = Insert-BlockedProcessEvent -ServerId $serverId -ServerName $serverName -SessionName $sessionName -Event $parsed -SourceFile $fileName -SourceOffset $fileOffset -RetainRawXml $retainBlockedProcessXml
+                                $result = Write-srv_BlockedProcessEvent -ServerId $serverId -ServerName $serverName -SessionName $sessionName -Event $parsed -SourceFile $fileName -SourceOffset $fileOffset -RetainRawXml $retainBlockedProcessXml
                             }
                         }
                         "xFACts_Deadlock" {
-                            $parsed = Parse-DeadlockEvent -EventXml $eventData
+                            $parsed = Convert-srv_DeadlockEvent -EventXml $eventData
                             if ($null -ne $parsed) {
-                                $result = Insert-DeadlockEvent -ServerId $serverId -ServerName $serverName -SessionName $sessionName -Event $parsed -SourceFile $fileName -SourceOffset $fileOffset
+                                $result = Write-srv_DeadlockEvent -ServerId $serverId -ServerName $serverName -SessionName $sessionName -Event $parsed -SourceFile $fileName -SourceOffset $fileOffset
                             }
                         }
                         "system_health" {
-                            $parsed = Parse-SystemHealthEvent -EventXml $eventData
+                            $parsed = Convert-srv_SystemHealthEvent -EventXml $eventData
                             if ($null -ne $parsed) {
-                                $result = Insert-SystemHealthEvent -ServerId $serverId -ServerName $serverName -SessionName $sessionName -Event $parsed -SourceFile $fileName -SourceOffset $fileOffset
+                                $result = Write-srv_SystemHealthEvent -ServerId $serverId -ServerName $serverName -SessionName $sessionName -Event $parsed -SourceFile $fileName -SourceOffset $fileOffset
                             }
                         }
                         "xFACts_Tracking" {
-                            $parsed = Parse-xFACtsEvent -EventXml $eventData
+                            $parsed = Convert-srv_xFACtsEvent -EventXml $eventData
                             if ($null -ne $parsed) {
-                                $result = Insert-xFACtsEvent -ServerId $serverId -ServerName $serverName -SessionName $sessionName -Event $parsed -SourceFile $fileName -SourceOffset $fileOffset
+                                $result = Write-srv_xFACtsEvent -ServerId $serverId -ServerName $serverName -SessionName $sessionName -Event $parsed -SourceFile $fileName -SourceOffset $fileOffset
                             }
                         }
                     }
-                    
+
                     if ($result) {
                         $sessionEvents++
                     }
@@ -2424,15 +2268,15 @@ WHEN NOT MATCHED THEN
                         $parseErrors++
                     }
                 }
-                
+
                 Write-Log "    Inserted $sessionEvents event(s)"
             }
-            
+
             if ($parseErrors -gt 0) {
                 Write-Log "    Skipped $parseErrors event(s) due to parse errors" "WARN"
             }
             $totalEvents += $sessionEvents
-            
+
             # Update collection state
             if ($lastFile -and $lastOff) {
                 $lastFileSafe = $lastFile -replace "'", "''"
@@ -2441,7 +2285,7 @@ MERGE ServerOps.Activity_XE_CollectionState AS target
 USING (SELECT $serverId AS server_id, '$sessionName' AS session_name) AS source
 ON target.server_id = source.server_id AND target.session_name = source.session_name
 WHEN MATCHED THEN
-    UPDATE SET 
+    UPDATE SET
         first_file_offset = $(if ($lastOffset) { $lastOffset } else { 0 }),
         last_file_name = '$lastFileSafe',
         last_file_offset = $lastOff,
@@ -2460,14 +2304,14 @@ WHEN NOT MATCHED THEN
         catch {
             Write-Log "    FAILED: $($_.Exception.Message)" "ERROR"
             $serverSuccess = $false
-            
+
             # Update collection state with failure
             $updateQuery = @"
 MERGE ServerOps.Activity_XE_CollectionState AS target
 USING (SELECT $serverId AS server_id, '$sessionName' AS session_name) AS source
 ON target.server_id = source.server_id AND target.session_name = source.session_name
 WHEN MATCHED THEN
-    UPDATE SET 
+    UPDATE SET
         last_collection_dttm = GETDATE(),
         last_collection_status = 'FAILED',
         events_collected = 0,
@@ -2480,7 +2324,7 @@ WHEN NOT MATCHED THEN
             Invoke-SqlNonQuery -Query $updateQuery | Out-Null
         }
     }
-    
+
     if ($serverSuccess) {
         $successCount++
     }
@@ -2489,21 +2333,20 @@ WHEN NOT MATCHED THEN
     }
 }
 
-# ----------------------------------------
-# Step 4: Collect AlwaysOn_health from AG servers
-# ----------------------------------------
+# -- Step 4: Collect AlwaysOn_health from AG servers --
+
 Write-Log "----------------------------------------"
 Write-Log "System Session Collection: AlwaysOn_health"
 Write-Log "----------------------------------------"
 
 # Get AG servers only (DM-PROD-DB, DM-PROD-REP)
 $agServers = Get-SqlData -Query @"
-SELECT 
-    sr.server_id, 
-    sr.server_name, 
+SELECT
+    sr.server_id,
+    sr.server_name,
     sr.instance_name
 FROM dbo.ServerRegistry sr
-WHERE sr.is_active = 1 
+WHERE sr.is_active = 1
   AND sr.server_name IN ('DM-PROD-DB', 'DM-PROD-REP')
 ORDER BY sr.server_id
 "@
@@ -2513,18 +2356,18 @@ if ($null -eq $agServers -or @($agServers).Count -eq 0) {
 }
 else {
     $sessionName = "AlwaysOn_health"
-    
+
     foreach ($server in $agServers) {
         $serverName = $server.server_name
         $serverId = $server.server_id
         $serverNameSafe = $serverName -replace "'", "''"
         $instanceName = if ($server.instance_name -isnot [DBNull]) { $server.instance_name } else { $null }
-        
+
         $sqlInstance = Get-SqlInstanceName -ServerName $serverName -InstanceName $instanceName
-        
+
         Write-Log "Server: $serverName (ID: $serverId)"
         Write-Log "  Session: $sessionName"
-        
+
         # Get last collection state for this server/session
         $stateQuery = @"
 SELECT last_file_name, last_file_offset
@@ -2534,20 +2377,20 @@ WHERE server_id = $serverId AND session_name = '$sessionName'
         $state = Get-SqlData -Query $stateQuery
         $lastFileName = if ($state -and $state.last_file_name -isnot [DBNull]) { $state.last_file_name } else { $null }
         $lastOffset = if ($state -and $state.last_file_offset -isnot [DBNull]) { $state.last_file_offset } else { $null }
-        
+
         # AlwaysOn_health uses default LOG directory - get the file path
-        $filePath = Get-XEFilePath -Instance $sqlInstance -SessionName $sessionName
-        
+        $filePath = Get-srv_XEFilePath -Instance $sqlInstance -SessionName $sessionName
+
         if ($null -eq $filePath) {
             Write-Log "    Could not determine XE file path - session may not be running" "WARN"
-            
+
             # Update state as failed
             $updateQuery = @"
 MERGE ServerOps.Activity_XE_CollectionState AS target
 USING (SELECT $serverId AS server_id, '$sessionName' AS session_name) AS source
 ON target.server_id = source.server_id AND target.session_name = source.session_name
 WHEN MATCHED THEN
-    UPDATE SET 
+    UPDATE SET
         last_collection_dttm = GETDATE(),
         last_collection_status = 'FAILED',
         events_collected = 0,
@@ -2560,14 +2403,14 @@ WHEN NOT MATCHED THEN
             Invoke-SqlNonQuery -Query $updateQuery | Out-Null
             continue
         }
-        
+
         Write-Log "    File pattern: $filePath"
         Write-Log "    Last offset: $(if ($lastOffset) { $lastOffset } else { 'None (initial collection)' })"
-        
+
         # Build query to read XE events
         if ($lastFileName -and $lastOffset) {
             $xeQuery = @"
-SELECT 
+SELECT
     event_data,
     file_name,
     file_offset
@@ -2577,7 +2420,7 @@ ORDER BY file_name, file_offset
         }
         else {
             $xeQuery = @"
-SELECT 
+SELECT
     event_data,
     file_name,
     file_offset
@@ -2585,20 +2428,20 @@ FROM sys.fn_xe_file_target_read_file('$filePath', NULL, NULL, NULL)
 ORDER BY file_name, file_offset
 "@
         }
-        
+
         try {
             $events = Get-SqlData -Query $xeQuery -Instance $sqlInstance -DatabaseName "master" -MaxCharLength 2147483647
-            
+
             if ($null -eq $events -or @($events).Count -eq 0) {
                 Write-Log "    No new events found"
-                
+
                 # Update collection state
                 $updateQuery = @"
 MERGE ServerOps.Activity_XE_CollectionState AS target
 USING (SELECT $serverId AS server_id, '$sessionName' AS session_name) AS source
 ON target.server_id = source.server_id AND target.session_name = source.session_name
 WHEN MATCHED THEN
-    UPDATE SET 
+    UPDATE SET
         last_collection_dttm = GETDATE(),
         last_collection_status = 'NO_DATA',
         events_collected = 0,
@@ -2611,15 +2454,15 @@ WHEN NOT MATCHED THEN
                 Invoke-SqlNonQuery -Query $updateQuery | Out-Null
                 continue
             }
-            
+
             $eventCount = @($events).Count
             Write-Log "    Found $eventCount event(s) to process"
-            
+
             $sessionEvents = 0
             $parseErrors = 0
             $lastFile = $null
             $lastOff = $null
-            
+
             foreach ($event in $events) {
                 $eventData = $event.event_data
                 $fileName = $event.file_name
@@ -2630,9 +2473,9 @@ WHEN NOT MATCHED THEN
                 $lastOff = $fileOffset
 
                 # Parse and insert AGHealth event
-                $parsed = Parse-AGHealthEvent -EventXml $eventData
+                $parsed = Convert-srv_AGHealthEvent -EventXml $eventData
                 if ($null -ne $parsed) {
-                    $newEventId = Insert-AGHealthEvent -ServerId $serverId -ServerName $serverName -SessionName $sessionName -Event $parsed -SourceFile $fileName -SourceOffset $fileOffset -RetainRawXml $retainAGHealthXml
+                    $newEventId = Write-srv_AGHealthEvent -ServerId $serverId -ServerName $serverName -SessionName $sessionName -Event $parsed -SourceFile $fileName -SourceOffset $fileOffset -RetainRawXml $retainAGHealthXml
                     if ($null -ne $newEventId) {
                         $sessionEvents++
 
@@ -2640,8 +2483,8 @@ WHEN NOT MATCHED THEN
                         # The $events array represents events newly read from the XE file
                         # since the last collection offset, so historical rows in the
                         # table are never reconsidered here.
-                        if ($alertsEnabled -and (Test-AGHealthAlertable -Event $parsed)) {
-                            Send-AGHealthAlert -EventId $newEventId -ServerName $serverName -Event $parsed
+                        if ($alertsEnabled -and (Test-srv_AGHealthAlertable -Event $parsed)) {
+                            Send-srv_AGHealthAlert -EventId $newEventId -ServerName $serverName -Event $parsed -StateChangeRouting $aghealthStateChangeRouting -CriticalErrorRouting $aghealthCriticalErrorRouting
                         }
                     }
                 }
@@ -2649,13 +2492,13 @@ WHEN NOT MATCHED THEN
                     $parseErrors++
                 }
             }
-            
+
             Write-Log "    Inserted $sessionEvents event(s)"
             if ($parseErrors -gt 0) {
                 Write-Log "    Skipped $parseErrors event(s) due to parse errors" "WARN"
             }
             $totalEvents += $sessionEvents
-            
+
             # Update collection state
             if ($lastFile -and $lastOff) {
                 $lastFileSafe = $lastFile -replace "'", "''"
@@ -2664,7 +2507,7 @@ MERGE ServerOps.Activity_XE_CollectionState AS target
 USING (SELECT $serverId AS server_id, '$sessionName' AS session_name) AS source
 ON target.server_id = source.server_id AND target.session_name = source.session_name
 WHEN MATCHED THEN
-    UPDATE SET 
+    UPDATE SET
         first_file_offset = $(if ($lastOffset) { $lastOffset } else { 0 }),
         last_file_name = '$lastFileSafe',
         last_file_offset = $lastOff,
@@ -2682,14 +2525,14 @@ WHEN NOT MATCHED THEN
         }
         catch {
             Write-Log "    FAILED: $($_.Exception.Message)" "ERROR"
-            
+
             # Update collection state with failure
             $updateQuery = @"
 MERGE ServerOps.Activity_XE_CollectionState AS target
 USING (SELECT $serverId AS server_id, '$sessionName' AS session_name) AS source
 ON target.server_id = source.server_id AND target.session_name = source.session_name
 WHEN MATCHED THEN
-    UPDATE SET 
+    UPDATE SET
         last_collection_dttm = GETDATE(),
         last_collection_status = 'FAILED',
         events_collected = 0,
@@ -2704,9 +2547,8 @@ WHEN NOT MATCHED THEN
     }
 }
 
-# ----------------------------------------
-# Summary
-# ----------------------------------------
+# -- Summary --
+
 Write-Log "========================================"
 Write-Log "Collection Complete"
 Write-Log "  Servers attempted: $serverCount"
@@ -2719,9 +2561,8 @@ if ($failedServers.Count -gt 0) {
     Write-Log "Servers with failures: $($failedServers -join ', ')" "WARN"
 }
 
-# ----------------------------------------
-# Orchestrator Callback
-# ----------------------------------------
+# -- Orchestrator Callback --
+
 if ($TaskId -gt 0) {
     $totalMs = [int]((New-TimeSpan -Start $scriptStart -End (Get-Date)).TotalMilliseconds)
     $outputMsg = "Servers: $successCount/$serverCount, Events: $totalEvents"
