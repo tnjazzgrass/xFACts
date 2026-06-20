@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-06-19 19:13:47
+Generated: 2026-06-20 04:40:18
 
 ## Module Registry
 
@@ -48,7 +48,7 @@ Generated: 2026-06-19 19:13:47
 | Orchestrator | Engine.Orchestrator | Process orchestration engine with version tracking, credential management, and DDL protection  |  | engine-room |  | Orchestrator |  |  |  | 2 |
 | ServerOps | ServerOps.Backup | Real-time SQL backup monitoring, network copy, AWS upload, retention management, and storage utilization | bkp | backup | Backup Monitoring | ServerOps | Backup |  | 40 | 1 |
 | ServerOps | ServerOps.DBCC | Scheduled DBCC integrity operations with per-database scheduling, on-demand execution, constraint tracking, and alerting | dbc | dbcc | DBCC Operations | ServerOps | DBCC |  | 55 | 1 |
-| ServerOps | ServerOps.Disk | Disk space monitoring and health summary alerts |  |  |  |  |  |  |  |  |
+| ServerOps | ServerOps.Disk | Disk space monitoring and health summary alerts | dsk |  |  |  |  |  |  |  |
 | ServerOps | ServerOps.Index | Real-time index queue management, Index discovery, fragmentation scanning, priority-based rebuilds, and statistics maintenance | idx | indexmaint | Index Maintenance | ServerOps | Index |  | 50 | 1 |
 | ServerOps | ServerOps.Replication | Real-time metrics for agent health, queue depth, end-to-end latency, delivery rate and event tracking | rpm | replication | Replication Monitoring | ServerOps | Replication |  | 30 | 1 |
 | ServerOps | ServerOps.ServerHealth | Real-time SQL Server performance and Activity monitoring, XE event capture, disk health, and server diagnostics | srv | serverhealth | Server Health | ServerOps | Activity,Disk |  | 20 | 1 |
