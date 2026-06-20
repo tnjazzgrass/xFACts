@@ -1,43 +1,18 @@
 <#
 .SYNOPSIS
-    xFACts - GitHub Repository Publisher
+    Publishes all xFACts platform files to a GitHub repository.
 
 .DESCRIPTION
-    xFACts - GitHub Integration
-    Script: Publish-GitHubRepository.ps1
-    Version: Tracked in dbo.System_Metadata (component: Engine.SharedInfrastructure)
-
-    Publishes all xFACts platform files to a GitHub repository via the REST API.
-    Maintains a complete, current snapshot of the platform: PowerShell scripts,
-    Control Center files, documentation, SQL object definitions, and generated
-    reference data.
-
-    Designed to run standalone or as a step in the Invoke-DocPipeline.ps1 pipeline.
-
-    WORKFLOW
-    --------
-    1. Collect file inventory from server source directories
-    2. Extract SQL object definitions from the database
-    3. Generate Platform Registry markdown from registry tables
-    4. Audit collected files against Object_Registry
-    5. Fetch current repo state (file listing with SHAs)
-    6. Compare local vs remote - identify creates, updates, deletes
-    7. Push changes to GitHub via Contents API
-    8. Generate and push manifest.json (enriched with module/component)
-    9. Report summary
-
-    CHANGELOG
-    ---------
-    2026-04-04  Segmented manifest into sub-manifests by category.
-                Master manifest.json is now a lightweight index with
-                links to category sub-manifests (cc-app, cc-docs,
-                powershell, sql, documentation).
-    2026-04-02  Added Object_Registry audit phase with path validation.
-                Manifest entries now include module_name and component_name
-                from Object_Registry. Unregistered files logged as warnings.
-                Audit exclusions: Planning docs, standalone docs, generated
-                DDL JSON, Legacy schema SQL objects.
-    2026-04-01  Initial implementation
+    Publishes the xFACts platform to a GitHub repository via the REST API,
+    maintaining a complete, current snapshot: PowerShell scripts, Control Center
+    files, documentation, SQL object definitions, and generated reference data.
+    The run collects the file inventory from the server source directories,
+    extracts SQL object definitions, generates the Platform Registry markdown,
+    audits collected files against Object_Registry, fetches the current repo
+    state, computes the create/update/delete diff against it, pushes the changes
+    via the Contents API, and generates a segmented set of manifests (a
+    lightweight master index plus per-category sub-manifests). Runs standalone
+    or as a step in the Invoke-DocPipeline.ps1 pipeline.
 
 .PARAMETER Owner
     GitHub repository owner. Default: tnjazzgrass
@@ -61,14 +36,61 @@
 .PARAMETER Execute
     Required to actually push changes. Without this, runs in preview mode.
 
-.EXAMPLE
-    .\Publish-GitHubRepository.ps1
-    Preview mode - shows what would be pushed without making changes.
+.COMPONENT
+    Documentation.Pipeline
 
-.EXAMPLE
-    .\Publish-GitHubRepository.ps1 -Execute
-    Full push to GitHub repository.
+.NOTES
+    File Name : Publish-GitHubRepository.ps1
+    Location  : E:\xFACts-PowerShell\Publish-GitHubRepository.ps1
+
+    FILE ORGANIZATION
+    -----------------
+    CHANGELOG: CHANGE HISTORY
+    PARAMETERS: SCRIPT PARAMETERS
+    IMPORTS: SCRIPT DEPENDENCIES
+    INITIALIZATION: SCRIPT INITIALIZATION
+    CONSTANTS: PATHS AND SOURCES
+    FUNCTIONS: GITHUB REST API
+    EXECUTION: SCRIPT EXECUTION
 #>
+
+<# ============================================================================
+   CHANGELOG: CHANGE HISTORY
+   ----------------------------------------------------------------------------
+   Dated change history for this file, most recent first. Authoritative version
+   tracking lives in dbo.System_Metadata (component Documentation.Pipeline);
+   this section records what changed and when.
+   Prefix: (none)
+   ============================================================================ #>
+
+# 2026-06-20  Conformed to the PowerShell file format spec: block-comment header
+#             and section banners, dedicated CHANGELOG section, single EXECUTION
+#             section, function purpose comments in place of docblocks, and the
+#             dot-source moved into the IMPORTS section. Added the
+#             xFACts-DocPipelineFunctions.ps1 dependency: SQL object extraction
+#             now calls the shared Get-SqlObjectDefinitions and registry markdown
+#             generation calls the shared Get-RegistryExportMarkdown, replacing
+#             the per-script copies. Removed the dead $script:Config assignment
+#             and its preview-mode no-op block; Initialize-XFActsScript now
+#             receives the script's server and database parameters.
+# 2026-04-04  Segmented manifest into sub-manifests by category. Master
+#             manifest.json is now a lightweight index with links to category
+#             sub-manifests (cc-app, cc-docs, powershell, sql, documentation).
+# 2026-04-02  Added Object_Registry audit phase with path validation. Manifest
+#             entries now include module_name and component_name from
+#             Object_Registry. Unregistered files logged as warnings. Audit
+#             exclusions: Planning docs, standalone docs, generated DDL JSON,
+#             Legacy schema SQL objects.
+# 2026-04-01  Initial implementation.
+
+<# ============================================================================
+   PARAMETERS: SCRIPT PARAMETERS
+   ----------------------------------------------------------------------------
+   Repository target (owner, repo, branch), the credential service name, the
+   SQL connection target for object extraction and registry queries, and the
+   execute guard.
+   Prefix: (none)
+   ============================================================================ #>
 
 [CmdletBinding()]
 param(
@@ -81,151 +103,171 @@ param(
     [switch]$Execute
 )
 
-# ============================================================================
-# INITIALIZATION
-# ============================================================================
+<# ============================================================================
+   IMPORTS: SCRIPT DEPENDENCIES
+   ----------------------------------------------------------------------------
+   Dot-sourced shared infrastructure: orchestrator helpers (initialization,
+   logging, SQL data access, credential retrieval) and the documentation-pipeline
+   helpers (SQL object extraction and Platform Registry markdown generation).
+   Prefix: (none)
+   ============================================================================ #>
 
 . "$PSScriptRoot\xFACts-OrchestratorFunctions.ps1"
-$script:Config = Initialize-XFActsScript -ScriptName 'Publish-GitHubRepository' -Execute:$Execute
-if (-not $script:Config -and -not $Execute) {
-    # Preview mode - Initialize-XFActsScript displays the warning but returns $null
-    # We still want to continue in preview mode, so don't exit
-}
+. "$PSScriptRoot\xFACts-DocPipelineFunctions.ps1"
 
-# Force TLS 1.2 for GitHub API connectivity
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+<# ============================================================================
+   INITIALIZATION: SCRIPT INITIALIZATION
+   ----------------------------------------------------------------------------
+   One-time shared setup: SQL module loading, application identity, log path,
+   default connection target, and the preview-mode guard. The connection target
+   is set from the script's xFACtsServer/xFACtsDB parameters so the shared SQL
+   helpers address exactly what those parameters specify.
+   Prefix: (none)
+   ============================================================================ #>
 
-# ============================================================================
-# CONFIGURATION - Source Mappings
-# ============================================================================
-# Each entry maps a server directory to a repository path.
-# Filter controls which files are collected from that directory.
-# Recurse controls whether subdirectories are included.
+Initialize-XFActsScript -ScriptName 'Publish-GitHubRepository' -ServerInstance $xFACtsServer -Database $xFACtsDB -Execute:$Execute
 
+<# ============================================================================
+   CONSTANTS: PATHS AND SOURCES
+   ----------------------------------------------------------------------------
+   Server source roots, the server-to-repository file-source map, the managed
+   repository path prefixes considered for orphan cleanup, and the sub-manifest
+   category definitions used when generating the segmented manifests.
+   Prefix: (none)
+   ============================================================================ #>
+
+# Root of the orchestrator PowerShell script tree.
 $ScriptsRoot = "E:\xFACts-PowerShell"
+# Root of the Control Center application and documentation-site tree.
 $CCRoot      = "E:\xFACts-ControlCenter"
+# Root of the standalone documentation and planning tree.
 $DocsRoot    = "E:\xFACts-Documentation"
 
+# Server-to-repository file-source map: each entry maps a server directory to a
+# repository path, with a filename filter set and a recurse flag.
 $FileSources = @(
-    # --- PowerShell scripts (flat) ---
     @{
-        ServerPath = $ScriptsRoot
-        RepoPath   = "xFACts-PowerShell"
-        Filter     = @("*.ps1", "*.js", "*.psm1")
-        Recurse    = $false
+        ServerPath  = $ScriptsRoot
+        RepoPath    = "xFACts-PowerShell"
+        Filter      = @("*.ps1", "*.js", "*.psm1")
+        Recurse     = $false
         Description = "Orchestrator scripts"
     }
-
-    # --- Control Center (full tree) ---
     @{
-        ServerPath = "$CCRoot\scripts"
-        RepoPath   = "xFACts-ControlCenter/scripts"
-        Filter     = @("*.ps1", "*.psm1", "*.psd1")
-        Recurse    = $true
+        ServerPath  = "$CCRoot\scripts"
+        RepoPath    = "xFACts-ControlCenter/scripts"
+        Filter      = @("*.ps1", "*.psm1", "*.psd1")
+        Recurse     = $true
         Description = "Control Center scripts, routes, modules"
     }
     @{
-        ServerPath = "$CCRoot\public\css"
-        RepoPath   = "xFACts-ControlCenter/public/css"
-        Filter     = @("*.css")
-        Recurse    = $false
+        ServerPath  = "$CCRoot\public\css"
+        RepoPath    = "xFACts-ControlCenter/public/css"
+        Filter      = @("*.css")
+        Recurse     = $false
         Description = "Control Center CSS"
     }
     @{
-        ServerPath = "$CCRoot\public\js"
-        RepoPath   = "xFACts-ControlCenter/public/js"
-        Filter     = @("*.js")
-        Recurse    = $false
+        ServerPath  = "$CCRoot\public\js"
+        RepoPath    = "xFACts-ControlCenter/public/js"
+        Filter      = @("*.js")
+        Recurse     = $false
         Description = "Control Center JS"
     }
     @{
-        ServerPath = "$CCRoot\public\docs\pages"
-        RepoPath   = "xFACts-ControlCenter/public/docs/pages"
-        Filter     = @("*.html")
-        Recurse    = $true
+        ServerPath  = "$CCRoot\public\docs\pages"
+        RepoPath    = "xFACts-ControlCenter/public/docs/pages"
+        Filter      = @("*.html")
+        Recurse     = $true
         Description = "Documentation HTML pages (narrative, arch, ref, cc, guides)"
     }
     @{
-        ServerPath = "$CCRoot\public\docs\css"
-        RepoPath   = "xFACts-ControlCenter/public/docs/css"
-        Filter     = @("*.css")
-        Recurse    = $false
+        ServerPath  = "$CCRoot\public\docs\css"
+        RepoPath    = "xFACts-ControlCenter/public/docs/css"
+        Filter      = @("*.css")
+        Recurse     = $false
         Description = "Documentation CSS"
     }
     @{
-        ServerPath = "$CCRoot\public\docs\js"
-        RepoPath   = "xFACts-ControlCenter/public/docs/js"
-        Filter     = @("*.js")
-        Recurse    = $false
+        ServerPath  = "$CCRoot\public\docs\js"
+        RepoPath    = "xFACts-ControlCenter/public/docs/js"
+        Filter      = @("*.js")
+        Recurse     = $false
         Description = "Documentation JS"
     }
     @{
-        ServerPath = "$CCRoot\public\docs\data\ddl"
-        RepoPath   = "xFACts-ControlCenter/public/docs/data/ddl"
-        Filter     = @("*.json")
-        Recurse    = $false
+        ServerPath  = "$CCRoot\public\docs\data\ddl"
+        RepoPath    = "xFACts-ControlCenter/public/docs/data/ddl"
+        Filter      = @("*.json")
+        Recurse     = $false
         Description = "Schema JSON data files"
     }
     @{
-        ServerPath = "$CCRoot\public\docs\images\cc"
-        RepoPath   = "xFACts-ControlCenter/public/docs/images/cc"
-        Filter     = @("*.png")
-        Recurse    = $false
+        ServerPath  = "$CCRoot\public\docs\images\cc"
+        RepoPath    = "xFACts-ControlCenter/public/docs/images/cc"
+        Filter      = @("*.png")
+        Recurse     = $false
         Description = "CC guide screenshots"
     }
-
-    # --- Documentation (standalone docs and planning) ---
     @{
-        ServerPath = "$DocsRoot\docs"
-        RepoPath   = "xFACts-Documentation"
-        Filter     = @("*.md")
-        Recurse    = $false
+        ServerPath  = "$DocsRoot\docs"
+        RepoPath    = "xFACts-Documentation"
+        Filter      = @("*.md")
+        Recurse     = $false
         Description = "Platform documentation (Guidelines, Backlog)"
     }
     @{
-        ServerPath = "$DocsRoot\Planning"
-        RepoPath   = "xFACts-Documentation/Planning"
-        Filter     = @("*.md")
-        Recurse    = $false
+        ServerPath  = "$DocsRoot\Planning"
+        RepoPath    = "xFACts-Documentation/Planning"
+        Filter      = @("*.md")
+        Recurse     = $false
         Description = "Planning documents (working docs, roadmaps)"
     }
     @{
-        ServerPath = "$DocsRoot\WorkingFiles"
-        RepoPath   = "xFACts-Documentation/WorkingFiles"
-        Filter     = @("*.*")
-        Recurse    = $true
+        ServerPath  = "$DocsRoot\WorkingFiles"
+        RepoPath    = "xFACts-Documentation/WorkingFiles"
+        Filter      = @("*.*")
+        Recurse     = $true
         Description = "Working reference files for active builds"
     }
 )
 
-# Track generated file paths so orphan cleanup doesn't delete them
-$GeneratedRepoPaths = [System.Collections.Generic.HashSet[string]]::new()
-$GeneratedRepoPaths.Add("manifest-cc-app.json")
-$GeneratedRepoPaths.Add("manifest-cc-docs.json")
-$GeneratedRepoPaths.Add("manifest-powershell.json")
-$GeneratedRepoPaths.Add("manifest-sql.json")
-$GeneratedRepoPaths.Add("manifest-documentation.json")
+# Repository path prefixes the publisher manages; only files under these are
+# considered for orphan deletion.
+$ManagedPrefixes = @("xFACts-PowerShell/", "xFACts-ControlCenter/", "xFACts-Documentation/", "xFACts-SQL/")
 
-# ============================================================================
-# GITHUB API FUNCTIONS
-# ============================================================================
+# Sub-manifest category definitions: bucket key, output filename, and title.
+$SubManifestDefs = @(
+    @{ Key = "cc-app";        Filename = "manifest-cc-app.json";        Title = "Control Center Application" }
+    @{ Key = "cc-docs";       Filename = "manifest-cc-docs.json";       Title = "Control Center Documentation Site" }
+    @{ Key = "powershell";    Filename = "manifest-powershell.json";    Title = "PowerShell Scripts" }
+    @{ Key = "sql";           Filename = "manifest-sql.json";           Title = "SQL Object Definitions" }
+    @{ Key = "documentation"; Filename = "manifest-documentation.json"; Title = "Documentation and Working Files" }
+)
 
+<# ============================================================================
+   FUNCTIONS: GITHUB REST API
+   ----------------------------------------------------------------------------
+   Thin wrappers over the GitHub REST API used by the publish run: request
+   header construction, repository tree retrieval, single-file create/update and
+   delete via the Contents API, and local git blob SHA computation for change
+   detection without downloading remote content.
+   Prefix: (none)
+   ============================================================================ #>
+
+# Builds the GitHub REST request headers carrying the bearer token and API version.
 function Get-GitHubHeaders {
     param([string]$Token)
     return @{
-        "Authorization"       = "Bearer $Token"
-        "Accept"              = "application/vnd.github+json"
-        "User-Agent"          = "xFACts-Publisher/1.0"
+        "Authorization"        = "Bearer $Token"
+        "Accept"               = "application/vnd.github+json"
+        "User-Agent"           = "xFACts-Publisher/1.0"
         "X-GitHub-Api-Version" = "2022-11-28"
     }
 }
 
+# Retrieves the full repository file tree via the Git Trees API as a path -> blob SHA map.
 function Get-RepoTree {
-    <#
-    .SYNOPSIS
-        Retrieves the full repository file tree with SHAs using the Git Trees API.
-        Returns a hashtable of path -> SHA for every file (blob) in the repo.
-    #>
     param(
         [string]$Owner,
         [string]$Repo,
@@ -253,12 +295,8 @@ function Get-RepoTree {
     }
 }
 
+# Creates or updates a single repository file via the Contents API (SHA required for updates, null for creates).
 function Push-GitHubFile {
-    <#
-    .SYNOPSIS
-        Creates or updates a single file in the repository via the Contents API.
-        Requires the file's current SHA for updates (null for creates).
-    #>
     param(
         [string]$Owner,
         [string]$Repo,
@@ -299,12 +337,8 @@ function Push-GitHubFile {
     }
 }
 
+# Deletes a repository file via the Contents API (SHA required).
 function Remove-GitHubFile {
-    <#
-    .SYNOPSIS
-        Deletes a file from the repository via the Contents API.
-        Requires the file's current SHA.
-    #>
     param(
         [string]$Owner,
         [string]$Repo,
@@ -334,13 +368,8 @@ function Remove-GitHubFile {
     }
 }
 
+# Computes the git blob SHA1 of file content (SHA1 of "blob <size>\0<content>") for change detection without downloading.
 function Get-GitBlobSha {
-    <#
-    .SYNOPSIS
-        Computes the git blob SHA1 hash for file content.
-        Git uses: SHA1("blob <size>\0<content>")
-        This allows comparing local content to remote SHAs without downloading.
-    #>
     param([byte[]]$ContentBytes)
 
     $header = [System.Text.Encoding]::ASCII.GetBytes("blob $($ContentBytes.Length)`0")
@@ -355,9 +384,28 @@ function Get-GitBlobSha {
     return [BitConverter]::ToString($hashBytes).Replace("-", "").ToLower()
 }
 
-# ============================================================================
-# PHASE 1: RETRIEVE CREDENTIALS
-# ============================================================================
+<# ============================================================================
+   EXECUTION: SCRIPT EXECUTION
+   ----------------------------------------------------------------------------
+   Runs the publish pipeline: retrieve credentials, collect local files, extract
+   SQL object definitions, generate the Platform Registry markdown, audit against
+   Object_Registry, compute the repository diff, push the create/update/delete
+   changes, generate and push the segmented manifests, and report a summary.
+   Prefix: (none)
+   ============================================================================ #>
+
+# Force TLS 1.2 for GitHub API connectivity.
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+# Generated repository paths that orphan cleanup must not delete (the manifests).
+$GeneratedRepoPaths = [System.Collections.Generic.HashSet[string]]::new()
+$GeneratedRepoPaths.Add("manifest-cc-app.json")        | Out-Null
+$GeneratedRepoPaths.Add("manifest-cc-docs.json")       | Out-Null
+$GeneratedRepoPaths.Add("manifest-powershell.json")    | Out-Null
+$GeneratedRepoPaths.Add("manifest-sql.json")           | Out-Null
+$GeneratedRepoPaths.Add("manifest-documentation.json") | Out-Null
+
+# -- Phase 1: Retrieve credentials --
 
 Write-Log "=========================================="
 Write-Log "xFACts GitHub Repository Publisher"
@@ -377,7 +425,7 @@ if (-not $creds -or -not $creds.PersonalAccessToken) {
 $token = $creds.PersonalAccessToken
 $headers = Get-GitHubHeaders -Token $token
 
-# Validate connectivity and authentication
+# Validate connectivity and authentication.
 try {
     $rateCheck = Invoke-RestMethod -Uri "https://api.github.com/rate_limit" `
         -Headers $headers -Method Get -TimeoutSec 10
@@ -395,15 +443,13 @@ catch {
     exit 1
 }
 
-# ============================================================================
-# PHASE 2: COLLECT LOCAL FILES
-# ============================================================================
+# -- Phase 2: Collect local files --
 
 Write-Log ""
 Write-Log "Phase 2: Collecting local files"
 Write-Log "-------------------------------"
 
-# Hashtable of repoPath -> @{ ContentBytes, Source }
+# Hashtable of repoPath -> @{ ContentBytes, Source }.
 $localFiles = @{}
 
 foreach ($source in $FileSources) {
@@ -430,7 +476,7 @@ foreach ($source in $FileSources) {
         $files = Get-ChildItem @params
 
         foreach ($file in $files) {
-            # Build repo path: base repo path + relative path from server source
+            # Build repo path: base repo path plus the relative path from the server source.
             if ($source.Recurse) {
                 $relativePath = $file.FullName.Substring($serverPath.Length).TrimStart('\') -replace '\\', '/'
                 $repoPath = "$($source.RepoPath)/$relativePath"
@@ -440,7 +486,7 @@ foreach ($source in $FileSources) {
             }
 
             $contentBytes = [System.IO.File]::ReadAllBytes($file.FullName)
-            # Strip UTF-8 BOM if present (0xEF, 0xBB, 0xBF)
+            # Strip the UTF-8 BOM if present (0xEF, 0xBB, 0xBF).
             if ($contentBytes.Length -ge 3 -and $contentBytes[0] -eq 0xEF -and $contentBytes[1] -eq 0xBB -and $contentBytes[2] -eq 0xBF) {
                 $contentBytes = $contentBytes[3..($contentBytes.Length - 1)]
             }
@@ -457,29 +503,13 @@ foreach ($source in $FileSources) {
 
 Write-Log "  Total files from disk: $($localFiles.Count)"
 
-# ============================================================================
-# PHASE 3: EXTRACT SQL OBJECT DEFINITIONS
-# ============================================================================
+# -- Phase 3: Extract SQL object definitions --
 
 Write-Log ""
 Write-Log "Phase 3: Extracting SQL object definitions"
 Write-Log "-------------------------------------------"
 
-$sqlQuery = @"
-    SELECT 
-        s.name AS schema_name,
-        o.name AS object_name,
-        o.type_desc,
-        m.definition
-    FROM sys.sql_modules m
-    INNER JOIN sys.objects o ON m.object_id = o.object_id
-    INNER JOIN sys.schemas s ON o.schema_id = s.schema_id
-    WHERE s.name NOT IN ('sys', 'INFORMATION_SCHEMA')
-      AND o.is_ms_shipped = 0
-    ORDER BY s.name, o.type_desc, o.name
-"@
-
-$sqlObjects = Get-SqlData -Query $sqlQuery -Timeout 120 -MaxCharLength 1000000
+$sqlObjects = Get-SqlObjectDefinitions
 $sqlCount = 0
 
 if ($sqlObjects) {
@@ -492,7 +522,7 @@ if ($sqlObjects) {
             ContentBytes = $contentBytes
             Source       = "SQL:$($obj.schema_name).$($obj.object_name)"
         }
-        $GeneratedRepoPaths.Add($repoPath)
+        $GeneratedRepoPaths.Add($repoPath) | Out-Null
         $sqlCount++
     }
     Write-Log "  OK    SQL object definitions - $sqlCount extracted" "SUCCESS"
@@ -501,130 +531,49 @@ else {
     Write-Log "  WARN  No SQL objects extracted" "WARN"
 }
 
-# ============================================================================
-# PHASE 4: GENERATE PLATFORM REGISTRY
-# ============================================================================
+# -- Phase 4: Generate Platform Registry --
 
 Write-Log ""
 Write-Log "Phase 4: Generating Platform Registry"
 Write-Log "--------------------------------------"
 
-$TableExports = @(
-    @{
-        Title = "Module Registry"
-        Query = "SELECT module_name, description FROM dbo.Module_Registry WHERE is_active = 1 ORDER BY module_name"
-    },
-    @{
-        Title = "Component Registry"
-        Query = "SELECT module_name, component_name, description, cc_prefix, doc_page_id, doc_title, doc_json_schema, doc_json_categories, doc_cc_slug, doc_sort_order, doc_section_order FROM dbo.Component_Registry WHERE is_active = 1 ORDER BY module_name, component_name"
-    },
-    @{
-        Title = "Object Registry"
-        Query = "SELECT component_name, object_name, object_category, object_type, object_path, description FROM dbo.Object_Registry WHERE is_active = 1 ORDER BY component_name, object_category, object_type, object_name"
-    },
-    @{
-        Title = "Nav Registry"
-        Query = "SELECT page_route, nav_label, display_title, description, section_key, sort_order, doc_page_id, show_in_nav, show_on_home FROM dbo.RBAC_NavRegistry WHERE is_active = 1 ORDER BY section_key, sort_order, page_route"
-    },
-    @{
-        Title = "Process Registry"
-        Query = "SELECT module_name, process_name, description, script_path, procedure_name, execution_mode, dependency_group, interval_seconds, scheduled_time, timeout_seconds, run_mode, allow_concurrent, cc_engine_slug, cc_engine_label, cc_page_route, cc_sort_order FROM Orchestrator.ProcessRegistry ORDER BY dependency_group, module_name, process_name"
-    },
-    @{
-        Title = "Global Configuration"
-        Query = "SELECT module_name, category, setting_name, setting_value, data_type, description FROM dbo.GlobalConfig WHERE is_active = 1 ORDER BY module_name, category, setting_name"
-    }
-)
-
-$registryContent = @()
-$registryContent += "# xFACts Platform Registry"
-$registryContent += "Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-$registryContent += ""
-$exportedTables = 0
-
-foreach ($export in $TableExports) {
-    try {
-        $rows = Get-SqlData -Query $export.Query -Timeout 60
-
-        $rowCount = @($rows).Count
-        if ($rowCount -eq 0) {
-            Write-Log "  SKIP  $($export.Title) - no rows"
-            continue
-        }
-
-        $registryContent += "## $($export.Title)"
-        $registryContent += ""
-
-        # Get column names (exclude system properties from DataRow)
-        $columns = $rows[0].PSObject.Properties |
-            Where-Object { $_.Name -notin @('RowError','RowState','Table','ItemArray','HasErrors') } |
-            ForEach-Object { $_.Name }
-
-        # Header row
-        $registryContent += "| " + ($columns -join " | ") + " |"
-        $registryContent += "| " + (($columns | ForEach-Object { "---" }) -join " | ") + " |"
-
-        # Data rows
-        foreach ($row in $rows) {
-            $values = foreach ($col in $columns) {
-                $val = $row.$col
-                if ($null -eq $val -or $val -is [DBNull]) { "" }
-                else { [string]$val -replace '\|', '\|' -replace '\r?\n', ' ' }
-            }
-            $registryContent += "| " + ($values -join " | ") + " |"
-        }
-
-        $registryContent += ""
-        $exportedTables++
-        Write-Log "  OK    $($export.Title) - $rowCount rows" "SUCCESS"
-    }
-    catch {
-        Write-Log "  ERROR  $($export.Title) - $($_.Exception.Message)" "ERROR"
-    }
-}
+$registryExport = Get-RegistryExportMarkdown
+$exportedTables = $registryExport.TableCount
 
 if ($exportedTables -gt 0) {
-    $registryText = $registryContent -join "`n"
-    $registryBytes = [System.Text.Encoding]::UTF8.GetBytes($registryText)
+    $registryBytes = [System.Text.Encoding]::UTF8.GetBytes($registryExport.Markdown)
     $registryRepoPath = "xFACts-Documentation/xFACts_Platform_Registry.md"
 
     $localFiles[$registryRepoPath] = @{
         ContentBytes = $registryBytes
         Source       = "Generated:PlatformRegistry"
     }
-    $GeneratedRepoPaths.Add($registryRepoPath)
+    $GeneratedRepoPaths.Add($registryRepoPath) | Out-Null
     Write-Log "  OK    Platform Registry - $exportedTables tables exported" "SUCCESS"
 }
 
-# ============================================================================
-# PHASE 5: AUDIT FILES AGAINST OBJECT_REGISTRY
-# ============================================================================
-# Query Object_Registry to build a lookup by filename. Validates that every
-# file being published has a corresponding registry entry, and that registry
-# paths match actual source paths. Also validates SQL objects exist in the
-# registry. Results are used in Phase 8 to enrich manifest entries with
-# module_name and component_name.
+# -- Phase 5: Object_Registry audit --
 
 Write-Log ""
 Write-Log "Phase 5: Object_Registry audit"
 Write-Log "---------------------------------"
 
 $registryQuery = @"
-    SELECT 
-        r.object_name,
-        r.object_path,
-        r.object_category,
-        r.object_type,
-        r.module_name,
-        r.component_name
-    FROM dbo.Object_Registry r
-    WHERE r.is_active = 1
+SELECT
+    r.object_name,
+    r.object_path,
+    r.object_category,
+    r.object_type,
+    r.module_name,
+    r.component_name
+FROM dbo.Object_Registry r
+WHERE r.is_active = 1
 "@
 
 $registryRows = Get-SqlData -Query $registryQuery -Timeout 60
 
-# Build lookup by object_name (filename) -> registry entry
-# Some filenames may appear in multiple components (unlikely but possible)
+# Build a lookup by object_name (filename) -> registry entries. Some filenames
+# may appear in multiple components (unlikely but possible).
 $registryLookup = @{}
 if ($registryRows) {
     foreach ($row in @($registryRows)) {
@@ -646,14 +595,14 @@ else {
     Write-Log "  WARN  Could not load Object_Registry" "WARN"
 }
 
-# Audit each collected file against the registry
+# Audit each collected file against the registry.
 $auditMatched = 0
 $auditUnregistered = 0
 $auditPathMismatch = 0
 $unregisteredFiles = @()
 $pathMismatches = @()
 
-# Build a manifest enrichment lookup: repoPath -> { module_name, component_name }
+# Manifest enrichment lookup: repoPath -> { module_name, component_name }.
 $manifestEnrichment = @{}
 
 foreach ($repoPath in $localFiles.Keys) {
@@ -661,28 +610,29 @@ foreach ($repoPath in $localFiles.Keys) {
     $fileName = $repoPath.Split('/')[-1]
     $sourcePath = $entry.Source
 
-    # Skip generated files (Platform Registry, manifest) - they aren't registered objects
+    # Skip generated files (Platform Registry, manifests) - not registered objects.
     if ($sourcePath -like "Generated:*") { continue }
 
-    # Skip files excluded from registry audit by convention
-    # Planning/working docs: transient session documents, not platform objects
+    # Skip files excluded from the registry audit by convention.
+    # Planning/working docs are transient session documents, not platform objects.
     if ($repoPath -like "xFACts-Documentation/Planning/*") { continue }
     if ($repoPath -like "xFACts-Documentation/WorkingFiles/*") { continue }
-    # Standalone documentation files (Guidelines, Backlog, working docs): reference documents, not module objects
+    # Standalone documentation files (Guidelines, Backlog) are reference documents, not module objects.
     if ($repoPath -like "xFACts-Documentation/*.md") { continue }
-    # Generated DDL JSON data files: output of Generate-DDLReference.ps1, not authored objects
+    # Generated DDL JSON data files are output of Generate-DDLReference.ps1, not authored objects.
     if ($repoPath -like "xFACts-ControlCenter/public/docs/data/ddl/*.json") { continue }
 
-    # SQL objects: match by schema.objectname pattern
+    # SQL objects: match by schema.objectname pattern.
     if ($sourcePath -like "SQL:*") {
-        $sqlIdentifier = $sourcePath.Substring(4)  # Remove "SQL:" prefix
+        # Remove the "SQL:" prefix.
+        $sqlIdentifier = $sourcePath.Substring(4)
         $parts = $sqlIdentifier.Split('.')
-        # Skip Legacy schema objects - deprecated, not tracked
+        # Skip Legacy schema objects - deprecated, not tracked.
         if ($parts.Count -ge 1 -and $parts[0] -eq 'Legacy') { continue }
         if ($parts.Count -eq 2) {
             $schemaName = $parts[0]
             $objectName = $parts[1]
-            # Look for the object by its actual name (without schema prefix)
+            # Look for the object by its actual name (without schema prefix).
             if ($registryLookup.ContainsKey($objectName)) {
                 $regEntry = $registryLookup[$objectName] | Where-Object { $_.object_category -eq 'Database' } | Select-Object -First 1
                 if ($regEntry) {
@@ -697,7 +647,7 @@ foreach ($repoPath in $localFiles.Keys) {
                     $unregisteredFiles += $repoPath
                 }
             }
-            # Also try schema.objectname as the lookup key
+            # Also try schema.objectname as the lookup key.
             elseif ($registryLookup.ContainsKey($sqlIdentifier)) {
                 $regEntry = $registryLookup[$sqlIdentifier][0]
                 $auditMatched++
@@ -714,7 +664,7 @@ foreach ($repoPath in $localFiles.Keys) {
         continue
     }
 
-    # File-based objects: match by filename
+    # File-based objects: match by filename.
     if ($registryLookup.ContainsKey($fileName)) {
         $regEntry = $registryLookup[$fileName][0]
         $auditMatched++
@@ -723,7 +673,7 @@ foreach ($repoPath in $localFiles.Keys) {
             component_name = $regEntry.component_name
         }
 
-        # Path validation: compare registry object_path to actual source path
+        # Path validation: compare registry object_path to the actual source path.
         if ($regEntry.object_path) {
             $registryPathNormalized = $regEntry.object_path.TrimEnd('\') -replace '/', '\'
             $sourcePathNormalized = $sourcePath.TrimEnd('\') -replace '/', '\'
@@ -764,12 +714,10 @@ if ($auditPathMismatch -gt 0) {
     }
 }
 
-# Track whether audit found issues (used for exit code)
+# Track whether the audit found issues (used for the exit code).
 $auditHasWarnings = ($auditUnregistered -gt 0 -or $auditPathMismatch -gt 0)
 
-# ============================================================================
-# PHASE 6: FETCH REMOTE STATE AND COMPUTE DIFF
-# ============================================================================
+# -- Phase 6: Compute repository diff --
 
 Write-Log ""
 Write-Log "Phase 6: Computing repository diff"
@@ -784,7 +732,7 @@ if ($null -eq $remoteTree) {
 Write-Log "  Remote files: $($remoteTree.Count)"
 Write-Log "  Local files:  $($localFiles.Count)"
 
-# Classify each local file as CREATE or UPDATE (by comparing git blob SHA)
+# Classify each local file as CREATE or UPDATE by comparing git blob SHA.
 $toCreate = @()
 $toUpdate = @()
 $unchanged = 0
@@ -816,14 +764,11 @@ foreach ($repoPath in $localFiles.Keys) {
     }
 }
 
-# Identify orphans: files in the repo that are not in the local set
-# Only consider files under our managed prefixes
-$managedPrefixes = @("xFACts-PowerShell/", "xFACts-ControlCenter/", "xFACts-Documentation/", "xFACts-SQL/")
-
+# Identify orphans: files in the repo not in the local set, under a managed prefix.
 $toDelete = @()
 foreach ($remotePath in $remoteTree.Keys) {
     $isManaged = $false
-    foreach ($prefix in $managedPrefixes) {
+    foreach ($prefix in $ManagedPrefixes) {
         if ($remotePath.StartsWith($prefix)) {
             $isManaged = $true
             break
@@ -852,9 +797,7 @@ if ($toCreate.Count -eq 0 -and $toUpdate.Count -eq 0 -and $toDelete.Count -eq 0)
     Write-Log "Repository is already current. Nothing to push." "SUCCESS"
 }
 
-# ============================================================================
-# PHASE 7: PUSH CHANGES TO GITHUB
-# ============================================================================
+# -- Phase 7: Push changes to GitHub --
 
 if ($toCreate.Count -gt 0 -or $toUpdate.Count -gt 0 -or $toDelete.Count -gt 0) {
     Write-Log ""
@@ -878,7 +821,7 @@ if ($toCreate.Count -gt 0 -or $toUpdate.Count -gt 0 -or $toDelete.Count -gt 0) {
         }
     }
     else {
-        # Process creates
+        # Process creates.
         foreach ($item in $toCreate) {
             $result = Push-GitHubFile -Owner $Owner -Repo $Repo -Branch $Branch -Headers $headers `
                 -RepoPath $item.RepoPath -ContentBytes $item.ContentBytes `
@@ -892,11 +835,11 @@ if ($toCreate.Count -gt 0 -or $toUpdate.Count -gt 0 -or $toDelete.Count -gt 0) {
                 $pushErrors++
             }
 
-            # Brief pause to respect API rate limits
+            # Brief pause to respect API rate limits.
             Start-Sleep -Milliseconds 100
         }
 
-        # Process updates
+        # Process updates.
         foreach ($item in $toUpdate) {
             $result = Push-GitHubFile -Owner $Owner -Repo $Repo -Branch $Branch -Headers $headers `
                 -RepoPath $item.RepoPath -ContentBytes $item.ContentBytes `
@@ -914,7 +857,7 @@ if ($toCreate.Count -gt 0 -or $toUpdate.Count -gt 0 -or $toDelete.Count -gt 0) {
             Start-Sleep -Milliseconds 100
         }
 
-        # Process deletes
+        # Process deletes.
         foreach ($item in $toDelete) {
             $result = Remove-GitHubFile -Owner $Owner -Repo $Repo -Branch $Branch -Headers $headers `
                 -RepoPath $item.RepoPath -Sha $item.Sha `
@@ -940,13 +883,7 @@ if ($toCreate.Count -gt 0 -or $toUpdate.Count -gt 0 -or $toDelete.Count -gt 0) {
     }
 }
 
-# ============================================================================
-# PHASE 8: GENERATE AND PUSH SEGMENTED MANIFESTS
-# ============================================================================
-# Generates category-specific sub-manifests and a master index manifest.
-# The master manifest contains only metadata and URLs to sub-manifests.
-# Each sub-manifest contains the actual file entries for its category.
-# This prevents fetch truncation as the repository grows.
+# -- Phase 8: Generate and push segmented manifests --
 
 Write-Log ""
 Write-Log "Phase 8: Generating segmented manifests"
@@ -956,9 +893,8 @@ $baseRawUrl = "https://raw.githubusercontent.com/$Owner/$Repo/$Branch"
 $cacheBuster = (Get-Date).ToUniversalTime().ToString("yyyyMMddHHmmss")
 $generatedTimestamp = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
 
-# -- Classify files into sub-manifest categories ----------------------------
-# ControlCenter is split into cc-app (routes, CSS, JS) and cc-docs (docs site)
-
+# Classify files into sub-manifest categories. ControlCenter splits into cc-app
+# (routes, CSS, JS) and cc-docs (the documentation site under public/docs).
 $subManifestBuckets = @{}
 
 foreach ($repoPath in ($localFiles.Keys | Sort-Object)) {
@@ -974,7 +910,6 @@ foreach ($repoPath in ($localFiles.Keys | Sort-Object)) {
         $subCategory = "documentation"
     }
     elseif ($repoPath.StartsWith("xFACts-ControlCenter/")) {
-        # Split CC: anything under public/docs/ goes to cc-docs, everything else to cc-app
         if ($repoPath -like "xFACts-ControlCenter/public/docs/*") {
             $subCategory = "cc-docs"
         }
@@ -995,7 +930,7 @@ foreach ($repoPath in ($localFiles.Keys | Sort-Object)) {
         raw_url = "$baseRawUrl/${repoPath}?v=$cacheBuster"
     }
 
-    # Enrich with module/component from Object_Registry audit
+    # Enrich with module/component from the Object_Registry audit.
     if ($manifestEnrichment.ContainsKey($repoPath)) {
         $enrichment = $manifestEnrichment[$repoPath]
         $fileEntry.module    = $enrichment.module_name
@@ -1005,22 +940,12 @@ foreach ($repoPath in ($localFiles.Keys | Sort-Object)) {
     $subManifestBuckets[$subCategory] += $fileEntry
 }
 
-# -- Sub-manifest definitions -----------------------------------------------
-
-$subManifestDefs = @(
-    @{ Key = "cc-app";        Filename = "manifest-cc-app.json";        Title = "Control Center Application" }
-    @{ Key = "cc-docs";       Filename = "manifest-cc-docs.json";       Title = "Control Center Documentation Site" }
-    @{ Key = "powershell";    Filename = "manifest-powershell.json";    Title = "PowerShell Scripts" }
-    @{ Key = "sql";           Filename = "manifest-sql.json";           Title = "SQL Object Definitions" }
-    @{ Key = "documentation"; Filename = "manifest-documentation.json"; Title = "Documentation and Working Files" }
-)
-
-# -- Generate each sub-manifest --------------------------------------------
-
+# Generate each sub-manifest and collect its summary for the master index.
 $subManifestSummaries = @()
-$allManifestFiles = @{}  # repoPath -> bytes, for pushing
+# repoPath -> bytes, for pushing.
+$allManifestFiles = @{}
 
-foreach ($def in $subManifestDefs) {
+foreach ($def in $SubManifestDefs) {
     $bucketKey = $def.Key
     $filename = $def.Filename
     $files = if ($subManifestBuckets.ContainsKey($bucketKey)) { $subManifestBuckets[$bucketKey] } else { @() }
@@ -1046,13 +971,12 @@ foreach ($def in $subManifestDefs) {
     Write-Log "  Sub-manifest: $filename - $($files.Count) files"
 }
 
-# Handle any "other" category files (shouldn't normally exist)
+# Warn about any "other" category files (should not normally exist).
 if ($subManifestBuckets.ContainsKey("other") -and $subManifestBuckets["other"].Count -gt 0) {
     Write-Log "  WARN  $($subManifestBuckets['other'].Count) files in 'other' category - not in any sub-manifest" "WARN"
 }
 
-# -- Generate master manifest (index only) ----------------------------------
-
+# Generate the master manifest (index only).
 $totalFileCount = 0
 foreach ($s in $subManifestSummaries) { $totalFileCount += $s.file_count }
 
@@ -1070,8 +994,7 @@ $allManifestFiles["manifest.json"] = $masterBytes
 
 Write-Log "  Master manifest: $($subManifestSummaries.Count) sub-manifests, $totalFileCount total files"
 
-# -- Push all manifests -----------------------------------------------------
-
+# Push all manifests.
 if ($Execute) {
     $manifestPushCount = 0
     $manifestSkipCount = 0
@@ -1079,13 +1002,13 @@ if ($Execute) {
     foreach ($manifestPath in $allManifestFiles.Keys) {
         $manifestBytes = $allManifestFiles[$manifestPath]
 
-        # Check if this manifest exists in remote
+        # Resolve the existing SHA, if the manifest is already in the remote.
         $existingSha = $null
         if ($remoteTree -and $remoteTree.ContainsKey($manifestPath)) {
             $existingSha = $remoteTree[$manifestPath]
         }
 
-        # Check if content actually changed
+        # Push only when content actually changed.
         $localSha = Get-GitBlobSha -ContentBytes $manifestBytes
         $contentChanged = ($null -eq $existingSha) -or ($localSha -ne $existingSha)
 
@@ -1119,9 +1042,7 @@ else {
     }
 }
 
-# ============================================================================
-# SUMMARY
-# ============================================================================
+# -- Summary --
 
 Write-Log ""
 Write-Log "=========================================="
