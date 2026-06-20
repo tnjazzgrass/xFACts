@@ -1234,9 +1234,9 @@ function Test-PrefixValueIsValid {
     if ([string]::IsNullOrEmpty($val)) { return $false }
     if ($val -eq 'cc') { return $true }
     # Page-prefix shape: any non-empty single token survives here. The
-    # registry's CK constraint enforces the actual shape (3 lowercase
-    # ASCII letters as of 2026-05-22); this validator just enforces
-    # single-token-ness.
+    # registry's CK constraint enforces the actual shape (3 ASCII chars:
+    # lowercase letter, then letter-or-digit, then lowercase letter;
+    # this validator just enforces single-token-ness.
     return $true
 }
 
