@@ -19,7 +19,7 @@
                         "name":  "Consolidate-UploadFiles.ps1",
                         "description":  "Collects all xFACts platform files from their various server locations into a single flat folder for uploading to Claude as project context. Scans orchestrator scripts, Control Center routes, APIs, modules, CSS, JS, documentation pages, and markdown exports. Optionally extracts stored procedure, trigger, and function definitions from the database and includes JSON data files. Generates a manifest file with source path mappings, collection summary, and per-file origin tracking.",
                         "module":  "ControlCenter",
-                        "category":  "AdminTools",
+                        "category":  "Documentation.Pipeline",
                         "dataFlow":  "Scans configured source directories across the xFACts server (orchestrator scripts, Control Center routes, APIs, modules, CSS, JS, documentation pages, planning documents). Copies all discovered files into a single flat output folder at E:\\xFACts-Upload and generates a _manifest.txt with the server directory structure map, collection summary, and per-file origin listing.",
                         "designNotes":  [
                                             {
@@ -102,7 +102,7 @@
                         "name":  "Invoke-DocPipeline.ps1",
                         "description":  "Documentation pipeline wrapper script. Runs selected documentation steps (Generate DDL Reference, Publish to Confluence, Consolidate Upload Files) in sequence. Writes real-time status to a JSON file after each step completes, enabling the Admin page to poll for per-step progress updates. Launched fire-and-forget by the /api/admin/doc-pipeline endpoint.",
                         "module":  "ControlCenter",
-                        "category":  "AdminTools",
+                        "category":  "Documentation.Pipeline",
                         "dataFlow":  "Receives step selections and option flags from the Admin API endpoint. Launches each selected documentation script sequentially, capturing stdout and stderr per step. Writes real-time progress to E:\\xFACts-PowerShell\\Logs\\doc-pipeline-status.json, which the Admin page polls every 2 seconds to display per-step status updates.",
                         "designNotes":  [
                                             {
@@ -220,6 +220,30 @@
                                                       "sortOrder":  4
                                                   }
                                               ]
+                    },
+                    {
+                        "name":  "xFACts-DocPipelineFunctions.ps1",
+                        "description":  "Shared scoped-function library for the documentation-pipeline scripts. Centralizes the user SQL object definition extraction and the Platform Registry markdown generation that the upload-consolidation and GitHub-publishing scripts previously duplicated. Dot-sourced after xFACts-OrchestratorFunctions.ps1, which supplies the Write-Log and Get-SqlData it calls.",
+                        "module":  "ControlCenter",
+                        "category":  "Documentation.Pipeline",
+                        "dataFlow":  "Dot-sourced by Consolidate-UploadFiles.ps1 and Publish-GitHubRepository.ps1 after xFACts-OrchestratorFunctions.ps1. Get-SqlObjectDefinitions reads stored procedure, trigger, function, and view definitions from sys.sql_modules in the xFACts database and returns the raw rows so each consumer can write per-object .sql files. Get-RegistryExportMarkdown runs the registry export queries it holds, renders each result set as a markdown table, and returns the assembled Platform Registry markdown along with the count of tables rendered; the consumers write that markdown to a file and report the table count. The functions hold no state of their own; they read through the shared Get-SqlData against the connection target the calling script established with Initialize-XFActsScript.",
+                        "designNotes":  [
+                                            {
+                                                "topic":  "No self-import of the orchestrator",
+                                                "note":  "As a shared-library file it declares no IMPORTS section, so it does not dot-source xFACts-OrchestratorFunctions.ps1 even though it depends on that file\u0027s Write-Log and Get-SqlData. Consuming scripts dot-source the orchestrator first, then this helper. This keeps the load order explicit at the call site and avoids a shared library reaching back into platform infrastructure.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "topic":  "Markdown generator returns content and table count",
+                                                "note":  "Get-RegistryExportMarkdown returns a hashtable carrying both the assembled markdown and the count of tables rendered, rather than the bare markdown string. The two consumers both write the markdown and report how many registry tables the snapshot covered, so the count is returned alongside the content rather than recomputed by each caller.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "topic":  "Scoped to the documentation pipeline",
+                                                "note":  "The extraction and registry-export logic was lifted into this scoped helper rather than into xFACts-OrchestratorFunctions.ps1 because only the documentation-pipeline scripts use it. Platform-wide infrastructure stays in the orchestrator; pipeline-specific shared logic lives here, next to the scripts that consume it.",
+                                                "sortOrder":  3
+                                            }
+                                        ]
                     }
                 ],
     "xeSessions":  [
