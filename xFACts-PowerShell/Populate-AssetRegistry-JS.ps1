@@ -91,6 +91,18 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-06-20  Docs-zone JS support (CC_JS_Spec 4.4, 7.2, 8, 11). Added the
+#             docs-shell section taxonomy (IMPORTS / FOUNDATION / STATE /
+#             FUNCTIONS) as a third valid-section-type set and made the
+#             per-file selection zone-aware (page / cc shell / docs shell).
+#             Gated the ENGINE_PROCESSES validation block to the cc zone so
+#             the absence-triggered MISSING_ENGINE_PROCESSES_DECLARATION check
+#             cannot misfire on a docs page. Corrected the stale MISSING_PAGE_
+#             INIT comment (removed the retired engine-events.js reference and
+#             the unimplemented docs-exemption claim; the init requirement
+#             applies to page files in every zone). Page lifecycle hook checks
+#             are presence-triggered and need no zone gate. SectionTypeOrder
+#             unchanged: 1->2->3->5 validates for the docs shell as-is.
 # 2026-06-02  Fixed Get-HtmlAttributeOccurrences id/class scanner: the word-
 #             boundary anchor matched the tail of hyphenated attribute names
 #             (e.g. the 'id' in data-action-bsv-group-id="0"), mis-cataloging
@@ -231,15 +243,19 @@ $VendoredJsFiles = @('chart.min.js','chartjs-adapter-date-fns.min.js','xlsx.full
 # Section types valid in a page file. A FOUNDATION/BOOTLOADER/CHROME banner
 # in a page file produces UNKNOWN_SECTION_TYPE.
 $ValidSectionTypes_Page   = @('IMPORTS', 'CONSTANTS', 'STATE', 'FUNCTIONS')
-# Section types valid in the shell file. A CONSTANTS/FUNCTIONS banner in the
-# shell file produces UNKNOWN_SECTION_TYPE.
+# Section types valid in the cc-zone shell file. A CONSTANTS/FUNCTIONS banner
+# in the cc shell file produces UNKNOWN_SECTION_TYPE.
 $ValidSectionTypes_Shared = @('IMPORTS', 'FOUNDATION', 'STATE', 'BOOTLOADER', 'CHROME')
+# Section types valid in the docs-zone shell file. A BOOTLOADER/CHROME banner
+# in the docs shell file produces UNKNOWN_SECTION_TYPE.
+$ValidSectionTypes_DocsShell = @('IMPORTS', 'FOUNDATION', 'STATE', 'FUNCTIONS')
 
 # Required ordering of section types, keyed by type. Page files run
-# IMPORTS -> CONSTANTS -> STATE -> FUNCTIONS; the shell file runs
-# IMPORTS -> FOUNDATION -> STATE -> BOOTLOADER -> CHROME. FOUNDATION and
-# CONSTANTS share slot 2; FUNCTIONS and CHROME share slot 5. One hashtable
-# serves both file kinds.
+# IMPORTS -> CONSTANTS -> STATE -> FUNCTIONS; the cc shell file runs
+# IMPORTS -> FOUNDATION -> STATE -> BOOTLOADER -> CHROME; the docs shell file
+# runs IMPORTS -> FOUNDATION -> STATE -> FUNCTIONS. FOUNDATION and CONSTANTS
+# share slot 2; FUNCTIONS and CHROME share slot 5. One hashtable serves all
+# three file kinds.
 $SectionTypeOrder = @{
     'IMPORTS'    = 1
     'FOUNDATION' = 2
@@ -3559,11 +3575,16 @@ foreach ($file in $JsFiles) {
     $script:CurrentEngineProcessesRow     = $null
     $script:CurrentEngineProcessesEntries = New-Object System.Collections.Generic.List[object]
 
-    # Valid section types by file kind: the shell file uses the shared
-    # taxonomy (FOUNDATION / BOOTLOADER / CHROME); page files use the
-    # page-file taxonomy.
+    # Valid section types by file kind: the cc shell file uses the cc shared
+    # taxonomy (FOUNDATION / BOOTLOADER / CHROME); the docs shell file uses the
+    # docs shared taxonomy (FOUNDATION / FUNCTIONS, no bootloader or chrome);
+    # page files use the page-file taxonomy.
     $script:CurrentValidSectionTypes = if ($script:CurrentFileIsShell) {
-        $ValidSectionTypes_Shared
+        if ($script:CurrentFileZone -eq 'docs') {
+            $ValidSectionTypes_DocsShell
+        } else {
+            $ValidSectionTypes_Shared
+        }
     } else {
         $ValidSectionTypes_Page
     }
@@ -3828,8 +3849,11 @@ foreach ($file in $JsFiles) {
     # Every page file with a registered cc_prefix must declare a top-level
     # <prefix>_init function. The init function can be either a function
     # declaration or a const initialized to an arrow/function expression
-    # (both forms enter $CurrentLocalFuncs in Pass 1 / per-file Pass 2).
-    # cc-shared.js, engine-events.js, and docs-zone files are exempt.
+    # (both forms enter $CurrentLocalFuncs in Pass 1 / per-file Pass 2). The
+    # requirement applies to page files in every zone (CC_JS_Spec 11): in the
+    # cc zone the bootloader invokes it, in the docs zone the page self-invokes
+    # it from a DOMContentLoaded listener. Shell files declare no page prefix
+    # and are skipped by the not-shared guard.
     if ($script:CurrentRegistryHasMapping -and
         -not [string]::IsNullOrEmpty($script:CurrentRegistryPrefix) -and
         -not $script:CurrentFileIsShared -and
@@ -3849,8 +3873,12 @@ foreach ($file in $JsFiles) {
     # per-entry mismatch checks also need a global by-process_name view to
     # catch entries that reference a process registered on a different page,
     # so both views are built once before the entry loop. Suppressed when the
-    # ProcessRegistry preload returned zero rows.
-    if ($script:processRegistryByPageRoute.Count -gt 0 -and
+    # ProcessRegistry preload returned zero rows. Engine processes are a
+    # cc-zone construct (CC_JS_Spec 7.2); docs-zone files declare none and the
+    # absence-triggered MISSING_ENGINE_PROCESSES_DECLARATION check would
+    # otherwise misfire on a route collision, so the block is cc-only.
+    if ($script:CurrentFileZone -eq 'cc' -and
+        $script:processRegistryByPageRoute.Count -gt 0 -and
         -not $script:CurrentFileIsShared -and $jsFileRow) {
 
         $pageRoute = Get-PageRouteForJsFile -FileName $script:CurrentFile
