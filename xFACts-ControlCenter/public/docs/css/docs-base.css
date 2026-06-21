@@ -5,20 +5,22 @@
 
    Shell file for the documentation site. Owns the documentation token palette
    declared once in :root, the dark-theme reset and element base, the universal
-   page chrome every docs page wears (breadcrumb nav, page header, context bar,
-   footer), the shared content components docs pages compose from (callouts,
-   info tables, cross-reference links, section headings), and the page layout
-   wrapper. Every other docs CSS file consumes the tokens defined here via
-   var(...) and adds only its page-family-specific content.
+   page chrome every docs page wears (the sidebar navigation rail and the fixed
+   page header injected and managed by nav.js, the context bar, and the generated
+   footer), the shared content components docs pages compose from (callouts, info
+   tables, cross-reference links, section headings), and the app-frame layout
+   that pins the rail and header while the body scrolls. Every other docs CSS file
+   consumes the tokens defined here via var(...) and adds only its
+   page-family-specific content.
 
    FILE ORGANIZATION
    -----------------
    FOUNDATION: TOKENS, RESET, ELEMENT BASE
-   CHROME: BREADCRUMB NAVIGATION
-   CHROME: PAGE HEADER
+   CHROME: APP FRAME
+   CHROME: SIDEBAR NAVIGATION
+   CHROME: FIXED HEADER
    CHROME: CONTEXT BAR
    CHROME: FOOTER
-   LAYOUT: PAGE WRAPPER
    CONTENT: SECTIONS
    CONTENT: CALLOUTS
    CONTENT: INFO TABLES
@@ -33,8 +35,7 @@
    The documentation token palette declared once in :root and referenced
    everywhere via var(...), the box-model reset, the dark-theme body base, and
    the bare element styling (paragraphs, inline code, preformatted blocks) that
-   every page inherits. The responsive breakpoint that narrows the page wrapper
-   on small viewports lives here as the platform-wide layout adjustment.
+   every page inherits.
    Prefix: doc
    ============================================================================ */
 
@@ -106,6 +107,9 @@
     /* -- Layout -- */
     --size-max-width: 1600px;
     --size-radius-default: 8px;
+    --size-nav-width: 240px;
+    --size-nav-collapsed: 52px;
+    --size-nav-head: 52px;
 }
 
 /* Enables smooth scrolling for in-page anchor jumps. */
@@ -159,119 +163,372 @@ pre {
     color: var(--color-text-primary);
 }
 
-/* Narrows the page wrapper padding on small viewports. */
+/* ============================================================================
+   CHROME: APP FRAME
+   ----------------------------------------------------------------------------
+   The viewport-height application frame shared by every documentation page:
+   the outer flex row that seats the sidebar rail beside the content column,
+   the content column that stacks the fixed header above the scrolling body,
+   and the narrow-viewport adjustment. The rail and header hold still while
+   only the body region scrolls.
+   Prefix: doc
+   ============================================================================ */
+
+/* Seats the sidebar rail beside the content column at full viewport height. */
+.doc-layout {
+    display: flex;
+    align-items: stretch;
+    height: 100vh;
+    overflow: hidden;
+}
+
+/* Stacks the fixed header above the scrolling body in the content column. */
+.doc-content {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* Scrolls the page body beneath the fixed header; the only scrolling region. */
+.doc-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 36px 60px 90px;
+}
+
+/* Caps body content width and centers it within the scrolling region. */
+.doc-body-inner {
+    max-width: var(--size-max-width);
+    margin: 0 auto;
+}
+
+/* Tightens body padding on narrow viewports. */
 @media (max-width: 700px) {
-    /* Reduces page wrapper padding for narrow viewports. */
-    .doc-page-wrapper {
-        padding: 20px 16px 60px;
+    /* Reduces body padding so content keeps room on small screens. */
+    .doc-body {
+        padding: 22px 18px 70px;
     }
 }
 
 /* ============================================================================
-   CHROME: BREADCRUMB NAVIGATION
+   CHROME: SIDEBAR NAVIGATION
    ----------------------------------------------------------------------------
-   The breadcrumb navigation bar injected by nav.js at the top of every page,
-   its links and separators, and the active parent-plus-child page grouping
-   that stacks child and reference lines beneath the active parent label.
+   The sticky sidebar rail nav.js injects on the left of every page: the brand
+   and collapse toggle head, the scrolling module list, each module row and
+   its icon, label, and chevron, the active module's expanded sub-page links,
+   and the collapsed-rail state classes nav.js toggles onto the affected
+   elements directly (state-on-element, no ancestor-driven hiding).
    Prefix: doc
    ============================================================================ */
 
-/* Styles the breadcrumb navigation bar that nav.js injects at page top. */
+/* Holds the rail at full height with its own internal column layout. */
 .doc-nav {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 30px;
-    padding: 10px 16px;
+    flex-shrink: 0;
+    width: var(--size-nav-width);
     background: var(--color-bg-secondary);
-    border-radius: var(--size-radius-default);
-    border: 1px solid var(--color-border-subtle);
-    font-size: 0.85em;
-    flex-wrap: wrap;
+    border-right: 1px solid var(--color-border-default);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transition: width 0.18s ease;
 }
 
-/* Styles a navigation link within the breadcrumb bar. */
-.doc-nav-link {
-    color: var(--color-accent-blue);
+.doc-nav.doc-nav-collapsed { /* collapsed to icon rail */
+    width: var(--size-nav-collapsed);
+}
+
+/* Marks the rail and its parts as collapsed; styling lives on each compound. */
+.doc-nav-collapsed {
+}
+
+/* Marks the current module's row and glyph; styling lives on each compound. */
+.doc-nav-active {
+}
+
+/* Marks the current view among sub-page links; styling lives on each compound. */
+.doc-nav-current {
+}
+
+/* Seats the brand and the collapse toggle across the top of the rail. */
+.doc-nav-head {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    min-height: var(--size-nav-head);
+    padding: 14px;
+    border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.doc-nav-head.doc-nav-collapsed { /* center the toggle when collapsed */
+    justify-content: center;
+    padding: 14px 0;
+}
+
+/* Shows the product mark and wordmark, linking to the hub, at the rail head. */
+.doc-nav-brand {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    flex: 1;
+    overflow: hidden;
+    color: var(--color-text-primary);
+    font-size: 13.5px;
+    font-weight: 600;
+    white-space: nowrap;
     text-decoration: none;
 }
 
-.doc-nav-link:hover { /* hover */
-    text-decoration: underline;
+.doc-nav-brand:hover { /* hover */
+    color: var(--color-accent-blue);
 }
 
-/* Marks the current page label within the breadcrumb bar. */
-.doc-nav-current {
+.doc-nav-brand.doc-nav-collapsed { /* hidden in the icon rail */
+    display: none;
+}
+
+/* Colors the product mark glyph in the brand. */
+.doc-nav-brand-mark {
+    flex-shrink: 0;
+    color: var(--color-accent-blue);
+    font-size: 17px;
+    line-height: 1;
+}
+
+/* Hides the wordmark text while the icon glyph remains. */
+.doc-nav-brand-text {
+    overflow: hidden;
+}
+
+.doc-nav-brand-text.doc-nav-collapsed { /* wordmark drops in the icon rail */
+    display: none;
+}
+
+/* Toggles the rail between expanded and collapsed widths. */
+.doc-nav-toggle {
+    flex-shrink: 0;
+    padding: 4px;
+    background: transparent;
+    border: none;
+    border-radius: 5px;
+    color: var(--color-text-secondary);
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.doc-nav-toggle:hover { /* hover */
+    background: var(--color-bg-card-hover);
     color: var(--color-text-primary);
+}
+
+/* Scrolls the module list independently within the rail. */
+.doc-nav-modules {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 6px 0;
+}
+
+/* Groups a module row with its optional expanded sub-page links. */
+.doc-nav-module {
+    display: block;
+}
+
+/* Lays out a single module row as icon, label, and chevron. */
+.doc-nav-module-link {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 16px;
+    border-left: 2px solid transparent;
+    color: var(--color-text-secondary);
+    font-size: 12.8px;
+    text-decoration: none;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.doc-nav-module-link:hover { /* hover */
+    background: var(--color-bg-card);
+    color: var(--color-text-primary);
+}
+
+.doc-nav-module-link.doc-nav-active { /* current module */
+    background: var(--color-bg-primary);
+    border-left-color: var(--color-accent-blue);
+    color: var(--color-accent-blue);
     font-weight: 600;
 }
 
-/* Styles the separator glyph between breadcrumb segments. */
-.doc-nav-sep {
+.doc-nav-module-link.doc-nav-collapsed { /* icon-only row in the collapsed rail */
+    justify-content: center;
+    gap: 0;
+    padding: 8px 0;
+}
+
+/* Sizes and colors the module glyph at the start of a row. */
+.doc-nav-module-icon {
+    flex-shrink: 0;
+    width: 18px;
+    text-align: center;
     color: var(--color-text-muted);
+    font-size: 14px;
 }
 
-/* Groups an active parent with its child pages, kept inline in the flex flow. */
-.doc-nav-active-group {
-    display: inline-block;
-    vertical-align: top;
+.doc-nav-module-icon.doc-nav-active { /* active module glyph */
+    color: var(--color-accent-blue);
 }
 
-/* Stacks a child page line beneath the active parent label. */
-.doc-nav-child-line {
-    display: block;
-    margin-top: 2px;
-    font-size: 0.95em;
+.doc-nav-module-icon.doc-nav-collapsed { /* widen glyph in the icon rail */
+    width: auto;
+    font-size: 16px;
 }
 
-/* Stacks a reference page line beneath the active parent label. */
-.doc-nav-ref-line {
-    display: block;
-    margin-top: 2px;
-    font-size: 0.95em;
+/* Shows the module name and lets it truncate before the chevron. */
+.doc-nav-module-label {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
-/* Styles the arrow glyph preceding a child page line. */
-.doc-nav-child-arrow {
-    color: var(--color-text-muted);
-    font-size: 0.9em;
+.doc-nav-module-label.doc-nav-collapsed { /* label drops in the icon rail */
+    display: none;
 }
 
-/* Styles the arrow glyph preceding a reference page line. */
-.doc-nav-ref-arrow {
-    color: var(--color-text-muted);
-    font-size: 0.9em;
+/* Points the expansion chevron at the end of an active module row. */
+.doc-nav-module-chev {
+    flex-shrink: 0;
+    color: var(--color-accent-blue);
+    font-size: 10px;
+}
+
+.doc-nav-module-chev.doc-nav-collapsed { /* chevron drops in the icon rail */
+    display: none;
+}
+
+/* Reveals the active module's sub-page links beneath its row. */
+.doc-nav-subpages {
+    padding: 2px 0 6px;
+    background: var(--color-bg-primary);
+}
+
+.doc-nav-subpages.doc-nav-collapsed { /* sub-pages drop in the icon rail */
+    display: none;
+}
+
+/* Lays out a single sub-page link indented beneath its module. */
+.doc-nav-subpage {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 5px 16px 5px 30px;
+    border-left: 2px solid transparent;
+    color: var(--color-text-secondary);
+    font-size: 12.2px;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.doc-nav-subpage:hover { /* hover */
+    background: var(--color-bg-card);
+    color: var(--color-text-primary);
+}
+
+.doc-nav-subpage.doc-nav-current { /* sub-page of the current view */
+    background: var(--color-bg-card);
+    border-left-color: var(--color-accent-blue-dim);
+    color: var(--color-accent-blue);
+    font-weight: 600;
+}
+
+/* Sizes the small glyph preceding a sub-page label. */
+.doc-nav-subpage-icon {
+    flex-shrink: 0;
+    width: 15px;
+    text-align: center;
+    font-size: 12px;
 }
 
 /* ============================================================================
-   CHROME: PAGE HEADER
+   CHROME: FIXED HEADER
    ----------------------------------------------------------------------------
-   The page header block at the top of every documentation page: the bordered
-   title region, the main page title, and the italic subtitle line beneath it.
+   The non-scrolling header pinned above the page body: the authored page
+   title and subtitle the page supplies, and the sub-page link row nav.js
+   injects beneath them so the four related views of the current module stay
+   visible regardless of rail collapse state.
    Prefix: doc
    ============================================================================ */
 
-/* Styles the bordered page header region at the top of a page. */
-.doc-page-header {
-    margin-bottom: 40px;
-    padding-bottom: 20px;
+/* Pins the page header above the scrolling body. */
+.doc-header {
+    flex-shrink: 0;
+    padding: 16px 60px 14px;
+    background: var(--color-bg-primary);
     border-bottom: 1px solid var(--color-border-default);
 }
 
-/* Styles the main page title within the header. */
+/* Centers the header content to align with the body content width. */
+.doc-header-inner {
+    max-width: var(--size-max-width);
+    margin: 0 auto;
+}
+
+/* Styles the main page title within the fixed header. */
 .doc-page-title {
-    font-size: 2.2em;
-    font-weight: 700;
     color: var(--color-text-heading);
-    margin-bottom: 8px;
+    font-size: 1.9em;
+    font-weight: 700;
     letter-spacing: -0.5px;
+    margin-bottom: 5px;
 }
 
 /* Styles the italic subtitle line beneath the page title. */
 .doc-page-subtitle {
-    font-size: 1.05em;
     color: var(--color-text-secondary);
+    font-size: 1em;
     font-style: italic;
+    margin-bottom: 11px;
+}
+
+/* Rows the current module's sub-page links beneath the title block. */
+.doc-subpage-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+/* Styles a single sub-page link as a pill in the header link row. */
+.doc-subpage-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border-default);
+    border-radius: 5px;
+    color: var(--color-text-primary);
+    font-size: 12px;
+    text-decoration: none;
+}
+
+.doc-subpage-link:hover { /* hover */
+    background: var(--color-bg-card-hover);
+    border-color: var(--color-accent-blue-dim);
+}
+
+.doc-subpage-link.doc-nav-current { /* link to the current view */
+    border-color: var(--color-accent-blue);
+    color: var(--color-accent-blue);
+}
+
+/* Tightens header padding on narrow viewports. */
+@media (max-width: 700px) {
+    /* Reduces header padding so the title keeps room on small screens. */
+    .doc-header {
+        padding: 14px 18px 12px;
+    }
 }
 
 /* ============================================================================
@@ -307,60 +564,15 @@ pre {
 /* ============================================================================
    CHROME: FOOTER
    ----------------------------------------------------------------------------
-   The page footer rule shown at the bottom of every documentation page, with
-   its top border and muted, centered fine-print text.
+   The generated footer region nav.js injects at the end of the page body. It
+   holds any future footer blocks above a Contributing callout anchored last.
+   nav.js owns its markup; pages carry only the empty mount element.
    Prefix: doc
    ============================================================================ */
 
-/* Styles the page footer with a top border and muted centered text. */
+/* Spaces the generated footer region away from the body content above it. */
 .doc-footer {
-    margin-top: 40px;
-    padding-top: 20px;
-    border-top: 1px solid var(--color-border-default);
-    text-align: center;
-    color: var(--color-text-muted);
-    font-size: 0.82em;
-}
-
-/* Styles a link within the footer in the accent color without underline. */
-.doc-footer-link {
-    color: var(--color-accent-blue);
-    text-decoration: none;
-}
-
-/* Spaces a secondary footer line beneath the first. */
-.doc-footer-line {
-    margin-top: 8px;
-}
-
-/* ============================================================================
-   LAYOUT: PAGE WRAPPER
-   ----------------------------------------------------------------------------
-   The outermost page wrapper that caps content width, centers it horizontally,
-   and sets the page padding, plus the default link styling applied to links
-   inside the wrapper.
-   Prefix: doc
-   ============================================================================ */
-
-/* Caps content width, centers the wrapper, and sets page padding. */
-.doc-page-wrapper {
-    max-width: var(--size-max-width);
-    margin: 0 auto;
-    padding: 40px 60px 80px;
-}
-
-/* Styles a link inside the page wrapper in the accent color. */
-.doc-page-link {
-    color: var(--color-accent-blue);
-    text-decoration: none;
-}
-
-.doc-page-link:hover { /* hover */
-    text-decoration: underline;
-}
-
-.doc-page-link:visited { /* visited */
-    color: var(--color-accent-blue);
+    margin-top: 30px;
 }
 
 /* ============================================================================
