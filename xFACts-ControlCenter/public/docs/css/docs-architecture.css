@@ -1,39 +1,64 @@
-/* ============================================================
-   docs-architecture.css — Overrides for architecture pages
-   
-   Loaded after docs-base.css on architecture pages like:
-   arch/engine-room-arch.html and future module architecture pages.
+/* ============================================================================
+   xFACts Control Center - Documentation Architecture Pages (docs-architecture.css)
+   Location: E:\xFACts-ControlCenter\public\docs\css\docs-architecture.css
+   Version: Tracked in dbo.System_Metadata (component: Documentation.Site)
 
-   Provides: sticky section nav with breadcrumb + jump links,
-   tech-tip callouts, diagram placeholders, and scroll behavior.
-   ============================================================ */
+   Content components specific to architecture pages: the sticky two-tier
+   section navigation (breadcrumb row populated by nav.js plus static jump
+   links), tech-tip callouts, the architecture flow diagrams with their fork
+   and branch decision points, collapsible expand cards, and diagram
+   placeholders. Loaded after docs-base.css, which owns the token palette, the
+   page wrapper, the shared info table, and the decorative flow color modifiers
+   these flow steps reuse.
 
-/* ===== Scroll Behavior ===== */
-html {
-    scroll-behavior: smooth;
-    scroll-padding-top: 120px;  /* fallback, overridden dynamically by nav.js */
-}
+   FILE ORGANIZATION
+   -----------------
+   LAYOUT: PAGE WRAPPER
+   CONTENT: SECTION NAVIGATION
+   CONTENT: TECH TIPS
+   CONTENT: ARCHITECTURE FLOW DIAGRAMS
+   CONTENT: EXPAND CARDS
+   CONTENT: DIAGRAM PLACEHOLDERS
+   CONTENT: RESPONSIVE ADJUSTMENTS
+   ============================================================================ */
 
-/* ===== Extra bottom padding so last section scrolls fully ===== */
-.page-wrapper {
+/* ============================================================================
+   LAYOUT: PAGE WRAPPER
+   ----------------------------------------------------------------------------
+   Architecture-page override adding bottom padding so the final section can
+   scroll fully beneath the sticky section navigation.
+   Prefix: doc
+   ============================================================================ */
+
+/* Adds bottom padding so the last section scrolls clear of the sticky nav. */
+.doc-arch-page-wrapper {
     padding-bottom: 300px;
 }
 
-/* ===== Sticky Section Navigation (two-tier: breadcrumb + jump links) ===== */
-.section-nav {
+/* ============================================================================
+   CONTENT: SECTION NAVIGATION
+   ----------------------------------------------------------------------------
+   The sticky two-tier section navigation. The top row holds the breadcrumb
+   trail injected by nav.js; the populated state class is added by nav.js when
+   it injects that content. The links row holds the static in-page jump links.
+   Prefix: doc
+   ============================================================================ */
+
+/* Styles the sticky section navigation as a blurred, bordered bar. */
+.doc-section-nav {
     position: sticky;
     top: 0;
     z-index: 100;
     backdrop-filter: blur(8px);
-    background: rgba(var(--bg-secondary-rgb), 0.95);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius);
+    background: rgba(var(--color-bg-secondary-rgb), 0.95);
+    border: 1px solid var(--color-border-default);
+    border-radius: var(--size-radius-default);
     padding: 10px 20px 12px;
     margin-bottom: 35px;
 }
 
-/* ===== Breadcrumb row (populated by nav.js) ===== */
-.section-nav-top {
+/* Lays out the breadcrumb row that nav.js populates. */
+.doc-section-nav-top {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -41,119 +66,109 @@ html {
     flex-wrap: wrap;
 }
 
-/* Only show spacing/border when section-nav-top has child elements */
-.section-nav-top:has(*) {
+/* Marks the breadcrumb row as carrying injected content. */
+.doc-populated { }
+
+.doc-section-nav-top.doc-populated { /* has injected breadcrumb content */
     margin-bottom: 8px;
     padding-bottom: 8px;
-    border-bottom: 1px solid var(--border-subtle);
+    border-bottom: 1px solid var(--color-border-subtle);
 }
 
-.section-nav-top a {
-    color: var(--accent-blue);
+/* Styles a breadcrumb link within the section navigation. */
+.doc-section-nav-link {
+    color: var(--color-accent-blue);
     text-decoration: none;
 }
 
-.section-nav-top a:hover {
+.doc-section-nav-link:hover { /* hover */
     text-decoration: underline;
 }
 
-.section-nav-top .current {
-    color: var(--text-primary);
+/* Styles the current-page label within the section navigation breadcrumb. */
+.doc-section-nav-current {
+    color: var(--color-text-primary);
     font-weight: 600;
 }
 
-.section-nav-top .sep {
-    color: var(--text-muted);
+/* Styles the separator between breadcrumb entries. */
+.doc-section-nav-sep {
+    color: var(--color-text-muted);
 }
 
-/* ===== Section Jump Links ===== */
-.section-nav-links {
+/* Lays out the static in-page jump links in a wrapping row. */
+.doc-section-nav-links {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
     align-items: center;
 }
 
-.section-nav-links a {
+/* Styles an in-page jump link as a small bordered pill. */
+.doc-section-nav-jump {
     display: inline-block;
     padding: 4px 14px;
-    background: var(--bg-secondary);
-    border: 1px solid var(--border-subtle);
-    border-radius: 4px;
-    color: var(--text-primary);
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--size-radius-default);
+    color: var(--color-text-primary);
     text-decoration: none;
     font-size: 0.85em;
     transition: all 0.15s ease;
 }
 
-.section-nav-links a:hover {
-    background: var(--bg-card-hover);
-    border-color: var(--accent-blue-dim);
-    color: var(--accent-blue);
+.doc-section-nav-jump:hover { /* hover */
+    background: var(--color-bg-card-hover);
+    border-color: var(--color-accent-blue-dim);
+    color: var(--color-accent-blue);
 }
 
-/* ===== Tech Tip Callouts ===== */
-.tech-tip {
+/* ============================================================================
+   CONTENT: TECH TIPS
+   ----------------------------------------------------------------------------
+   The tech-tip callout: a left-bordered, tinted block for architecture-level
+   asides, with a colored lead-in label.
+   Prefix: doc
+   ============================================================================ */
+
+/* Styles a tech-tip callout as a left-bordered, tinted aside. */
+.doc-tech-tip {
     padding: 14px 18px;
-    border-radius: var(--radius);
+    border-radius: var(--size-radius-default);
     margin: 18px 0;
-    border-left: 4px solid var(--accent-blue);
-    background: rgba(var(--accent-blue-rgb), 0.06);
+    border-left: 4px solid var(--color-accent-blue);
+    background: rgba(var(--color-accent-blue-rgb), 0.06);
     font-size: 0.92em;
 }
 
-.tech-tip strong {
-    color: var(--accent-blue);
+/* Styles a tech-tip lead-in label as a colored block heading. */
+.doc-tech-tip-label {
+    color: var(--color-accent-blue);
     display: block;
     margin-bottom: 4px;
 }
 
-.tech-tip p:last-child {
-    margin-bottom: 0;
-}
+/* ============================================================================
+   CONTENT: ARCHITECTURE FLOW DIAGRAMS
+   ----------------------------------------------------------------------------
+   The architecture flow diagram: a bordered container holding a centered row
+   of titled, detailed steps connected by arrows, with optional fork and branch
+   decision points and a caption. Step and branch colors reuse the shared
+   decorative flow modifiers from docs-base.
+   Prefix: doc
+   ============================================================================ */
 
-/* ===== Diagram Placeholders ===== */
-.diagram-placeholder {
-    background: var(--bg-card);
-    border: 2px dashed var(--border-color);
-    border-radius: var(--radius);
-    padding: 40px 24px;
-    margin: 24px 0;
-    text-align: center;
-}
-
-.placeholder-label {
-    color: var(--text-muted);
-    font-size: 1.1em;
-    font-weight: 600;
-    margin-bottom: 6px;
-}
-
-.placeholder-desc {
-    color: var(--text-muted);
-    font-size: 0.85em;
-    opacity: 0.7;
-}
-
-/* ===== Architecture Flow Diagrams ===== */
-/* Shared components for process flow visualizations on architecture pages.
-   Extends the narrative flow-step pattern with subtitles, detail text,
-   and fork/branch support for decision points.
-   
-   Usage:
-   .arch-flow > .arch-flow-steps > .arch-flow-step (linear)
-   .arch-flow > .arch-flow-steps > .arch-flow-fork  (decision point)
-*/
-
-.arch-flow {
-    background: var(--bg-card);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius);
+/* Styles the architecture flow container as a bordered card. */
+.doc-arch-flow {
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border-default);
+    border-radius: var(--size-radius-default);
     padding: 20px 16px;
     margin: 20px 0;
 }
 
-.arch-flow-steps {
+/* Lays out the architecture flow steps in a centered, wrapping row. */
+.doc-arch-flow-steps {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -161,9 +176,18 @@ html {
     flex-wrap: wrap;
 }
 
-.arch-flow-step {
+/* Marks a flow-steps row for stacked vertical layout. */
+.doc-vertical { }
+
+.doc-arch-flow-steps.doc-vertical { /* stacked vertical layout */
+    flex-direction: column;
+    gap: 12px;
+}
+
+/* Styles an architecture flow step as a titled, min-width box. */
+.doc-arch-flow-step {
     padding: 10px 14px;
-    border-radius: var(--radius);
+    border-radius: var(--size-radius-default);
     font-size: 0.82em;
     font-weight: 600;
     text-align: center;
@@ -171,89 +195,189 @@ html {
     max-width: 160px;
 }
 
-/* Color variants — same palette as narrative flow-steps */
-.arch-flow-step.blue    { background: rgba(var(--accent-blue-rgb), 0.2); border: 1px solid var(--accent-blue-dim); color: var(--accent-blue); }
-.arch-flow-step.green   { background: rgba(var(--accent-green-rgb), 0.2); border: 1px solid var(--accent-green-dim); color: var(--accent-green); }
-.arch-flow-step.orange  { background: rgba(var(--accent-orange-rgb), 0.2); border: 1px solid var(--accent-orange-dim); color: var(--accent-orange); }
-.arch-flow-step.purple  { background: rgba(var(--accent-purple-rgb), 0.2); border: 1px solid var(--accent-purple-dim); color: var(--accent-purple); }
-.arch-flow-step.red     { background: rgba(var(--accent-red-rgb), 0.2); border: 1px solid var(--accent-red-dim); color: var(--accent-red); }
-.arch-flow-step.muted   { background: rgba(var(--text-muted-rgb), 0.15); border: 1px solid var(--text-muted); color: var(--text-secondary); }
+.doc-arch-flow-step.doc-flow-blue { /* blue step */
+    background: rgba(var(--color-accent-blue-rgb), 0.2);
+    border: 1px solid var(--color-accent-blue-dim);
+    color: var(--color-accent-blue);
+}
 
-.arch-flow-step-title {
+.doc-arch-flow-step.doc-flow-green { /* green step */
+    background: rgba(var(--color-accent-green-rgb), 0.2);
+    border: 1px solid var(--color-accent-green-dim);
+    color: var(--color-accent-green);
+}
+
+.doc-arch-flow-step.doc-flow-orange { /* orange step */
+    background: rgba(var(--color-accent-orange-rgb), 0.2);
+    border: 1px solid var(--color-accent-orange-dim);
+    color: var(--color-accent-orange);
+}
+
+.doc-arch-flow-step.doc-flow-purple { /* purple step */
+    background: rgba(var(--color-accent-purple-rgb), 0.2);
+    border: 1px solid var(--color-accent-purple-dim);
+    color: var(--color-accent-purple);
+}
+
+.doc-arch-flow-step.doc-flow-red { /* red step */
+    background: rgba(var(--color-accent-red-rgb), 0.2);
+    border: 1px solid var(--color-accent-red-dim);
+    color: var(--color-accent-red);
+}
+
+.doc-arch-flow-step.doc-flow-muted { /* muted step */
+    background: rgba(var(--color-text-muted-rgb), 0.15);
+    border: 1px solid var(--color-text-muted);
+    color: var(--color-text-secondary);
+}
+
+/* Styles the bold title line within an architecture flow step. */
+.doc-arch-flow-step-title {
     font-weight: 700;
     margin-bottom: 3px;
 }
 
-.arch-flow-step-detail {
+/* Styles the secondary detail text within an architecture flow step. */
+.doc-arch-flow-step-detail {
     font-size: 0.85em;
     font-weight: 400;
     opacity: 0.8;
     line-height: 1.3;
 }
 
-.arch-flow-arrow {
-    color: var(--text-muted);
+/* Styles the connector arrow between architecture flow steps. */
+.doc-arch-flow-arrow {
+    color: var(--color-text-muted);
     font-size: 1.1em;
     flex-shrink: 0;
 }
 
-.arch-flow-caption {
+/* Styles the caption beneath an architecture flow diagram. */
+.doc-arch-flow-caption {
     text-align: center;
     font-size: 0.8em;
-    color: var(--text-muted);
+    color: var(--color-text-muted);
     margin-top: 10px;
 }
 
-/* Fork/branch — decision point that splits into multiple outcomes */
-.arch-flow-fork {
+/* Lays out a horizontal sub-row of steps within a multi-row flow diagram. */
+.doc-arch-flow-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+/* Lays out a wide-gap sub-row of branching outcome stacks. */
+.doc-arch-flow-branch-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 30px;
+    flex-wrap: wrap;
+}
+
+/* Stacks a single step above its trailing note. */
+.doc-arch-flow-stack {
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 4px;
 }
 
-.arch-flow-fork-label {
+/* Styles a muted trailing note beneath a stacked flow step. */
+.doc-arch-flow-note {
+    color: var(--color-text-muted);
+    font-size: 0.78em;
+}
+
+/* Stacks a fork decision point and its outcome branches vertically. */
+.doc-arch-flow-fork {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+/* Styles the label above a fork's outcome branches. */
+.doc-arch-flow-fork-label {
     font-size: 0.78em;
     font-weight: 600;
-    color: var(--text-secondary);
+    color: var(--color-text-secondary);
     margin-bottom: 2px;
 }
 
-.arch-flow-branches {
+/* Stacks a fork's outcome branches vertically. */
+.doc-arch-flow-branches {
     display: flex;
     flex-direction: column;
     gap: 4px;
 }
 
-.arch-flow-branch {
+/* Styles a fork outcome branch as a small min-width pill. */
+.doc-arch-flow-branch {
     padding: 5px 12px;
-    border-radius: 4px;
+    border-radius: var(--size-radius-default);
     font-size: 0.78em;
     font-weight: 600;
     text-align: center;
     min-width: 90px;
 }
 
-.arch-flow-branch.green  { background: rgba(var(--accent-green-rgb), 0.15); border: 1px solid var(--accent-green-dim); color: var(--accent-green); }
-.arch-flow-branch.red    { background: rgba(var(--accent-red-rgb), 0.15); border: 1px solid var(--accent-red-dim); color: var(--accent-red); }
-.arch-flow-branch.orange { background: rgba(var(--accent-orange-rgb), 0.15); border: 1px solid var(--accent-orange-dim); color: var(--accent-orange); }
-.arch-flow-branch.muted  { background: rgba(var(--text-muted-rgb), 0.1); border: 1px solid var(--text-muted); color: var(--text-secondary); }
+.doc-arch-flow-branch.doc-flow-green { /* green branch */
+    background: rgba(var(--color-accent-green-rgb), 0.15);
+    border: 1px solid var(--color-accent-green-dim);
+    color: var(--color-accent-green);
+}
 
-/* ===== Expand Cards (collapsible content sections) ===== */
-.expand-card {
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius);
+.doc-arch-flow-branch.doc-flow-red { /* red branch */
+    background: rgba(var(--color-accent-red-rgb), 0.15);
+    border: 1px solid var(--color-accent-red-dim);
+    color: var(--color-accent-red);
+}
+
+.doc-arch-flow-branch.doc-flow-orange { /* orange branch */
+    background: rgba(var(--color-accent-orange-rgb), 0.15);
+    border: 1px solid var(--color-accent-orange-dim);
+    color: var(--color-accent-orange);
+}
+
+.doc-arch-flow-branch.doc-flow-muted { /* muted branch */
+    background: rgba(var(--color-text-muted-rgb), 0.1);
+    border: 1px solid var(--color-text-muted);
+    color: var(--color-text-secondary);
+}
+
+/* ============================================================================
+   CONTENT: EXPAND CARDS
+   ----------------------------------------------------------------------------
+   The collapsible expand card: a bordered container with a clickable title bar
+   carrying a rotating disclosure arrow and a body that shows when the card
+   carries the open state. The open state class is toggled by nav.js on both
+   the card and its title so the arrow rotation needs no descendant selector.
+   Prefix: doc
+   ============================================================================ */
+
+/* Styles an expand card as a bordered, clipped container. */
+.doc-expand-card {
+    border: 1px solid var(--color-border-default);
+    border-radius: var(--size-radius-default);
     margin: 18px 0;
     overflow: hidden;
 }
 
-.expand-card-title {
+/* Marks an expand-card title or body as open. */
+.doc-open { }
+
+/* Styles an expand-card title bar as a clickable colored header. */
+.doc-expand-card-title {
     display: flex;
     align-items: center;
     gap: 8px;
     padding: 12px 18px;
-    background: var(--bg-card);
-    color: var(--accent-blue);
+    background: var(--color-bg-card);
+    color: var(--color-accent-blue);
     font-weight: 600;
     font-size: 0.95em;
     cursor: pointer;
@@ -261,73 +385,120 @@ html {
     transition: background 0.15s;
 }
 
-.expand-card-title:hover {
-    background: var(--bg-card-hover);
-}
-
-.expand-card-title::before {
+/* Renders the disclosure arrow before an expand-card title. */
+.doc-expand-card-title::before {
     content: '\25B6';
     font-size: 0.7em;
-    color: var(--text-muted);
+    color: var(--color-text-muted);
     transition: transform 0.2s;
 }
 
-.expand-card.open .expand-card-title::before {
+.doc-expand-card-title.doc-open::before { /* rotated open-state arrow */
     transform: rotate(90deg);
 }
 
-.expand-card-body {
+.doc-expand-card-title:hover { /* hover */
+    background: var(--color-bg-card-hover);
+}
+
+/* Styles the hidden body of an expand card. */
+.doc-expand-card-body {
     display: none;
     padding: 16px 18px;
-    background: var(--bg-secondary);
-    border-top: 1px solid var(--border-subtle);
+    background: var(--color-bg-secondary);
+    border-top: 1px solid var(--color-border-subtle);
     font-size: 0.92em;
     line-height: 1.6;
 }
 
-.expand-card.open .expand-card-body {
+.doc-expand-card-body.doc-open { /* revealed open-state body */
     display: block;
 }
 
-.expand-card-body p:last-child {
-    margin-bottom: 0;
-}
-
-.expand-card-body ol {
+/* Styles an ordered list within an expand-card body. */
+.doc-expand-card-list {
     padding-left: 20px;
     margin: 8px 0;
 }
 
-.expand-card-body ol li {
+/* Styles an ordered-list item within an expand-card body. */
+.doc-expand-card-list-item {
     margin-bottom: 8px;
 }
 
-.expand-card-body .step-note {
+/* Styles a secondary note line within an expand-card body. */
+.doc-expand-card-step-note {
     font-size: 0.88em;
-    color: var(--text-muted);
+    color: var(--color-text-muted);
     margin-top: 2px;
 }
 
-/* ===== Responsive ===== */
+/* ============================================================================
+   CONTENT: DIAGRAM PLACEHOLDERS
+   ----------------------------------------------------------------------------
+   The diagram placeholder: a dashed, centered box standing in for a diagram
+   not yet rendered, with a label and a muted description.
+   Prefix: doc
+   ============================================================================ */
+
+/* Styles a diagram placeholder as a dashed, centered box. */
+.doc-diagram-placeholder {
+    background: var(--color-bg-card);
+    border: 2px dashed var(--color-border-default);
+    border-radius: var(--size-radius-default);
+    padding: 40px 24px;
+    margin: 24px 0;
+    text-align: center;
+}
+
+/* Styles the label within a diagram placeholder. */
+.doc-placeholder-label {
+    color: var(--color-text-muted);
+    font-size: 1.1em;
+    font-weight: 600;
+    margin-bottom: 6px;
+}
+
+/* Styles the muted description within a diagram placeholder. */
+.doc-placeholder-desc {
+    color: var(--color-text-muted);
+    font-size: 0.85em;
+    opacity: 0.7;
+}
+
+/* ============================================================================
+   CONTENT: RESPONSIVE ADJUSTMENTS
+   ----------------------------------------------------------------------------
+   Small-viewport adjustments: tighter jump-link pills and vertically stacked
+   architecture flow steps with rotated connector arrows.
+   Prefix: doc
+   ============================================================================ */
+
+/* Tightens jump-link spacing on narrow viewports. */
 @media (max-width: 700px) {
-    .section-nav-links {
+    /* Tightens the gap between jump links. */
+    .doc-section-nav-links {
         gap: 4px;
     }
 
-    .section-nav-links a {
+    /* Shrinks jump-link pills. */
+    .doc-section-nav-jump {
         padding: 3px 10px;
         font-size: 0.8em;
     }
 
-    .arch-flow-steps {
+    /* Stacks architecture flow steps vertically. */
+    .doc-arch-flow-steps {
         flex-direction: column;
     }
 
-    .arch-flow-arrow {
+    /* Rotates the flow connector arrow to point down the stack. */
+    .doc-arch-flow-arrow {
         transform: rotate(90deg);
     }
 
-    .arch-flow-step {
+    /* Removes the max-width cap so stacked steps fill the column. */
+    .doc-arch-flow-step {
         max-width: none;
     }
 }
