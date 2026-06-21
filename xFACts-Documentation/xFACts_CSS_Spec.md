@@ -73,9 +73,9 @@ Five section types are recognized:
 |-------|------|---------|----------------|
 | 1 | `FOUNDATION` | Custom property tokens, CSS resets, scrollbar styling, keyframes, animation utilities. | Shell file only. |
 | 2 | `CHROME` | Universal page chrome — nav bar, header bar, refresh info, engine cards, connection banner. | Shell file only. |
-| 3 | `LAYOUT` | Page-level structural layout. | Page files. At most one LAYOUT section per page. |
+| 3 | `LAYOUT` | Page-level structural layout. | Shell file or page files. At most one LAYOUT section per page. |
 | 4 | `CONTENT` | Page-specific content components — cards, tables, badges, panels, sub-components. | Page files. Multiple CONTENT sections permitted, one per logical concept. |
-| 5 | `FEEDBACK_OVERLAYS` | Transient, behavior-driven viewport-overlay elements — idle overlay, toast notifications, loading spinners, confirmation flashes. | Shell file or page file, scoped by overlay scope. |
+| 5 | `FEEDBACK_OVERLAYS` | Transient, behavior-driven viewport-overlay elements — idle overlay, toast notifications, loading spinners, confirmation flashes. | Shell file or page files, scoped by overlay scope. |
 
 ### 4.1 Rules
 
