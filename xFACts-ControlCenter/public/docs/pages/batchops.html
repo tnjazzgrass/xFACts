@@ -8,20 +8,24 @@
     <link rel="stylesheet" href="../css/docs-narrative.css">
 </head>
 <body>
+<div class="doc-layout">
 
-<div class="doc-page-wrapper">
+    <nav class="doc-nav"></nav>
 
-    <!-- Header -->
-    <div class="doc-page-header">
-        <h1 class="doc-page-title">Batch Monitoring</h1>
-        <div class="doc-page-subtitle">Watching the pipeline so you don't have to stare at it</div>
-    </div>
+    <div class="doc-content">
 
-    <!-- Navigation (populated by nav.js) -->
-    <div class="doc-nav"></div>
+        <div class="doc-header">
+            <div class="doc-header-inner">
+                <h1 class="doc-page-title">Batch Monitoring</h1>
+                <div class="doc-page-subtitle">Watching the pipeline so you don't have to stare at it</div>
+                <div class="doc-subpage-links"></div>
+            </div>
+        </div>
 
-    <!-- Where This Fits -->
-    <div class="doc-context-bar">
+        <div class="doc-body">
+            <div class="doc-body-inner">
+
+<div class="doc-context-bar">
         Clients send us data in batches &mdash; new accounts, payments, phone numbers, address updates. Those batches go through a series of processing stages before the data actually lands in the system. Batch Monitoring watches every step of that journey for all three batch types, and when something goes sideways, it tells you about it before anyone else notices. Think of it as the person in the control room who actually pays attention to the monitors.
     </div>
 
@@ -150,27 +154,14 @@
         <p>Three collectors. Four tables. One evening report. And the confidence that if something goes wrong in the batch pipeline, you'll know about it before anyone asks.</p>
     </div>
 
-    <!-- Architecture & Reference Links -->
-    <div class="doc-ref-link-group">
-        <a href="arch/batchops-arch.html" class="doc-ref-link">&#x1F527; Batch Monitoring Architecture &mdash; How the monitoring works under the hood</a>
-    </div>
-    <div class="doc-ref-link-group-following">
-        <a href="ref/batchops-ref.html" class="doc-ref-link">&#x1F4CB; Batch Monitoring Reference &mdash; Full technical details, DDL, and operational queries</a>
-    </div>
+                <div class="doc-footer"></div>
 
-    <!-- Contributing -->
-    <div class="doc-callout doc-tip">
-        <p><strong>Contributing:</strong> This platform is designed to grow organically. If you have a manual process, monitoring need, or utility that could benefit from centralization, contact the <a href="mailto:applications@frost-arnett.com?subject=xFACts%20New%20Module%20Request&body=I%20would%20like%20to%20submit%20a%20possible%20process%20for%20consideration%20as%20an%20xFACts%20module.%0A%0AProcess%20Name%3A%0ACurrent%20Method%3A%0ABusiness%20Need%3A%0A%0A">Applications Team</a> to discuss adding it as an xFACts module.</p>
-    </div>
+            </div>
+        </div>
 
-    <!-- Footer -->
-    <div class="doc-footer">
-        <p><a href="index.html" class="doc-footer-link">&larr; Back to xFACts Secrets Revealed</a></p>
-        <p class="doc-footer-line">Applications Team, Frost Arnett</p>
     </div>
 
 </div>
-
 <script src="../js/nav.js"></script>
 </body>
 </html>
