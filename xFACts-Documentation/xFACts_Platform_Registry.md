@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-06-20 21:29:18
+Generated: 2026-06-21 10:32:52
 
 ## Module Registry
 
@@ -218,6 +218,7 @@ Generated: 2026-06-20 21:29:18
 | Documentation.Site | ddl-erd.js | Documentation | JavaScript | E:\xFACts-ControlCenter\public\docs\js\ddl-erd.js | ERD diagram renderer |
 | Documentation.Site | ddl-loader.js | Documentation | JavaScript | E:\xFACts-ControlCenter\public\docs\js\ddl-loader.js | DDL reference JSON loader and renderer |
 | Documentation.Site | docs-controlcenter.js | Documentation | JavaScript | E:\xFACts-ControlCenter\public\docs\js\docs-controlcenter.js | CC guide page interactive behavior and slideout panel |
+| Documentation.Site | docs-shared.js | Documentation | JavaScript | E:\xFACts-ControlCenter\public\docs\js\docs-shared.js | Documentation site shared file |
 | Documentation.Site | nav.js | Documentation | JavaScript | E:\xFACts-ControlCenter\public\docs\js\nav.js | Documentation site navigation |
 | Engine.Orchestrator | CycleLog | Database | Table | Orchestrator | Orchestrator heartbeat cycle log |
 | Engine.Orchestrator | ProcessRegistry | Database | Table | Orchestrator | Registered processes with schedules and run modes |
