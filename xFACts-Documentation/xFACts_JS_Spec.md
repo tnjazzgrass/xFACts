@@ -68,7 +68,7 @@ Each section opens with a multi-line block comment:
 
 ## 4. Section types
 
-The recognized section types differ between page files and the shared file `cc-shared.js`.
+The recognized section types differ between page files and zone shell files.
 
 ### 4.1 Page files
 
@@ -81,7 +81,7 @@ Four section types, in fixed order:
 | 3 | `STATE` | Module-scope `var` declarations of mutable values. | Yes -- group by concept. |
 | 4 | `FUNCTIONS` | Function declarations. | Yes. Two banners have fixed names: `INITIALIZATION` (first FUNCTIONS banner, contains only `<prefix>_init` per §11.1) and `PAGE LIFECYCLE HOOKS` (last FUNCTIONS banner, contains only hooks per §8). Zero or more named FUNCTIONS banners appear between them. |
 
-### 4.2 The shared file `cc-shared.js`
+### 4.2 The cc-zone shell file `cc-shared.js`
 
 Five section types, in fixed order:
 
@@ -96,8 +96,26 @@ Five section types, in fixed order:
 ### 4.3 Rules
 
 - Section types appear in the order shown.
-- `FOUNDATION`, `BOOTLOADER`, and `CHROME` sections live only in `cc-shared.js`. Any other JS file containing one of these sections is drift.
+- `BOOTLOADER` and `CHROME` sections live only in `cc-shared.js`. Any other JS file containing one of these sections is drift.
+- A `FOUNDATION` section lives only in a zone shell file. Any non-shell JS file containing a `FOUNDATION` section is drift.
 - A file with no imports omits the IMPORTS banner entirely, along with its FILE ORGANIZATION entry.
+
+### 4.4 The docs-zone shell file `docs-shared.js`
+
+Four section types, in fixed order:
+
+| Order | TYPE | Purpose | Multiple banners? |
+|-------|------|---------|-------------------|
+| 1 | `IMPORTS` | ES module imports or `require` statements. | No. |
+| 2 | `FOUNDATION` | Zone-wide immutable constants and primitives. Holds `const` declarations only. | Yes -- group by concept. |
+| 3 | `STATE` | Zone-wide mutable runtime state. Holds `var` declarations only. | Yes -- group by concept. |
+| 4 | `FUNCTIONS` | Shared function declarations. | Yes -- group by concept. |
+
+### 4.4.1 Rules
+
+- Section types appear in the order shown.
+- `BOOTLOADER` and `CHROME` sections in `docs-shared.js` are drift.
+- The docs-zone shell file declares the `doc` chrome prefix in every banner.
 
 ---
 
@@ -159,7 +177,7 @@ Module-scope declarations split into two kinds based on the section they live in
 
 ### 7.2 Engine processes constant
 
-Pages with engine cards registered in `Orchestrator.ProcessRegistry` declare a `<prefix>_ENGINE_PROCESSES` constant in a `CONSTANTS` banner with the fixed name `ENGINE PROCESSES`:
+Engine processes are a cc-zone construct. Pages with engine cards registered in `Orchestrator.ProcessRegistry` declare a `<prefix>_ENGINE_PROCESSES` constant in a `CONSTANTS` banner with the fixed name `ENGINE PROCESSES`:
 
 ```javascript
 var <prefix>_ENGINE_PROCESSES = {
@@ -173,12 +191,13 @@ var <prefix>_ENGINE_PROCESSES = {
 - The banner declaring `<prefix>_ENGINE_PROCESSES` has the fixed name `ENGINE PROCESSES`. Declaration in any other banner is drift.
 - Keys match `Orchestrator.ProcessRegistry.process_name`. Slug values match `Orchestrator.ProcessRegistry.cc_engine_slug` for the corresponding process.
 - `<prefix>_ENGINE_PROCESSES` is declared with `var`. Every other declaration in a `CONSTANTS` section uses `const`.
+- Engine-processes rules apply only to the cc zone. The `ENGINE_PROCESSES` constant, the `ENGINE PROCESSES` banner, and the engine drift codes do not apply to docs-zone files.
 
 ---
 
 ## 8. Page lifecycle hooks
 
-Page lifecycle hooks are named callbacks that `cc-shared.js` invokes when relevant events occur. The set of recognized hook suffixes is fixed:
+Page lifecycle hooks are a cc-zone construct. They are named callbacks that `cc-shared.js` invokes when relevant events occur. The set of recognized hook suffixes is fixed:
 
 | Hook suffix | When called |
 |---|---|
@@ -196,6 +215,7 @@ A page defines only the hooks it uses.
 - Hook function names follow the form `<prefix>_<hookSuffix>` where `<hookSuffix>` is one of the recognized values above.
 - A function whose suffix matches a recognized hook name must be declared inside the hooks banner. Declaration elsewhere in the file is drift.
 - A function inside the hooks banner whose suffix is not in the recognized set is drift.
+- Page lifecycle hooks apply only to the cc zone. The `PAGE LIFECYCLE HOOKS` banner and the hook drift codes do not apply to docs-zone files.
 
 ---
 
@@ -218,7 +238,7 @@ A page defines only the hooks it uses.
 
 ## 11. Page boot and action dispatch
 
-Every page file declares a single page boot function named `<prefix>_init`. The bootloader in `cc-shared.js` invokes it after the page's JS module loads. The page registers its own delegated event listeners inside `<prefix>_init` and routes events through per-event dispatch tables.
+Every page file declares a single page boot function named `<prefix>_init`. In the cc zone the bootloader in `cc-shared.js` invokes it after the page's JS module loads; in the docs zone the page self-invokes it from a single `DOMContentLoaded` listener. The page registers its own delegated event listeners inside `<prefix>_init` and routes events through per-event dispatch tables.
 
 ### 11.1 Page boot function
 
@@ -475,12 +495,12 @@ The five hook suffixes a page may implement, per §8:
 
 JS files emit USAGE rows that reference identifiers defined by other file types. These references resolve against the catalog after every populator has run, in a dedicated resolve phase. Two reference types in JS files are subject to cross-spec resolution: CSS class references (in classList operations, `className` assignments, and string literals) and HTML ID references (in `getElementById`, `querySelector`, `setAttribute('id', ...)`, and `el.id` assignments).
 
-The resolve phase matches each USAGE row to a DEFINITION row of the same `component_type` and `component_name`, within the same zone. When no matching DEFINITION exists in the catalog, the resolve phase stamps the appropriate drift code on the USAGE row.
+The resolve phase matches each USAGE row to a DEFINITION row of the same `component_type` and `component_name`, in the same zone, and in either the same component family (`Object_Registry.component_name`) or the zone's chrome family. When no matching DEFINITION exists in the catalog, the resolve phase stamps the appropriate drift code on the USAGE row.
 
 ### 17.1 Rules
 
-- Every CSS class referenced by a JS file has a matching `CSS_CLASS` DEFINITION row in the catalog.
-- Every HTML ID referenced by a JS file has a matching `HTML_ID` DEFINITION row in the catalog.
+- Every CSS class referenced by a JS file has a matching `CSS_CLASS` DEFINITION row in the same component family or the zone's chrome family.
+- Every HTML ID referenced by a JS file has a matching `HTML_ID` DEFINITION row in the same component family or the zone's chrome family.
 
 ---
 
@@ -503,7 +523,7 @@ The populator emits a drift code on every spec violation. Each code maps to a si
 | `BANNER_MISSING_DESCRIPTION` | Banner has no description text. | §3.1 |
 | `UNKNOWN_SECTION_TYPE` | Banner declares a TYPE not in the recognized list for the file kind. | §4 |
 | `SECTION_TYPE_ORDER_VIOLATION` | Section types appear out of order. | §4.3 |
-| `DUPLICATE_FOUNDATION` | FOUNDATION section appears outside `cc-shared.js`. | §4.3 |
+| `DUPLICATE_FOUNDATION` | FOUNDATION section appears outside a zone shell file. | §4.3 |
 | `DUPLICATE_BOOTLOADER` | BOOTLOADER section appears outside `cc-shared.js`. | §4.3 |
 | `DUPLICATE_CHROME` | CHROME section appears outside `cc-shared.js`. | §4.3 |
 | `MISSING_PREFIX_DECLARATION` | Banner missing the `Prefix:` line. | §5.2 |
