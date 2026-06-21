@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-06-20 07:10:53
+Generated: 2026-06-20 21:29:18
 
 ## Module Registry
 
@@ -33,7 +33,7 @@ Generated: 2026-06-20 07:10:53
 | ControlCenter | ControlCenter.Platform | Platform Monitoring page: XE event viewer, API request logs | plt | controlcenter | Platform Monitoring |  |  | platform |  |  |
 | ControlCenter | ControlCenter.Shared | Shared Control Center infrastructure: startup, helpers module, engine events |  | controlcenter | Control Center |  |  |  | 130 | 1 |
 | ControlCenter | Documentation.Pipeline | Documentation pipeline: DDL reference generation, Confluence publishing, file consolidation |  | controlcenter |  | ControlCenter |  |  |  | 2 |
-| ControlCenter | Documentation.Site | Documentation site: navigation, DDL loader, ERD renderer, shared CSS, all HTML narrative/architecture/reference pages |  | index | xFACts Secrets Revealed |  |  |  | 0 |  |
+| ControlCenter | Documentation.Site | Documentation site: navigation, DDL loader, ERD renderer, shared CSS, all HTML narrative/architecture/reference pages | doc | index | xFACts Secrets Revealed |  |  |  | 0 |  |
 | dbo | Engine.RBAC | Role-based access control and tracking |  | engine-room |  | dbo | RBAC |  |  | 3 |
 | dbo | Engine.SharedInfrastructure | Core platform tables and procedures |  | engine-room | Engine Room | dbo |  |  | 10 | 1 |
 | DeptOps | DeptOps.ApplicationsIntegration | Applications & Integration departmental page | aai |  |  |  |  |  |  |  |
@@ -90,7 +90,6 @@ Generated: 2026-06-20 07:10:53
 | ControlCenter.Admin | admin.css | WebAsset | CSS | E:\xFACts-ControlCenter\public\css\admin.css | Administration CC styles |
 | ControlCenter.Admin | admin.js | WebAsset | JavaScript | E:\xFACts-ControlCenter\public\js\admin.js | Administration CC client-side logic |
 | ControlCenter.Admin | Admin.ps1 | WebAsset | Route | E:\xFACts-ControlCenter\scripts\routes\Admin.ps1 | Administration CC page route |
-| ControlCenter.Home | index.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\index.html | Documentation hub page |
 | ControlCenter.Home | home.css | WebAsset | CSS | E:\xFACts-ControlCenter\public\css\home.css | Home page CC styles |
 | ControlCenter.Home | Home.ps1 | WebAsset | Route | E:\xFACts-ControlCenter\scripts\routes\Home.ps1 | Home page route |
 | ControlCenter.Platform | PlatformMonitoring-API.ps1 | WebAsset | API | E:\xFACts-ControlCenter\scripts\routes\PlatformMonitoring-API.ps1 | Platform Monitoring CC API endpoints |
@@ -135,9 +134,6 @@ Generated: 2026-06-20 07:10:53
 | DmOps | ShellPurge_ConsumerExceptionLog | Database | Table | DmOps | Consumers excluded from shell purge due to qualifying data in tables not covered by the delete sequence — one row per consumer per exclusion reason |
 | DmOps | ShellPurge_ConsumerLog | Database | Table | DmOps | Audit trail of every consumer purged — batch and consumer ID for reconciliation |
 | DmOps | ShellPurge_Schedule | Database | Table | DmOps | Weekly schedule grid controlling shell purge execution mode per hour — blocked, full batch, or reduced batch |
-| DmOps | dmops-arch.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\arch\dmops-arch.html | DM Operations architecture documentation page |
-| DmOps | dmops-ref.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\ref\dmops-ref.html | DM Operations reference documentation page |
-| DmOps | dmops.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\dmops.html | DM Operations narrative documentation page |
 | DmOps | Execute-DmConsumerArchive.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Execute-DmConsumerArchive.ps1 | Unified consumer-level archive execution — TC_ARCH-driven batch deletion of consumers and all linked accounts/transactions from crs5_oltp, with mid-batch BIDATA P-to-C migration |
 | DmOps | Execute-DmShellPurge.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Execute-DmShellPurge.ps1 | Consumer shell purge execution — removes orphaned consumer records with no remaining accounts from crs5_oltp |
 | DmOps | xFACts-DmOpsFunctions.ps1 | PowerShell | Script | E:\xFACts-PowerShell\xFACts-DmOpsFunctions.ps1 | Shared function library for the DmOps consumer-deletion scripts. Centralizes persistent-connection management, chunked snapshot-isolation DELETE and UPDATE primitives, per-table operation wrappers with the preview/execute split, and the stop-on-failure step wrappers that both scripts share. |
@@ -179,7 +175,10 @@ Generated: 2026-06-20 07:10:53
 | Documentation.Site | dbcc-arch.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\arch\dbcc-arch.html | DBCC Operations architecture page |
 | Documentation.Site | dbcc-ref.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\ref\dbcc-ref.html | DBCC Operations DDL reference page |
 | Documentation.Site | dbcc.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\dbcc.html | DBCC Operations narrative page |
+| Documentation.Site | dmops-arch.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\arch\dmops-arch.html | DM Operations architecture documentation page |
 | Documentation.Site | dmops-cc.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\cc\dmops-cc.html | DM Operations Control Center guide page |
+| Documentation.Site | dmops-ref.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\ref\dmops-ref.html | DM Operations reference documentation page |
+| Documentation.Site | dmops.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\dmops.html | DM Operations narrative documentation page |
 | Documentation.Site | engine-room-arch.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\arch\engine-room-arch.html | Engine Room architecture page |
 | Documentation.Site | engine-room-ref.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\ref\engine-room-ref.html | Engine Room DDL reference page |
 | Documentation.Site | engine-room.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\engine-room.html | Engine Room narrative page |
@@ -187,6 +186,7 @@ Generated: 2026-06-20 07:10:53
 | Documentation.Site | fileops-cc.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\cc\fileops-cc.html | File Monitoring Control Center guide page |
 | Documentation.Site | fileops-ref.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\ref\fileops-ref.html | FileOps DDL reference page |
 | Documentation.Site | fileops.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\fileops.html | FileOps narrative page |
+| Documentation.Site | index.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\index.html | Documentation hub page |
 | Documentation.Site | indexmaint-arch.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\arch\indexmaint-arch.html | Index Maintenance architecture page |
 | Documentation.Site | indexmaint-cc.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\cc\indexmaint-cc.html | Index Maintenance Control Center guide page |
 | Documentation.Site | indexmaint-ref.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\ref\indexmaint-ref.html | Index Maintenance DDL reference page |
@@ -636,7 +636,7 @@ Generated: 2026-06-20 07:10:53
 | ServerOps | Index | index_frag_med_max | 60 | INT | Upper fragmentation bound for medium range (%) |
 | ServerOps | Index | index_frag_med_score | 15 | INT | Priority score for moderately fragmented indexes (30-60%) |
 | ServerOps | Index | index_fragmentation_threshold | 15.00 | DECIMAL | Minimum fragmentation % to qualify for maintenance |
-| ServerOps | Index | index_lock_timeout_seconds | 120 | INT | Seconds to wait for a lock before skipping an index |
+| ServerOps | Index | index_lock_timeout_seconds | 300 | INT | Seconds to wait for a lock before skipping an index |
 | ServerOps | Index | index_maintenance_priority_1_score | 40 | INT | Priority score for Critical maintenance priority databases |
 | ServerOps | Index | index_maintenance_priority_2_score | 25 | INT | Priority score for High maintenance priority databases |
 | ServerOps | Index | index_maintenance_priority_3_score | 15 | INT | Priority score for Normal maintenance priority databases |
@@ -655,7 +655,7 @@ Generated: 2026-06-20 07:10:53
 | ServerOps | Index | index_scan_pages_per_second | 120000 | INT | Estimated scan speed for timeout calculation (pages/sec) |
 | ServerOps | Index | index_scan_skip_rebuilt_days | 3 | INT | Days to skip scanning recently rebuilt indexes |
 | ServerOps | Index | index_scan_time_limit_minutes | 0 | INT | Maximum scan duration in minutes (0 = no limit) |
-| ServerOps | Index | index_scan_timeout_base_seconds | 120 | INT | Minimum timeout per index during scanning (seconds) |
+| ServerOps | Index | index_scan_timeout_base_seconds | 300 | INT | Minimum timeout per index during scanning (seconds) |
 | ServerOps | Index | index_seconds_per_page_offline | 0.00020 | DECIMAL | Time estimate factor for offline rebuilds (seconds per page) |
 | ServerOps | Index | index_seconds_per_page_online | 0.0004 | DECIMAL | Time estimate factor for online rebuilds (seconds per page) |
 | ServerOps | Index | index_sync_interval_minutes | 1440 | INT | Minimum minutes between index discovery runs |
