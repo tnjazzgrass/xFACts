@@ -9,27 +9,27 @@
 </head>
 <body>
 
-<div class="page-wrapper">
+<div class="doc-page-wrapper">
 
     <!-- Header -->
-    <div class="page-header">
-        <h1>Replication Monitoring</h1>
-        <div class="subtitle">Because &ldquo;is the data getting there?&rdquo; shouldn&rsquo;t require a PhD in distribution database archaeology</div>
+    <div class="doc-page-header">
+        <h1 class="doc-page-title">Replication Monitoring</h1>
+        <div class="doc-page-subtitle">Because &ldquo;is the data getting there?&rdquo; shouldn&rsquo;t require a PhD in distribution database archaeology</div>
     </div>
 
     <!-- Navigation (populated by nav.js) -->
     <div class="doc-nav"></div>
 
     <!-- Where This Fits -->
-    <div class="context-bar">
+    <div class="doc-context-bar">
         SQL Server replication is the invisible plumbing that keeps data warehouses, reports, and downstream systems fed with current data. When it works, nobody notices. When it breaks, everyone notices. This module makes the invisible visible &mdash; continuously, automatically, and without requiring anyone to sit and stare at a monitor.
     </div>
 
     <!-- ============================================ -->
     <!-- SECTION: The Problem -->
     <!-- ============================================ -->
-    <div class="section">
-        <h2>The Problem</h2>
+    <div class="doc-section">
+        <h2 class="doc-section-title">The Problem</h2>
 
         <p>Replication is one of those things that works beautifully until it doesn&rsquo;t. And when it doesn&rsquo;t, the first sign is usually someone asking why their numbers look wrong. Or a report showing yesterday&rsquo;s data. Or an awkward silence in a meeting when someone says &ldquo;according to the latest figures&hellip;&rdquo;</p>
 
@@ -39,22 +39,22 @@
     <!-- ============================================ -->
     <!-- SECTION: How It Works -->
     <!-- ============================================ -->
-    <div class="section">
-        <h2>How It Works</h2>
+    <div class="doc-section">
+        <h2 class="doc-section-title">How It Works</h2>
 
-        <div class="flow-diagram">
-            <div class="flow-steps">
-                <div class="flow-step blue">Collector<br>Runs</div>
-                <span class="flow-arrow">&rarr;</span>
-                <div class="flow-step green">Agent Health<br>Captured</div>
-                <span class="flow-arrow">&rarr;</span>
-                <div class="flow-step orange">Changes<br>Detected</div>
-                <span class="flow-arrow">&rarr;</span>
-                <div class="flow-step purple">Latency<br>Measured</div>
-                <span class="flow-arrow">&rarr;</span>
-                <div class="flow-step muted-step">Complete<br>Picture</div>
+        <div class="doc-flow-diagram">
+            <div class="doc-flow-steps">
+                <div class="doc-flow-step doc-flow-blue">Collector<br>Runs</div>
+                <span class="doc-flow-arrow">&rarr;</span>
+                <div class="doc-flow-step doc-flow-green">Agent Health<br>Captured</div>
+                <span class="doc-flow-arrow">&rarr;</span>
+                <div class="doc-flow-step doc-flow-orange">Changes<br>Detected</div>
+                <span class="doc-flow-arrow">&rarr;</span>
+                <div class="doc-flow-step doc-flow-purple">Latency<br>Measured</div>
+                <span class="doc-flow-arrow">&rarr;</span>
+                <div class="doc-flow-step doc-flow-muted">Complete<br>Picture</div>
             </div>
-            <div class="flow-caption">One script, three monitoring layers, every 60 seconds</div>
+            <div class="doc-flow-caption">One script, three monitoring layers, every 60 seconds</div>
         </div>
 
         <p>One script runs on a configurable schedule via the Orchestrator and captures everything in a single pass. No coordination headaches, no timing gaps, no &ldquo;well, the second script should have run by now&hellip;&rdquo;</p>
@@ -67,8 +67,8 @@
     <!-- ============================================ -->
     <!-- SECTION: The Nightly Pause -->
     <!-- ============================================ -->
-    <div class="section">
-        <h2>The Nightly Pause</h2>
+    <div class="doc-section">
+        <h2 class="doc-section-title">The Nightly Pause</h2>
 
         <p>Every night, the data warehouse build job needs a consistent snapshot of the data. To get that, it briefly stops the replication agents &mdash; like hitting pause on a conveyor belt so you can count what&rsquo;s on it.</p>
 
@@ -78,8 +78,8 @@
     <!-- ============================================ -->
     <!-- SECTION: When Things Go Wrong -->
     <!-- ============================================ -->
-    <div class="section">
-        <h2>When Things Go Wrong</h2>
+    <div class="doc-section">
+        <h2 class="doc-section-title">When Things Go Wrong</h2>
 
         <p>The value isn&rsquo;t in watching replication work. It&rsquo;s in catching the moment it stops working.</p>
 
@@ -91,8 +91,8 @@
     <!-- ============================================ -->
     <!-- SECTION: The Bottom Line -->
     <!-- ============================================ -->
-    <div class="section">
-        <h2>The Bottom Line</h2>
+    <div class="doc-section">
+        <h2 class="doc-section-title">The Bottom Line</h2>
 
         <p>No more checking replication tools in SSMS. No more discovering at 9 AM that replication stopped at midnight. No more guessing whether a stopped agent is planned maintenance or an actual problem.</p>
 
@@ -100,22 +100,22 @@
     </div>
 
     <!-- Architecture & Reference Links -->
-    <div style="text-align: center;">
-        <a href="arch/replication-arch.html" class="ref-link">&#x1F527; Replication Monitoring Architecture &mdash; How the monitoring works under the hood</a>
+    <div class="doc-ref-link-group">
+        <a href="arch/replication-arch.html" class="doc-ref-link">&#x1F527; Replication Monitoring Architecture &mdash; How the monitoring works under the hood</a>
     </div>
-    <div style="text-align: center; margin-top: 8px;">
-        <a href="ref/replication-ref.html" class="ref-link">&#x1F4CB; Replication Monitoring Reference &mdash; Full technical details, DDL, and operational queries</a>
+    <div class="doc-ref-link-group-following">
+        <a href="ref/replication-ref.html" class="doc-ref-link">&#x1F4CB; Replication Monitoring Reference &mdash; Full technical details, DDL, and operational queries</a>
     </div>
 
     <!-- Contributing -->
-    <div class="callout tip">
+    <div class="doc-callout doc-tip">
         <p><strong>Contributing:</strong> This platform is designed to grow organically. If you have a manual process, monitoring need, or utility that could benefit from centralization, contact the <a href="mailto:applications@frost-arnett.com?subject=xFACts%20New%20Module%20Request&body=I%20would%20like%20to%20submit%20a%20possible%20process%20for%20consideration%20as%20an%20xFACts%20module.%0A%0AProcess%20Name%3A%0ACurrent%20Method%3A%0ABusiness%20Need%3A%0A%0A">Applications Team</a> to discuss adding it as an xFACts module.</p>
     </div>
 
     <!-- Footer -->
     <div class="doc-footer">
-        <p><a href="index.html" style="color: var(--accent-blue); text-decoration: none;">&larr; Back to xFACts Secrets Revealed</a></p>
-        <p style="margin-top: 8px;">Applications Team, Frost Arnett</p>
+        <p><a href="index.html" class="doc-footer-link">&larr; Back to xFACts Secrets Revealed</a></p>
+        <p class="doc-footer-line">Applications Team, Frost Arnett</p>
     </div>
 
 </div>
