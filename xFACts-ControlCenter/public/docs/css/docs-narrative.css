@@ -1,20 +1,44 @@
-/* ============================================================
-   docs-narrative.css — Overrides for narrative "Secrets Revealed" pages
-   
-   Loaded after docs-base.css on: teams.html, jira.html, 
-   engine-room.html, and future module narrative pages.
-   ============================================================ */
+/* ============================================================================
+   xFACts Control Center - Documentation Narrative Pages (docs-narrative.css)
+   Location: E:\xFACts-ControlCenter\public\docs\css\docs-narrative.css
+   Version: Tracked in dbo.System_Metadata (component: Documentation.Site)
 
-/* ===== Flow Diagrams ===== */
-.flow-diagram {
-    background: var(--bg-card);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius);
+   Content components for the narrative "Secrets Revealed" documentation pages.
+   Supplies the flow-diagram family (step and branch nodes with shared color and
+   muted modifiers, arrows, captions, fork/branch grouping), the two-column
+   side-by-side layout, and the inline color-sample swatch. Loaded after
+   docs-base.css, which owns the token palette these rules consume via var(...).
+
+   FILE ORGANIZATION
+   -----------------
+   CONTENT: FLOW DIAGRAMS
+   CONTENT: FLOW FORK AND BRANCH
+   CONTENT: SIDE-BY-SIDE LAYOUT
+   CONTENT: COLOR SAMPLE
+   CONTENT: RESPONSIVE ADJUSTMENTS
+   ============================================================================ */
+
+/* ============================================================================
+   CONTENT: FLOW DIAGRAMS
+   ----------------------------------------------------------------------------
+   The flow-diagram container, its centered row of step nodes, the step node
+   itself with its shared color and muted modifiers, the connector arrow, and
+   the caption beneath the diagram. Color and muted modifiers are shared with
+   the fork/branch nodes.
+   Prefix: doc
+   ============================================================================ */
+
+/* Styles the flow-diagram container as a bordered, padded card. */
+.doc-flow-diagram {
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border-default);
+    border-radius: var(--size-radius-default);
     padding: 24px;
     margin: 20px 0;
 }
 
-.flow-steps {
+/* Lays out the row of flow steps centered and wrapping. */
+.doc-flow-steps {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -22,78 +46,179 @@
     flex-wrap: wrap;
 }
 
-.flow-step {
+/* Styles a single flow-step node as a centered, rounded pill. */
+.doc-flow-step {
     padding: 10px 18px;
-    border-radius: var(--radius);
+    border-radius: var(--size-radius-default);
     font-size: 0.85em;
     font-weight: 600;
     text-align: center;
 }
 
-.flow-step.blue    { background: rgba(var(--accent-blue-rgb), 0.2); border: 1px solid var(--accent-blue-dim); color: var(--accent-blue); }
-.flow-step.green   { background: rgba(var(--accent-green-rgb), 0.2); border: 1px solid var(--accent-green-dim); color: var(--accent-green); }
-.flow-step.orange  { background: rgba(var(--accent-orange-rgb), 0.2); border: 1px solid var(--accent-orange-dim); color: var(--accent-orange); }
-.flow-step.purple  { background: rgba(var(--accent-purple-rgb), 0.2); border: 1px solid var(--accent-purple-dim); color: var(--accent-purple); }
-.flow-step.red     { background: rgba(var(--accent-red-rgb), 0.2); border: 1px solid var(--accent-red-dim); color: var(--accent-red); }
-.flow-step.muted-step { background: rgba(var(--text-muted-rgb), 0.15); border: 1px solid var(--text-muted); color: var(--text-secondary); }
+/* Tints a flow node blue. */
+.doc-flow-blue { }
 
-.flow-arrow {
-    color: var(--text-muted);
+/* Tints a flow node green. */
+.doc-flow-green { }
+
+/* Tints a flow node orange. */
+.doc-flow-orange { }
+
+/* Tints a flow node purple. */
+.doc-flow-purple { }
+
+/* Tints a flow node red. */
+.doc-flow-red { }
+
+/* Tints a flow node muted gray. */
+.doc-flow-muted { }
+
+.doc-flow-step.doc-flow-blue { /* blue */
+    background: rgba(var(--color-accent-blue-rgb), 0.2);
+    border: 1px solid var(--color-accent-blue-dim);
+    color: var(--color-accent-blue);
+}
+
+.doc-flow-step.doc-flow-green { /* green */
+    background: rgba(var(--color-accent-green-rgb), 0.2);
+    border: 1px solid var(--color-accent-green-dim);
+    color: var(--color-accent-green);
+}
+
+.doc-flow-step.doc-flow-orange { /* orange */
+    background: rgba(var(--color-accent-orange-rgb), 0.2);
+    border: 1px solid var(--color-accent-orange-dim);
+    color: var(--color-accent-orange);
+}
+
+.doc-flow-step.doc-flow-purple { /* purple */
+    background: rgba(var(--color-accent-purple-rgb), 0.2);
+    border: 1px solid var(--color-accent-purple-dim);
+    color: var(--color-accent-purple);
+}
+
+.doc-flow-step.doc-flow-red { /* red */
+    background: rgba(var(--color-accent-red-rgb), 0.2);
+    border: 1px solid var(--color-accent-red-dim);
+    color: var(--color-accent-red);
+}
+
+.doc-flow-step.doc-flow-muted { /* muted */
+    background: rgba(var(--color-text-muted-rgb), 0.15);
+    border: 1px solid var(--color-text-muted);
+    color: var(--color-text-secondary);
+}
+
+/* Styles the connector arrow between flow steps. */
+.doc-flow-arrow {
+    color: var(--color-text-muted);
     font-size: 1.2em;
 }
 
-.flow-caption {
+/* Styles the caption beneath a flow diagram. */
+.doc-flow-caption {
     text-align: center;
     font-size: 0.82em;
-    color: var(--text-muted);
+    color: var(--color-text-muted);
     margin-top: 12px;
 }
 
-/* ===== Flow Fork/Branch (parallel paths in flow diagrams) ===== */
-.flow-fork {
+/* ============================================================================
+   CONTENT: FLOW FORK AND BRANCH
+   ----------------------------------------------------------------------------
+   The fork construct that shows parallel paths within a flow diagram: the fork
+   column, its label, the branch stack, and the branch node. Branch nodes reuse
+   the shared color and muted modifiers defined in the flow-diagram section.
+   Prefix: doc
+   ============================================================================ */
+
+/* Stacks a fork's label and branches in a centered column. */
+.doc-flow-fork {
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 4px;
 }
 
-.flow-fork-label {
+/* Styles the label above a fork's branches. */
+.doc-flow-fork-label {
     font-size: 0.75em;
     font-weight: 600;
-    color: var(--text-secondary);
+    color: var(--color-text-secondary);
     margin-bottom: 2px;
 }
 
-.flow-branches {
+/* Stacks the branch nodes within a fork. */
+.doc-flow-branches {
     display: flex;
     flex-direction: column;
     gap: 4px;
 }
 
-.flow-branch {
+/* Styles a single branch node as a centered, rounded pill. */
+.doc-flow-branch {
     padding: 8px 16px;
-    border-radius: var(--radius);
+    border-radius: var(--size-radius-default);
     font-size: 0.82em;
     font-weight: 600;
     text-align: center;
 }
 
-.flow-branch.green  { background: rgba(var(--accent-green-rgb), 0.2); border: 1px solid var(--accent-green-dim); color: var(--accent-green); }
-.flow-branch.orange { background: rgba(var(--accent-orange-rgb), 0.2); border: 1px solid var(--accent-orange-dim); color: var(--accent-orange); }
-.flow-branch.purple { background: rgba(var(--accent-purple-rgb), 0.2); border: 1px solid var(--accent-purple-dim); color: var(--accent-purple); }
-.flow-branch.red    { background: rgba(var(--accent-red-rgb), 0.2); border: 1px solid var(--accent-red-dim); color: var(--accent-red); }
-.flow-branch.muted  { background: rgba(var(--text-muted-rgb), 0.15); border: 1px solid var(--text-muted); color: var(--text-secondary); }
+.doc-flow-branch.doc-flow-green { /* green */
+    background: rgba(var(--color-accent-green-rgb), 0.2);
+    border: 1px solid var(--color-accent-green-dim);
+    color: var(--color-accent-green);
+}
 
-/* ===== Side-by-Side Layouts ===== */
-.side-by-side {
+.doc-flow-branch.doc-flow-orange { /* orange */
+    background: rgba(var(--color-accent-orange-rgb), 0.2);
+    border: 1px solid var(--color-accent-orange-dim);
+    color: var(--color-accent-orange);
+}
+
+.doc-flow-branch.doc-flow-purple { /* purple */
+    background: rgba(var(--color-accent-purple-rgb), 0.2);
+    border: 1px solid var(--color-accent-purple-dim);
+    color: var(--color-accent-purple);
+}
+
+.doc-flow-branch.doc-flow-red { /* red */
+    background: rgba(var(--color-accent-red-rgb), 0.2);
+    border: 1px solid var(--color-accent-red-dim);
+    color: var(--color-accent-red);
+}
+
+.doc-flow-branch.doc-flow-muted { /* muted */
+    background: rgba(var(--color-text-muted-rgb), 0.15);
+    border: 1px solid var(--color-text-muted);
+    color: var(--color-text-secondary);
+}
+
+/* ============================================================================
+   CONTENT: SIDE-BY-SIDE LAYOUT
+   ----------------------------------------------------------------------------
+   The two-column grid used to place related content blocks beside each other,
+   collapsing to a single column on small viewports.
+   Prefix: doc
+   ============================================================================ */
+
+/* Lays out two content blocks in an equal two-column grid. */
+.doc-side-by-side {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 24px;
     margin: 20px 0;
 }
 
-/* ===== Color Samples ===== */
-.color-sample {
+/* ============================================================================
+   CONTENT: COLOR SAMPLE
+   ----------------------------------------------------------------------------
+   The small inline swatch used to show a color key beside descriptive text.
+   Prefix: doc
+   ============================================================================ */
+
+/* Styles a small inline color swatch aligned with adjacent text. */
+.doc-color-sample {
     display: inline-block;
     width: 14px;
     height: 14px;
@@ -102,17 +227,29 @@
     margin-right: 6px;
 }
 
-/* ===== Responsive ===== */
+/* ============================================================================
+   CONTENT: RESPONSIVE ADJUSTMENTS
+   ----------------------------------------------------------------------------
+   Small-viewport adjustments: the side-by-side grid collapses to one column,
+   the flow steps stack vertically, and the connector arrows rotate to point
+   down the stack.
+   Prefix: doc
+   ============================================================================ */
+
+/* Adjusts narrative layouts for narrow viewports. */
 @media (max-width: 700px) {
-    .side-by-side {
+    /* Collapses the side-by-side grid to a single column. */
+    .doc-side-by-side {
         grid-template-columns: 1fr;
     }
 
-    .flow-steps {
+    /* Stacks the flow steps vertically. */
+    .doc-flow-steps {
         flex-direction: column;
     }
 
-    .flow-arrow {
+    /* Rotates the connector arrow to point down the stack. */
+    .doc-flow-arrow {
         transform: rotate(90deg);
     }
 }
