@@ -8,20 +8,24 @@
     <link rel="stylesheet" href="../css/docs-narrative.css">
 </head>
 <body>
+<div class="doc-layout">
 
-<div class="doc-page-wrapper">
+    <nav class="doc-nav"></nav>
 
-    <!-- Header -->
-    <div class="doc-page-header">
-        <h1 class="doc-page-title">JBoss Monitoring</h1>
-        <div class="doc-page-subtitle">Cracking open the JBoss black box &mdash; because &ldquo;have you tried restarting it?&rdquo; is not a monitoring strategy</div>
-    </div>
+    <div class="doc-content">
 
-    <!-- Navigation (populated by nav.js) -->
-    <div class="doc-nav"></div>
+        <div class="doc-header">
+            <div class="doc-header-inner">
+                <h1 class="doc-page-title">JBoss Monitoring</h1>
+                <div class="doc-page-subtitle">Cracking open the JBoss black box &mdash; because &ldquo;have you tried restarting it?&rdquo; is not a monitoring strategy</div>
+                <div class="doc-subpage-links"></div>
+            </div>
+        </div>
 
-    <!-- Where This Fits -->
-    <div class="doc-context-bar">
+        <div class="doc-body">
+            <div class="doc-body-inner">
+
+<div class="doc-context-bar">
         Debt Manager runs on JBoss. JBoss runs on three application servers. When one of those servers decides to take an unscheduled nap, nobody knows until users start complaining and the database starts screaming. This module watches the application servers directly &mdash; not the database symptoms, but the actual engines that run DM.
     </div>
 
@@ -117,27 +121,14 @@
         <p>We&rsquo;re still learning what &ldquo;normal&rdquo; looks like for these servers. The patterns will get clearer over time. But we can already see things we&rsquo;ve never seen before &mdash; and the first time we catch a freeze forming before users notice, the entire module will have paid for itself.</p>
     </div>
 
-    <!-- Architecture & Reference Links -->
-    <div class="doc-ref-link-group">
-        <a href="arch/jboss-arch.html" class="doc-ref-link">&#x1F527; JBoss Monitoring Architecture &mdash; How we cracked JBoss open</a>
-    </div>
-    <div class="doc-ref-link-group-following">
-        <a href="ref/jboss-ref.html" class="doc-ref-link">&#x1F4CB; JBoss Monitoring Reference &mdash; Full technical details, DDL, and operational queries</a>
-    </div>
+                <div class="doc-footer"></div>
 
-    <!-- Contributing -->
-    <div class="doc-callout doc-tip">
-        <p><strong>Contributing:</strong> This platform is designed to grow organically. If you have a manual process, monitoring need, or utility that could benefit from centralization, contact the <a href="mailto:applications@frost-arnett.com?subject=xFACts%20New%20Module%20Request&body=I%20would%20like%20to%20submit%20a%20possible%20process%20for%20consideration%20as%20an%20xFACts%20module.%0A%0AProcess%20Name%3A%0ACurrent%20Method%3A%0ABusiness%20Need%3A%0A%0A">Applications Team</a> to discuss adding it as an xFACts module.</p>
-    </div>
+            </div>
+        </div>
 
-    <!-- Footer -->
-    <div class="doc-footer">
-        <p><a href="index.html" class="doc-footer-link">&larr; Back to xFACts Secrets Revealed</a></p>
-        <p class="doc-footer-line">Applications Team, Frost Arnett</p>
     </div>
 
 </div>
-
 <script src="../js/nav.js"></script>
 </body>
 </html>
