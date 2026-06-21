@@ -105,7 +105,7 @@
 #             processes span multiple components now resolve correctly. Added
 #             the route-file map load and a per-run parse cache in EXECUTION.
 # 2026-05-31  Converted to the Control Center PowerShell file format spec:
-#             block-comment header and section banners, canonical section
+#             block-comment header and section banners, required section
 #             order, dedicated CHANGELOG section, single EXECUTION section
 #             with sub-section markers, and leading purpose comments on
 #             script-scope declarations. Made zone, scope, and shell
@@ -317,7 +317,7 @@ $DriftDescriptions = [ordered]@{
     'UNKNOWN_SECTION_TYPE'              = "A section banner declares a TYPE not valid for the file kind. Page files allow IMPORTS, CONSTANTS, STATE, FUNCTIONS. cc-shared.js allows IMPORTS, FOUNDATION, STATE, BOOTLOADER, CHROME."
     'SECTION_TYPE_ORDER_VIOLATION'      = "Section types appear out of the required order for the file kind."
     'MISSING_PREFIX_DECLARATION'        = "A section banner is missing the mandatory Prefix line in its description block."
-    'MALFORMED_PREFIX_VALUE'            = "A banner's Prefix value is neither a page prefix nor 'cc', or declares multiple comma-separated values."
+    'MALFORMED_PREFIX_VALUE'            = "A banner's Prefix value is neither a page prefix nor the zone's chrome prefix, or declares multiple comma-separated values."
     'PREFIX_REGISTRY_MISMATCH'          = "A section banner's declared prefix does not match Component_Registry.cc_prefix for the file's component (with the spec's IMPORTS / CONSTANTS / hooks-banner carve-outs honored)."
     'DUPLICATE_FOUNDATION'              = "A FOUNDATION section appears in a JS file that is not the shell file. FOUNDATION sections live only in the shell file (cc-shared.js)."
     'DUPLICATE_BOOTLOADER'              = "A BOOTLOADER section appears in a JS file that is not the shell file. BOOTLOADER sections live only in the shell file (cc-shared.js)."
@@ -1508,29 +1508,33 @@ function Add-JsCommentBannerRow {
     # MALFORMED_PREFIX_VALUE
     if ($Section.Prefix -and -not (Test-PrefixValueIsValid -Prefix $Section.Prefix)) {
         Add-DriftCode -Row $row -Code 'MALFORMED_PREFIX_VALUE' `
-            -Context "Banner declares Prefix '$($Section.Prefix)' which is neither a page prefix nor 'cc'."
+            -Context "Banner declares Prefix '$($Section.Prefix)' which is neither a page prefix nor the zone's chrome prefix."
     }
 
     # PREFIX_REGISTRY_MISMATCH
     # - Registry mapping with cc_prefix = X -> banner must declare X.
     # - Registry mapping with cc_prefix = NULL and this is the shell file ->
-    #   banner must declare 'cc'.
+    #   banner must declare the zone's chrome prefix (from Get-ZoneChromePrefix).
     # - No registry mapping -> skip; the missing row is reported by the miss
     #   advisory.
     # MALFORMED_PREFIX_VALUE has already fired upstream on values that are
-    # neither a page prefix nor cc, so both values here are known well-formed.
+    # neither a page prefix nor the zone's chrome prefix, so both values here
+    # are known well-formed.
     if ($script:CurrentRegistryHasMapping -and $Section.Prefix -and (Test-PrefixValueIsValid -Prefix $Section.Prefix)) {
-        # bannerVal is 'cc' or the page prefix; regVal is $null or the page prefix.
-        $bannerVal = Get-BannerPrefixValue -Prefix $Section.Prefix
-        $regVal    = $script:CurrentRegistryPrefix
-        $isShell   = $script:CurrentFileIsShell
+        # bannerVal is the zone's chrome prefix or the page prefix; regVal is
+        # $null or the page prefix.
+        $bannerVal    = Get-BannerPrefixValue -Prefix $Section.Prefix
+        $regVal       = $script:CurrentRegistryPrefix
+        $isShell      = $script:CurrentFileIsShell
+        # The zone's chrome prefix, from the shared zone-to-chrome-prefix map.
+        $chromePrefix = Get-ZoneChromePrefix -Zone $script:CurrentFileZone
 
         $mismatch = $false
         if ($null -eq $regVal) {
-            # No registered page prefix. The shell file must declare 'cc';
-            # any other JS file in this state is unexpected.
+            # No registered page prefix. The shell file must declare the zone's
+            # chrome prefix; any other JS file in this state is unexpected.
             if ($isShell) {
-                if ($bannerVal -ne 'cc') { $mismatch = $true }
+                if ($chromePrefix -and ($bannerVal -ne $chromePrefix)) { $mismatch = $true }
             } else {
                 $mismatch = $true
             }
@@ -1540,7 +1544,7 @@ function Add-JsCommentBannerRow {
 
         if ($mismatch) {
             $regDisplay = if ($null -eq $regVal) {
-                if ($isShell) { 'cc' } else { '<no prefix registered>' }
+                if ($isShell) { $chromePrefix } else { '<no prefix registered>' }
             } else { $regVal }
             Add-DriftCode -Row $row -Code 'PREFIX_REGISTRY_MISMATCH' `
                 -Context "Banner declares Prefix '$bannerVal' but the expected value for this file is '$regDisplay'."
