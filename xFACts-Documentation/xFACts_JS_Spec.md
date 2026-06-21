@@ -110,14 +110,14 @@ Every section banner declares one prefix via the `Prefix:` line. Every top-level
 Two forms, no others:
 
 - **Page prefix** -- the value of `Component_Registry.cc_prefix` for the file's component. Declared in every section banner of page files. Identifiers in these sections begin with `<page-prefix>_`.
-- **Chrome prefix** -- the literal token `cc`. Declared in every section banner of `cc-shared.js`. Identifiers in `cc-shared.js` begin with `cc_`.
+- **Chrome prefix** -- the zone's chrome prefix, declared in every section banner of the zone's shell file. Each zone has exactly one chrome prefix, fixed by the zone-to-chrome-prefix map: the `cc` zone uses `cc`, the `docs` zone uses `doc`. Adding a zone requires a spec amendment to that map. Identifiers in the shell file begin with `<chrome-prefix>_`.
 
 ### 5.2 Rules
 
 - A page-file banner declares the page prefix from `Component_Registry.cc_prefix`.
-- A `cc-shared.js` banner declares `cc`.
+- A shell-file banner declares the zone's chrome prefix (§5.1).
 - The `Prefix:` line declares exactly one value. Comma-separated values are not permitted.
-- `Component_Registry.cc_prefix` is the source of truth. When the file and registry disagree, the file is wrong.
+- `Component_Registry.cc_prefix` is the source of truth for the page prefix. When the file and registry disagree, the file is wrong.
 - Every top-level identifier in a JS file begins with the file's prefix followed by an underscore. There are no exemptions: hooks, ENGINE_PROCESSES, dispatch tables, and every other top-level identifier all follow this rule.
 - Methods inside classes are exempt.
 
@@ -507,8 +507,7 @@ The populator emits a drift code on every spec violation. Each code maps to a si
 | `DUPLICATE_BOOTLOADER` | BOOTLOADER section appears outside `cc-shared.js`. | §4.3 |
 | `DUPLICATE_CHROME` | CHROME section appears outside `cc-shared.js`. | §4.3 |
 | `MISSING_PREFIX_DECLARATION` | Banner missing the `Prefix:` line. | §5.2 |
-| `MALFORMED_PREFIX_VALUE` | Banner declares a `Prefix:` value that is neither a page prefix nor `cc`, or declares multiple comma-separated values. | §5.2 |
-| `PREFIX_REGISTRY_MISMATCH` | Page-file banner's declared prefix does not match `Component_Registry.cc_prefix`. | §5.2 |
+| `MALFORMED_PREFIX_VALUE` | A banner declares a `Prefix:` value that is neither a page prefix nor the zone's chrome prefix, or declares multiple comma-separated values. | §5.2 || `PREFIX_REGISTRY_MISMATCH` | Page-file banner's declared prefix does not match `Component_Registry.cc_prefix`. | §5.2 |
 | `CHROME_FILE_INVALID_PREFIX` | `cc-shared.js` banner declares a prefix other than `cc`. | §5.2 |
 | `PREFIX_MISSING` | Top-level identifier does not begin with the file's prefix followed by an underscore. | §5.2 |
 | `PREFIX_MISMATCH` | Top-level identifier does not begin with the declared section prefix. | §5.2 |
