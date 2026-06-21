@@ -9,27 +9,27 @@
 </head>
 <body>
 
-<div class="page-wrapper">
+<div class="doc-page-wrapper">
 
     <!-- Header -->
-    <div class="page-header">
-        <h1>The Control Center</h1>
-        <div class="subtitle">The website you&rsquo;re probably already using &mdash; now with an explanation</div>
+    <div class="doc-page-header">
+        <h1 class="doc-page-title">The Control Center</h1>
+        <div class="doc-page-subtitle">The website you&rsquo;re probably already using &mdash; now with an explanation</div>
     </div>
 
     <!-- Navigation (populated by nav.js) -->
     <div class="doc-nav"></div>
 
     <!-- Where This Fits -->
-    <div class="context-bar">
+    <div class="doc-context-bar">
         The Control Center is the web interface that turns xFACts data into something you can actually look at without writing SQL. If you&rsquo;ve ever checked a server&rsquo;s memory, watched a batch process, or wondered why your Teams channel just exploded at 1:45 AM, you&rsquo;ve used this. It lives at <code>http://fa-sqldbb:8085</code> and it&rsquo;s always on.
     </div>
 
     <!-- ============================================ -->
     <!-- SECTION: What It Does -->
     <!-- ============================================ -->
-    <div class="section">
-        <h2>What It Does</h2>
+    <div class="doc-section">
+        <h2 class="doc-section-title">What It Does</h2>
 
         <p>Every module in xFACts collects data, evaluates it, and stores it in the database. That&rsquo;s useful, but only if someone can <em>see</em> it. The Control Center is the seeing part.</p>
 
@@ -37,7 +37,7 @@
 
         <p>The pages are live. Most of them refresh automatically on a regular interval &mdash; some every five seconds, some every thirty, depending on how fast the underlying data changes. You don&rsquo;t need to hit F5. You don&rsquo;t need to click a refresh button. Open the page, and it stays current.</p>
 
-        <div class="callout info">
+        <div class="doc-callout doc-info">
             <p>There are also departmental pages for teams outside of IT. Business Services, Client Relations, and Business Intelligence each have their own space with tools specific to their workflows. Same technology, different audience.</p>
         </div>
     </div>
@@ -45,8 +45,8 @@
     <!-- ============================================ -->
     <!-- SECTION: Getting Around -->
     <!-- ============================================ -->
-    <div class="section">
-        <h2>Getting Around</h2>
+    <div class="doc-section">
+        <h2 class="doc-section-title">Getting Around</h2>
 
         <p>When you first visit the Control Center, you&rsquo;ll be asked to sign in with your normal Windows credentials. Same username and password you use to log into your computer. Once you&rsquo;re in, you land on the home page &mdash; a grid of cards, one per feature.</p>
 
@@ -58,30 +58,30 @@
     <!-- ============================================ -->
     <!-- SECTION: The Things Every Page Shares -->
     <!-- ============================================ -->
-    <div class="section">
-        <h2>The Things Every Page Shares</h2>
+    <div class="doc-section">
+        <h2 class="doc-section-title">The Things Every Page Shares</h2>
 
         <p>Even though each page does its own thing, they all share a few common elements.</p>
 
-        <h3>Engine Indicators</h3>
+        <h3 class="doc-section-subtitle">Engine Indicators</h3>
 
         <p>Every monitoring page has small indicator cards near the top that represent the orchestrator processes feeding that page with data. These update in real time over a persistent connection to the server, independently of the page&rsquo;s own refresh cycle.</p>
 
         <p>When a process fires, its indicator changes to a blue color and displays a running message. When it finishes it displays changes color and then starts a countdown to the next run. If the last run was successful, the indicator turns green, If a process fails, the indicator turns red. If the orchestrator itself goes quiet for too long, the indicators let you know something might be wrong with the engine &mdash; not just the data.</p>
 
-        <div class="callout tip">
+        <div class="doc-callout doc-tip">
             <p>Engine indicators are your early warning system. If the data on a page looks stale but the engine indicators are happily counting down, the data is probably just between cycles. If the engine indicators are red or frozen, something upstream may need attention.</p>
         </div>
 
-        <h3>Idle Detection</h3>
+        <h3 class="doc-section-subtitle">Idle Detection</h3>
 
         <p>The Control Center knows when you&rsquo;ve walked away. If a page detects no mouse movement or keyboard activity for a few minutes, it pauses its refresh cycle to conserve resources. When you come back, it picks right back up. There&rsquo;s an overlay that lets you know it paused, so you&rsquo;re never looking at stale data thinking it&rsquo;s current.</p>
 
-        <h3>Connection Awareness</h3>
+        <h3 class="doc-section-subtitle">Connection Awareness</h3>
 
         <p>If the connection to the server is interrupted &mdash; network hiccup, server restart, someone tripping over a cable &mdash; the page shows a reconnecting banner rather than just silently going stale. If the server comes back quickly, the page reconnects on its own. If it doesn&rsquo;t, the banner tells you something more serious might be going on.</p>
 
-        <h3>The Dark Theme</h3>
+        <h3 class="doc-section-subtitle">The Dark Theme</h3>
 
         <p>Yes, it&rsquo;s dark mode. No, there isn&rsquo;t a light mode. The decision was made early, it was made deliberately, and it will not be revisited. You&rsquo;re welcome.</p>
     </div>
@@ -89,22 +89,21 @@
     <!-- ============================================ -->
     <!-- SECTION: What the Colors Mean -->
     <!-- ============================================ -->
-    <div class="section">
-        <h2>What the Colors Mean</h2>
+    <div class="doc-section">
+        <h2 class="doc-section-title">What the Colors Mean</h2>
 
         <p>Color is used consistently across every page to communicate status at a glance:</p>
 
-        <table>
+        <table class="doc-info-table">
             <thead>
-                <tr><th>Color</th><th>What It Means</th></tr>
+                <tr><th class="doc-info-table-th">Color</th><th class="doc-info-table-th">What It Means</th></tr>
             </thead>
             <tbody>
-                <tr><td style="color: #4ec9b0;"><strong>Green</strong></td><td>Healthy, successful, good throughput. Things are working as expected.</td></tr>
-                <tr><td style="color: #dcdcaa;"><strong>Yellow</strong></td><td>Warning. Worth a look, not yet a problem. Approaching a threshold.</td></tr>
-                <tr><td style="color: #ce9178;"><strong>Orange</strong></td><td>Critical. Action recommended. A threshold has been crossed.</td></tr>
-                <tr><td style="color: #f44747;"><strong>Red</strong></td><td>Errors, failures, crisis. Something needs attention now.</td></tr>
-                <tr><td style="color: #569cd6;"><strong>Blue</strong></td><td>In progress. Something is actively running or processing.</td></tr>
-                <tr><td style="color: #d4d4d4;"><strong>White/Gray</strong></td><td>Informational. Neutral data with no status implication.</td></tr>
+                <tr><td class="doc-info-table-td doc-status-success"><strong>Green</strong></td><td class="doc-info-table-td">Healthy, successful, good throughput. Things are working as expected.</td></tr>
+                <tr><td class="doc-info-table-td doc-status-warning"><strong>Yellow</strong></td><td class="doc-info-table-td">Warning. Worth a look, not yet a problem. Approaching a threshold.</td></tr>
+                <tr><td class="doc-info-table-td doc-status-critical"><strong>Red</strong></td><td class="doc-info-table-td">Errors, failures, crisis. Something needs attention now.</td></tr>
+                <tr><td class="doc-info-table-td doc-status-progress"><strong>Blue</strong></td><td class="doc-info-table-td">In progress. Something is actively running or processing.</td></tr>
+                <tr><td class="doc-info-table-td doc-info-table-td-last doc-status-info"><strong>White/Gray</strong></td><td class="doc-info-table-td doc-info-table-td-last">Informational. Neutral data with no status implication.</td></tr>
             </tbody>
         </table>
 
@@ -114,8 +113,8 @@
     <!-- ============================================ -->
     <!-- SECTION: Interactive Elements -->
     <!-- ============================================ -->
-    <div class="section">
-        <h2>Interactive Elements</h2>
+    <div class="doc-section">
+        <h2 class="doc-section-title">Interactive Elements</h2>
 
         <p>The Control Center isn&rsquo;t just a wall of numbers. Most pages have interactive elements that let you dig deeper.</p>
 
@@ -131,26 +130,26 @@
     <!-- ============================================ -->
     <!-- SECTION: The Administration Page -->
     <!-- ============================================ -->
-    <div class="section">
-        <h2>The Administration Page</h2>
+    <div class="doc-section">
+        <h2 class="doc-section-title">The Administration Page</h2>
 
         <p>If you see a small gear icon (&#9881;) in the top-right corner of the home page, you have access to the Administration page. If you don&rsquo;t see it, you don&rsquo;t &mdash; and that&rsquo;s by design.</p>
 
         <p>The Administration page is where the platform itself is managed. It&rsquo;s the dashboard for the people who keep xFACts running, as opposed to the people who use it to keep everything <em>else</em> running.</p>
 
-        <h3>Process Grid</h3>
+        <h3 class="doc-section-subtitle">Process Grid</h3>
 
         <p>Every automated process in xFACts appears as a card in the Process Grid. Each card shows the process name, its last execution status, a countdown to the next run, and daily success/failure counts. Cards are color-coded &mdash; green for success, red for failure, blue for running, gray for disabled. Click a card to see its recent execution history.</p>
 
-        <h3>Engine Controls</h3>
+        <h3 class="doc-section-subtitle">Engine Controls</h3>
 
         <p>The center column has controls for the orchestrator engine itself. A drain mode switch lets you gracefully wind down all processes before a server restart &mdash; no new launches while currently running processes finish up. Service controls let you stop, start, or restart the orchestrator once it&rsquo;s drained. These controls are deliberately restrictive. You can&rsquo;t restart a running engine without draining it first.</p>
 
-        <h3>Execution Timeline</h3>
+        <h3 class="doc-section-subtitle">Execution Timeline</h3>
 
         <p>A visual canvas showing every process execution across time. Each process gets a row, and each execution is a colored bar. It&rsquo;s the quickest way to answer &ldquo;what happened in the last 30 minutes?&rdquo; without reading a single log entry. Hover a bar for details, click it for the full story.</p>
 
-        <h3>Platform Management</h3>
+        <h3 class="doc-section-subtitle">Platform Management</h3>
 
         <p>Below the timeline, a row of management tools provides access to the inner workings:</p>
 
@@ -166,8 +165,8 @@
     <!-- ============================================ -->
     <!-- SECTION: How It's Built -->
     <!-- ============================================ -->
-    <div class="section">
-        <h2>How It&rsquo;s Built</h2>
+    <div class="doc-section">
+        <h2 class="doc-section-title">How It&rsquo;s Built</h2>
 
         <p>The Control Center runs on Pode, a web framework written in PowerShell. That means the same language that collects the data, processes the alerts, and runs the orchestrator is also the language that serves the web pages. One language, one team, no translation layer.</p>
 
@@ -175,7 +174,7 @@
 
         <p>The separation is deliberate. Changing how something looks doesn&rsquo;t require touching how it works. Adding a new metric to an API doesn&rsquo;t require rebuilding the page layout. Each piece has one job and does it independently.</p>
 
-        <div class="callout info">
+        <div class="doc-callout doc-info">
             <p>The entire Control Center &mdash; every page, every API, every stylesheet &mdash; lives in one folder on one server. There&rsquo;s no build process, no deployment pipeline, no container orchestration. Update a file, restart the service, and the change is live. It&rsquo;s the kind of simplicity you can only get when you&rsquo;re not trying to impress anyone with your infrastructure.</p>
         </div>
     </div>
@@ -183,8 +182,8 @@
     <!-- ============================================ -->
     <!-- SECTION: Finding Help -->
     <!-- ============================================ -->
-    <div class="section">
-        <h2>Finding Help</h2>
+    <div class="doc-section">
+        <h2 class="doc-section-title">Finding Help</h2>
 
         <p>Each monitoring module has its own documentation page right here in xFACts Secrets Revealed. Those pages explain what the module monitors, why it exists, and how it works. They&rsquo;re written for a general audience &mdash; you don&rsquo;t need to be technical to follow along.</p>
 
@@ -194,19 +193,19 @@
     </div>
 
     <!-- Architecture Link -->
-    <div style="text-align: center;">
-        <a href="arch/controlcenter-arch.html" class="ref-link">&#x1F527; The Control Center Architecture &mdash; Pode, routing, authentication, and the four-file pattern</a>
+    <div class="doc-ref-link-group">
+        <a href="arch/controlcenter-arch.html" class="doc-ref-link">&#x1F527; The Control Center Architecture &mdash; Pode, routing, authentication, and the four-file pattern</a>
     </div>
 
     <!-- Contributing -->
-    <div class="callout tip">
+    <div class="doc-callout doc-tip">
         <p><strong>Contributing:</strong> This platform is designed to grow organically. If you have a manual process, monitoring need, or utility that could benefit from centralization, contact the <a href="mailto:applications@frost-arnett.com?subject=xFACts%20New%20Module%20Request&body=I%20would%20like%20to%20submit%20a%20possible%20process%20for%20consideration%20as%20an%20xFACts%20module.%0A%0AProcess%20Name%3A%0ACurrent%20Method%3A%0ABusiness%20Need%3A%0A%0A">Applications Team</a> to discuss adding it as an xFACts module.</p>
     </div>
 
     <!-- Footer -->
     <div class="doc-footer">
-        <p><a href="index.html" style="color: var(--accent-blue); text-decoration: none;">&larr; Back to xFACts Secrets Revealed</a></p>
-        <p style="margin-top: 8px;">Applications Team, Frost Arnett</p>
+        <p><a href="index.html" class="doc-footer-link">&larr; Back to xFACts Secrets Revealed</a></p>
+        <p class="doc-footer-line">Applications Team, Frost Arnett</p>
     </div>
 
 </div>
