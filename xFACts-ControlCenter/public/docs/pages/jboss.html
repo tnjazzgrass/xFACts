@@ -9,27 +9,27 @@
 </head>
 <body>
 
-<div class="page-wrapper">
+<div class="doc-page-wrapper">
 
     <!-- Header -->
-    <div class="page-header">
-        <h1>JBoss Monitoring</h1>
-        <div class="subtitle">Cracking open the JBoss black box &mdash; because &ldquo;have you tried restarting it?&rdquo; is not a monitoring strategy</div>
+    <div class="doc-page-header">
+        <h1 class="doc-page-title">JBoss Monitoring</h1>
+        <div class="doc-page-subtitle">Cracking open the JBoss black box &mdash; because &ldquo;have you tried restarting it?&rdquo; is not a monitoring strategy</div>
     </div>
 
     <!-- Navigation (populated by nav.js) -->
     <div class="doc-nav"></div>
 
     <!-- Where This Fits -->
-    <div class="context-bar">
+    <div class="doc-context-bar">
         Debt Manager runs on JBoss. JBoss runs on three application servers. When one of those servers decides to take an unscheduled nap, nobody knows until users start complaining and the database starts screaming. This module watches the application servers directly &mdash; not the database symptoms, but the actual engines that run DM.
     </div>
 
     <!-- ============================================ -->
     <!-- SECTION: The Black Box -->
     <!-- ============================================ -->
-    <div class="section">
-        <h2>The Black Box</h2>
+    <div class="doc-section">
+        <h2 class="doc-section-title">The Black Box</h2>
 
         <p>Here&rsquo;s a fun fact: the team responsible for keeping Debt Manager running has never had any real visibility into the application servers that host it.</p>
 
@@ -43,22 +43,22 @@
     <!-- ============================================ -->
     <!-- SECTION: What We're Watching -->
     <!-- ============================================ -->
-    <div class="section">
-        <h2>What We&rsquo;re Watching</h2>
+    <div class="doc-section">
+        <h2 class="doc-section-title">What We&rsquo;re Watching</h2>
 
-        <div class="flow-diagram">
-            <div class="flow-steps">
-                <div class="flow-step blue">Is It<br>Alive?</div>
-                <span class="flow-arrow">&rarr;</span>
-                <div class="flow-step green">Is the Engine<br>Running?</div>
-                <span class="flow-arrow">&rarr;</span>
-                <div class="flow-step orange">How Is It<br>Feeling?</div>
-                <span class="flow-arrow">&rarr;</span>
-                <div class="flow-step purple">Are the Queues<br>Flowing?</div>
-                <span class="flow-arrow">&rarr;</span>
-                <div class="flow-step muted-step">Did Anything<br>Change?</div>
+        <div class="doc-flow-diagram">
+            <div class="doc-flow-steps">
+                <div class="doc-flow-step doc-flow-blue">Is It<br>Alive?</div>
+                <span class="doc-flow-arrow">&rarr;</span>
+                <div class="doc-flow-step doc-flow-green">Is the Engine<br>Running?</div>
+                <span class="doc-flow-arrow">&rarr;</span>
+                <div class="doc-flow-step doc-flow-orange">How Is It<br>Feeling?</div>
+                <span class="doc-flow-arrow">&rarr;</span>
+                <div class="doc-flow-step doc-flow-purple">Are the Queues<br>Flowing?</div>
+                <span class="doc-flow-arrow">&rarr;</span>
+                <div class="doc-flow-step doc-flow-muted">Did Anything<br>Change?</div>
             </div>
-            <div class="flow-caption">Five questions, three servers, every 60 seconds</div>
+            <div class="doc-flow-caption">Five questions, three servers, every 60 seconds</div>
         </div>
 
         <p>On each scheduled execution the script reaches out to all three DM application servers and asks a series of increasingly nosy questions.</p>
@@ -77,8 +77,8 @@
     <!-- ============================================ -->
     <!-- SECTION: Three Servers, Three Personalities -->
     <!-- ============================================ -->
-    <div class="section">
-        <h2>Three Servers, Three Personalities</h2>
+    <div class="doc-section">
+        <h2 class="doc-section-title">Three Servers, Three Personalities</h2>
 
         <p>The DM environment runs across three application servers, and they are not created equal.</p>
 
@@ -94,8 +94,8 @@
     <!-- ============================================ -->
     <!-- SECTION: The Control Center View -->
     <!-- ============================================ -->
-    <div class="section">
-        <h2>The Control Center View</h2>
+    <div class="doc-section">
+        <h2 class="doc-section-title">The Control Center View</h2>
 
         <p>The monitoring page shows all three servers side by side. Each server card is a self-contained health dashboard: status badges across the top for quick pass/fail, then a stack of metric cards showing what&rsquo;s happening inside the engine.</p>
 
@@ -107,8 +107,8 @@
     <!-- ============================================ -->
     <!-- SECTION: The Bottom Line -->
     <!-- ============================================ -->
-    <div class="section">
-        <h2>The Bottom Line</h2>
+    <div class="doc-section">
+        <h2 class="doc-section-title">The Bottom Line</h2>
 
         <p>For years, the application servers were the one part of the Debt Manager stack we couldn&rsquo;t see into. The database? Monitored to the millisecond. The batch pipeline? Tracked through every status change. The app servers? &ldquo;Restart them and hope for the best.&rdquo;</p>
 
@@ -118,22 +118,22 @@
     </div>
 
     <!-- Architecture & Reference Links -->
-    <div style="text-align: center;">
-        <a href="arch/jboss-arch.html" class="ref-link">&#x1F527; JBoss Monitoring Architecture &mdash; How we cracked JBoss open</a>
+    <div class="doc-ref-link-group">
+        <a href="arch/jboss-arch.html" class="doc-ref-link">&#x1F527; JBoss Monitoring Architecture &mdash; How we cracked JBoss open</a>
     </div>
-    <div style="text-align: center; margin-top: 8px;">
-        <a href="ref/jboss-ref.html" class="ref-link">&#x1F4CB; JBoss Monitoring Reference &mdash; Full technical details, DDL, and operational queries</a>
+    <div class="doc-ref-link-group-following">
+        <a href="ref/jboss-ref.html" class="doc-ref-link">&#x1F4CB; JBoss Monitoring Reference &mdash; Full technical details, DDL, and operational queries</a>
     </div>
 
     <!-- Contributing -->
-    <div class="callout tip">
+    <div class="doc-callout doc-tip">
         <p><strong>Contributing:</strong> This platform is designed to grow organically. If you have a manual process, monitoring need, or utility that could benefit from centralization, contact the <a href="mailto:applications@frost-arnett.com?subject=xFACts%20New%20Module%20Request&body=I%20would%20like%20to%20submit%20a%20possible%20process%20for%20consideration%20as%20an%20xFACts%20module.%0A%0AProcess%20Name%3A%0ACurrent%20Method%3A%0ABusiness%20Need%3A%0A%0A">Applications Team</a> to discuss adding it as an xFACts module.</p>
     </div>
 
     <!-- Footer -->
     <div class="doc-footer">
-        <p><a href="index.html" style="color: var(--accent-blue); text-decoration: none;">&larr; Back to xFACts Secrets Revealed</a></p>
-        <p style="margin-top: 8px;">Applications Team, Frost Arnett</p>
+        <p><a href="index.html" class="doc-footer-link">&larr; Back to xFACts Secrets Revealed</a></p>
+        <p class="doc-footer-line">Applications Team, Frost Arnett</p>
     </div>
 
 </div>
