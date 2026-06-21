@@ -73,6 +73,14 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-06-20  Added Get-ZoneChromePrefix: the single code-side expression of the
+#             CC_CSS_Spec.md / CC_JS_Spec.md Section 5.1 zone-to-chrome-prefix
+#             map (cc -> cc, docs -> doc), consumed by the CSS and JS populators
+#             so the shell-prefix check is zone-aware rather than hardcoding 'cc'.
+#             Simplified Test-PrefixValueIsValid: dropped the now-redundant 'cc'
+#             special-case branch (the single-token fallthrough already accepts
+#             it); validity is shape-only, with context-correctness enforced by
+#             the SHELL_SECTION_INVALID_PREFIX / PREFIX_REGISTRY_MISMATCH checks.
 # 2026-06-18  Added PS function fingerprinting: a new FUNCTIONS: PS FUNCTION
 #             FINGERPRINTING section (Get-PSFunctionFingerprints plus the
 #             Get-Sha256Hex, Get-PSFunctionBodyTokens, Get-PSFunctionBodyAnd-
@@ -97,14 +105,14 @@
 # 2026-05-31  Lifted Format-SingleLine into the shared library (was duplicated
 #             identically in the CSS and PS populators). Callers dot-source this
 #             file, so the local definitions are removed.
-# 2026-05-31  FK flag-day: Invoke-AssetRegistryBulkInsert now takes the combined
+#             FK flag-day: Invoke-AssetRegistryBulkInsert now takes the combined
 #             zone/scope map (file_name -> @{ RegistryId; ... }) and reads
 #             .RegistryId for object_registry_id, instead of a flat
 #             file_name -> registry_id map. All four populators pass their
 #             combined map directly; the transitional projection shims are
 #             removed. Get-ObjectRegistryMap was retired (no remaining callers;
 #             the combined map fully replaces it).
-# 2026-05-31  Get-ObjectRegistryZoneScopeMap now also returns ObjectType
+#             Get-ObjectRegistryZoneScopeMap now also returns ObjectType
 #             (Route / API / Module / CSS / etc.) so the HTML populator can
 #             classify each host file from the same single query. Additive;
 #             existing callers are unaffected.
@@ -1232,12 +1240,36 @@ function Test-PrefixValueIsValid {
     # Reject multi-token forms: any embedded whitespace or comma is drift.
     if ($val -match '[\s,]') { return $false }
     if ([string]::IsNullOrEmpty($val)) { return $false }
-    if ($val -eq 'cc') { return $true }
-    # Page-prefix shape: any non-empty single token survives here. The
-    # registry's CK constraint enforces the actual shape (3 ASCII chars:
-    # lowercase letter, then letter-or-digit, then lowercase letter;
-    # this validator just enforces single-token-ness.
+    # Any non-empty single token is well-formed here. This validator only
+    # checks shape (single token, no whitespace, no comma); whether the value
+    # is correct for the section it appears in -- the page prefix in page-file
+    # sections, the zone chrome prefix in shell-file chrome sections -- is the
+    # PREFIX_REGISTRY_MISMATCH / SHELL_SECTION_INVALID_PREFIX checks' job. The
+    # registry's CK constraint enforces the page-prefix character shape
+    # (3 ASCII chars: lowercase letter, then letter-or-digit, then lowercase
+    # letter); the chrome prefix is supplied by Get-ZoneChromePrefix.
     return $true
+}
+
+# Return the chrome prefix for a zone. The chrome prefix is the token that
+# FOUNDATION, CHROME, and shell-file FEEDBACK_OVERLAYS banners declare in the
+# zone's shell file, and that every identifier in the shell file carries.
+# Unlike the page prefix (sourced per component from Component_Registry.cc_prefix),
+# the chrome prefix is a fixed per-zone constant defined by this map -- it is not
+# stored in the registry, because the shell file has no page prefix of its own.
+# The CC_CSS_Spec.md / CC_JS_Spec.md Section 5.1 zone-to-chrome-prefix map is the
+# authority; this function is its single code-side expression, consumed by both
+# the CSS and JS populators. Adding a zone requires a spec amendment and a new
+# entry here. A zone not in the map returns $null, and callers skip the
+# shell-prefix check rather than assume a value.
+function Get-ZoneChromePrefix {
+    param([string]$Zone)
+    $map = @{
+        'cc'   = 'cc'
+        'docs' = 'doc'
+    }
+    if ($null -ne $Zone -and $map.ContainsKey($Zone)) { return $map[$Zone] }
+    return $null
 }
 
 <# ============================================================================
