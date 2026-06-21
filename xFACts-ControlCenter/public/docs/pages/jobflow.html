@@ -8,20 +8,24 @@
     <link rel="stylesheet" href="../css/docs-narrative.css">
 </head>
 <body>
+<div class="doc-layout">
 
-<div class="doc-page-wrapper">
+    <nav class="doc-nav"></nav>
 
-    <!-- Header -->
-    <div class="doc-page-header">
-        <h1 class="doc-page-title">Job/Flow Monitoring</h1>
-        <div class="doc-page-subtitle">Catching overnight problems at 2:30 AM instead of 9 AM</div>
-    </div>
+    <div class="doc-content">
 
-    <!-- Navigation (populated by nav.js) -->
-    <div class="doc-nav"></div>
+        <div class="doc-header">
+            <div class="doc-header-inner">
+                <h1 class="doc-page-title">Job/Flow Monitoring</h1>
+                <div class="doc-page-subtitle">Catching overnight problems at 2:30 AM instead of 9 AM</div>
+                <div class="doc-subpage-links"></div>
+            </div>
+        </div>
 
-    <!-- Where This Fits -->
-    <div class="doc-context-bar">
+        <div class="doc-body">
+            <div class="doc-body-inner">
+
+<div class="doc-context-bar">
         Every job that runs through Debt Manager's processing engine &mdash; whether it's part of the nightly flows or an ad-hoc execution during the day &mdash; is tracked by JobFlow. Several hundred jobs run overnight alone. Before JobFlow, a failure at 2 AM meant nobody found out until 9 AM. Now the detection window is minutes instead of hours. That's the difference between "minor inconvenience" and "all-hands emergency meeting with people who haven't had coffee yet."
     </div>
 
@@ -130,27 +134,14 @@
         <p>Because "I didn't know" is never a good answer when someone asks why the jobs didn't run.</p>
     </div>
 
-    <!-- Architecture & Reference Links -->
-    <div class="doc-ref-link-group">
-        <a href="arch/jobflow-arch.html" class="doc-ref-link">&#x1F527; Job/Flow Monitoring Architecture &mdash; How the monitoring works under the hood</a>
-    </div>
-    <div class="doc-ref-link-group-following">
-        <a href="ref/jobflow-ref.html" class="doc-ref-link">&#x1F4CB; Job/Flow Monitoring Reference &mdash; Full technical details, DDL, and operational queries</a>
-    </div>
+                <div class="doc-footer"></div>
 
-    <!-- Contributing -->
-    <div class="doc-callout doc-tip">
-        <p><strong>Contributing:</strong> This platform is designed to grow organically. If you have a manual process, monitoring need, or utility that could benefit from centralization, contact the <a href="mailto:applications@frost-arnett.com?subject=xFACts%20New%20Module%20Request&body=I%20would%20like%20to%20submit%20a%20possible%20process%20for%20consideration%20as%20an%20xFACts%20module.%0A%0AProcess%20Name%3A%0ACurrent%20Method%3A%0ABusiness%20Need%3A%0A%0A">Applications Team</a> to discuss adding it as an xFACts module.</p>
-    </div>		
+            </div>
+        </div>
 
-    <!-- Footer -->
-    <div class="doc-footer">
-        <p><a href="index.html" class="doc-footer-link">&larr; Back to xFACts Secrets Revealed</a></p>
-        <p class="doc-footer-line">Applications Team, Frost Arnett</p>
     </div>
 
 </div>
-
 <script src="../js/nav.js"></script>
 </body>
 </html>
