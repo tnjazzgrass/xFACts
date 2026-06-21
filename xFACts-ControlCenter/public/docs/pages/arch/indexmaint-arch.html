@@ -3,122 +3,122 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Index Maintenance Architecture — xFACts Secrets Revealed</title>
+    <title>Index Maintenance Architecture &mdash; xFACts Secrets Revealed</title>
     <link rel="stylesheet" href="../../css/docs-base.css">
     <link rel="stylesheet" href="../../css/docs-architecture.css">
     <link rel="stylesheet" href="../../css/docs-erd.css">
 </head>
 <body>
 
-<div class="page-wrapper">
+<div class="doc-page-wrapper doc-arch-page-wrapper">
 
     <!-- Header -->
-    <div class="page-header">
-        <h1>Index Maintenance Architecture</h1>
-        <div class="subtitle">How thousands of indexes get discovered, evaluated, prioritized, and rebuilt &mdash; without ever stepping on production's toes</div>
+    <div class="doc-page-header">
+        <h1 class="doc-page-title">Index Maintenance Architecture</h1>
+        <div class="doc-page-subtitle">How thousands of indexes get discovered, evaluated, prioritized, and rebuilt &mdash; without ever stepping on production's toes</div>
     </div>
 
     <!-- Sticky Section Nav -->
-    <div class="section-nav">
-        <div class="section-nav-top"></div>
-        <div class="section-nav-links">
-            <a href="#erd">Schema Overview</a>
-            <a href="#four-phases">The Four Phases</a>
-            <a href="#scheduling">Scheduling Hierarchy</a>
-            <a href="#priority">Priority Scoring</a>
-            <a href="#queue">The Living Queue</a>
-            <a href="#statistics">Statistics Maintenance</a>
-            <a href="#troubleshooting">Troubleshooting</a>
-            <a href="#connections">How Everything Connects</a>
+    <div class="doc-section-nav">
+        <div class="doc-section-nav-top"></div>
+        <div class="doc-section-nav-links">
+            <a href="#erd" class="doc-section-nav-jump">Schema Overview</a>
+            <a href="#four-phases" class="doc-section-nav-jump">The Four Phases</a>
+            <a href="#scheduling" class="doc-section-nav-jump">Scheduling Hierarchy</a>
+            <a href="#priority" class="doc-section-nav-jump">Priority Scoring</a>
+            <a href="#queue" class="doc-section-nav-jump">The Living Queue</a>
+            <a href="#statistics" class="doc-section-nav-jump">Statistics Maintenance</a>
+            <a href="#troubleshooting" class="doc-section-nav-jump">Troubleshooting</a>
+            <a href="#connections" class="doc-section-nav-jump">How Everything Connects</a>
         </div>
     </div>
 
     <!-- Context Bar -->
-    <div class="context-bar">
+    <div class="doc-context-bar">
         The narrative page tells you <em>what</em> Index Maintenance does and <em>why</em>. This page tells you <em>how</em>. Ten tables, two stored procedures, five PowerShell scripts, and a shared function library that manage the entire lifecycle of index maintenance across every enrolled database &mdash; from discovery through fragmentation scanning, priority-based rebuild execution, and targeted statistics updates.
     </div>
 
     <!-- TODO: Remove this callout once Index Maintenance scripts are scheduled via Orchestrator ProcessRegistry -->
-    <div class="callout info">
+    <div class="doc-callout doc-info">
         <p><strong>Current execution model:</strong> Index Maintenance scripts are currently executed manually rather than scheduled through the Orchestrator. The four scripts (Sync, Scan, Execute, Statistics) are run on-demand by the Applications Team. Orchestrator scheduling is planned but pending additional work on the scripts. References to scheduling in this page describe the maintenance <em>window</em> system (which hours are safe for rebuilds), not the orchestrator process schedule.</p>
     </div>
 
     <!-- ============================================ -->
     <!-- SECTION: Schema Overview / ERD -->
     <!-- ============================================ -->
-    <div class="section" id="erd">
-        <h2>Schema Overview</h2>
+    <div class="doc-section" id="erd">
+        <h2 class="doc-section-title">Schema Overview</h2>
 
         <p>The Index component has the largest table footprint in ServerOps. That's because it manages three distinct concerns: <em>configuration</em> (what gets maintained, when, and how aggressively), <em>state</em> (what's fragmented, what's queued, what's in progress), and <em>history</em> (what happened, how long it took, and whether the estimates were right).</p>
 
         <div class="erd-root" data-schema="ServerOps" data-category="Index"></div>
 
-        <table class="info-table">
-            <thead><tr><th>Table</th><th>Role</th><th>Cardinality</th></tr></thead>
+        <table class="doc-info-table">
+            <thead><tr><th class="doc-info-table-th">Table</th><th class="doc-info-table-th">Role</th><th class="doc-info-table-th">Cardinality</th></tr></thead>
             <tbody>
-                <tr><td><code>Index_DatabaseConfig</code></td><td>Per-database enrollment and feature flags</td><td>One per monitored database</td></tr>
-                <tr><td><code>Index_DatabaseSchedule</code></td><td>Default maintenance windows (24-hour &times; 7-day grid)</td><td>Seven per database (one per day of week)</td></tr>
-                <tr><td><code>Index_HolidaySchedule</code></td><td>Holiday maintenance windows</td><td>One per database</td></tr>
-                <tr><td><code>Index_ExceptionSchedule</code></td><td>Ad-hoc overrides for specific dates</td><td>Many per date/scope combination</td></tr>
-                <tr><td><code>Index_Registry</code></td><td>Central catalog of all tracked indexes</td><td>Many per database (one per index)</td></tr>
-                <tr><td><code>Index_Queue</code></td><td>Pending rebuild operations with priority scores</td><td>Many per database (indexes above threshold)</td></tr>
-                <tr><td><code>Index_ExecutionLog</code></td><td>Per-index rebuild execution details</td><td>Many per database over time</td></tr>
-                <tr><td><code>Index_ExecutionSummary</code></td><td>Per-database, per-run summary records</td><td>Many per process per run</td></tr>
-                <tr><td><code>Index_StatsExecutionLog</code></td><td>Statistics update execution details</td><td>Many per database over time</td></tr>
-                <tr><td><code>Index_Status</code></td><td>At-a-glance status for each process</td><td>Fixed: one row per process type</td></tr>
+                <tr><td class="doc-info-table-td"><code>Index_DatabaseConfig</code></td><td class="doc-info-table-td">Per-database enrollment and feature flags</td><td class="doc-info-table-td">One per monitored database</td></tr>
+                <tr><td class="doc-info-table-td"><code>Index_DatabaseSchedule</code></td><td class="doc-info-table-td">Default maintenance windows (24-hour &times; 7-day grid)</td><td class="doc-info-table-td">Seven per database (one per day of week)</td></tr>
+                <tr><td class="doc-info-table-td"><code>Index_HolidaySchedule</code></td><td class="doc-info-table-td">Holiday maintenance windows</td><td class="doc-info-table-td">One per database</td></tr>
+                <tr><td class="doc-info-table-td"><code>Index_ExceptionSchedule</code></td><td class="doc-info-table-td">Ad-hoc overrides for specific dates</td><td class="doc-info-table-td">Many per date/scope combination</td></tr>
+                <tr><td class="doc-info-table-td"><code>Index_Registry</code></td><td class="doc-info-table-td">Central catalog of all tracked indexes</td><td class="doc-info-table-td">Many per database (one per index)</td></tr>
+                <tr><td class="doc-info-table-td"><code>Index_Queue</code></td><td class="doc-info-table-td">Pending rebuild operations with priority scores</td><td class="doc-info-table-td">Many per database (indexes above threshold)</td></tr>
+                <tr><td class="doc-info-table-td"><code>Index_ExecutionLog</code></td><td class="doc-info-table-td">Per-index rebuild execution details</td><td class="doc-info-table-td">Many per database over time</td></tr>
+                <tr><td class="doc-info-table-td"><code>Index_ExecutionSummary</code></td><td class="doc-info-table-td">Per-database, per-run summary records</td><td class="doc-info-table-td">Many per process per run</td></tr>
+                <tr><td class="doc-info-table-td"><code>Index_StatsExecutionLog</code></td><td class="doc-info-table-td">Statistics update execution details</td><td class="doc-info-table-td">Many per database over time</td></tr>
+                <tr><td class="doc-info-table-td doc-info-table-td-last"><code>Index_Status</code></td><td class="doc-info-table-td doc-info-table-td-last">At-a-glance status for each process</td><td class="doc-info-table-td doc-info-table-td-last">Fixed: one row per process type</td></tr>
             </tbody>
         </table>
 
-        <div class="tech-tip">
-            <strong>Configuration vs. Scheduling vs. Execution.</strong> The four configuration tables (DatabaseConfig, DatabaseSchedule, HolidaySchedule, ExceptionSchedule) define the rules. Index_Registry and Index_Queue represent current state. The three execution log tables record history. This separation means you can change scheduling rules without affecting the queue, and queue state doesn't pollute execution history.
+        <div class="doc-tech-tip">
+            <strong class="doc-tech-tip-label">Configuration vs. Scheduling vs. Execution.</strong> The four configuration tables (DatabaseConfig, DatabaseSchedule, HolidaySchedule, ExceptionSchedule) define the rules. Index_Registry and Index_Queue represent current state. The three execution log tables record history. This separation means you can change scheduling rules without affecting the queue, and queue state doesn't pollute execution history.
         </div>
     </div>
 
     <!-- ============================================ -->
     <!-- SECTION: The Four Phases -->
     <!-- ============================================ -->
-    <div class="section" id="four-phases">
-        <h2>The Four Phases</h2>
+    <div class="doc-section" id="four-phases">
+        <h2 class="doc-section-title">The Four Phases</h2>
 
         <p>Index maintenance operates as a pipeline with four phases, each handled by a dedicated script. The phases build on each other &mdash; you can't scan what hasn't been discovered, and you can't rebuild what hasn't been scanned.</p>
 
         <!-- Four-phase pipeline diagram -->
-        <div class="arch-flow">
-            <div class="arch-flow-steps">
-                <div class="arch-flow-step blue">
-                    <div class="arch-flow-step-title">Phase 1: Sync</div>
-                    <div class="arch-flow-step-detail">Discover indexes<br>Refresh metadata<br>Mark dropped</div>
+        <div class="doc-arch-flow">
+            <div class="doc-arch-flow-steps">
+                <div class="doc-arch-flow-step doc-flow-blue">
+                    <div class="doc-arch-flow-step-title">Phase 1: Sync</div>
+                    <div class="doc-arch-flow-step-detail">Discover indexes<br>Refresh metadata<br>Mark dropped</div>
                 </div>
-                <span class="arch-flow-arrow">&rarr;</span>
-                <div class="arch-flow-step green">
-                    <div class="arch-flow-step-title">Phase 2: Scan</div>
-                    <div class="arch-flow-step-detail">Measure fragmentation<br>Manage queue<br>Calculate priority</div>
+                <span class="doc-arch-flow-arrow">&rarr;</span>
+                <div class="doc-arch-flow-step doc-flow-green">
+                    <div class="doc-arch-flow-step-title">Phase 2: Scan</div>
+                    <div class="doc-arch-flow-step-detail">Measure fragmentation<br>Manage queue<br>Calculate priority</div>
                 </div>
-                <span class="arch-flow-arrow">&rarr;</span>
-                <div class="arch-flow-step orange">
-                    <div class="arch-flow-step-title">Phase 3: Execute</div>
-                    <div class="arch-flow-step-detail">Window-aware rebuilds<br>Best-fit selection<br>Continuous claiming</div>
+                <span class="doc-arch-flow-arrow">&rarr;</span>
+                <div class="doc-arch-flow-step doc-flow-orange">
+                    <div class="doc-arch-flow-step-title">Phase 3: Execute</div>
+                    <div class="doc-arch-flow-step-detail">Window-aware rebuilds<br>Best-fit selection<br>Continuous claiming</div>
                 </div>
-                <span class="arch-flow-arrow">&rarr;</span>
-                <div class="arch-flow-step purple">
-                    <div class="arch-flow-step-title">Phase 4: Stats</div>
-                    <div class="arch-flow-step-detail">Targeted updates<br>Modification-based<br>Staleness-based</div>
+                <span class="doc-arch-flow-arrow">&rarr;</span>
+                <div class="doc-arch-flow-step doc-flow-purple">
+                    <div class="doc-arch-flow-step-title">Phase 4: Stats</div>
+                    <div class="doc-arch-flow-step-detail">Targeted updates<br>Modification-based<br>Staleness-based</div>
                 </div>
             </div>
-            <div class="arch-flow-caption">Each phase has a dedicated script. Sync and Stats run frequently; Scan runs on a configurable interval; Execute runs during maintenance windows.</div>
+            <div class="doc-arch-flow-caption">Each phase has a dedicated script. Sync and Stats run frequently; Scan runs on a configurable interval; Execute runs during maintenance windows.</div>
         </div>
 
-        <h3>Phase 1: Discovery (Sync)</h3>
+        <h3 class="doc-section-subtitle">Phase 1: Discovery (Sync)</h3>
 
         <p><code>Sync-IndexRegistry.ps1</code> is the "cheap pass." It connects to each enrolled database and queries <code>sys.indexes</code>, <code>sys.dm_db_partition_stats</code>, and <code>sys.dm_db_index_usage_stats</code> to collect index metadata. New indexes are inserted into <code>Index_Registry</code>. Existing entries get refreshed metadata (page count, fill factor, usage statistics). Indexes that exist in the registry but not in the source are marked <code>is_dropped = 1</code>.</p>
 
         <p>This phase deliberately avoids fragmentation scanning. Querying <code>sys.indexes</code> and usage DMVs is lightweight &mdash; it completes in seconds per database. Fragmentation scanning via <code>sys.dm_db_index_physical_stats</code> can take 30&ndash;60 minutes for large databases. Separating the two means you get frequent discovery without frequent fragmentation cost.</p>
 
-        <div class="tech-tip">
-            <strong>Replication system table exclusion.</strong> The sync script excludes known replication system tables by name (<code>sysarticles</code>, <code>sysschemaarticles</code>, etc.) and by pattern (<code>MSpeer_%</code>, <code>MSpub_%</code>). These have system-managed indexes that should never be touched by automated maintenance.
+        <div class="doc-tech-tip">
+            <strong class="doc-tech-tip-label">Replication system table exclusion.</strong> The sync script excludes known replication system tables by name (<code>sysarticles</code>, <code>sysschemaarticles</code>, etc.) and by pattern (<code>MSpeer_%</code>, <code>MSpub_%</code>). These have system-managed indexes that should never be touched by automated maintenance.
         </div>
 
-        <h3>Phase 2: Scanning &amp; Queue Population</h3>
+        <h3 class="doc-section-subtitle">Phase 2: Scanning &amp; Queue Population</h3>
 
         <p><code>Scan-IndexFragmentation.ps1</code> is the "expensive pass." It queries <code>sys.dm_db_index_physical_stats</code> in <code>LIMITED</code> mode for each candidate index, updates <code>Index_Registry</code> with the current fragmentation percentage, and manages the <code>Index_Queue</code> as a living queue &mdash; adding indexes that exceed thresholds, updating existing entries, and removing entries that no longer qualify.</p>
 
@@ -126,7 +126,7 @@
 
         <p>The script supports both a configurable time limit and an abort flag in GlobalConfig. Both enable graceful termination of long-running scans, preserving all work completed before the stop.</p>
 
-        <h3>Phase 3: Rebuild Execution</h3>
+        <h3 class="doc-section-subtitle">Phase 3: Rebuild Execution</h3>
 
         <p><code>Execute-IndexMaintenance.ps1</code> processes the queue during maintenance windows. Before each database, it evaluates the three-tier schedule hierarchy to confirm the window is open. Before each individual index, it re-evaluates the schedule &mdash; if the window closes mid-batch, processing stops gracefully.</p>
 
@@ -134,97 +134,97 @@
 
         <p>Each rebuild follows a strict sequence: claim the queue entry (set <code>IN_PROGRESS</code>), log the pre-rebuild state to <code>Index_ExecutionLog</code>, execute <code>ALTER INDEX REBUILD</code>, scan post-rebuild fragmentation, calculate estimate variance, update the execution log, update <code>Index_Registry</code>, and delete the queue entry. If the rebuild fails, the queue entry is marked <code>FAILED</code> with an incremented deferral count.</p>
 
-        <div class="tech-tip">
-            <strong>Edition-aware online/offline.</strong> The <code>online_option</code> on each queue entry respects the database's <code>index_allow_offline_rebuild</code> setting. But if the SQL Server edition is not Enterprise, the script overrides to OFFLINE regardless &mdash; online rebuilds require Enterprise Edition. The override is noted in the execution log for transparency.
+        <div class="doc-tech-tip">
+            <strong class="doc-tech-tip-label">Edition-aware online/offline.</strong> The <code>online_option</code> on each queue entry respects the database's <code>index_allow_offline_rebuild</code> setting. But if the SQL Server edition is not Enterprise, the script overrides to OFFLINE regardless &mdash; online rebuilds require Enterprise Edition. The override is noted in the execution log for transparency.
         </div>
 
-        <h3>Phase 4: Statistics Maintenance</h3>
+        <h3 class="doc-section-subtitle">Phase 4: Statistics Maintenance</h3>
 
         <p><code>Update-IndexStatistics.ps1</code> runs independently from index rebuilds. It queries <code>sys.dm_db_stats_properties</code> for modification counters and evaluates each statistic against two criteria: modification threshold (percentage of rows modified) and staleness threshold (days since last update). Both thresholds are configurable via GlobalConfig.</p>
 
         <p>Statistics exceeding the modification threshold are updated individually and logged with full details (table, stat name, row count, modification counter, percentage modified). Stale statistics are updated in batch and logged as one cumulative row per database &mdash; this avoids flooding the log with hundreds of low-value "it was old" entries.</p>
 
-        <div class="tech-tip">
-            <strong>~2% vs 100%.</strong> Traditional statistics maintenance updates all statistics weekly regardless of need. The targeted approach typically finds only ~2% of statistics need updating on any given run, completing in seconds instead of minutes. Modification-based updates catch actively changing data; staleness-based updates catch distribution drift.
+        <div class="doc-tech-tip">
+            <strong class="doc-tech-tip-label">~2% vs 100%.</strong> Traditional statistics maintenance updates all statistics weekly regardless of need. The targeted approach typically finds only ~2% of statistics need updating on any given run, completing in seconds instead of minutes. Modification-based updates catch actively changing data; staleness-based updates catch distribution drift.
         </div>
     </div>
 
     <!-- ============================================ -->
     <!-- SECTION: Scheduling Hierarchy -->
     <!-- ============================================ -->
-    <div class="section" id="scheduling">
-        <h2>Scheduling Hierarchy</h2>
+    <div class="doc-section" id="scheduling">
+        <h2 class="doc-section-title">Scheduling Hierarchy</h2>
 
         <p>Not all maintenance windows are created equal. The system evaluates three layers of schedule configuration in strict priority order, stopping at the first match:</p>
 
         <!-- Schedule hierarchy diagram -->
-        <div class="arch-flow">
-            <div class="arch-flow-steps" style="flex-direction: column; gap: 12px;">
+        <div class="doc-arch-flow">
+            <div class="doc-arch-flow-steps doc-vertical">
                 <!-- Evaluation order -->
-                <div style="display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap;">
-                    <div class="arch-flow-step red">
-                        <div class="arch-flow-step-title">Exception</div>
-                        <div class="arch-flow-step-detail">DATABASE scope<br>&darr; SERVER scope<br>&darr; GLOBAL scope</div>
+                <div class="doc-arch-flow-row">
+                    <div class="doc-arch-flow-step doc-flow-red">
+                        <div class="doc-arch-flow-step-title">Exception</div>
+                        <div class="doc-arch-flow-step-detail">DATABASE scope<br>&darr; SERVER scope<br>&darr; GLOBAL scope</div>
                     </div>
-                    <span class="arch-flow-arrow">&rarr;</span>
-                    <div class="arch-flow-step orange">
-                        <div class="arch-flow-step-title">Holiday</div>
-                        <div class="arch-flow-step-detail">Is today a holiday?<br>Does this DB have<br>a holiday schedule?</div>
+                    <span class="doc-arch-flow-arrow">&rarr;</span>
+                    <div class="doc-arch-flow-step doc-flow-orange">
+                        <div class="doc-arch-flow-step-title">Holiday</div>
+                        <div class="doc-arch-flow-step-detail">Is today a holiday?<br>Does this DB have<br>a holiday schedule?</div>
                     </div>
-                    <span class="arch-flow-arrow">&rarr;</span>
-                    <div class="arch-flow-step blue">
-                        <div class="arch-flow-step-title">Default</div>
-                        <div class="arch-flow-step-detail">DatabaseSchedule<br>7 rows per DB<br>(one per weekday)</div>
+                    <span class="doc-arch-flow-arrow">&rarr;</span>
+                    <div class="doc-arch-flow-step doc-flow-blue">
+                        <div class="doc-arch-flow-step-title">Default</div>
+                        <div class="doc-arch-flow-step-detail">DatabaseSchedule<br>7 rows per DB<br>(one per weekday)</div>
                     </div>
-                    <span class="arch-flow-arrow">&rarr;</span>
-                    <div class="arch-flow-step green">
-                        <div class="arch-flow-step-title">Result</div>
-                        <div class="arch-flow-step-detail">24 hourly slots<br>allowed / blocked</div>
+                    <span class="doc-arch-flow-arrow">&rarr;</span>
+                    <div class="doc-arch-flow-step doc-flow-green">
+                        <div class="doc-arch-flow-step-title">Result</div>
+                        <div class="doc-arch-flow-step-detail">24 hourly slots<br>allowed / blocked</div>
                     </div>
                 </div>
             </div>
-            <div class="arch-flow-caption">First match wins. Exception overrides Holiday overrides Default. All three use the same 24-bit hourly structure.</div>
+            <div class="doc-arch-flow-caption">First match wins. Exception overrides Holiday overrides Default. All three use the same 24-bit hourly structure.</div>
         </div>
 
-        <table class="info-table">
-            <thead><tr><th>Priority</th><th>Schedule Type</th><th>Table</th><th>Example Use Case</th></tr></thead>
+        <table class="doc-info-table">
+            <thead><tr><th class="doc-info-table-th">Priority</th><th class="doc-info-table-th">Schedule Type</th><th class="doc-info-table-th">Table</th><th class="doc-info-table-th">Example Use Case</th></tr></thead>
             <tbody>
-                <tr><td>1 (highest)</td><td>Exception &mdash; DATABASE scope</td><td><code>Index_ExceptionSchedule</code></td><td>"Don't touch crs5_oltp Saturday &mdash; we have a release"</td></tr>
-                <tr><td>2</td><td>Exception &mdash; SERVER scope</td><td><code>Index_ExceptionSchedule</code></td><td>"Freeze all maintenance on DM-PROD-DB this weekend"</td></tr>
-                <tr><td>3</td><td>Exception &mdash; GLOBAL scope</td><td><code>Index_ExceptionSchedule</code></td><td>"No maintenance anywhere during month-end close"</td></tr>
-                <tr><td>4</td><td>Holiday</td><td><code>dbo.Holiday</code> + <code>Index_HolidaySchedule</code></td><td>Extended windows on holidays (offices empty, indexes happy)</td></tr>
-                <tr><td>5 (lowest)</td><td>Database default</td><td><code>Index_DatabaseSchedule</code></td><td>Regular weekday/weekend maintenance windows</td></tr>
+                <tr><td class="doc-info-table-td">1 (highest)</td><td class="doc-info-table-td">Exception &mdash; DATABASE scope</td><td class="doc-info-table-td"><code>Index_ExceptionSchedule</code></td><td class="doc-info-table-td">"Don't touch crs5_oltp Saturday &mdash; we have a release"</td></tr>
+                <tr><td class="doc-info-table-td">2</td><td class="doc-info-table-td">Exception &mdash; SERVER scope</td><td class="doc-info-table-td"><code>Index_ExceptionSchedule</code></td><td class="doc-info-table-td">"Freeze all maintenance on DM-PROD-DB this weekend"</td></tr>
+                <tr><td class="doc-info-table-td">3</td><td class="doc-info-table-td">Exception &mdash; GLOBAL scope</td><td class="doc-info-table-td"><code>Index_ExceptionSchedule</code></td><td class="doc-info-table-td">"No maintenance anywhere during month-end close"</td></tr>
+                <tr><td class="doc-info-table-td">4</td><td class="doc-info-table-td">Holiday</td><td class="doc-info-table-td"><code>dbo.Holiday</code> + <code>Index_HolidaySchedule</code></td><td class="doc-info-table-td">Extended windows on holidays (offices empty, indexes happy)</td></tr>
+                <tr><td class="doc-info-table-td doc-info-table-td-last">5 (lowest)</td><td class="doc-info-table-td doc-info-table-td-last">Database default</td><td class="doc-info-table-td doc-info-table-td-last"><code>Index_DatabaseSchedule</code></td><td class="doc-info-table-td doc-info-table-td-last">Regular weekday/weekend maintenance windows</td></tr>
             </tbody>
         </table>
 
         <p>All three schedule types use the same data structure: 24 bit columns (<code>hr00</code> through <code>hr23</code>) where 1 = allowed and 0 = blocked. <code>Get-EffectiveSchedule</code> in <code>xFACts-IndexFunctions.ps1</code> evaluates the hierarchy and returns a simple yes/no for the current hour.</p>
 
-        <h3>Extended Windows</h3>
+        <h3 class="doc-section-subtitle">Extended Windows</h3>
 
         <p>Weekends and holidays qualify as "extended window" days. This triggers a special behavior in <code>Execute-IndexMaintenance.ps1</code>: at startup, all <code>SCHEDULED</code> indexes (those too large for any weekday window) are reset to <code>PENDING</code> and become eligible for processing. This is the primary mechanism for handling large indexes that accumulate during the work week.</p>
 
-        <div class="tech-tip">
-            <strong>Holiday detection is a two-table check.</strong> <code>dbo.Holiday</code> defines which dates are holidays (shared across the platform). <code>Index_HolidaySchedule</code> defines per-database maintenance hours on those dates. Adding a new holiday only requires one Holiday row &mdash; all databases automatically get their existing HolidaySchedule applied.
+        <div class="doc-tech-tip">
+            <strong class="doc-tech-tip-label">Holiday detection is a two-table check.</strong> <code>dbo.Holiday</code> defines which dates are holidays (shared across the platform). <code>Index_HolidaySchedule</code> defines per-database maintenance hours on those dates. Adding a new holiday only requires one Holiday row &mdash; all databases automatically get their existing HolidaySchedule applied.
         </div>
     </div>
 
     <!-- ============================================ -->
     <!-- SECTION: Priority Scoring -->
     <!-- ============================================ -->
-    <div class="section" id="priority">
-        <h2>Priority Scoring</h2>
+    <div class="doc-section" id="priority">
+        <h2 class="doc-section-title">Priority Scoring</h2>
 
         <p>Not all fragmented indexes are equal. A heavily fragmented 10-million-page index on the primary OLTP database matters more than a mildly fragmented 5,000-page index on a reporting database. The priority scoring system quantifies this.</p>
 
         <p>Each queued index receives a score from four weighted components. All weights and tier boundaries are configurable via GlobalConfig (module <code>ServerOps</code>, category <code>Index</code>):</p>
 
-        <table class="info-table">
-            <thead><tr><th>Component</th><th>Factor</th><th>Tiers</th><th>Points</th></tr></thead>
+        <table class="doc-info-table">
+            <thead><tr><th class="doc-info-table-th">Component</th><th class="doc-info-table-th">Factor</th><th class="doc-info-table-th">Tiers</th><th class="doc-info-table-th">Points</th></tr></thead>
             <tbody>
-                <tr><td><strong>Database Priority</strong></td><td>How critical is this database?</td><td>Priority 1 / 2 / 3</td><td>40 / 25 / 15</td></tr>
-                <tr><td><strong>Fragmentation Severity</strong></td><td>How fragmented is this index?</td><td>Low / Medium / High</td><td>10 / 15 / 20</td></tr>
-                <tr><td><strong>Index Size</strong></td><td>How large is this index?</td><td>Small / Medium / Large</td><td>10 / 20 / 30</td></tr>
-                <tr><td><strong>Deferral Count</strong></td><td>How many times has this been skipped?</td><td>None / Some / Above threshold</td><td>0 / 5 / 10</td></tr>
+                <tr><td class="doc-info-table-td"><strong>Database Priority</strong></td><td class="doc-info-table-td">How critical is this database?</td><td class="doc-info-table-td">Priority 1 / 2 / 3</td><td class="doc-info-table-td">40 / 25 / 15</td></tr>
+                <tr><td class="doc-info-table-td"><strong>Fragmentation Severity</strong></td><td class="doc-info-table-td">How fragmented is this index?</td><td class="doc-info-table-td">Low / Medium / High</td><td class="doc-info-table-td">10 / 15 / 20</td></tr>
+                <tr><td class="doc-info-table-td"><strong>Index Size</strong></td><td class="doc-info-table-td">How large is this index?</td><td class="doc-info-table-td">Small / Medium / Large</td><td class="doc-info-table-td">10 / 20 / 30</td></tr>
+                <tr><td class="doc-info-table-td doc-info-table-td-last"><strong>Deferral Count</strong></td><td class="doc-info-table-td doc-info-table-td-last">How many times has this been skipped?</td><td class="doc-info-table-td doc-info-table-td-last">None / Some / Above threshold</td><td class="doc-info-table-td doc-info-table-td-last">0 / 5 / 10</td></tr>
             </tbody>
         </table>
 
@@ -232,129 +232,129 @@
 
         <p>The deferral component is the anti-starvation mechanism. Without it, large indexes on low-priority databases could be perpetually skipped by smaller, higher-priority work. Each time an index is evaluated but doesn't fit in the remaining window, its deferral count increments and its priority score increases. Eventually it rises high enough to be selected.</p>
 
-        <div class="tech-tip">
-            <strong>Calculate-PriorityScore lives in Scan-IndexFragmentation.ps1</strong> (defined inline, not in the shared function library). It reads all tier boundaries and point values from GlobalConfig at script startup, so adjusting the scoring model requires zero code changes &mdash; just update the config rows.
+        <div class="doc-tech-tip">
+            <strong class="doc-tech-tip-label">Calculate-PriorityScore lives in Scan-IndexFragmentation.ps1</strong> (defined inline, not in the shared function library). It reads all tier boundaries and point values from GlobalConfig at script startup, so adjusting the scoring model requires zero code changes &mdash; just update the config rows.
         </div>
     </div>
 
     <!-- ============================================ -->
     <!-- SECTION: The Living Queue -->
     <!-- ============================================ -->
-    <div class="section" id="queue">
-        <h2>The Living Queue</h2>
+    <div class="doc-section" id="queue">
+        <h2 class="doc-section-title">The Living Queue</h2>
 
         <p>The <code>Index_Queue</code> is not a static work list. It's a living reflection of what actually needs work right now. Indexes are added when they exceed thresholds, updated when rescanned, and automatically removed if they drop below threshold. If someone manually rebuilds an index, it drops off the queue on the next scan.</p>
 
-        <h3>Status Transitions</h3>
+        <h3 class="doc-section-subtitle">Status Transitions</h3>
 
         <!-- Queue status state machine diagram -->
-        <div class="arch-flow">
-            <div class="arch-flow-steps" style="flex-direction: column; gap: 12px;">
+        <div class="doc-arch-flow">
+            <div class="doc-arch-flow-steps doc-vertical">
                 <!-- Main flow -->
-                <div style="display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap;">
-                    <div class="arch-flow-step green">
-                        <div class="arch-flow-step-title">PENDING</div>
-                        <div class="arch-flow-step-detail">Awaiting<br>processing</div>
+                <div class="doc-arch-flow-row">
+                    <div class="doc-arch-flow-step doc-flow-green">
+                        <div class="doc-arch-flow-step-title">PENDING</div>
+                        <div class="doc-arch-flow-step-detail">Awaiting<br>processing</div>
                     </div>
-                    <span class="arch-flow-arrow">&rarr;</span>
-                    <div class="arch-flow-step blue">
-                        <div class="arch-flow-step-title">IN_PROGRESS</div>
-                        <div class="arch-flow-step-detail">Rebuild<br>running</div>
+                    <span class="doc-arch-flow-arrow">&rarr;</span>
+                    <div class="doc-arch-flow-step doc-flow-blue">
+                        <div class="doc-arch-flow-step-title">IN_PROGRESS</div>
+                        <div class="doc-arch-flow-step-detail">Rebuild<br>running</div>
                     </div>
-                    <span class="arch-flow-arrow">&rarr;</span>
-                    <div class="arch-flow-step muted">
-                        <div class="arch-flow-step-title">Deleted</div>
-                        <div class="arch-flow-step-detail">Success &rarr; removed<br>History in ExecutionLog</div>
+                    <span class="doc-arch-flow-arrow">&rarr;</span>
+                    <div class="doc-arch-flow-step doc-flow-muted">
+                        <div class="doc-arch-flow-step-title">Deleted</div>
+                        <div class="doc-arch-flow-step-detail">Success &rarr; removed<br>History in ExecutionLog</div>
                     </div>
                 </div>
                 <!-- Branching statuses -->
-                <div style="display: flex; align-items: flex-start; justify-content: center; gap: 30px; flex-wrap: wrap;">
-                    <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
-                        <div class="arch-flow-step orange">
-                            <div class="arch-flow-step-title">DEFERRED</div>
-                            <div class="arch-flow-step-detail">Didn't fit in<br>remaining window</div>
+                <div class="doc-arch-flow-branch-row">
+                    <div class="doc-arch-flow-stack">
+                        <div class="doc-arch-flow-step doc-flow-orange">
+                            <div class="doc-arch-flow-step-title">DEFERRED</div>
+                            <div class="doc-arch-flow-step-detail">Didn't fit in<br>remaining window</div>
                         </div>
-                        <span style="color: var(--text-muted); font-size: 0.78em;">&uarr; reset to PENDING next run</span>
+                        <span class="doc-arch-flow-note">&uarr; reset to PENDING next run</span>
                     </div>
-                    <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
-                        <div class="arch-flow-step purple">
-                            <div class="arch-flow-step-title">SCHEDULED</div>
-                            <div class="arch-flow-step-detail">Too large for any<br>weekday window</div>
+                    <div class="doc-arch-flow-stack">
+                        <div class="doc-arch-flow-step doc-flow-purple">
+                            <div class="doc-arch-flow-step-title">SCHEDULED</div>
+                            <div class="doc-arch-flow-step-detail">Too large for any<br>weekday window</div>
                         </div>
-                        <span style="color: var(--text-muted); font-size: 0.78em;">&uarr; reset to PENDING on extended days</span>
+                        <span class="doc-arch-flow-note">&uarr; reset to PENDING on extended days</span>
                     </div>
-                    <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
-                        <div class="arch-flow-step red">
-                            <div class="arch-flow-step-title">FAILED</div>
-                            <div class="arch-flow-step-detail">Rebuild error<br>Deferral count +1</div>
+                    <div class="doc-arch-flow-stack">
+                        <div class="doc-arch-flow-step doc-flow-red">
+                            <div class="doc-arch-flow-step-title">FAILED</div>
+                            <div class="doc-arch-flow-step-detail">Rebuild error<br>Deferral count +1</div>
                         </div>
-                        <span style="color: var(--text-muted); font-size: 0.78em;">&uarr; reset to PENDING next run</span>
+                        <span class="doc-arch-flow-note">&uarr; reset to PENDING next run</span>
                     </div>
                 </div>
             </div>
-            <div class="arch-flow-caption">Success deletes the entry. All other terminal states reset to PENDING on the next applicable run. Below-threshold indexes are removed by the scanner.</div>
+            <div class="doc-arch-flow-caption">Success deletes the entry. All other terminal states reset to PENDING on the next applicable run. Below-threshold indexes are removed by the scanner.</div>
         </div>
 
-        <table class="info-table">
-            <thead><tr><th>Status</th><th>Meaning</th><th>Set By</th></tr></thead>
+        <table class="doc-info-table">
+            <thead><tr><th class="doc-info-table-th">Status</th><th class="doc-info-table-th">Meaning</th><th class="doc-info-table-th">Set By</th></tr></thead>
             <tbody>
-                <tr><td><code>PENDING</code></td><td>Awaiting processing</td><td>Scan (new entry), Execute (reset from DEFERRED/FAILED at startup)</td></tr>
-                <tr><td><code>IN_PROGRESS</code></td><td>Currently being rebuilt</td><td>Execute (before ALTER INDEX)</td></tr>
-                <tr><td><code>DEFERRED</code></td><td>Didn't fit in remaining window</td><td>Execute (best-fit algorithm skip)</td></tr>
-                <tr><td><code>SCHEDULED</code></td><td>Too large for any weekday window</td><td>Execute (exceeds max weekday window)</td></tr>
-                <tr><td><code>FAILED</code></td><td>Rebuild attempt failed</td><td>Execute (after error)</td></tr>
+                <tr><td class="doc-info-table-td"><code>PENDING</code></td><td class="doc-info-table-td">Awaiting processing</td><td class="doc-info-table-td">Scan (new entry), Execute (reset from DEFERRED/FAILED at startup)</td></tr>
+                <tr><td class="doc-info-table-td"><code>IN_PROGRESS</code></td><td class="doc-info-table-td">Currently being rebuilt</td><td class="doc-info-table-td">Execute (before ALTER INDEX)</td></tr>
+                <tr><td class="doc-info-table-td"><code>DEFERRED</code></td><td class="doc-info-table-td">Didn't fit in remaining window</td><td class="doc-info-table-td">Execute (best-fit algorithm skip)</td></tr>
+                <tr><td class="doc-info-table-td"><code>SCHEDULED</code></td><td class="doc-info-table-td">Too large for any weekday window</td><td class="doc-info-table-td">Execute (exceeds max weekday window)</td></tr>
+                <tr><td class="doc-info-table-td doc-info-table-td-last"><code>FAILED</code></td><td class="doc-info-table-td doc-info-table-td-last">Rebuild attempt failed</td><td class="doc-info-table-td doc-info-table-td-last">Execute (after error)</td></tr>
             </tbody>
         </table>
 
         <p>On success, the queue entry is <strong>deleted</strong>, not status-updated. The history lives in <code>Index_ExecutionLog</code>. The queue only contains work that still needs to be done.</p>
 
-        <h3>Best-Fit vs. Priority Selection</h3>
+        <h3 class="doc-section-subtitle">Best-Fit vs. Priority Selection</h3>
 
         <p><code>Get-IndexesForWindow</code> in <code>xFACts-IndexFunctions.ps1</code> implements different selection strategies based on window type:</p>
 
-        <table class="info-table">
-            <thead><tr><th>Window Type</th><th>Algorithm</th><th>Rationale</th></tr></thead>
+        <table class="doc-info-table">
+            <thead><tr><th class="doc-info-table-th">Window Type</th><th class="doc-info-table-th">Algorithm</th><th class="doc-info-table-th">Rationale</th></tr></thead>
             <tbody>
-                <tr><td>Weekday</td><td>Best-fit: iterate by priority, select indexes that fit, skip larger ones to try smaller ones</td><td>Maximize throughput in limited windows</td></tr>
-                <tr><td>Extended (weekend/holiday)</td><td>Straight priority order, including SCHEDULED indexes</td><td>Time is plentiful; process everything in importance order</td></tr>
+                <tr><td class="doc-info-table-td">Weekday</td><td class="doc-info-table-td">Best-fit: iterate by priority, select indexes that fit, skip larger ones to try smaller ones</td><td class="doc-info-table-td">Maximize throughput in limited windows</td></tr>
+                <tr><td class="doc-info-table-td doc-info-table-td-last">Extended (weekend/holiday)</td><td class="doc-info-table-td doc-info-table-td-last">Straight priority order, including SCHEDULED indexes</td><td class="doc-info-table-td doc-info-table-td-last">Time is plentiful; process everything in importance order</td></tr>
             </tbody>
         </table>
 
-        <div class="tech-tip">
-            <strong>SCHEDULED indexes are the weekday overflow mechanism.</strong> When Get-IndexesForWindow finds an index whose estimated duration exceeds the largest contiguous weekday window (calculated by <code>Get-MaxWeekdayWindow</code>), it marks it SCHEDULED rather than repeatedly deferring it. SCHEDULED indexes are only eligible on extended window days, which is the designed mechanism for handling large indexes that accumulate during the week. If a SCHEDULED index doesn't fit even in an extended window, its deferral count is incremented to boost its priority for next time.
+        <div class="doc-tech-tip">
+            <strong class="doc-tech-tip-label">SCHEDULED indexes are the weekday overflow mechanism.</strong> When Get-IndexesForWindow finds an index whose estimated duration exceeds the largest contiguous weekday window (calculated by <code>Get-MaxWeekdayWindow</code>), it marks it SCHEDULED rather than repeatedly deferring it. SCHEDULED indexes are only eligible on extended window days, which is the designed mechanism for handling large indexes that accumulate during the week. If a SCHEDULED index doesn't fit even in an extended window, its deferral count is incremented to boost its priority for next time.
         </div>
     </div>
 
     <!-- ============================================ -->
     <!-- SECTION: Statistics Maintenance -->
     <!-- ============================================ -->
-    <div class="section" id="statistics">
-        <h2>Statistics Maintenance</h2>
+    <div class="doc-section" id="statistics">
+        <h2 class="doc-section-title">Statistics Maintenance</h2>
 
         <p>Statistics maintenance runs independently from index rebuilds on its own schedule. While index rebuilds automatically update statistics on the rebuilt index, indexes that don't need rebuilding can still develop stale statistics.</p>
 
-        <h3>Two Update Strategies</h3>
+        <h3 class="doc-section-subtitle">Two Update Strategies</h3>
 
-        <table class="info-table">
-            <thead><tr><th>Strategy</th><th>Trigger</th><th>Logging</th><th>Purpose</th></tr></thead>
+        <table class="doc-info-table">
+            <thead><tr><th class="doc-info-table-th">Strategy</th><th class="doc-info-table-th">Trigger</th><th class="doc-info-table-th">Logging</th><th class="doc-info-table-th">Purpose</th></tr></thead>
             <tbody>
-                <tr><td><strong>Modification-based</strong></td><td>modification_counter &ge; threshold % of rows</td><td>Individual row per statistic</td><td>Catch actively changing data</td></tr>
-                <tr><td><strong>Staleness-based</strong></td><td>Last update &ge; threshold days ago</td><td>One cumulative row per database</td><td>Catch distribution drift</td></tr>
+                <tr><td class="doc-info-table-td"><strong>Modification-based</strong></td><td class="doc-info-table-td">modification_counter &ge; threshold % of rows</td><td class="doc-info-table-td">Individual row per statistic</td><td class="doc-info-table-td">Catch actively changing data</td></tr>
+                <tr><td class="doc-info-table-td doc-info-table-td-last"><strong>Staleness-based</strong></td><td class="doc-info-table-td doc-info-table-td-last">Last update &ge; threshold days ago</td><td class="doc-info-table-td doc-info-table-td-last">One cumulative row per database</td><td class="doc-info-table-td doc-info-table-td-last">Catch distribution drift</td></tr>
             </tbody>
         </table>
 
         <p>The dual logging strategy reflects the operational value of each update type. Modification-based updates are interesting &mdash; they tell you which tables are changing rapidly, how much, and how often. Staleness-based updates are routine housekeeping. Logging hundreds of individual "it was old, now it's not" entries would flood the table with noise.</p>
 
-        <div class="tech-tip">
-            <strong>Per-database sample rate override.</strong> <code>stats_sample_pct</code> in <code>Index_DatabaseConfig</code> overrides the GlobalConfig default. A value of 0 means FULLSCAN. Critical databases with skewed distributions can use full scans while less critical databases use sampling for speed.
+        <div class="doc-tech-tip">
+            <strong class="doc-tech-tip-label">Per-database sample rate override.</strong> <code>stats_sample_pct</code> in <code>Index_DatabaseConfig</code> overrides the GlobalConfig default. A value of 0 means FULLSCAN. Critical databases with skewed distributions can use full scans while less critical databases use sampling for speed.
         </div>
     </div>
 
     <!-- ============================================ -->
     <!-- SECTION: Troubleshooting -->
     <!-- ============================================ -->
-    <div class="section" id="troubleshooting">
-        <h2>Troubleshooting</h2>
+    <div class="doc-section" id="troubleshooting">
+        <h2 class="doc-section-title">Troubleshooting</h2>
 
         <p><strong>"Indexes aren't being rebuilt."</strong></p>
         <p>Check the chain: Is <code>Index_DatabaseConfig.index_maintenance_enabled = 1</code>? Is <code>ServerRegistry.serverops_index_enabled = 1</code>? Is the scan running (check <code>Index_Status</code> for the SCAN process)? Is the queue populated (<code>SELECT COUNT(*) FROM ServerOps.Index_Queue</code>)? Is the schedule allowing maintenance right now (check <code>Index_DatabaseSchedule</code> for the current day/hour)?</p>
@@ -375,53 +375,53 @@
     <!-- ============================================ -->
     <!-- SECTION: How Everything Connects -->
     <!-- ============================================ -->
-    <div class="section" id="connections">
-        <h2>How Everything Connects</h2>
+    <div class="doc-section" id="connections">
+        <h2 class="doc-section-title">How Everything Connects</h2>
 
-        <h3>Internal Flow</h3>
+        <h3 class="doc-section-subtitle">Internal Flow</h3>
 
-        <table class="info-table">
-            <thead><tr><th>From</th><th>To</th><th>Relationship</th></tr></thead>
+        <table class="doc-info-table">
+            <thead><tr><th class="doc-info-table-th">From</th><th class="doc-info-table-th">To</th><th class="doc-info-table-th">Relationship</th></tr></thead>
             <tbody>
-                <tr><td><code>Index_DatabaseConfig</code></td><td>All scripts</td><td>Feature flags and per-database overrides control which scripts process which databases</td></tr>
-                <tr><td><code>Index_Registry</code></td><td><code>Index_Queue</code></td><td>Queue entries reference registry_id; registry provides scan data that determines queuing</td></tr>
-                <tr><td><code>Index_Queue</code></td><td><code>Index_ExecutionLog</code></td><td>Each rebuild operation logs pre/post state, duration, and variance</td></tr>
-                <tr><td><code>Index_Registry</code></td><td><code>Index_StatsExecutionLog</code></td><td>Registry provides the index list; stats log records each update</td></tr>
-                <tr><td>Schedule tables</td><td><code>xFACts-IndexFunctions.ps1</code></td><td>ExceptionSchedule, HolidaySchedule, and DatabaseSchedule evaluated in priority order</td></tr>
+                <tr><td class="doc-info-table-td"><code>Index_DatabaseConfig</code></td><td class="doc-info-table-td">All scripts</td><td class="doc-info-table-td">Feature flags and per-database overrides control which scripts process which databases</td></tr>
+                <tr><td class="doc-info-table-td"><code>Index_Registry</code></td><td class="doc-info-table-td"><code>Index_Queue</code></td><td class="doc-info-table-td">Queue entries reference registry_id; registry provides scan data that determines queuing</td></tr>
+                <tr><td class="doc-info-table-td"><code>Index_Queue</code></td><td class="doc-info-table-td"><code>Index_ExecutionLog</code></td><td class="doc-info-table-td">Each rebuild operation logs pre/post state, duration, and variance</td></tr>
+                <tr><td class="doc-info-table-td"><code>Index_Registry</code></td><td class="doc-info-table-td"><code>Index_StatsExecutionLog</code></td><td class="doc-info-table-td">Registry provides the index list; stats log records each update</td></tr>
+                <tr><td class="doc-info-table-td doc-info-table-td-last">Schedule tables</td><td class="doc-info-table-td doc-info-table-td-last"><code>xFACts-IndexFunctions.ps1</code></td><td class="doc-info-table-td doc-info-table-td-last">ExceptionSchedule, HolidaySchedule, and DatabaseSchedule evaluated in priority order</td></tr>
             </tbody>
         </table>
 
-        <h3>External Dependencies</h3>
+        <h3 class="doc-section-subtitle">External Dependencies</h3>
 
-        <table class="info-table">
-            <thead><tr><th>Dependency</th><th>Module</th><th>Purpose</th></tr></thead>
+        <table class="doc-info-table">
+            <thead><tr><th class="doc-info-table-th">Dependency</th><th class="doc-info-table-th">Module</th><th class="doc-info-table-th">Purpose</th></tr></thead>
             <tbody>
-                <tr><td><code>dbo.ServerRegistry</code></td><td>Engine Room</td><td>Server-level master switch (<code>serverops_index_enabled</code>) and AG topology</td></tr>
-                <tr><td><code>dbo.DatabaseRegistry</code></td><td>Engine Room</td><td>Database enrollment and active status</td></tr>
-                <tr><td><code>dbo.GlobalConfig</code></td><td>Engine Room</td><td>All thresholds, intervals, scoring weights, abort flags, seconds-per-page coefficients</td></tr>
-                <tr><td><code>dbo.Holiday</code></td><td>Engine Room</td><td>Holiday calendar for extended window detection</td></tr>
-                <tr><td><code>sys.dm_db_index_physical_stats</code></td><td>SQL Server</td><td>Fragmentation data (expensive; LIMITED mode)</td></tr>
-                <tr><td><code>sys.dm_db_stats_properties</code></td><td>SQL Server</td><td>Modification counters for targeted statistics updates</td></tr>
+                <tr><td class="doc-info-table-td"><code>dbo.ServerRegistry</code></td><td class="doc-info-table-td">Engine Room</td><td class="doc-info-table-td">Server-level master switch (<code>serverops_index_enabled</code>) and AG topology</td></tr>
+                <tr><td class="doc-info-table-td"><code>dbo.DatabaseRegistry</code></td><td class="doc-info-table-td">Engine Room</td><td class="doc-info-table-td">Database enrollment and active status</td></tr>
+                <tr><td class="doc-info-table-td"><code>dbo.GlobalConfig</code></td><td class="doc-info-table-td">Engine Room</td><td class="doc-info-table-td">All thresholds, intervals, scoring weights, abort flags, seconds-per-page coefficients</td></tr>
+                <tr><td class="doc-info-table-td"><code>dbo.Holiday</code></td><td class="doc-info-table-td">Engine Room</td><td class="doc-info-table-td">Holiday calendar for extended window detection</td></tr>
+                <tr><td class="doc-info-table-td"><code>sys.dm_db_index_physical_stats</code></td><td class="doc-info-table-td">SQL Server</td><td class="doc-info-table-td">Fragmentation data (expensive; LIMITED mode)</td></tr>
+                <tr><td class="doc-info-table-td doc-info-table-td-last"><code>sys.dm_db_stats_properties</code></td><td class="doc-info-table-td doc-info-table-td-last">SQL Server</td><td class="doc-info-table-td doc-info-table-td-last">Modification counters for targeted statistics updates</td></tr>
             </tbody>
         </table>
     </div>
 
     <!-- Reference Page Link -->
-    <div style="text-align: center;">
-        <a href="../ref/indexmaint-ref.html" class="ref-link">&#x1F4CB; Index Maintenance Reference &mdash; Full DDL, field definitions, and operational queries</a>
+    <div class="doc-ref-link-group">
+        <a href="../ref/indexmaint-ref.html" class="doc-ref-link">&#x1F4CB; Index Maintenance Reference &mdash; Full DDL, field definitions, and operational queries</a>
     </div>
 
     <!-- Contributing -->
-    <div class="callout tip">
+    <div class="doc-callout doc-tip">
         <p><strong>Contributing:</strong> This platform is designed to grow organically. If you have a manual process, monitoring need, or utility that could benefit from centralization, contact the <a href="mailto:applications@frost-arnett.com?subject=xFACts%20New%20Module%20Request&body=I%20would%20like%20to%20submit%20a%20possible%20process%20for%20consideration%20as%20an%20xFACts%20module.%0A%0AProcess%20Name%3A%0ACurrent%20Method%3A%0ABusiness%20Need%3A%0A%0A">Applications Team</a> to discuss adding it as an xFACts module.</p>
     </div>
 
     <!-- Footer -->
     <div class="doc-footer">
-        <p><a href="../indexmaint.html" style="color: var(--accent-blue); text-decoration: none;">&larr; Back to Index Maintenance</a>
+        <p><a href="../indexmaint.html" class="doc-footer-link">&larr; Back to Index Maintenance</a>
            &nbsp;&nbsp;&bull;&nbsp;&nbsp;
-           <a href="../index.html" style="color: var(--accent-blue); text-decoration: none;">Hub</a></p>
-        <p style="margin-top: 8px;">Applications Team, Frost Arnett</p>
+           <a href="../index.html" class="doc-footer-link">Hub</a></p>
+        <p class="doc-footer-line">Applications Team, Frost Arnett</p>
     </div>
 
 </div>
