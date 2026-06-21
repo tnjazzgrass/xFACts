@@ -89,7 +89,7 @@ Five section types are recognized:
 | Component | Shell file |
 |-----------|-------------|
 | `ControlCenter.Shared` (CC application) | `cc-shared.css` |
-| `Documentation.Site` (docs application) | `docs-shared.css` |
+| `Documentation.Site` (docs application) | `docs-base.css` |
 
 Adding a platform domain that needs its own shell file requires a spec amendment to the table above.
 
@@ -106,14 +106,14 @@ Every section banner declares one prefix via the `Prefix:` line. The prefix scop
 Two forms, no others:
 
 - **Page prefix** — the value of `Component_Registry.cc_prefix` for the file's component. Used in LAYOUT, CONTENT, and page-file FEEDBACK_OVERLAYS sections of page files.
-- **Chrome prefix** — the literal token `cc`. Used in FOUNDATION, CHROME, and shell-file FEEDBACK_OVERLAYS sections of the shell file.
+- **Chrome prefix** — the zone's chrome prefix, declared in FOUNDATION, CHROME, and shell-file FEEDBACK_OVERLAYS sections of the shell file. Each zone has exactly one chrome prefix, fixed by the zone-to-chrome-prefix map: the `cc` zone uses `cc`, the `docs` zone uses `doc`. Adding a zone requires a spec amendment to that map. A zone whose chrome prefix equals its sole page prefix is permitted and expected — in such a zone the shell's chrome sections and the page files' sections all declare the same value, distinguished by section type and file role rather than by a different token.
 
 ### 5.2 Rules
 
 - A page-file banner declares the page prefix from `Component_Registry.cc_prefix`.
-- A shell-file banner declares `cc`.
+- A shell-file FOUNDATION, CHROME, or FEEDBACK_OVERLAYS banner declares the zone's chrome prefix (§5.1).
 - The `Prefix:` line declares exactly one value. Comma-separated values are not permitted.
-- `Component_Registry.cc_prefix` is the source of truth. When the file and registry disagree, the file is wrong.
+- `Component_Registry.cc_prefix` is the source of truth for the page prefix. When the file and registry disagree, the file is wrong.
 
 ---
 
@@ -300,10 +300,8 @@ The populator emits a drift code on every spec violation. Each code maps to a si
 | `DUPLICATE_FOUNDATION` | A FOUNDATION section appears in a non-shell file. | §4.1 |
 | `DUPLICATE_CHROME` | A CHROME section appears in a non-shell file. | §4.1 |
 | `MISSING_PREFIX_DECLARATION` | A banner is missing the `Prefix:` line. | §5.2 |
-| `MALFORMED_PREFIX_VALUE` | A banner declares a `Prefix:` value that is neither a page prefix nor `cc`, or declares multiple comma-separated values. | §5.2 |
-| `PREFIX_REGISTRY_MISMATCH` | A page-file banner's declared prefix does not match `Component_Registry.cc_prefix`. | §5.2 |
-| `SHELL_SECTION_INVALID_PREFIX` | A FOUNDATION, CHROME, or shell-file FEEDBACK_OVERLAYS section declares a prefix other than `cc`. | §5.2 |
-| `PREFIX_MISMATCH` | A class name's leftmost token does not begin with the declared prefix. Every class token in a compound selector is checked. | §5, §6.1, §7.1 |
+| `MALFORMED_PREFIX_VALUE` | A banner declares a `Prefix:` value that is neither a page prefix nor the zone's chrome prefix, or declares multiple comma-separated values. | §5.2 || `PREFIX_REGISTRY_MISMATCH` | A page-file banner's declared prefix does not match `Component_Registry.cc_prefix`. | §5.2 |
+| `SHELL_SECTION_INVALID_PREFIX` | A FOUNDATION, CHROME, or shell-file FEEDBACK_OVERLAYS section declares a prefix other than the zone's chrome prefix. | §5.2 || `PREFIX_MISMATCH` | A class name's leftmost token does not begin with the declared prefix. Every class token in a compound selector is checked. | §5, §6.1, §7.1 |
 | `UNDEFINED_CLASS_USAGE` | A class participating in a class-on-class compound rule has no standalone single-class definition in the same file. | §7.1 |
 | `ORPHAN_VARIANT` | A pseudo-class variant references a class with no single-class definition in the same file. | §7.1 |
 | `PSEUDO_ELEMENT_OUT_OF_ORDER` | A pseudo-element rule appears before its base class or after a variant on the same class. | §7.1 |
