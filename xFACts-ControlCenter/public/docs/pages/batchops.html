@@ -3,33 +3,33 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Batch Monitoring — xFACts Secrets Revealed</title>
+    <title>Batch Monitoring &mdash; xFACts Secrets Revealed</title>
     <link rel="stylesheet" href="../css/docs-base.css">
     <link rel="stylesheet" href="../css/docs-narrative.css">
 </head>
 <body>
 
-<div class="page-wrapper">
+<div class="doc-page-wrapper">
 
     <!-- Header -->
-    <div class="page-header">
-        <h1>Batch Monitoring</h1>
-        <div class="subtitle">Watching the pipeline so you don't have to stare at it</div>
+    <div class="doc-page-header">
+        <h1 class="doc-page-title">Batch Monitoring</h1>
+        <div class="doc-page-subtitle">Watching the pipeline so you don't have to stare at it</div>
     </div>
 
     <!-- Navigation (populated by nav.js) -->
     <div class="doc-nav"></div>
 
     <!-- Where This Fits -->
-    <div class="context-bar">
+    <div class="doc-context-bar">
         Clients send us data in batches &mdash; new accounts, payments, phone numbers, address updates. Those batches go through a series of processing stages before the data actually lands in the system. Batch Monitoring watches every step of that journey for all three batch types, and when something goes sideways, it tells you about it before anyone else notices. Think of it as the person in the control room who actually pays attention to the monitors.
     </div>
 
     <!-- ============================================ -->
     <!-- SECTION: The Problem -->
     <!-- ============================================ -->
-    <div class="section">
-        <h2>The Problem</h2>
+    <div class="doc-section">
+        <h2 class="doc-section-title">The Problem</h2>
 
         <p>Clients send us data. That data arrives as files. Those files become batches. Those batches go through a series of processing stages &mdash; uploading, releasing, merging, posting, importing &mdash; until eventually the accounts land in the system and everyone's happy.</p>
 
@@ -45,22 +45,22 @@
     <!-- ============================================ -->
     <!-- SECTION: How It Works -->
     <!-- ============================================ -->
-    <div class="section">
-        <h2>How It Works</h2>
+    <div class="doc-section">
+        <h2 class="doc-section-title">How It Works</h2>
 
-        <div class="flow-diagram">
-            <div class="flow-steps">
-                <div class="flow-step blue">Collector<br>Polls DM</div>
-                <span class="flow-arrow">&rarr;</span>
-                <div class="flow-step green">Tracking Table<br>Updated</div>
-                <span class="flow-arrow">&rarr;</span>
-                <div class="flow-step orange">Alert Conditions<br>Evaluated</div>
-                <span class="flow-arrow">&rarr;</span>
-                <div class="flow-step purple">Teams / Jira<br>Notified</div>
-                <span class="flow-arrow">&rarr;</span>
-                <div class="flow-step muted-step">Someone<br>Investigates</div>
+        <div class="doc-flow-diagram">
+            <div class="doc-flow-steps">
+                <div class="doc-flow-step doc-flow-blue">Collector<br>Polls DM</div>
+                <span class="doc-flow-arrow">&rarr;</span>
+                <div class="doc-flow-step doc-flow-green">Tracking Table<br>Updated</div>
+                <span class="doc-flow-arrow">&rarr;</span>
+                <div class="doc-flow-step doc-flow-orange">Alert Conditions<br>Evaluated</div>
+                <span class="doc-flow-arrow">&rarr;</span>
+                <div class="doc-flow-step doc-flow-purple">Teams / Jira<br>Notified</div>
+                <span class="doc-flow-arrow">&rarr;</span>
+                <div class="doc-flow-step doc-flow-muted">Someone<br>Investigates</div>
             </div>
-            <div class="flow-caption">Collect &rarr; Track &rarr; Evaluate &rarr; Alert &mdash; every 5 minutes, three pipelines</div>
+            <div class="doc-flow-caption">Collect &rarr; Track &rarr; Evaluate &rarr; Alert &mdash; every 5 minutes, three pipelines</div>
         </div>
 
         <p>Three independent collectors check on Debt Manager every 5 minutes, each watching a different kind of batch. They look at what's happening, compare it to what <em>should</em> be happening, and raise their hand when something doesn't add up.</p>
@@ -71,30 +71,30 @@
     <!-- ============================================ -->
     <!-- SECTION: Three Batch Types -->
     <!-- ============================================ -->
-    <div class="section">
-        <h2>Three Batch Types, One Goal</h2>
+    <div class="doc-section">
+        <h2 class="doc-section-title">Three Batch Types, One Goal</h2>
 
         <p>Debt Manager processes three fundamentally different kinds of batch data, and each one can fail in its own special way.</p>
 
-        <table class="info-table">
+        <table class="doc-info-table">
             <thead>
-                <tr><th>Batch Type</th><th>What It Is</th><th>What Can Go Wrong</th></tr>
+                <tr><th class="doc-info-table-th">Batch Type</th><th class="doc-info-table-th">What It Is</th><th class="doc-info-table-th">What Can Go Wrong</th></tr>
             </thead>
             <tbody>
                 <tr>
-                    <td><strong>New Business</strong></td>
-                    <td>New account placements from clients &mdash; the files that bring accounts into the system for the first time.</td>
-                    <td>Uploads fail. Releases stall. Merges freeze halfway through. A batch sits in a queue for six hours and nobody notices.</td>
+                    <td class="doc-info-table-td"><strong>New Business</strong></td>
+                    <td class="doc-info-table-td">New account placements from clients &mdash; the files that bring accounts into the system for the first time.</td>
+                    <td class="doc-info-table-td">Uploads fail. Releases stall. Merges freeze halfway through. A batch sits in a queue for six hours and nobody notices.</td>
                 </tr>
                 <tr>
-                    <td><strong>Payments</strong></td>
-                    <td>Payment files, manual entries, and reversals &mdash; the money moving through the system.</td>
-                    <td>Import failures. Posting stalls. Partial postings where half the payments go through and the other half don't. Reversals that fail midway.</td>
+                    <td class="doc-info-table-td"><strong>Payments</strong></td>
+                    <td class="doc-info-table-td">Payment files, manual entries, and reversals &mdash; the money moving through the system.</td>
+                    <td class="doc-info-table-td">Import failures. Posting stalls. Partial postings where half the payments go through and the other half don't. Reversals that fail midway.</td>
                 </tr>
                 <tr>
-                    <td><strong>BDL Import</strong></td>
-                    <td>Bulk data updates &mdash; phone numbers, addresses, account tags, consumer updates. Both scheduled daily runs and user-initiated imports from the BDL Import wizard.</td>
-                    <td>Staging failures where the data doesn't validate. Import failures where validated data doesn't make it into the system. Processing stalls where partitions stop moving.</td>
+                    <td class="doc-info-table-td"><strong>BDL Import</strong></td>
+                    <td class="doc-info-table-td">Bulk data updates &mdash; phone numbers, addresses, account tags, consumer updates. Both scheduled daily runs and user-initiated imports from the BDL Import wizard.</td>
+                    <td class="doc-info-table-td">Staging failures where the data doesn't validate. Import failures where validated data doesn't make it into the system. Processing stalls where partitions stop moving.</td>
                 </tr>
             </tbody>
         </table>
@@ -105,8 +105,8 @@
     <!-- ============================================ -->
     <!-- SECTION: What It Catches -->
     <!-- ============================================ -->
-    <div class="section">
-        <h2>What It Catches</h2>
+    <div class="doc-section">
+        <h2 class="doc-section-title">What It Catches</h2>
 
         <p>Not all problems announce themselves. Some batch failures are obvious &mdash; an upload errors out and the status turns red. Those are easy. The hard ones are the batches that <em>look</em> fine but aren't actually doing anything. The status says "processing" but nothing has moved in an hour. The batch says "released" but it's been sitting in a queue all afternoon. Everything looks green. Everything is <em>not</em> fine.</p>
 
@@ -118,8 +118,8 @@
     <!-- ============================================ -->
     <!-- SECTION: The Evening Report -->
     <!-- ============================================ -->
-    <div class="section">
-        <h2>The Evening Report</h2>
+    <div class="doc-section">
+        <h2 class="doc-section-title">The Evening Report</h2>
 
         <p>Every evening before the maintenance window, a summary card shows up in Teams. It's the batch pipeline's status report &mdash; a quick visual answer to "is anything still running?"</p>
 
@@ -129,8 +129,8 @@
     <!-- ============================================ -->
     <!-- SECTION: The Control Center View -->
     <!-- ============================================ -->
-    <div class="section">
-        <h2>The Control Center View</h2>
+    <div class="doc-section">
+        <h2 class="doc-section-title">The Control Center View</h2>
 
         <p>The Batch Monitoring page in the Control Center shows the current state of the pipeline at a glance &mdash; what's actively processing, what finished today, and the complete history of every batch that's been through the system. You can filter by batch type, drill down to a specific day, and see exactly what happened to each individual batch, including how long each processing phase took.</p>
 
@@ -140,8 +140,8 @@
     <!-- ============================================ -->
     <!-- SECTION: The Bottom Line -->
     <!-- ============================================ -->
-    <div class="section">
-        <h2>The Bottom Line</h2>
+    <div class="doc-section">
+        <h2 class="doc-section-title">The Bottom Line</h2>
 
         <p>Batch processing is one of those things where small problems become big problems if nobody's watching. A failed upload at 2 AM turns into a missing report at 8 AM turns into an unhappy client by noon. A bulk data update that silently stalled means phone numbers that didn't update and calls that go to the wrong place.</p>
 
@@ -151,22 +151,22 @@
     </div>
 
     <!-- Architecture & Reference Links -->
-    <div style="text-align: center;">
-        <a href="arch/batchops-arch.html" class="ref-link">&#x1F527; Batch Monitoring Architecture &mdash; How the monitoring works under the hood</a>
+    <div class="doc-ref-link-group">
+        <a href="arch/batchops-arch.html" class="doc-ref-link">&#x1F527; Batch Monitoring Architecture &mdash; How the monitoring works under the hood</a>
     </div>
-    <div style="text-align: center; margin-top: 8px;">
-        <a href="ref/batchops-ref.html" class="ref-link">&#x1F4CB; Batch Monitoring Reference &mdash; Full technical details, DDL, and operational queries</a>
+    <div class="doc-ref-link-group-following">
+        <a href="ref/batchops-ref.html" class="doc-ref-link">&#x1F4CB; Batch Monitoring Reference &mdash; Full technical details, DDL, and operational queries</a>
     </div>
 
     <!-- Contributing -->
-    <div class="callout tip">
+    <div class="doc-callout doc-tip">
         <p><strong>Contributing:</strong> This platform is designed to grow organically. If you have a manual process, monitoring need, or utility that could benefit from centralization, contact the <a href="mailto:applications@frost-arnett.com?subject=xFACts%20New%20Module%20Request&body=I%20would%20like%20to%20submit%20a%20possible%20process%20for%20consideration%20as%20an%20xFACts%20module.%0A%0AProcess%20Name%3A%0ACurrent%20Method%3A%0ABusiness%20Need%3A%0A%0A">Applications Team</a> to discuss adding it as an xFACts module.</p>
-    </div>		
+    </div>
 
     <!-- Footer -->
     <div class="doc-footer">
-        <p><a href="index.html" style="color: var(--accent-blue); text-decoration: none;">&larr; Back to xFACts Secrets Revealed</a></p>
-        <p style="margin-top: 8px;">Applications Team, Frost Arnett</p>
+        <p><a href="index.html" class="doc-footer-link">&larr; Back to xFACts Secrets Revealed</a></p>
+        <p class="doc-footer-line">Applications Team, Frost Arnett</p>
     </div>
 
 </div>
