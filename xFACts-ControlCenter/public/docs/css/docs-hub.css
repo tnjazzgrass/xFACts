@@ -1,85 +1,63 @@
-/* ============================================================
-   docs-hub.css — Styles specific to the Hub page (index.html)
-   
-   Module cards, architecture diagram, pattern flow, tech table.
-   Loaded after docs-base.css on index.html only.
-   ============================================================ */
+/* ============================================================================
+   xFACts Control Center - Documentation Hub Page (docs-hub.css)
+   Location: E:\xFACts-ControlCenter\public\docs\css\docs-hub.css
+   Version: Tracked in dbo.System_Metadata (component: Documentation.Site)
 
-/* ===== xFACts Logo Accent ===== */
-.page-header h1 span.fac {
-    color: var(--accent-blue);
+   Content components specific to the documentation hub (index.html): the xFACts
+   logo accent, the architecture diagram with its labeled boxes, and the
+   repeating-pattern flow. Loaded after docs-base.css, which owns the token
+   palette, the shared card component the module grid uses, the shared info
+   table, and the decorative flow color modifiers these components reuse.
+
+   FILE ORGANIZATION
+   -----------------
+   CONTENT: LOGO ACCENT
+   CONTENT: ARCHITECTURE DIAGRAM
+   CONTENT: PATTERN FLOW
+   CONTENT: RESPONSIVE ADJUSTMENTS
+   ============================================================================ */
+
+/* ============================================================================
+   CONTENT: LOGO ACCENT
+   ----------------------------------------------------------------------------
+   The accent coloring applied to the "FAC" letters within the xFACts wordmark
+   in the page title.
+   Prefix: doc
+   ============================================================================ */
+
+/* Colors the FAC letters of the xFACts wordmark in the accent color. */
+.doc-fac {
+    color: var(--color-accent-blue);
 }
 
-/* ===== Module Cards Grid ===== */
-.module-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 16px;
-    margin: 20px 0;
-}
+/* ============================================================================
+   CONTENT: ARCHITECTURE DIAGRAM
+   ----------------------------------------------------------------------------
+   The architecture diagram: a bordered container with a caption, a centered
+   flow row of labeled boxes, and the connector arrow between them. Box colors
+   reuse the shared decorative flow modifiers from docs-base.
+   Prefix: doc
+   ============================================================================ */
 
-.module-card {
-    background: var(--bg-card);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius);
-    padding: 18px 20px;
-    text-decoration: none;
-    color: var(--text-primary);
-    transition: all 0.2s ease;
-}
-
-.module-card:hover {
-    background: var(--bg-card-hover);
-    border-color: var(--accent-blue-dim);
-    transform: translateY(-1px);
-}
-
-.module-card .card-title {
-    font-size: 1.05em;
-    font-weight: 600;
-    color: var(--accent-blue);
-    margin-bottom: 6px;
-}
-
-.module-card .card-desc {
-    font-size: 0.88em;
-    color: var(--text-secondary);
-    line-height: 1.5;
-}
-
-.module-card .card-tag {
-    display: inline-block;
-    font-size: 0.72em;
-    padding: 2px 8px;
-    border-radius: 4px;
-    margin-top: 8px;
-    font-weight: 500;
-}
-
-/* ===== Module Tag Colors ===== */
-.tag-serverops   { background: rgba(var(--accent-green-rgb), 0.15); color: var(--accent-green); }
-.tag-core        { background: rgba(var(--accent-blue-rgb), 0.15); color: var(--accent-blue); }
-.tag-monitoring  { background: rgba(var(--accent-orange-rgb), 0.15); color: var(--accent-orange); }
-.tag-integration { background: rgba(var(--accent-purple-rgb), 0.15); color: var(--accent-purple); }
-.tag-department  { background: rgba(var(--accent-red-rgb), 0.15); color: var(--accent-red); }
-
-/* ===== Architecture Diagram ===== */
-.diagram-container {
-    background: var(--bg-card);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius);
+/* Styles the architecture diagram container as a bordered, centered card. */
+.doc-diagram-container {
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border-default);
+    border-radius: var(--size-radius-default);
     padding: 24px;
     margin: 20px 0;
     text-align: center;
 }
 
-.diagram-container .diagram-title {
+/* Styles the caption beneath an architecture diagram. */
+.doc-diagram-title {
     font-size: 0.85em;
-    color: var(--text-muted);
+    color: var(--color-text-muted);
     margin-top: 12px;
 }
 
-.arch-flow {
+/* Lays out the architecture boxes in a centered, wrapping row. */
+.doc-arch-flow {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -88,27 +66,83 @@
     padding: 20px;
 }
 
-.arch-box {
+/* Styles a labeled architecture box as a rounded, min-width pill. */
+.doc-arch-box {
     padding: 12px 18px;
-    border-radius: var(--radius);
+    border-radius: var(--size-radius-default);
     font-size: 0.85em;
     font-weight: 600;
     text-align: center;
     min-width: 130px;
 }
 
-.arch-box.engine  { background: rgba(var(--accent-blue-rgb), 0.2); border: 1px solid var(--accent-blue-dim); color: var(--accent-blue); }
-.arch-box.modules { background: rgba(var(--accent-green-rgb), 0.2); border: 1px solid var(--accent-green-dim); color: var(--accent-green); }
-.arch-box.alerts  { background: rgba(var(--accent-orange-rgb), 0.2); border: 1px solid var(--accent-orange-dim); color: var(--accent-orange); }
-.arch-box.ui      { background: rgba(var(--accent-purple-rgb), 0.2); border: 1px solid var(--accent-purple-dim); color: var(--accent-purple); }
+.doc-arch-box.doc-flow-blue { /* engine box */
+    background: rgba(var(--color-accent-blue-rgb), 0.2);
+    border: 1px solid var(--color-accent-blue-dim);
+    color: var(--color-accent-blue);
+}
 
-.arch-arrow {
-    color: var(--text-muted);
+.doc-arch-box.doc-flow-green { /* modules box */
+    background: rgba(var(--color-accent-green-rgb), 0.2);
+    border: 1px solid var(--color-accent-green-dim);
+    color: var(--color-accent-green);
+}
+
+.doc-arch-box.doc-flow-orange { /* alerts box */
+    background: rgba(var(--color-accent-orange-rgb), 0.2);
+    border: 1px solid var(--color-accent-orange-dim);
+    color: var(--color-accent-orange);
+}
+
+.doc-arch-box.doc-flow-purple { /* UI box */
+    background: rgba(var(--color-accent-purple-rgb), 0.2);
+    border: 1px solid var(--color-accent-purple-dim);
+    color: var(--color-accent-purple);
+}
+
+/* Styles the connector arrow between architecture boxes. */
+.doc-arch-arrow {
+    color: var(--color-text-muted);
     font-size: 1.3em;
 }
 
-/* ===== Pattern Flow (Collect → Store → Evaluate → Alert) ===== */
-.pattern-flow {
+/* Styles the secondary label line within an architecture box. */
+.doc-arch-box-sublabel {
+    font-weight: 400;
+    font-size: 0.85em;
+}
+
+/* Spaces the vertical connector row beneath the main architecture row. */
+.doc-arch-vertical {
+    margin-top: 12px;
+}
+
+/* Sizes the vertical connector arrow. */
+.doc-arch-arrow-vertical {
+    font-size: 1.1em;
+}
+
+/* Centers the trailing architecture box beneath the vertical connector. */
+.doc-arch-tail {
+    margin-top: 8px;
+}
+
+/* Renders the trailing architecture box inline so it centers. */
+.doc-arch-box-centered {
+    display: inline-block;
+}
+
+/* ============================================================================
+   CONTENT: PATTERN FLOW
+   ----------------------------------------------------------------------------
+   The repeating-pattern flow row that illustrates the collect, store, evaluate,
+   and alert steps as colored pills with connector arrows. Pill colors reuse the
+   shared decorative flow modifiers from docs-base.
+   Prefix: doc
+   ============================================================================ */
+
+/* Lays out the pattern steps in a centered, wrapping row. */
+.doc-pattern-flow {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -117,54 +151,57 @@
     flex-wrap: wrap;
 }
 
-.pattern-step {
+/* Styles a pattern step as a rounded pill. */
+.doc-pattern-step {
     padding: 8px 16px;
     border-radius: 20px;
     font-size: 0.85em;
     font-weight: 600;
 }
 
-.pattern-step.collect  { background: rgba(var(--accent-blue-rgb), 0.2); color: var(--accent-blue); }
-.pattern-step.store    { background: rgba(var(--accent-green-rgb), 0.2); color: var(--accent-green); }
-.pattern-step.evaluate { background: rgba(var(--accent-orange-rgb), 0.2); color: var(--accent-orange); }
-.pattern-step.alert    { background: rgba(var(--accent-red-rgb), 0.2); color: var(--accent-red); }
+.doc-pattern-step.doc-flow-blue { /* collect step */
+    background: rgba(var(--color-accent-blue-rgb), 0.2);
+    color: var(--color-accent-blue);
+}
 
-.pattern-arrow {
-    color: var(--text-muted);
+.doc-pattern-step.doc-flow-green { /* store step */
+    background: rgba(var(--color-accent-green-rgb), 0.2);
+    color: var(--color-accent-green);
+}
+
+.doc-pattern-step.doc-flow-orange { /* evaluate step */
+    background: rgba(var(--color-accent-orange-rgb), 0.2);
+    color: var(--color-accent-orange);
+}
+
+.doc-pattern-step.doc-flow-red { /* alert step */
+    background: rgba(var(--color-accent-red-rgb), 0.2);
+    color: var(--color-accent-red);
+}
+
+/* Styles the connector arrow between pattern steps. */
+.doc-pattern-arrow {
+    color: var(--color-text-muted);
     font-size: 1.1em;
 }
 
-/* ===== Tech Stack Table ===== */
-.tech-table {
-    width: 100%;
-    border-collapse: collapse;
-    margin: 16px 0;
-}
+/* ============================================================================
+   CONTENT: RESPONSIVE ADJUSTMENTS
+   ----------------------------------------------------------------------------
+   Small-viewport adjustments: the architecture flow stacks vertically and its
+   connector arrows rotate to point down the stack.
+   Prefix: doc
+   ============================================================================ */
 
-.tech-table th {
-    text-align: left;
-    padding: 10px 14px;
-    background: var(--bg-secondary);
-    color: var(--text-secondary);
-    font-size: 0.82em;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    border-bottom: 1px solid var(--border-color);
-}
-
-.tech-table td {
-    padding: 10px 14px;
-    border-bottom: 1px solid var(--border-subtle);
-    font-size: 0.92em;
-}
-
-.tech-table tr:last-child td {
-    border-bottom: none;
-}
-
-/* ===== Responsive ===== */
+/* Adjusts hub layouts for narrow viewports. */
 @media (max-width: 700px) {
-    .module-grid { grid-template-columns: 1fr; }
-    .arch-flow { flex-direction: column; }
-    .arch-arrow { transform: rotate(90deg); }
+    /* Stacks the architecture boxes vertically. */
+    .doc-arch-flow {
+        flex-direction: column;
+    }
+
+    /* Rotates the architecture connector arrow to point down the stack. */
+    .doc-arch-arrow {
+        transform: rotate(90deg);
+    }
 }
