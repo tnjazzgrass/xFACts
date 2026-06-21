@@ -28,7 +28,7 @@
     Multi-match resolution within a USAGE's scope prefers scope = 'SHARED'
     over 'LOCAL', then file_name ascending. For HTML_ID specifically,
     DEFINITION rows from file_type = 'HTML' win over file_type = 'JS'
-    (HTML is the canonical source of truth for ID declarations).
+    (HTML is the source of truth for ID declarations).
 
 .PARAMETER Execute
     Required to actually run the UPDATE statements against Asset_Registry.
@@ -549,7 +549,7 @@ WHERE component_type = 'CSS_CLASS'
 
 # Resolves JS HTML_ID USAGE rows against HTML_ID DEFINITION rows from the
 # same component or chrome. DEFINITION rows can come from either HTML route
-# files (canonical) or JS files (setAttribute / el.id assignments). The
+# files or JS files (setAttribute / el.id assignments). The
 # ORDER BY prefers HTML DEFINITION over JS DEFINITION; within file_type,
 # SHARED scope wins over LOCAL.
 $script:EdgeJsHtmlId = @{
