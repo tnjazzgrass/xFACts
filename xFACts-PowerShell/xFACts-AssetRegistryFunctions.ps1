@@ -73,6 +73,12 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-06-20  Hardened Get-SectionForLine against PowerShell single-element
+#             collapse: the $Sections parameter is now normalized via @() at
+#             entry so a file with exactly one section banner resolves its
+#             definitions to that section instead of spuriously drawing
+#             MISSING_SECTION_BANNER. No-op for multi-section files. Surfaced
+#             by docs-shared.js, the first single-section file in the platform.
 # 2026-06-20  Added Get-ZoneChromePrefix: the single code-side expression of the
 #             CC_CSS_Spec.md / CC_JS_Spec.md Section 5.1 zone-to-chrome-prefix
 #             map (cc -> cc, docs -> doc), consumed by the CSS and JS populators
@@ -1596,6 +1602,12 @@ function Get-SectionForLine {
         $Sections,
         [Parameter(Mandatory)][int]$Line
     )
+    # Normalize to a real array. New-SectionList returns a List[object], but
+    # PowerShell collapses a single-element list to a scalar when it crosses a
+    # call boundary, which breaks .Count and index access below. The @() cast
+    # is a no-op for multi-element lists and re-wraps a collapsed single
+    # section, so a file with exactly one section banner resolves correctly.
+    $Sections = @($Sections)
     if ($null -eq $Sections -or $Sections.Count -eq 0) { return $null }
 
     # Binary search: New-SectionList returns sections sorted by BannerStartLine
