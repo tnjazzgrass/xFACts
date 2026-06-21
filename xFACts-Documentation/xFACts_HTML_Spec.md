@@ -637,13 +637,13 @@ Route files do not contain local functions that emit HTML; route HTML emission i
 
 HTML files emit USAGE rows that reference identifiers defined by other file types. These references resolve against the catalog after every populator has run, in a dedicated resolve phase. Three reference types in HTML files are subject to cross-spec resolution: CSS class references in `class=""` attributes, CSS file references in `<link rel="stylesheet">` elements, and JS file references in `<script src="">` elements.
 
-The resolve phase matches each USAGE row to a DEFINITION row of the same `component_type` and `component_name`, within the same zone. When no matching DEFINITION exists in the catalog, the resolve phase stamps the appropriate drift code on the USAGE row.
+The resolve phase matches each USAGE row to a DEFINITION row of the same `component_type` and `component_name`, in the same zone, and in either the same component family (`Object_Registry.component_name`) or the zone's chrome family. When no matching DEFINITION exists in the catalog, the resolve phase stamps the appropriate drift code on the USAGE row.
 
 ### 13.1 Rules
 
-- Every CSS class referenced by an HTML file has a matching `CSS_CLASS` DEFINITION row in the catalog.
-- Every CSS file referenced by an HTML file has a matching `CSS_FILE` DEFINITION row in the catalog.
-- Every JS file referenced by an HTML file has a matching `JS_FILE` DEFINITION row in the catalog.
+- Every CSS class referenced by an HTML file has a matching `CSS_CLASS` DEFINITION row in the same component family or the zone's chrome family.
+- Every CSS file referenced by an HTML file has a matching `CSS_FILE` DDEFINITION row in the same component family or the zone's chrome family.
+- Every JS file referenced by an HTML file has a matching `JS_FILE` DEFINITION row in the same component family or the zone's chrome family.
 
 ---
 
