@@ -211,11 +211,11 @@ $SectionTypeOrder = @('FOUNDATION', 'CHROME', 'LAYOUT', 'CONTENT', 'FEEDBACK_OVE
 # Alias of the ordered list, used where only membership is checked.
 $ValidSectionTypes = $SectionTypeOrder
 
-# Section types that must declare the chrome prefix 'cc' when they appear in a
-# zone's shell file. FOUNDATION and CHROME live only in the shell file (any
+# Section types that must declare the zone's chrome prefix when they appear in
+# a zone's shell file. FOUNDATION and CHROME live only in the shell file (any
 # other file carrying them is DUPLICATE_FOUNDATION / DUPLICATE_CHROME drift);
-# FEEDBACK_OVERLAYS may appear in shell or page files, and declares 'cc' when
-# in the shell file.
+# FEEDBACK_OVERLAYS may appear in shell or page files, and declares the zone's
+# chrome prefix when in the shell file.
 $ShellSectionTypes = @('FOUNDATION', 'CHROME', 'FEEDBACK_OVERLAYS')
 
 <# ============================================================================
@@ -246,11 +246,11 @@ $DriftDescriptions = [ordered]@{
     'UNKNOWN_SECTION_TYPE'              = "A section banner declares a TYPE not in the enumerated list (FOUNDATION, CHROME, LAYOUT, CONTENT, FEEDBACK_OVERLAYS)."
     'SECTION_TYPE_ORDER_VIOLATION'      = "Section types appear out of the required order (FOUNDATION -> CHROME -> LAYOUT -> CONTENT -> FEEDBACK_OVERLAYS)."
     'MISSING_PREFIX_DECLARATION'        = "A section banner is missing the mandatory Prefix line in its description block."
-    'MALFORMED_PREFIX_VALUE'            = "A section banner declares a Prefix value that is neither a page prefix nor 'cc', or declares multiple comma-separated values."
+    'MALFORMED_PREFIX_VALUE'            = "A section banner declares a Prefix value that is neither a page prefix nor the zone's chrome prefix, or declares multiple comma-separated values."
     'PREFIX_REGISTRY_MISMATCH'          = "A page-file section banner's declared prefix does not match Component_Registry.cc_prefix for the file's component."
-    'SHELL_SECTION_INVALID_PREFIX'      = "A FOUNDATION, CHROME, or shell-file FEEDBACK_OVERLAYS section declares a prefix other than 'cc'."
-    'DUPLICATE_FOUNDATION'              = "More than one CSS file in the codebase contains a FOUNDATION section."
-    'DUPLICATE_CHROME'                  = "More than one CSS file in the codebase contains a CHROME section."
+    'SHELL_SECTION_INVALID_PREFIX'      = "A FOUNDATION, CHROME, or shell-file FEEDBACK_OVERLAYS section declares a prefix other than the zone's chrome prefix."
+    'DUPLICATE_FOUNDATION'              = "A FOUNDATION section appears in a CSS file that is not the shell file. FOUNDATION sections live only in the zone's shell file."
+    'DUPLICATE_CHROME'                  = "A CHROME section appears in a CSS file that is not the shell file. CHROME sections live only in the zone's shell file."
     # Class definitions, variants, and ordering
     'PREFIX_MISMATCH'                   = "A class name's leftmost token does not begin with the declared prefix. Every class token in a compound selector is checked."
     'MISSING_PURPOSE_COMMENT'           = "A class definition, :root block, @keyframes block, or @media block is not preceded by a single-line purpose comment."
@@ -1593,7 +1593,7 @@ function Add-CssCommentBannerRow {
     }
 
     # SECTION_TYPE_ORDER_VIOLATION: this banner's type appears before the
-    # previous banner's type in the canonical order.
+    # previous banner's type in the required order.
     if ($Section.TypeName) {
         $newIdx = [array]::IndexOf($script:SectionTypeOrder, $Section.TypeName)
         if ($newIdx -ge 0 -and $PreviousSectionTypeOrderIdx -ge 0 -and $newIdx -lt $PreviousSectionTypeOrderIdx) {
@@ -1601,22 +1601,39 @@ function Add-CssCommentBannerRow {
         }
     }
 
+    # DUPLICATE_FOUNDATION / DUPLICATE_CHROME
+    # Shell-file enforcement: FOUNDATION and CHROME may appear only in the
+    # shell file. The drift code fires when they appear in any file that is
+    # not the shell. Shell designation is per zone (scope_tier SHELL in
+    # Object_Registry), so each zone's shell legitimately carries its own
+    # FOUNDATION and CHROME without firing. Mirrors the JS populator.
+    if ($Section.TypeName -eq 'FOUNDATION' -and -not $script:CurrentFileIsShell) {
+        Add-DriftCode -Row $row -Code 'DUPLICATE_FOUNDATION' `
+            -Context "FOUNDATION section appears in '$($script:CurrentFile)'; FOUNDATION lives only in the shell file."
+    }
+    if ($Section.TypeName -eq 'CHROME' -and -not $script:CurrentFileIsShell) {
+        Add-DriftCode -Row $row -Code 'DUPLICATE_CHROME' `
+            -Context "CHROME section appears in '$($script:CurrentFile)'; CHROME lives only in the shell file."
+    }
+
     # MALFORMED_PREFIX_VALUE: Prefix line declares something that is neither
-    # a page prefix nor 'cc', or declares multiple comma-separated values.
+    # a page prefix nor the zone's chrome prefix, or declares multiple
+    # comma-separated values.
     # CSS callers do NOT pass -AllowNoneSentinel, so the (none) sentinel is
     # invalid here per the new spec.
     if ($Section.Prefix -and -not (Test-PrefixValueIsValid -Prefix $Section.Prefix)) {
         Add-DriftCode -Row $row -Code 'MALFORMED_PREFIX_VALUE' `
-            -Context "Banner declares Prefix '$($Section.Prefix)' which is neither a page prefix nor 'cc'."
+            -Context "Banner declares Prefix '$($Section.Prefix)' which is neither a page prefix nor the zone's chrome prefix."
     }
 
     # Prefix registry validation (CC_CSS_Spec.md Section 5.2).
     # Two distinct failure modes, two distinct drift codes:
     #   SHELL_SECTION_INVALID_PREFIX -- section is FOUNDATION/CHROME/
-    #     shell-file FEEDBACK_OVERLAYS but the banner declares a value
-    #     other than 'cc'. Applies in shell files; non-shell files
+    #     shell-file FEEDBACK_OVERLAYS but the banner declares a value other
+    #     than the zone's chrome prefix. Applies in shell files; non-shell files
     #     carrying FOUNDATION or CHROME already fire DUPLICATE_FOUNDATION
-    #     or DUPLICATE_CHROME from Pass 3 and don't double-fire here.
+    #     or DUPLICATE_CHROME from the per-banner shell check and don't
+    #     double-fire here.
     #   PREFIX_REGISTRY_MISMATCH -- page-file banner declares something
     #     other than the file's registered cc_prefix.
     #
@@ -1627,15 +1644,19 @@ function Add-CssCommentBannerRow {
     # surfaces in the miss advisory).
     if ($Section.Prefix -and (Test-PrefixValueIsValid -Prefix $Section.Prefix)) {
         $bannerVal = Get-BannerPrefixValue -Prefix $Section.Prefix
-        $isCc      = ($bannerVal -eq 'cc')
+        # The zone's chrome prefix, from the shared zone-to-chrome-prefix map
+        # (Get-ZoneChromePrefix). A zone absent from the map yields $null and the
+        # shell check below is skipped.
+        $chromePrefix = Get-ZoneChromePrefix -Zone $script:CurrentFileZone
 
         # SHELL_SECTION_INVALID_PREFIX: a shell-only section type must declare
-        # 'cc' in the zone's shell file. Checked first because it depends only
-        # on section type and file identity, not the registry.
+        # the zone's chrome prefix in the zone's shell file. Checked first
+        # because it depends only on section type and file identity, not the
+        # registry.
         if ($script:CurrentFileIsShell -and ($Section.TypeName -in $ShellSectionTypes)) {
-            if (-not $isCc) {
+            if ($chromePrefix -and ($bannerVal -ne $chromePrefix)) {
                 Add-DriftCode -Row $row -Code 'SHELL_SECTION_INVALID_PREFIX' `
-                    -Context "Section type '$($Section.TypeName)' in the shell file must declare Prefix 'cc'; banner declares '$bannerVal'."
+                    -Context "Section type '$($Section.TypeName)' in the shell file must declare Prefix '$chromePrefix'; banner declares '$bannerVal'."
             }
         }
         elseif ($script:CurrentRegistryHasMapping) {
@@ -2126,10 +2147,8 @@ foreach ($file in $CssFiles) {
     $script:CurrentUsedCommentLines   = New-Object 'System.Collections.Generic.HashSet[int]'
 
     $script:fileMeta[$name] = @{
-        FoundationLine = $null
-        ChromeLine     = $null
-        FileOrgList    = $null
-        Sections       = $null
+        FileOrgList = $null
+        Sections    = $null
     }
 
     # Collect comments in the normalized shape, then build the section list.
@@ -2155,16 +2174,6 @@ foreach ($file in $CssFiles) {
         -FileLineCount    $script:CurrentFileLineCount `
         -ValidSectionTypes $script:ValidSectionTypes
     $script:fileMeta[$name].Sections = $script:CurrentSections
-
-    # Track FOUNDATION / CHROME presence for Pass 3 cross-file dup checks.
-    foreach ($s in $script:CurrentSections) {
-        if ($s.TypeName -eq 'FOUNDATION' -and -not $script:fileMeta[$name].FoundationLine) {
-            $script:fileMeta[$name].FoundationLine = $s.BannerStartLine
-        }
-        if ($s.TypeName -eq 'CHROME' -and -not $script:fileMeta[$name].ChromeLine) {
-            $script:fileMeta[$name].ChromeLine = $s.BannerStartLine
-        }
-    }
 
     $startCount = $script:rows.Count
     $scopeLabel = if ($script:CurrentFileIsShared) { 'SHARED' } else { 'LOCAL' }
@@ -2286,35 +2295,6 @@ foreach ($missing in $script:objectRegistryMisses) {
     if ($script:cssFileRowByFile.ContainsKey($missing)) {
         Add-DriftCode -Row $script:cssFileRowByFile[$missing] -Code 'FILE_NOT_REGISTERED' `
             -Context "File '$missing' has no active Object_Registry row; zone and scope are '<undefined>'."
-    }
-}
-
-# -- DUPLICATE_FOUNDATION / DUPLICATE_CHROME --
-
-$foundationFiles = @($fileMeta.Keys | Where-Object { $fileMeta[$_].FoundationLine })
-$chromeFiles     = @($fileMeta.Keys | Where-Object { $fileMeta[$_].ChromeLine })
-
-if ($foundationFiles.Count -gt 1) {
-    Write-Log ("  DUPLICATE_FOUNDATION across files: {0}" -f ($foundationFiles -join ', ')) 'WARN'
-    foreach ($fname in $foundationFiles) {
-        if (-not $rowsByFile.ContainsKey($fname)) { continue }
-        foreach ($r in $rowsByFile[$fname]) {
-            if ($r.ComponentType -eq 'COMMENT_BANNER' -and $r.Signature -eq 'FOUNDATION') {
-                Add-DriftCode -Row $r -Code 'DUPLICATE_FOUNDATION'
-            }
-        }
-    }
-}
-
-if ($chromeFiles.Count -gt 1) {
-    Write-Log ("  DUPLICATE_CHROME across files: {0}" -f ($chromeFiles -join ', ')) 'WARN'
-    foreach ($fname in $chromeFiles) {
-        if (-not $rowsByFile.ContainsKey($fname)) { continue }
-        foreach ($r in $rowsByFile[$fname]) {
-            if ($r.ComponentType -eq 'COMMENT_BANNER' -and $r.Signature -eq 'CHROME') {
-                Add-DriftCode -Row $r -Code 'DUPLICATE_CHROME'
-            }
-        }
     }
 }
 
