@@ -9,27 +9,27 @@
 </head>
 <body>
 
-<div class="page-wrapper">
+<div class="doc-page-wrapper">
 
     <!-- Header -->
-    <div class="page-header">
-        <h1>DM Operations</h1>
-        <div class="subtitle">Direct operations on Debt Manager production data &mdash; because sometimes you have to reach in and clean house</div>
+    <div class="doc-page-header">
+        <h1 class="doc-page-title">DM Operations</h1>
+        <div class="doc-page-subtitle">Direct operations on Debt Manager production data &mdash; because sometimes you have to reach in and clean house</div>
     </div>
 
     <!-- Navigation (populated by nav.js) -->
     <div class="doc-nav"></div>
 
     <!-- Where This Fits -->
-    <div class="context-bar">
+    <div class="doc-context-bar">
         Debt Manager has been collecting data for years. A lot of it represents consumers who are long since done &mdash; every account paid, returned, settled, or otherwise closed. DM Operations is the systematic process of removing those finished consumers from the production system while preserving the financial reporting their accounts contributed to. Done right, it&rsquo;s invisible: the database gets smaller, queries get faster, backups get shorter, and the reports don&rsquo;t skip a beat.
     </div>
 
     <!-- ============================================ -->
     <!-- SECTION: The Problem -->
     <!-- ============================================ -->
-    <div class="section">
-        <h2>The Problem</h2>
+    <div class="doc-section">
+        <h2 class="doc-section-title">The Problem</h2>
 
         <p>Debt Manager&rsquo;s production database is around 10 terabytes. A meaningful chunk of that belongs to consumers who haven&rsquo;t been actively worked in years &mdash; their accounts are returned, paid, settled, or otherwise closed and there&rsquo;s simply nothing left to do with them. These records have been accumulating because there was never a safe, reliable way to remove them.</p>
 
@@ -41,8 +41,8 @@
     <!-- ============================================ -->
     <!-- SECTION: Why Consumers, Not Accounts -->
     <!-- ============================================ -->
-    <div class="section">
-        <h2>Why Consumers, Not Accounts</h2>
+    <div class="doc-section">
+        <h2 class="doc-section-title">Why Consumers, Not Accounts</h2>
 
         <p>The intuitive way to design archiving is account-by-account: find the accounts that qualify, archive them, move on. That was the original plan, and it tested cleanly against millions of records. But a quirk of how Debt Manager handles money exposed a structural problem.</p>
 
@@ -58,24 +58,24 @@
     <!-- ============================================ -->
     <!-- SECTION: How a Batch Works -->
     <!-- ============================================ -->
-    <div class="section">
-        <h2>How a Batch Works</h2>
+    <div class="doc-section">
+        <h2 class="doc-section-title">How a Batch Works</h2>
 
         <p>The archive process runs as a continuous loop of self-contained batches. Each batch picks up a set of eligible consumers, processes them end-to-end, and only then moves on to the next.</p>
 
-        <div class="flow-diagram">
-            <div class="flow-steps">
-                <div class="flow-step blue">Select<br>Consumers</div>
-                <span class="flow-arrow">&rarr;</span>
-                <div class="flow-step green">Re-Verify<br>Eligibility</div>
-                <span class="flow-arrow">&rarr;</span>
-                <div class="flow-step orange">Remove<br>Account Data</div>
-                <span class="flow-arrow">&rarr;</span>
-                <div class="flow-step purple">Preserve<br>Financials</div>
-                <span class="flow-arrow">&rarr;</span>
-                <div class="flow-step muted">Remove<br>Consumer</div>
+        <div class="doc-flow-diagram">
+            <div class="doc-flow-steps">
+                <div class="doc-flow-step doc-flow-blue">Select<br>Consumers</div>
+                <span class="doc-flow-arrow">&rarr;</span>
+                <div class="doc-flow-step doc-flow-green">Re-Verify<br>Eligibility</div>
+                <span class="doc-flow-arrow">&rarr;</span>
+                <div class="doc-flow-step doc-flow-orange">Remove<br>Account Data</div>
+                <span class="doc-flow-arrow">&rarr;</span>
+                <div class="doc-flow-step doc-flow-purple">Preserve<br>Financials</div>
+                <span class="doc-flow-arrow">&rarr;</span>
+                <div class="doc-flow-step doc-flow-muted">Remove<br>Consumer</div>
             </div>
-            <div class="flow-caption">A single batch handles a consumer&rsquo;s entire footprint &mdash; accounts first, financial migration in the middle, consumer record last.</div>
+            <div class="doc-flow-caption">A single batch handles a consumer&rsquo;s entire footprint &mdash; accounts first, financial migration in the middle, consumer record last.</div>
         </div>
 
         <p>Eligibility is established by a Debt Manager job that runs nightly: it looks at every consumer, checks whether all of their accounts are tagged for archive, and tags the consumer itself when the answer is yes. The xFACts process then picks those tagged consumers up, batch by batch.</p>
@@ -88,8 +88,8 @@
     <!-- ============================================ -->
     <!-- SECTION: Smart Scheduling -->
     <!-- ============================================ -->
-    <div class="section">
-        <h2>Smart Scheduling</h2>
+    <div class="doc-section">
+        <h2 class="doc-section-title">Smart Scheduling</h2>
 
         <p>The archive process is schedule-aware. Every hour of every day has a designated mode: full speed, reduced speed, or blocked. During business hours the process runs at a reduced pace to minimize any impact on the people using the system. Evenings and weekends are full speed. Certain hours are blocked entirely &mdash; particularly the window around the nightly reporting warehouse rebuild, which has to complete undisturbed.</p>
 
@@ -101,8 +101,8 @@
     <!-- ============================================ -->
     <!-- SECTION: Protecting the Reports -->
     <!-- ============================================ -->
-    <div class="section">
-        <h2>Protecting the Reports</h2>
+    <div class="doc-section">
+        <h2 class="doc-section-title">Protecting the Reports</h2>
 
         <p>This is the part that keeps everyone honest. The reporting warehouse is rebuilt every night from whatever&rsquo;s in the production database. If we just deleted consumers from production, their financial history would vanish from the reports the next morning &mdash; and with it, the numbers clients and internal teams rely on.</p>
 
@@ -112,8 +112,8 @@
     <!-- ============================================ -->
     <!-- SECTION: Shells -->
     <!-- ============================================ -->
-    <div class="section">
-        <h2>What About Shells?</h2>
+    <div class="doc-section">
+        <h2 class="doc-section-title">What About Shells?</h2>
 
         <p>A &ldquo;shell&rdquo; is a consumer record with no remaining accounts &mdash; the consumer exists in the system but has nothing attached to it. Under the new archive process, shells aren&rsquo;t typically created in the first place: the consumer record gets removed in the same batch that removes their accounts. Done correctly, the archive process leaves no shells behind.</p>
 
@@ -123,8 +123,8 @@
     <!-- ============================================ -->
     <!-- SECTION: The Control Center View -->
     <!-- ============================================ -->
-    <div class="section">
-        <h2>The Control Center View</h2>
+    <div class="doc-section">
+        <h2 class="doc-section-title">The Control Center View</h2>
 
         <p>The DM Operations page in the Control Center is a real-time window into the process. At a glance you can see how many consumers and accounts have been archived to date, how many are still waiting their turn, and how many shells have been purged. Today&rsquo;s activity shows what&rsquo;s happening right now &mdash; live counters that tick upward as batches complete. The execution history tracks daily totals, so you can watch the steady progress as millions of records work their way through.</p>
 
@@ -134,8 +134,8 @@
     <!-- ============================================ -->
     <!-- SECTION: The Bottom Line -->
     <!-- ============================================ -->
-    <div class="section">
-        <h2>The Bottom Line</h2>
+    <div class="doc-section">
+        <h2 class="doc-section-title">The Bottom Line</h2>
 
         <p>DM Operations is doing something that should have been done years ago but never had a safe, reliable way to happen. It&rsquo;s removing millions of fully-finished consumer records while making sure their financial history is preserved exactly where it needs to be. The database gets smaller, queries get faster, backups get shorter, and the reports don&rsquo;t skip a beat.</p>
 
@@ -143,25 +143,25 @@
     </div>
 
     <!-- Architecture & Reference Links -->
-    <div style="text-align: center;">
-        <a href="arch/dmops-arch.html" class="ref-link">&#x1F527; DM Operations Architecture &mdash; How archiving works under the hood</a>
+    <div class="doc-ref-link-group">
+        <a href="arch/dmops-arch.html" class="doc-ref-link">&#x1F527; DM Operations Architecture &mdash; How archiving works under the hood</a>
     </div>
-    <div style="text-align: center; margin-top: 8px;">
-        <a href="cc/dmops-cc.html" class="ref-link">&#x1F4FA; DM Operations Control Center Guide &mdash; What you&rsquo;re looking at on the live page</a>
+    <div class="doc-ref-link-group-following">
+        <a href="cc/dmops-cc.html" class="doc-ref-link">&#x1F4FA; DM Operations Control Center Guide &mdash; What you&rsquo;re looking at on the live page</a>
     </div>
-    <div style="text-align: center; margin-top: 8px;">
-        <a href="ref/dmops-ref.html" class="ref-link">&#x1F4CB; DM Operations Reference &mdash; Full technical details, DDL, and operational queries</a>
+    <div class="doc-ref-link-group-following">
+        <a href="ref/dmops-ref.html" class="doc-ref-link">&#x1F4CB; DM Operations Reference &mdash; Full technical details, DDL, and operational queries</a>
     </div>
 
     <!-- Contributing -->
-    <div class="callout tip">
+    <div class="doc-callout doc-tip">
         <p><strong>Contributing:</strong> This platform is designed to grow organically. If you have a manual process, monitoring need, or utility that could benefit from centralization, contact the <a href="mailto:applications@frost-arnett.com?subject=xFACts%20New%20Module%20Request&body=I%20would%20like%20to%20submit%20a%20possible%20process%20for%20consideration%20as%20an%20xFACts%20module.%0A%0AProcess%20Name%3A%0ACurrent%20Method%3A%0ABusiness%20Need%3A%0A%0A">Applications Team</a> to discuss adding it as an xFACts module.</p>
     </div>
 
     <!-- Footer -->
     <div class="doc-footer">
-        <p><a href="index.html" style="color: var(--accent-blue); text-decoration: none;">&larr; Back to xFACts Secrets Revealed</a></p>
-        <p style="margin-top: 8px;">Applications Team, Frost Arnett</p>
+        <p><a href="index.html" class="doc-footer-link">&larr; Back to xFACts Secrets Revealed</a></p>
+        <p class="doc-footer-line">Applications Team, Frost Arnett</p>
     </div>
 
 </div>
