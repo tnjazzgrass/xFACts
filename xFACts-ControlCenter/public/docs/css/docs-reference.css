@@ -1,95 +1,174 @@
-/* ============================================================
-   docs-reference.css — Overrides for technical reference pages
-   
-   Loaded after docs-base.css on: ref/teams-ref.html, 
-   ref/jira-ref.html, and future module reference pages.
-   ============================================================ */
+/* ============================================================================
+   xFACts Control Center - Documentation Site Reference Pages (docs-reference.css)
+   Location: E:\xFACts-ControlCenter\public\docs\css\docs-reference.css
+   Version: Tracked in dbo.System_Metadata (component: Documentation.Site)
 
-/* ===== Scroll Behavior ===== */
-html {
-    scroll-behavior: smooth;
-    scroll-padding-top: 132px; /* fallback, overridden dynamically by ddl-loader.js */
+   Page-family overrides for the technical reference pages, whose content is
+   rendered almost entirely by ddl-loader.js from the per-schema DDL JSON. Owns
+   the dynamic object-navigation row folded into the fixed header, the object
+   section headers and badges, the schema field tables, the collapsible card
+   stack each object's detail groups into, and the enrichment content (data
+   flow, design notes, status values, relationships, and copyable queries) that
+   renders inside those cards. Consumes the docs token palette from docs-base.css
+   and the app-frame chrome; adds only the reference-page content components.
+
+   FILE ORGANIZATION
+   -----------------
+   LAYOUT: PAGE WRAPPER
+   CONTENT: OBJECT MOUNT
+   CONTENT: OBJECT NAVIGATION
+   CONTENT: OBJECT HEADERS
+   CONTENT: FIELD TABLES
+   CONTENT: CARD STACK
+   CONTENT: DATA FLOW
+   CONTENT: DESIGN NOTES
+   CONTENT: STATUS VALUES
+   CONTENT: RELATIONSHIP NOTES
+   CONTENT: COMMON QUERIES
+   ============================================================================ */
+
+/* ============================================================================
+   LAYOUT: PAGE WRAPPER
+   ----------------------------------------------------------------------------
+   Reference-page body-content wrapper adding trailing bottom space so the last
+   rendered object can scroll up far enough to land at its jump-link target
+   position. The header-offset half of clean jump landing is handled by
+   scroll-padding-top set by nav.js; this provides the room a short final object
+   needs to reach that position.
+   Prefix: doc
+   ============================================================================ */
+
+/* Adds trailing space so the last object can reach its jump-target position. */
+.doc-ref-page-wrapper {
+    padding-bottom: 300px;
 }
 
-/* ===== Extra bottom padding so last section scrolls fully into position ===== */
-.page-wrapper {
-    padding-bottom: 400px;
+/* ============================================================================
+   CONTENT: OBJECT MOUNT
+   ----------------------------------------------------------------------------
+   The reference mount ddl-loader.js renders every object into, and the inline
+   error message shown in its place when a mount declares no schema or its
+   schema fails to load.
+   Prefix: doc
+   ============================================================================ */
+
+/* Establishes the reference mount that ddl-loader.js renders objects into. */
+.doc-ddl-root {
+    display: block;
 }
 
-/* ===== Sticky Navigation (two-tier: breadcrumb + object links) ===== */
-.sticky-nav {
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius);
-    padding: 10px 20px 12px;
-    margin-bottom: 35px;
-    position: sticky;
-    top: 0;
-    z-index: 100;
-    backdrop-filter: blur(8px);
-    background: rgba(var(--bg-secondary-rgb), 0.95);
+/* Styles the inline error shown when a mount's schema is missing or fails. */
+.doc-obj-load-error {
+    color: var(--color-accent-red);
 }
 
-.sticky-nav-top {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 0.85em;
-    flex-wrap: wrap;
-}
+/* ============================================================================
+   CONTENT: OBJECT NAVIGATION
+   ----------------------------------------------------------------------------
+   The object jump-link row ddl-loader.js builds into the fixed header so every
+   object on the page is one click away. Holds the flat jump-link list, the
+   grouped-by-category accordion variant and its group toggle rows, and the
+   small type label that tags each jump link with its object kind. The type
+   label's color comes from a per-kind state token compounded onto the base.
+   Prefix: doc
+   ============================================================================ */
 
-/* Only show spacing/border when sticky-nav-top has child elements */
-.sticky-nav-top:has(*) {
-    margin-bottom: 8px;
-    padding-bottom: 8px;
-    border-bottom: 1px solid var(--border-subtle);
-}
-
-.sticky-nav-top a {
-    color: var(--accent-blue);
-    text-decoration: none;
-}
-
-.sticky-nav-top a:hover {
-    text-decoration: underline;
-}
-
-.sticky-nav-top .current {
-    color: var(--text-primary);
-    font-weight: 600;
-}
-
-.sticky-nav-top .sep {
-    color: var(--text-muted);
-}
-
-/* ===== Object Jump Links ===== */
-.obj-nav-links {
+/* Rows the object jump links and group toggles beneath a hairline rule that
+   separates them from the sub-page links above. */
+.doc-obj-nav {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
     align-items: center;
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid var(--color-border-subtle);
 }
 
-.obj-nav-links a {
+/* Marks the object nav as holding category groups. */
+.doc-obj-nav-grouped { }
+
+.doc-obj-nav.doc-obj-nav-grouped { /* stack groups vertically, full width */
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: stretch;
+}
+
+/* Styles a single object jump link as a quiet, borderless monospace pill. */
+.doc-obj-nav-link {
     display: inline-block;
     padding: 4px 12px;
-    background: var(--bg-secondary);
-    border: 1px solid var(--border-subtle);
+    background: var(--color-bg-secondary);
     border-radius: 4px;
-    color: var(--text-primary);
+    color: var(--color-text-secondary);
     text-decoration: none;
     font-size: 0.83em;
     font-family: var(--font-mono);
     transition: all 0.15s ease;
 }
 
-.obj-nav-links a:hover {
-    background: var(--bg-card-hover);
-    border-color: var(--accent-blue-dim);
+.doc-obj-nav-link:hover { /* hover */
+    background: var(--color-bg-card-hover);
+    color: var(--color-accent-blue);
 }
 
-/* ===== Object Type Labels (in nav and section headers) ===== */
-.obj-type-label {
+/* Groups a category's toggle row with its collapsible list of jump links. */
+.doc-obj-nav-group {
+    display: block;
+}
+
+/* Styles the category header as brighter clickable text that toggles its
+   group, sitting on its own line above the group's jump links. */
+.doc-obj-nav-group-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    padding: 0;
+    margin: 4px 0 2px;
+    background: none;
+    border: none;
+    color: var(--color-text-heading);
+    font-family: var(--font-main);
+    font-size: 0.86em;
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+}
+
+.doc-obj-nav-group-toggle:hover { /* hover */
+    color: var(--color-accent-blue);
+}
+
+/* Points the expansion arrow at the start of a category toggle. */
+.doc-obj-nav-group-arrow {
+    color: var(--color-text-muted);
+    font-size: 0.75em;
+}
+
+/* Shows the object count beside a category label. */
+.doc-obj-nav-group-count {
+    color: var(--color-text-muted);
+}
+
+/* Holds a category's jump links, wrapping beneath its header. */
+.doc-obj-nav-group-items {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    margin-top: 6px;
+}
+
+/* Marks a group's items as collapsed. */
+.doc-collapsed { }
+
+.doc-obj-nav-group-items.doc-collapsed { /* collapsed: hidden */
+    display: none;
+}
+
+/* Tags a jump link with its object kind in a small rounded label. */
+.doc-obj-type-label {
     font-size: 0.72em;
     padding: 2px 6px;
     border-radius: 3px;
@@ -97,26 +176,120 @@ html {
     font-family: var(--font-main);
 }
 
-.obj-type-label.nav-table,
-.badge-table { background: rgba(var(--accent-blue-rgb), 0.15); color: var(--accent-blue); }
+/* Marks a type label as a table. */
+.doc-nav-table { }
 
-.obj-type-label.nav-proc,
-.badge-proc { background: rgba(var(--accent-green-rgb), 0.15); color: var(--accent-green); }
+/* Marks a type label as a procedure. */
+.doc-nav-proc { }
 
-.obj-type-label.nav-trigger,
-.badge-trigger { background: rgba(var(--accent-orange-rgb), 0.15); color: var(--accent-orange); }
+/* Marks a type label as a trigger. */
+.doc-nav-trigger { }
 
-.obj-type-label.nav-script,
-.badge-script { background: rgba(var(--accent-purple-rgb), 0.15); color: var(--accent-purple); }
+/* Marks a type label as a script. */
+.doc-nav-script { }
 
-.obj-type-label.nav-xe,
-.badge-xe { background: rgba(78, 201, 176, 0.15); color: #4ec9b0; }
+/* Marks a type label as an extended-events session. */
+.doc-nav-xe { }
 
-.obj-type-label.nav-ddltrigger,
-.badge-ddltrigger { background: rgba(244, 135, 113, 0.15); color: var(--accent-red); }
+/* Marks a type label as a DDL trigger. */
+.doc-nav-ddltrigger { }
 
-/* ===== Object Section Headers ===== */
-.obj-badge {
+/* Marks a type label as a function. */
+.doc-nav-function { }
+
+/* Marks a type label as a view. */
+.doc-nav-view { }
+
+.doc-obj-type-label.doc-nav-table { /* table */
+    background: rgba(var(--color-accent-blue-rgb), 0.15);
+    color: var(--color-accent-blue);
+}
+
+.doc-obj-type-label.doc-nav-proc { /* procedure */
+    background: rgba(var(--color-accent-green-rgb), 0.15);
+    color: var(--color-accent-green);
+}
+
+.doc-obj-type-label.doc-nav-trigger { /* trigger */
+    background: rgba(var(--color-accent-orange-rgb), 0.15);
+    color: var(--color-accent-orange);
+}
+
+.doc-obj-type-label.doc-nav-script { /* script */
+    background: rgba(var(--color-accent-purple-rgb), 0.15);
+    color: var(--color-accent-purple);
+}
+
+.doc-obj-type-label.doc-nav-xe { /* extended-events session */
+    background: rgba(var(--color-accent-shared-rgb), 0.15);
+    color: var(--color-accent-shared);
+}
+
+.doc-obj-type-label.doc-nav-ddltrigger { /* DDL trigger */
+    background: rgba(var(--color-accent-red-rgb), 0.15);
+    color: var(--color-accent-red);
+}
+
+.doc-obj-type-label.doc-nav-function { /* function */
+    background: rgba(var(--color-accent-green-rgb), 0.15);
+    color: var(--color-accent-green);
+}
+
+.doc-obj-type-label.doc-nav-view { /* view */
+    background: rgba(var(--color-accent-blue-rgb), 0.15);
+    color: var(--color-accent-blue);
+}
+
+/* ============================================================================
+   CONTENT: OBJECT HEADERS
+   ----------------------------------------------------------------------------
+   The per-object section: the block wrapper that spaces each object apart, the
+   rule that divides one object from the next, the object description blurb with
+   its accent left-border, and the kind badge shown beside the object name in
+   the heading. The badge's color comes from a per-kind state token compounded
+   onto the base.
+   Prefix: doc
+   ============================================================================ */
+
+/* Spaces each object block apart and gives it top padding. */
+.doc-object-block {
+    margin-bottom: 45px;
+    padding-top: 30px;
+}
+
+.doc-object-block:first-of-type { /* first block sits flush at the top */
+    padding-top: 0;
+}
+
+/* Divides one object block from the next with a hairline rule. */
+.doc-object-separator {
+    border: none;
+    height: 1px;
+    background: var(--color-border-default);
+    margin: 50px 0 0;
+}
+
+/* Reserves enough height on the last object so its jump-link lands at the top. */
+.doc-section-last {
+    min-height: 70vh;
+}
+
+/* Styles the object description blurb with an accent left-border. */
+.doc-obj-desc {
+    color: var(--color-text-secondary);
+    font-size: 0.95em;
+    margin-bottom: 18px;
+    border-left: 3px solid var(--color-accent-blue-dim);
+    padding-left: 14px;
+}
+
+/* Styles a link within an object description blurb. */
+.doc-obj-desc-link {
+    color: var(--color-accent-blue);
+}
+
+/* Tags an object heading with its kind in a rounded badge. */
+.doc-obj-badge {
     display: inline-block;
     font-size: 0.72em;
     padding: 2px 8px;
@@ -126,105 +299,167 @@ html {
     vertical-align: middle;
 }
 
-/* ===== Object Description ===== */
-p.obj-desc {
-    color: var(--text-secondary);
-    font-size: 0.95em;
-    margin-bottom: 18px;
-    border-left: 3px solid var(--accent-blue-dim);
-    padding-left: 14px;
+/* Marks an object badge as a table. */
+.doc-badge-table { }
+
+/* Marks an object badge as a procedure. */
+.doc-badge-proc { }
+
+/* Marks an object badge as a trigger. */
+.doc-badge-trigger { }
+
+/* Marks an object badge as a script. */
+.doc-badge-script { }
+
+/* Marks an object badge as an extended-events session. */
+.doc-badge-xe { }
+
+/* Marks an object badge as a DDL trigger. */
+.doc-badge-ddltrigger { }
+
+/* Marks an object badge as a function. */
+.doc-badge-function { }
+
+/* Marks an object badge as a view. */
+.doc-badge-view { }
+
+.doc-obj-badge.doc-badge-table { /* table */
+    background: rgba(var(--color-accent-blue-rgb), 0.15);
+    color: var(--color-accent-blue);
 }
 
-p.obj-desc a {
-    color: var(--accent-blue);
+.doc-obj-badge.doc-badge-proc { /* procedure */
+    background: rgba(var(--color-accent-green-rgb), 0.15);
+    color: var(--color-accent-green);
 }
 
-/* ===== Object Separators ===== */
-.object-block {
-    margin-bottom: 45px;
-    padding-top: 30px;
+.doc-obj-badge.doc-badge-trigger { /* trigger */
+    background: rgba(var(--color-accent-orange-rgb), 0.15);
+    color: var(--color-accent-orange);
 }
 
-.object-block:first-of-type {
-    padding-top: 0;
+.doc-obj-badge.doc-badge-script { /* script */
+    background: rgba(var(--color-accent-purple-rgb), 0.15);
+    color: var(--color-accent-purple);
 }
 
-.object-separator {
-    border: none;
-    height: 1px;
-    background: var(--border-color);
-    margin: 50px 0 0;
+.doc-obj-badge.doc-badge-xe { /* extended-events session */
+    background: rgba(var(--color-accent-shared-rgb), 0.15);
+    color: var(--color-accent-shared);
 }
 
-/* ===== Field Tables (schema reference) ===== */
-.field-table {
+.doc-obj-badge.doc-badge-ddltrigger { /* DDL trigger */
+    background: rgba(var(--color-accent-red-rgb), 0.15);
+    color: var(--color-accent-red);
+}
+
+.doc-obj-badge.doc-badge-function { /* function */
+    background: rgba(var(--color-accent-green-rgb), 0.15);
+    color: var(--color-accent-green);
+}
+
+.doc-obj-badge.doc-badge-view { /* view */
+    background: rgba(var(--color-accent-blue-rgb), 0.15);
+    color: var(--color-accent-blue);
+}
+
+/* ============================================================================
+   CONTENT: FIELD TABLES
+   ----------------------------------------------------------------------------
+   The schema reference table used for columns, parameters, indexes, and
+   constraints. Holds the table base, its header and body cells, the first-row
+   removal of cell padding artifacts, and the monospace styling of the leading
+   name and type cells. Cell roles are explicit classes ddl-loader.js emits
+   rather than positional descendants.
+   Prefix: doc
+   ============================================================================ */
+
+/* Spans the field table across the content width with collapsed borders. */
+.doc-field-table {
     width: 100%;
     border-collapse: collapse;
     margin: 12px 0 20px;
     font-size: 0.88em;
 }
 
-.field-table th {
+/* Styles a field table header cell with an uppercase muted label. */
+.doc-field-table-th {
     text-align: left;
     padding: 8px 12px;
-    background: var(--bg-secondary);
-    color: var(--text-muted);
+    background: var(--color-bg-secondary);
+    color: var(--color-text-muted);
     font-size: 0.82em;
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    border-bottom: 1px solid var(--border-color);
+    border-bottom: 1px solid var(--color-border-default);
 }
 
-.field-table td {
+/* Styles a field table body cell with a subtle bottom border. */
+.doc-field-table-td {
     padding: 8px 12px;
-    border-bottom: 1px solid var(--border-subtle);
+    border-bottom: 1px solid var(--color-border-subtle);
     vertical-align: top;
 }
 
-.field-table tr:last-child td {
+/* Removes the bottom border on the final field table row's cells. */
+.doc-field-table-td-last {
     border-bottom: none;
 }
 
-.field-table td:first-child {
+/* Styles the leading name cell in monospace accent text. */
+.doc-field-table-td-name {
     font-family: var(--font-mono);
-    color: var(--accent-blue);
+    color: var(--color-accent-blue);
     font-size: 0.92em;
     white-space: nowrap;
 }
 
-.field-table td:nth-child(2) {
+/* Styles the second type cell in muted monospace text. */
+.doc-field-table-td-type {
     font-family: var(--font-mono);
-    color: var(--text-muted);
+    color: var(--color-text-muted);
     font-size: 0.88em;
     white-space: nowrap;
 }
 
-/* ===== Responsive ===== */
-@media (max-width: 700px) {
-    .obj-nav-links {
-        flex-direction: column;
-    }
-}
+/* ============================================================================
+   CONTENT: CARD STACK
+   ----------------------------------------------------------------------------
+   The collapsible card stack each object's detail groups (fields, indexes,
+   design notes, queries, and so on) render into. Holds the stack column, the
+   toggle button with its rotating arrow, label, and count chip, the
+   show-on-open content panel, and the field-table adjustments that keep wide
+   tables readable inside a card. Open state is a token compounded onto the
+   toggle and the content.
+   Prefix: doc
+   ============================================================================ */
 
-/* ===== Card Stack Layout ===== */
-
-.card-stack {
+/* Stacks an object's detail cards in a tight vertical column. */
+.doc-card-stack {
     margin-top: 16px;
     display: flex;
     flex-direction: column;
     gap: 4px;
 }
 
-/* Card toggle button */
-.card-toggle {
+/* Wraps a single toggle-and-content card in the stack. */
+.doc-card-item {
+    display: block;
+}
+
+/* Marks a card's toggle, arrow, and content as open. */
+.doc-card-open { }
+
+/* Styles the card toggle button that expands or collapses its content. */
+.doc-card-toggle {
     display: flex;
     align-items: center;
     gap: 10px;
     width: 100%;
-    background: var(--bg-card);
-    border: 1px solid var(--border-subtle);
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border-subtle);
     border-radius: 6px;
-    color: var(--text-primary);
+    color: var(--color-text-primary);
     padding: 10px 16px;
     cursor: pointer;
     font-family: var(--font-main);
@@ -233,207 +468,262 @@ p.obj-desc a {
     text-align: left;
 }
 
-.card-toggle:hover {
-    background: var(--bg-card-hover);
-    border-color: var(--accent-blue-dim);
+.doc-card-toggle:hover { /* hover */
+    background: var(--color-bg-card-hover);
+    border-color: var(--color-accent-blue-dim);
 }
 
-.card-toggle.open {
-    border-color: var(--accent-blue-dim);
+.doc-card-toggle.doc-card-open { /* expanded: square off the bottom edge */
+    border-color: var(--color-accent-blue-dim);
     border-bottom-left-radius: 0;
     border-bottom-right-radius: 0;
 }
 
-.card-arrow {
-    color: var(--text-muted);
+/* Points the disclosure arrow at the start of a card toggle. */
+.doc-card-arrow {
+    color: var(--color-text-muted);
     font-size: 0.75em;
     transition: transform 0.2s ease;
     flex-shrink: 0;
 }
 
-.card-toggle.open .card-arrow {
+.doc-card-arrow.doc-card-open { /* rotate to point down when expanded */
     transform: rotate(90deg);
 }
 
-.card-label {
+/* Shows the card's label and lets it fill the toggle width. */
+.doc-card-label {
     flex: 1;
     font-weight: 500;
 }
 
-.card-count {
-    background: rgba(var(--accent-blue-rgb), 0.15);
-    color: var(--accent-blue);
+/* Shows the item count for the card in a rounded chip. */
+.doc-card-count {
+    background: rgba(var(--color-accent-blue-rgb), 0.15);
+    color: var(--color-accent-blue);
     font-size: 0.8em;
     padding: 1px 8px;
     border-radius: 10px;
     font-weight: 500;
 }
 
-/* Card content panel */
-.card-content {
+/* Holds the card's detail content, hidden until the card is opened. */
+.doc-card-content {
     display: none;
-    background: var(--bg-secondary);
-    border: 1px solid var(--accent-blue-dim);
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-accent-blue-dim);
     border-top: none;
     border-radius: 0 0 6px 6px;
     padding: 16px 18px;
-}
-
-.card-content.open {
-    display: block;
-}
-
-/* Prevent content from overflowing card boundaries */
-.card-content {
     overflow: hidden;
 }
 
-.card-content .field-table {
-    table-layout: fixed;
-    width: 100%;
+.doc-card-content.doc-card-open { /* revealed when the card is expanded */
+    display: block;
 }
 
-.card-content .field-table td,
-.card-content .field-table th {
+/* Fixes the table layout so a field table fits within a card's width. */
+.doc-card-field-table {
+    table-layout: fixed;
+    width: 100%;
+    margin: 0 0 8px;
+}
+
+/* Wraps long cell text so a card field table never overflows. */
+.doc-card-field-table-td {
     white-space: normal;
     word-wrap: break-word;
     overflow-wrap: break-word;
 }
 
-/* Keep short structural columns compact */
-.card-content .field-table td:first-child {
+/* Keeps the leading name cell on one line inside a card field table. */
+.doc-card-field-table-td-name {
     white-space: nowrap;
 }
 
-/* Field table adjustments inside cards */
-.card-content .field-table {
-    margin: 0 0 8px;
-}
+/* ============================================================================
+   CONTENT: DATA FLOW
+   ----------------------------------------------------------------------------
+   The always-visible data-flow blurb shown beneath an object's description,
+   describing how data moves through the object. Holds the wrapper spacing and
+   the bordered flow text with its green accent left-border.
+   Prefix: doc
+   ============================================================================ */
 
-/* ===== Data Flow (always visible) ===== */
-.enrichment-data-flow {
+/* Spaces the data-flow blurb beneath the object description. */
+.doc-enrichment-data-flow {
     margin-bottom: 8px;
 }
 
-.data-flow-text {
-    color: var(--text-secondary);
+/* Styles the data-flow text with a green accent left-border. */
+.doc-data-flow-text {
+    color: var(--color-text-secondary);
     font-size: 0.93em;
     line-height: 1.65;
-    border-left: 3px solid var(--accent-green-dim);
+    border-left: 3px solid var(--color-accent-green-dim);
     padding-left: 14px;
     margin-bottom: 10px;
 }
 
-/* ===== Enrichment content inside cards ===== */
+/* ============================================================================
+   CONTENT: DESIGN NOTES
+   ----------------------------------------------------------------------------
+   The design-note entries that render inside a card: each note's wrapper with
+   a subtle left-border, its accent heading, its body text, and the italic
+   summary line. The last note drops its trailing margin.
+   Prefix: doc
+   ============================================================================ */
 
-/* Design Notes */
-.card-content .design-note {
+/* Wraps a single design note with a subtle left-border. */
+.doc-design-note {
     margin-bottom: 14px;
     padding-left: 12px;
-    border-left: 2px solid var(--border-subtle);
+    border-left: 2px solid var(--color-border-subtle);
 }
 
-.card-content .design-note:last-child {
+.doc-design-note:last-child { /* last note drops its trailing margin */
     margin-bottom: 0;
 }
 
-.card-content .design-note h4 {
-    color: var(--accent-blue);
+/* Styles a design note's heading in the accent color. */
+.doc-design-note-title {
+    color: var(--color-accent-blue);
     font-size: 0.9em;
     margin-bottom: 4px;
 }
 
-.card-content .design-note p {
-    color: var(--text-secondary);
+/* Styles a design note's body text. */
+.doc-design-note-body {
+    color: var(--color-text-secondary);
     font-size: 0.88em;
     line-height: 1.6;
     margin-bottom: 4px;
 }
 
-.card-content .design-note-summary {
-    color: var(--text-muted);
+/* Styles a design note's summary line as muted italic. */
+.doc-design-note-summary {
+    color: var(--color-text-muted);
     font-style: italic;
 }
 
-/* Status Values */
-.status-column-label {
+/* ============================================================================
+   CONTENT: STATUS VALUES
+   ----------------------------------------------------------------------------
+   The status-value tables that document a column's permitted values: the
+   per-column label introducing each table, its inline code styling, and the
+   fixed-width first column that keeps value codes aligned and colored.
+   Prefix: doc
+   ============================================================================ */
+
+/* Labels which column a following status-value table applies to. */
+.doc-status-column-label {
     font-size: 0.82em;
-    color: var(--text-muted);
+    color: var(--color-text-muted);
     margin-bottom: 4px;
 }
 
-.status-column-label code {
-    color: var(--accent-blue);
+/* Styles the column name inside a status-column label. */
+.doc-status-column-label-code {
+    color: var(--color-accent-blue);
     font-size: 0.95em;
 }
 
-.status-table td:first-child {
+/* Fixes the value column width and keeps codes on one line. */
+.doc-status-table-td-value {
     width: 120px;
     min-width: 80px;
     white-space: nowrap;
 }
 
-.status-table th:first-child {
+/* Fixes the value header column to match the value cells. */
+.doc-status-table-th-value {
     width: 120px;
 }
 
-.status-table td:first-child code {
-    color: var(--accent-orange);
+/* Colors the value code in a status-value cell. */
+.doc-status-table-td-value-code {
+    color: var(--color-accent-orange);
     font-size: 0.9em;
 }
 
-/* Relationship Notes */
-.card-content .relationship-note {
+/* ============================================================================
+   CONTENT: RELATIONSHIP NOTES
+   ----------------------------------------------------------------------------
+   The relationship-note entries that render inside a card, each describing how
+   the object relates to another: the wrapper with a subtle left-border, the
+   monospace related-object heading, and the body text. The last note drops its
+   trailing margin.
+   Prefix: doc
+   ============================================================================ */
+
+/* Wraps a single relationship note with a subtle left-border. */
+.doc-relationship-note {
     margin-bottom: 14px;
     padding-left: 12px;
-    border-left: 2px solid var(--border-subtle);
+    border-left: 2px solid var(--color-border-subtle);
 }
 
-.card-content .relationship-note:last-child {
+.doc-relationship-note:last-child { /* last note drops its trailing margin */
     margin-bottom: 0;
 }
 
-.card-content .relationship-note h4 {
-    color: var(--accent-blue);
+/* Styles a relationship note's related-object heading in monospace. */
+.doc-relationship-note-title {
+    color: var(--color-accent-blue);
     font-size: 0.9em;
     font-family: var(--font-mono);
     margin-bottom: 4px;
 }
 
-.card-content .relationship-note p {
-    color: var(--text-secondary);
+/* Styles a relationship note's body text. */
+.doc-relationship-note-body {
+    color: var(--color-text-secondary);
     font-size: 0.88em;
     line-height: 1.6;
 }
 
-/* Common Queries */
-.query-block {
+/* ============================================================================
+   CONTENT: COMMON QUERIES
+   ----------------------------------------------------------------------------
+   The copyable query blocks that render inside a card: each block's wrapper and
+   heading, the description line, the relative-positioned code wrapper, the
+   scrollable code surface and its monospace code, and the copy button with its
+   hover and success states. The last block drops its trailing margin.
+   Prefix: doc
+   ============================================================================ */
+
+/* Wraps a single common-query block. */
+.doc-query-block {
     margin-bottom: 18px;
 }
 
-.query-block:last-child {
+.doc-query-block:last-child { /* last block drops its trailing margin */
     margin-bottom: 0;
 }
 
-.query-block h4 {
-    color: var(--text-primary);
+/* Styles a query block's heading. */
+.doc-query-block-title {
+    color: var(--color-text-primary);
     font-size: 0.9em;
     margin-bottom: 4px;
 }
 
-.query-desc {
-    color: var(--text-muted);
+/* Styles a query block's description line. */
+.doc-query-desc {
+    color: var(--color-text-muted);
     font-size: 0.82em;
     margin-bottom: 6px;
 }
 
-.query-code-wrapper {
+/* Positions the copy button relative to the code surface. */
+.doc-query-code-wrapper {
     position: relative;
 }
 
-.query-code {
-    background: var(--bg-code);
-    border: 1px solid var(--border-subtle);
+/* Styles the scrollable code surface for a query. */
+.doc-query-code {
+    background: var(--color-bg-code);
+    border: 1px solid var(--color-border-subtle);
     border-radius: 4px;
     padding: 12px 14px;
     overflow-x: auto;
@@ -442,20 +732,25 @@ p.obj-desc a {
     margin: 0;
 }
 
-.query-code code {
+/* Styles the monospace code text inside a query surface. */
+.doc-query-code-text {
     font-family: var(--font-mono);
-    color: var(--text-primary);
+    color: var(--color-text-primary);
     white-space: pre;
 }
 
-.copy-btn {
+/* Marks the copy button as having copied successfully. */
+.doc-copy-success { }
+
+/* Styles the copy-to-clipboard button pinned in the code corner. */
+.doc-copy-btn {
     position: absolute;
     top: 6px;
     right: 6px;
-    background: var(--bg-secondary);
-    border: 1px solid var(--border-subtle);
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border-subtle);
     border-radius: 3px;
-    color: var(--text-muted);
+    color: var(--color-text-muted);
     font-size: 0.72em;
     padding: 2px 8px;
     cursor: pointer;
@@ -463,18 +758,13 @@ p.obj-desc a {
     z-index: 1;
 }
 
-.copy-btn:hover {
-    background: var(--bg-card-hover);
-    color: var(--text-primary);
-    border-color: var(--accent-blue-dim);
+.doc-copy-btn:hover { /* hover */
+    background: var(--color-bg-card-hover);
+    color: var(--color-text-primary);
+    border-color: var(--color-accent-blue-dim);
 }
 
-.copy-btn.copy-success {
-    color: var(--accent-green);
-    border-color: var(--accent-green-dim);
-}
-
-/* Ensure last object section has enough scroll room for sticky nav targeting */
-.ddl-root .section:last-child {
-    min-height: 60vh;
+.doc-copy-btn.doc-copy-success { /* copy succeeded */
+    color: var(--color-accent-green);
+    border-color: var(--color-accent-green-dim);
 }
