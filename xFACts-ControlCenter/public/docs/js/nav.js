@@ -66,7 +66,7 @@ const doc_collapseKey = 'docNavCollapsed';
 /* Current page filename, defaulting to index.html at a directory root. */
 var doc_filename = 'index.html';
 
-/* True when the current page lives in a cc/, arch/, or ref/ subfolder. */
+/* True when the current page lives in a cc/, arch/, ref/, or guides/ subfolder. */
 var doc_isSubfolder = false;
 
 /* Relative path prefix from the current page to the pages root. */
@@ -94,7 +94,8 @@ async function doc_init() {
     doc_filename = path.substring(path.lastIndexOf('/') + 1) || 'index.html';
     doc_isSubfolder = path.indexOf('/ref/') !== -1 ||
                       path.indexOf('/arch/') !== -1 ||
-                      path.indexOf('/cc/') !== -1;
+                      path.indexOf('/cc/') !== -1 ||
+                      path.indexOf('/guides/') !== -1;
     doc_prefix = doc_isSubfolder ? '../' : '';
     doc_dataPrefix = doc_isSubfolder ? '../../' : '../';
 
@@ -144,7 +145,9 @@ function doc_getCcSlugs(page) {
 
 /* Resolves the current URL to a registry page id and sub-page type. Named CC
    guide pages are matched before standard sub-page types because their
-   filenames are more specific. */
+   filenames are more specific. A page that matches no registry entry (such as a
+   standalone guide under guides/) returns a null id, which renders the full
+   module rail with no active module and skips sub-page discovery. */
 function doc_detectCurrent(pages) {
     for (var i = 0; i < pages.length; i++) {
         var p = pages[i];
