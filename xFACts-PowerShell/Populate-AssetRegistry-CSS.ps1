@@ -51,6 +51,28 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-06-22  Structural-dimension token carve-out (immediate fix; B-097 tracks
+#             the durable convention-based replacement). The size-dimension
+#             catch-all conflated genuine general dimensions with single-purpose
+#             structural/chrome tokens (nav rail, page max-width, panel/modal/
+#             slideup/scrollbar measures), so a page-file width/height literal
+#             that merely equaled one of those by value fired a false
+#             DRIFT_PX_LITERAL -- contradicting the drift definition's own caveat
+#             that a size value matching a token of unrelated purpose is not
+#             drift (e.g. .doc-mock-col-right width:240px flagged only because it
+#             equals --size-nav-width:240px, the nav rail). Get-TokenNameFamily
+#             now classifies size-nav-*/size-max-width/size-panel-*/size-modal-*/
+#             size-slideup-*/size-scrollbar-* into a new 'size-structural'
+#             family, and Test-LiteralTokenFamilyMatch never matches a literal
+#             against a 'size-structural' token. This mirrors the color-role
+#             split (Get-TokenNameFamily) but inverted: structural dimensions
+#             match NOTHING, where role colors match ANYTHING. Remaining --size-*
+#             tokens keep 'size-dimension' and match normally; there are no
+#             general dimension tokens today, so this changes only the chrome
+#             false-positives. Name-based, so the prefix list needs extending
+#             when a new structural dimension token is introduced -- B-097 will
+#             replace it with a convention (only an explicit general-dimension
+#             prefix participates in dimension matching).
 # 2026-06-09  Size-literal purpose sub-classification (B-014). The single 'size'
 #             token family is split four ways by property so a size literal
 #             matches only same-purpose --size-* tokens, mirroring the existing
@@ -950,23 +972,39 @@ function Get-TokenNameFamily {
         $n -like 'color-banner-*' -or $n -like 'color-button-*') { return 'color-role' }
     if ($n -like 'color-*')      { return 'color-role' }
     # Size sub-families. Specific purpose prefixes are tested before the bare
-    # 'size-*' catch-all, which maps every remaining --size-* layout-measurement
-    # token (nav, page-padding, panel/modal/slideup widths and heights,
-    # scrollbar) to the cross-property 'size-dimension' family.
+    # 'size-*' catch-all. Property-specific spacing/radius/border tokens match
+    # only same-purpose literals. Structural/chrome dimension tokens (nav rail,
+    # page max-width, and panel/modal/slideup measures) name a single layout
+    # element and are NOT a general dimension scale, so a page-file width/height
+    # literal that merely equals one by value is an unrelated-purpose match and
+    # must not be drift (mirrors the color-role split, but inverted: structural
+    # dimensions match NOTHING rather than matching any property). They return
+    # the 'size-structural' family, which Test-LiteralTokenFamilyMatch never
+    # matches a literal against. Any remaining --size-* token is a genuine
+    # general dimension and keeps 'size-dimension'. (B-097 will replace this
+    # name-based carve-out with a convention-based general-dimension prefix.)
     if ($n -like 'size-spacing-*') { return 'size-spacing' }
     if ($n -like 'size-radius-*')  { return 'size-radius' }
     if ($n -like 'size-border-*')  { return 'size-border' }
+    if ($n -like 'size-nav-*' -or $n -like 'size-max-width' -or
+        $n -like 'size-panel-*' -or $n -like 'size-modal-*' -or
+        $n -like 'size-slideup-*' -or $n -like 'size-scrollbar-*') { return 'size-structural' }
     if ($n -like 'size-*')         { return 'size-dimension' }
     return $null
 }
 
 # Decide whether a literal of the given family matches a token of the given
-# family for Tier-1 drift. Non-color families require exact equality. Color
-# families match when the token is a cross-property role/state color
-# ('color-role') or when the literal and token share the same color sub-family.
+# family for Tier-1 drift. Non-color families require exact equality, except
+# that a 'size-structural' token (nav/max-width/panel/modal/slideup/scrollbar --
+# a single named layout element, not a general dimension scale) never matches a
+# literal: a width/height value equal to a structural token's value is an
+# unrelated-purpose coincidence, not drift. Color families match when the token
+# is a cross-property role/state color ('color-role') or when the literal and
+# token share the same color sub-family.
 function Test-LiteralTokenFamilyMatch {
     param([string]$LiteralFamily, [string]$TokenFamily)
     if ([string]::IsNullOrWhiteSpace($LiteralFamily) -or [string]::IsNullOrWhiteSpace($TokenFamily)) { return $false }
+    if ($TokenFamily -eq 'size-structural') { return $false }
     $litIsColor = $LiteralFamily.StartsWith('color')
     $tokIsColor = $TokenFamily.StartsWith('color')
     if ($litIsColor -ne $tokIsColor) { return $false }
