@@ -91,18 +91,13 @@
    Prefix: (none)
    ============================================================================ #>
 
-# 2026-06-20  Docs-zone JS support (CC_JS_Spec 4.4, 7.2, 8, 11). Added the
-#             docs-shell section taxonomy (IMPORTS / FOUNDATION / STATE /
-#             FUNCTIONS) as a third valid-section-type set and made the
-#             per-file selection zone-aware (page / cc shell / docs shell).
+# 2026-06-20  Docs-zone JS support. Added the docs-shell section taxonomy 
+#             as a third valid-section-type set and made the per-file
+#             selection zone-aware (page / cc shell / docs shell).
 #             Gated the ENGINE_PROCESSES validation block to the cc zone so
 #             the absence-triggered MISSING_ENGINE_PROCESSES_DECLARATION check
 #             cannot misfire on a docs page. Corrected the stale MISSING_PAGE_
-#             INIT comment (removed the retired engine-events.js reference and
-#             the unimplemented docs-exemption claim; the init requirement
-#             applies to page files in every zone). Page lifecycle hook checks
-#             are presence-triggered and need no zone gate. SectionTypeOrder
-#             unchanged: 1->2->3->5 validates for the docs shell as-is.
+#             INIT comment.
 # 2026-06-02  Fixed Get-HtmlAttributeOccurrences id/class scanner: the word-
 #             boundary anchor matched the tail of hyphenated attribute names
 #             (e.g. the 'id' in data-action-bsv-group-id="0"), mis-cataloging
