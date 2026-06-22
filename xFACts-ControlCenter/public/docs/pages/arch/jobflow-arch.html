@@ -9,46 +9,46 @@
     <link rel="stylesheet" href="../../css/docs-erd.css">
 </head>
 <body>
+<div class="doc-layout">
 
-<div class="doc-page-wrapper doc-arch-page-wrapper">
+    <nav class="doc-nav"></nav>
 
-    <!-- Header -->
-    <div class="doc-page-header">
-        <h1 class="doc-page-title">Job/Flow Monitoring Architecture</h1>
-        <div class="doc-page-subtitle">Eight steps (sometimes less), eleven tables, one script, and a whole lot of XML snapshots</div>
-    </div>
+    <div class="doc-content">
 
-    <!-- Sticky Section Nav -->
-    <div class="doc-section-nav">
-        <div class="doc-section-nav-top"></div>
-        <div class="doc-section-nav-links">
-            <a href="#erd" class="doc-section-nav-jump">Schema Overview</a>
-            <a href="#state-machine" class="doc-section-nav-jump">State Machine</a>
-            <a href="#processing-pipeline" class="doc-section-nav-jump">Processing Pipeline</a>
-            <a href="#stall-detection" class="doc-section-nav-jump">Stall Detection</a>
-            <a href="#validation" class="doc-section-nav-jump">Validation Pipeline</a>
-            <a href="#missing-flows" class="doc-section-nav-jump">Missing Flow Detection</a>
-            <a href="#config-sync" class="doc-section-nav-jump">ConfigSync</a>
-            <a href="#status-translation" class="doc-section-nav-jump">Status Translation</a>
-            <a href="#troubleshooting" class="doc-section-nav-jump">Troubleshooting</a>
-            <a href="#connections" class="doc-section-nav-jump">How Everything Connects</a>
+        <div class="doc-header">
+            <div class="doc-header-inner">
+                <h1 class="doc-page-title">Job/Flow Monitoring Architecture</h1>
+                <div class="doc-page-subtitle">Eight steps (sometimes less), eleven tables, one script, and a whole lot of XML snapshots</div>
+                <div class="doc-subpage-links"></div>
+                <div class="doc-section-jumps">
+                    <span class="doc-section-jumps-label">On This Page:</span>
+                    <a href="#erd" class="doc-section-jump">Schema Overview</a>
+                    <a href="#state-machine" class="doc-section-jump">State Machine</a>
+                    <a href="#processing-pipeline" class="doc-section-jump">Processing Pipeline</a>
+                    <a href="#stall-detection" class="doc-section-jump">Stall Detection</a>
+                    <a href="#validation" class="doc-section-jump">Validation Pipeline</a>
+                    <a href="#missing-flows" class="doc-section-jump">Missing Flow Detection</a>
+                    <a href="#config-sync" class="doc-section-jump">ConfigSync</a>
+                    <a href="#status-translation" class="doc-section-jump">Status Translation</a>
+                    <a href="#troubleshooting" class="doc-section-jump">Troubleshooting</a>
+                    <a href="#connections" class="doc-section-jump">How Everything Connects</a>
+                </div>
+            </div>
         </div>
-    </div>
 
+        <div class="doc-body">
+            <div class="doc-body-inner doc-arch-page-wrapper">
     <!-- Context Bar -->
     <div class="doc-context-bar">
         The narrative page tells you <em>what</em> JobFlow does and <em>why</em>. This page tells you <em>how</em>. Eleven tables, one PowerShell script with eight processing steps, a state machine, snapshot-based stall detection, and a validation pipeline that distinguishes real failures from business-as-usual rejections.
     </div>
 
-    <!-- ============================================ -->
-    <!-- SECTION: Schema Overview / ERD -->
-    <!-- ============================================ -->
-    <div class="doc-section" id="erd">
+<div class="doc-section" id="erd">
         <h2 class="doc-section-title">Schema Overview</h2>
 
         <p>The JobFlow schema is organized around three functional groups: configuration (what to monitor), tracking (what's happening), and analysis (what happened). All processing logic lives in <code>Monitor-JobFlow.ps1</code> &mdash; there are no stored procedures or triggers in this schema.</p>
 
-        <div class="erd-root" data-schema="JobFlow"></div>
+        <div class="doc-erd-root" data-schema="JobFlow"></div>
 
         <table class="doc-info-table">
             <thead><tr><th class="doc-info-table-th">Group</th><th class="doc-info-table-th">Table</th><th class="doc-info-table-th">Role</th></tr></thead>
@@ -532,26 +532,15 @@
         </table>
     </div>
 
-    <!-- Reference Page Link -->
-    <div class="doc-ref-link-group">
-        <a href="../ref/jobflow-ref.html" class="doc-ref-link">&#x1F4CB; JobFlow Monitoring Reference &mdash; Full DDL, field definitions, and operational queries</a>
-    </div>
+                <div class="doc-footer"></div>
 
-    <!-- Contributing -->
-    <div class="doc-callout doc-tip">
-        <p><strong>Contributing:</strong> This platform is designed to grow organically. If you have a manual process, monitoring need, or utility that could benefit from centralization, contact the <a href="mailto:applications@frost-arnett.com?subject=xFACts%20New%20Module%20Request&body=I%20would%20like%20to%20submit%20a%20possible%20process%20for%20consideration%20as%20an%20xFACts%20module.%0A%0AProcess%20Name%3A%0ACurrent%20Method%3A%0ABusiness%20Need%3A%0A%0A">Applications Team</a> to discuss adding it as an xFACts module.</p>
-    </div>
+            </div>
+        </div>
 
-    <!-- Footer -->
-    <div class="doc-footer">
-        <p><a href="../jobflow.html" class="doc-footer-link">&larr; Back to JobFlow Monitoring</a>
-           &nbsp;&nbsp;&bull;&nbsp;&nbsp;
-           <a href="../index.html" class="doc-footer-link">Hub</a></p>
-        <p class="doc-footer-line">Applications Team, Frost Arnett</p>
     </div>
 
 </div>
-
+<script src="../../js/docs-shared.js"></script>
 <script src="../../js/nav.js"></script>
 <script src="../../js/ddl-erd.js"></script>
 </body>
