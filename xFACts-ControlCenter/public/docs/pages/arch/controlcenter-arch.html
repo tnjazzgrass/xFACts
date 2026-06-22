@@ -8,42 +8,41 @@
     <link rel="stylesheet" href="../../css/docs-architecture.css">
 </head>
 <body>
-<div class="doc-page-wrapper doc-arch-page-wrapper">
+<div class="doc-layout">
 
-    <div class="doc-page-header">
-        <h1 class="doc-page-title">The Control Center Architecture</h1>
-        <div class="doc-page-subtitle">Pode, PowerShell, four files per page, and the machinery behind the dark theme</div>
-    </div>
+    <nav class="doc-nav"></nav>
 
-    <div class="doc-section-nav">
-        <div class="doc-section-nav-top"></div>
-        <div class="doc-section-nav-links">
-            <a href="#pode" class="doc-section-nav-jump">Pode &amp; NSSM</a>
-            <a href="#folder-structure" class="doc-section-nav-jump">Folder Structure</a>
-            <a href="#startup" class="doc-section-nav-jump">Startup Sequence</a>
-            <a href="#authentication" class="doc-section-nav-jump">Authentication</a>
-            <a href="#rbac" class="doc-section-nav-jump">RBAC</a>
-            <a href="#four-file" class="doc-section-nav-jump">The Four-File Pattern</a>
-            <a href="#helpers" class="doc-section-nav-jump">Helpers Module</a>
-            <a href="#refresh" class="doc-section-nav-jump">Refresh Architecture</a>
-            <a href="#engine-events" class="doc-section-nav-jump">Engine Events</a>
-            <a href="#api-patterns" class="doc-section-nav-jump">API Patterns</a>
-            <a href="#api-cache" class="doc-section-nav-jump">API Caching</a>
-            <a href="#request-logging" class="doc-section-nav-jump">Request Logging</a>
-            <a href="#shared-behaviors" class="doc-section-nav-jump">Shared Behaviors</a>
-            <a href="#troubleshooting" class="doc-section-nav-jump">Troubleshooting</a>
-            <a href="#connections" class="doc-section-nav-jump">How Everything Connects</a>
+    <div class="doc-content">
+
+        <div class="doc-header">
+            <div class="doc-header-inner">
+                <h1 class="doc-page-title">The Control Center Architecture</h1>
+                <div class="doc-page-subtitle">Pode, PowerShell, four files per page, and the machinery behind the dark theme</div>
+                <div class="doc-subpage-links"></div>
+                <div class="doc-section-jumps">
+                    <span class="doc-section-jumps-label">On This Page:</span>
+                    <a href="#pode" class="doc-section-jump">Pode &amp; NSSM</a>
+                    <a href="#folder-structure" class="doc-section-jump">Folder Structure</a>
+                    <a href="#startup" class="doc-section-jump">Startup Sequence</a>
+                    <a href="#authentication" class="doc-section-jump">Authentication</a>
+                    <a href="#rbac" class="doc-section-jump">RBAC</a>
+                    <a href="#four-file" class="doc-section-jump">The Four-File Pattern</a>
+                    <a href="#helpers" class="doc-section-jump">Helpers Module</a>
+                    <a href="#refresh" class="doc-section-jump">Refresh Architecture</a>
+                    <a href="#engine-events" class="doc-section-jump">Engine Events</a>
+                    <a href="#api-patterns" class="doc-section-jump">API Patterns</a>
+                    <a href="#api-cache" class="doc-section-jump">API Caching</a>
+                    <a href="#request-logging" class="doc-section-jump">Request Logging</a>
+                    <a href="#shared-behaviors" class="doc-section-jump">Shared Behaviors</a>
+                    <a href="#troubleshooting" class="doc-section-jump">Troubleshooting</a>
+                    <a href="#connections" class="doc-section-jump">How Everything Connects</a>
+                </div>
+            </div>
         </div>
-    </div>
 
-    <div class="doc-context-bar">
-        The narrative page tells you <em>what</em> the Control Center is and <em>how to use it</em>. This page tells you <em>how it&rsquo;s built</em> &mdash; the framework, the patterns, the infrastructure that makes every page work. If you&rsquo;re maintaining or extending the Control Center, start here.
-    </div>
-
-    <!-- ============================================ -->
-    <!-- SECTION: Pode & NSSM -->
-    <!-- ============================================ -->
-    <div class="doc-section" id="pode">
+        <div class="doc-body">
+            <div class="doc-body-inner doc-arch-page-wrapper">
+<div class="doc-section" id="pode">
         <h2 class="doc-section-title">Pode &amp; NSSM</h2>
 
         <p>The Control Center is a <a href="https://badgerati.github.io/Pode/" class="doc-ref-inline">Pode</a> web application &mdash; a web framework written entirely in PowerShell. Pode handles HTTP routing, WebSocket connections, session management, static file serving, and middleware. The same language that collects data, runs the orchestrator, and processes alerts also serves the web pages. One language, one team, no translation layer.</p>
@@ -136,7 +135,7 @@
                 <tr><td class="doc-info-table-td">2</td><td class="doc-info-table-td">Static routes (<code>/css</code>, <code>/js</code>, <code>/images</code>, <code>/docs</code>)</td><td class="doc-info-table-td">Must exist before any page tries to load assets</td></tr>
                 <tr><td class="doc-info-table-td">3</td><td class="doc-info-table-td">File logging (requests + errors)</td><td class="doc-info-table-td">Logging should be active before any requests are handled</td></tr>
                 <tr><td class="doc-info-table-td">4</td><td class="doc-info-table-td">Session middleware</td><td class="doc-info-table-td">Required before authentication is configured</td></tr>
-                <tr><td class="doc-info-table-td">5</td><td class="doc-info-table-td">Helpers module (<code>xFACts-Helpers.psm1</code>)</td><td class="doc-info-table-td">Must load before auth setup &mdash; RBAC functions and <code>Invoke-XFActsQuery</code> are used in the auth scriptblock</td></tr>
+                <tr><td class="doc-info-table-td">5</td><td class="doc-info-table-td">Helpers module (<code>xFACts-CCShared.psm1</code>)</td><td class="doc-info-table-td">Must load before auth setup &mdash; RBAC functions and <code>Invoke-XFActsQuery</code> are used in the auth scriptblock</td></tr>
                 <tr><td class="doc-info-table-td">6</td><td class="doc-info-table-td">AD authentication scheme</td><td class="doc-info-table-td">Depends on session middleware and helpers module</td></tr>
                 <tr><td class="doc-info-table-td">7</td><td class="doc-info-table-td">Request logging middleware + endware</td><td class="doc-info-table-td">After auth so user context is available in log entries</td></tr>
                 <tr><td class="doc-info-table-td">8</td><td class="doc-info-table-td">Login/logout routes</td><td class="doc-info-table-td">After auth scheme is registered</td></tr>
@@ -148,7 +147,7 @@
         </table>
 
         <div class="doc-tech-tip">
-            <strong class="doc-tech-tip-label">Fatal guard.</strong> If <code>xFACts-Helpers.psm1</code> is missing, the startup script throws immediately. There is no graceful degradation &mdash; every route depends on the module for database access and RBAC. If the module isn&rsquo;t there, nothing works, and failing fast with a clear error is better than silently serving broken pages.
+            <strong class="doc-tech-tip-label">Fatal guard.</strong> If <code>xFACts-CCShared.psm1</code> is missing, the startup script throws immediately. There is no graceful degradation &mdash; every route depends on the module for database access and RBAC. If the module isn&rsquo;t there, nothing works, and failing fast with a clear error is better than silently serving broken pages.
         </div>
     </div>
 
@@ -308,7 +307,7 @@
 
         <p>Every route file follows the same pattern: register a GET route with <code>-Authentication 'ADLogin'</code>, perform an RBAC check via <code>Get-UserAccess</code>, resolve admin context via <code>Get-UserContext</code> for the gear icon, then write the complete HTML page as a PowerShell here-string via <code>Write-PodeHtmlResponse</code>.</p>
 
-        <p>The HTML includes a fixed navigation bar (identical across all pages, with the current page highlighted), a header bar with title and engine indicators, section containers for data, and script tags loading the page JS followed by the shared <code>engine-events.js</code>.</p>
+        <p>The HTML includes a fixed navigation bar (identical across all pages, with the current page highlighted), a header bar with title and engine indicators, section containers for data, and script tags loading the page JS followed by the shared <code>cc-shared.js</code>.</p>
 
         <h3 class="doc-section-subtitle">API File Structure</h3>
 
@@ -329,7 +328,7 @@
     <div class="doc-section" id="helpers">
         <h2 class="doc-section-title">The Helpers Module</h2>
 
-        <p><code>xFACts-Helpers.psm1</code> is the shared PowerShell module loaded at startup and available to every Pode runspace. It provides the foundation that every route file depends on.</p>
+        <p><code>xFACts-CCShared.psm1</code> is the shared PowerShell module loaded at startup and available to every Pode runspace. It provides the foundation that every route file depends on.</p>
 
         <table class="doc-info-table">
             <thead><tr><th class="doc-info-table-th">Function Group</th><th class="doc-info-table-th">Functions</th><th class="doc-info-table-th">Purpose</th></tr></thead>
@@ -375,7 +374,7 @@
             <thead><tr><th class="doc-info-table-th">Component</th><th class="doc-info-table-th">Purpose</th></tr></thead>
             <tbody>
                 <tr><td class="doc-info-table-td"><code>ENGINE_PROCESSES</code> map</td><td class="doc-info-table-td">Defined as a <code>var</code> before the page IIFE. Maps orchestrator process names to engine card slugs. Set to <code>{}</code> if the page has no engine cards.</td></tr>
-                <tr><td class="doc-info-table-td"><code>engine-events.css</code> + <code>engine-events.js</code></td><td class="doc-info-table-td">Shared engine indicator files, linked after page-specific CSS/JS</td></tr>
+                <tr><td class="doc-info-table-td"><code>cc-shared.css</code> + <code>cc-shared.js</code></td><td class="doc-info-table-td">Shared engine indicator files, linked after page-specific CSS/JS</td></tr>
                 <tr><td class="doc-info-table-td"><code>connectEngineEvents()</code></td><td class="doc-info-table-td">Called in <code>init()</code> to establish the WebSocket connection</td></tr>
                 <tr><td class="doc-info-table-td"><code>onEngineProcessCompleted()</code></td><td class="doc-info-table-td">Global callback for event-driven section refreshes when a process completes</td></tr>
                 <tr><td class="doc-info-table-td">Midnight rollover</td><td class="doc-info-table-td">A 60-second <code>setInterval</code> that reloads the page if the date has changed, preventing stale overnight sessions</td></tr>
@@ -459,7 +458,7 @@
         <p>The engine events system respects browser tab visibility &mdash; when a tab is hidden, WebSocket processing pauses to conserve resources. Separately, an idle detection system pauses all page refresh activity after a configurable period of no user interaction, displaying an overlay when the user returns so they know the data may be stale.</p>
 
         <div class="doc-tech-tip">
-            <strong class="doc-tech-tip-label">All engine indicator functionality lives in two shared files.</strong> <code>engine-events.js</code> and <code>engine-events.css</code> handle everything: WebSocket connection, auto-reconnect, initial state hydration, card rendering, countdown timer, overdue escalation, click-to-popup, disconnect indicator, and idle detection. Never duplicate engine card code into page-specific files. If behavior needs to change, change it in the shared files &mdash; the fix propagates to every page automatically.
+            <strong class="doc-tech-tip-label">All engine indicator functionality lives in two shared files.</strong> <code>cc-shared.js</code> and <code>cc-shared.css</code> handle everything: WebSocket connection, auto-reconnect, initial state hydration, card rendering, countdown timer, overdue escalation, click-to-popup, disconnect indicator, and idle detection. Never duplicate engine card code into page-specific files. If behavior needs to change, change it in the shared files &mdash; the fix propagates to every page automatically.
         </div>
     </div>
 
@@ -645,19 +644,15 @@
         <p class="doc-muted">For the complete technical reference of every monitoring module&rsquo;s database schema, scripts, and DDL, see the individual module Reference pages accessible from the documentation hub.</p>
     </div>
 
-    <!-- Contributing -->
-    <div class="doc-callout doc-tip">
-        <p><strong>Contributing:</strong> This platform is designed to grow organically. If you have a manual process, monitoring need, or utility that could benefit from centralization, contact the <a href="mailto:applications@frost-arnett.com?subject=xFACts%20New%20Module%20Request&body=I%20would%20like%20to%20submit%20a%20possible%20process%20for%20consideration%20as%20an%20xFACts%20module.%0A%0AProcess%20Name%3A%0ACurrent%20Method%3A%0ABusiness%20Need%3A%0A%0A">Applications Team</a> to discuss adding it as an xFACts module.</p>
-    </div>
+                <div class="doc-footer"></div>
 
-    <div class="doc-footer">
-        <p><a href="../controlcenter.html" class="doc-footer-link">&#8592; Back to The Control Center</a>
-           &nbsp;&nbsp;&#8226;&nbsp;&nbsp;
-           <a href="../index.html" class="doc-footer-link">Hub</a></p>
-        <p class="doc-footer-line">Applications Team, Frost Arnett</p>
+            </div>
+        </div>
+
     </div>
 
 </div>
+<script src="../../js/docs-shared.js"></script>
 <script src="../../js/nav.js"></script>
 </body>
 </html>
