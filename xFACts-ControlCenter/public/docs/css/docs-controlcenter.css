@@ -1,286 +1,149 @@
-/* ============================================================
-   docs-controlcenter.css — Styles for Control Center guide pages
-
-   Loaded after docs-base.css on CC guide pages like:
-   cc/serverhealth-cc.html and future module CC guide pages.
-
-   Provides: sticky reference zone (mockup + flip key cards),
-   guided tour and show-all modes, smooth scrolling, annotated
-   mockup overlay with callout markers, and numbered section
-   headings.
-
+/* ============================================================================
+   xFACts Control Center - Documentation Control Center Guide Pages (docs-controlcenter.css)
+   Location: E:\xFACts-ControlCenter\public\docs\css\docs-controlcenter.css
    Version: Tracked in dbo.System_Metadata (component: Documentation.Site)
-   ============================================================ */
 
-/* ===== Scroll Behavior ===== */
-html {
-    scroll-behavior: smooth;
-}
+   Page-family components for the Control Center guide pages, whose body is a
+   sticky reference zone pairing an annotated mini-mockup of a real Control
+   Center page with a flip-card key, a clickable section sidebar, a guided-tour
+   mode toggle, numbered callout markers over the mockup, and an additive
+   slideout panel that reveals section detail as markers are clicked. Consumes
+   the docs token palette, the app-frame chrome, and the marker, mock-section,
+   and live-dot keyframes from docs-base.css; adds only the guide-page content.
 
-/* ===== Extra bottom padding so last section scrolls fully ===== */
-.page-wrapper {
-    padding: 40px 60px 0 !important;
-}
+   FILE ORGANIZATION
+   -----------------
+   LAYOUT: STICKY REFERENCE ZONE
+   CONTENT: KEY CARDS
+   CONTENT: SIDEBAR
+   CONTENT: MODE TOGGLE
+   CONTENT: CALLOUT MARKERS
+   CONTENT: SECTION HEADINGS
+   CONTENT: GUIDE SLIDEOUT
+   CONTENT: PAGE MOCKUP
+   FEEDBACK_OVERLAYS: MOCK MODAL PREVIEW
+   ============================================================================ */
 
-/* ===== Sticky Section Navigation (breadcrumb only on CC guide pages) ===== */
-.section-nav {
-    position: sticky;
-    top: 0;
-    z-index: 100;
-    backdrop-filter: blur(8px);
-    background: rgba(var(--bg-secondary-rgb), 0.95);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius);
-    padding: 10px 20px 12px;
-    margin-bottom: 0;
-}
+/* ============================================================================
+   LAYOUT: STICKY REFERENCE ZONE
+   ----------------------------------------------------------------------------
+   The sticky reference zone that pins the guide's mockup and key beside a
+   section sidebar while the page body scrolls: the outer zone, the two-column
+   main layout splitting the primary mockup column from the sidebar column, and
+   the primary and sidebar columns themselves.
+   Prefix: doc
+   ============================================================================ */
 
-/* ===== Breadcrumb row (populated by nav.js) ===== */
-.section-nav-top {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 0.85em;
-    flex-wrap: wrap;
-}
-
-.section-nav-top:has(*) {
-    margin-bottom: 0;
-    padding-bottom: 0;
-    border-bottom: none;
-}
-
-.section-nav-top a {
-    color: var(--accent-blue);
-    text-decoration: none;
-}
-
-.section-nav-top a:hover {
-    text-decoration: underline;
-}
-
-.section-nav-top .current {
-    color: var(--text-primary);
-    font-weight: 600;
-}
-
-.section-nav-top .sep {
-    color: var(--text-muted);
-}
-
-/* ============================================================
-   STICKY REFERENCE ZONE
-
-   Two-column sticky area below the nav bar containing the
-   page mockup (left) and Key to the Page flip cards (right).
-   Stays visible while user reads section content below.
-   ============================================================ */
-
-.sticky-ref-zone {
+/* Pins the reference zone near the top of the scrolling body. */
+.doc-sticky-ref-zone {
     position: sticky;
     z-index: 90;
-    background: var(--bg-primary);
-    border: 1px solid var(--border-color);
+    background: var(--color-bg-primary);
+    border: 1px solid var(--color-border-default);
     border-top: none;
-    border-radius: 0 0 var(--radius) var(--radius);
+    border-radius: 0 0 var(--size-radius-default) var(--size-radius-default);
     padding: 12px 16px 10px;
     margin-bottom: 0;
 }
 
-/* --- Key to the Page section (horizontal row above mockup) --- */
-.key-section {
+/* Splits the reference zone into the primary column and the sidebar column. */
+.doc-sticky-ref-main-layout {
+    display: flex;
+    gap: 20px;
+}
+
+/* Sizes the primary column to its content, capping its maximum width. */
+.doc-sticky-ref-primary {
+    flex: 0 0 auto;
+    max-width: 1200px;
+}
+
+/* Fills the remaining width with the section sidebar column. */
+.doc-sticky-ref-sidebar {
+    flex: 1;
+    min-width: 160px;
+    padding-top: 4px;
+}
+
+/* ============================================================================
+   CONTENT: KEY CARDS
+   ----------------------------------------------------------------------------
+   The Key to the Page section: its header row and hint, the responsive grid of
+   flip cards, each card's flip mechanics and front and back faces, and the
+   mini rendered UI samples shown on the card fronts (live, event, and action
+   badges, an engine indicator, a metric card, and a tooltip glyph).
+   Prefix: doc
+   ============================================================================ */
+
+/* Spaces the key section above the mockup. */
+.doc-key-section {
     margin-bottom: 10px;
 }
 
-.key-section-header {
+/* Rows the key section heading beside its hint. */
+.doc-key-section-header {
     display: flex;
     align-items: baseline;
     gap: 12px;
     margin-bottom: 6px;
 }
 
-.key-section-header h2 {
+/* Styles the key section heading. */
+.doc-key-section-title {
     font-size: 1.1em;
     margin: 0;
-    color: var(--text-primary);
+    color: var(--color-text-primary);
 }
 
-.key-section-hint {
+/* Styles the muted hint beside the key section heading. */
+.doc-key-section-hint {
     font-size: 0.78em;
-    color: var(--text-muted);
+    color: var(--color-text-muted);
 }
 
-/* --- Overview section header --- */
-.overview-section-header {
+/* Sizes the page-overview block to the full primary column width. */
+.doc-overview-section {
+    width: 100%;
+}
+
+/* Rows the overview heading beside its caption. */
+.doc-overview-section-header {
     display: flex;
     align-items: baseline;
     gap: 12px;
     margin-bottom: 8px;
 }
 
-.overview-section-header h2 {
+/* Styles the overview heading. */
+.doc-overview-section-title {
     font-size: 1.1em;
     margin: 0;
-    color: var(--text-primary);
+    color: var(--color-text-primary);
 }
 
-.overview-section-header p {
+/* Styles the muted caption beside the overview heading. */
+.doc-overview-section-caption {
     font-size: 0.78em;
-    color: var(--text-secondary);
+    color: var(--color-text-secondary);
     margin: 0;
 }
 
-/* Mockup takes its constrained width within primary column */
-.overview-section {
-    width: 100%;
-}
-
-/* --- Main layout: primary (keys + mockup) + sidebar --- */
-.sticky-ref-main-layout {
-    display: flex;
-    gap: 20px;
-}
-
-.sticky-ref-primary {
-    flex: 0 0 auto;
-    max-width: 1200px;
-}
-
-/* --- Sidebar: section summaries to fill right gap --- */
-.sticky-ref-sidebar {
-    flex: 1;
-    min-width: 160px;
-    padding-top: 4px;
-}
-
-.sticky-ref-sidebar h3 {
-    font-size: 0.95em;
-    color: var(--text-primary);
-    margin: 0 0 10px 0;
-    padding-bottom: 6px;
-    border-bottom: 1px solid var(--border-subtle);
-}
-
-.sidebar-items {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-}
-
-.sidebar-item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 0.82em;
-    color: var(--text-secondary);
-    padding: 4px 6px;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: background 0.15s ease, color 0.15s ease;
-}
-
-.sidebar-item:hover {
-    background: rgba(var(--accent-blue-rgb), 0.1);
-    color: var(--text-primary);
-}
-
-.sidebar-item:hover .sidebar-num {
-    background: rgba(86, 156, 214, 0.3);
-}
-
-.sidebar-intro {
-    margin-bottom: 14px;
-    padding-bottom: 12px;
-    border-bottom: 1px solid var(--border-subtle);
-}
-
-.sidebar-intro h3 {
-    font-size: 0.95em;
-    color: var(--text-primary);
-    margin: 0 0 8px 0;
-}
-
-.sidebar-intro p {
-    font-size: 0.82em;
-    color: var(--text-secondary);
-    line-height: 1.55;
-    margin: 0 0 6px 0;
-}
-
-.sidebar-intro p:last-child {
-    margin-bottom: 0;
-}
-
-.sidebar-hint {
-    font-size: 0.75em;
-    color: var(--text-muted);
-    margin: 0 0 8px 0;
-    font-style: italic;
-    line-height: 1.4;
-}
-
-.sidebar-num {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
-    background: rgba(86, 156, 214, 0.15);
-    color: var(--accent-blue);
-    font-size: 11px;
-    font-weight: 600;
-    flex-shrink: 0;
-}
-
-/* ============================================================
-   MODE TOGGLE — "Take The Tour" / "Show Me Everything"
-   ============================================================ */
-
-/* Mode buttons are in .sticky-ref-header-center */
-
-.mode-btn {
-    padding: 5px 14px;
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    background: var(--bg-card);
-    color: var(--text-secondary);
-    font-size: 0.82em;
-    font-family: var(--font-main);
-    cursor: pointer;
-    transition: all 0.2s ease;
-}
-
-.mode-btn:hover {
-    background: var(--bg-card-hover);
-    border-color: var(--accent-blue-dim);
-    color: var(--text-primary);
-}
-
-.mode-btn.active {
-    background: var(--accent-blue-dim);
-    border-color: var(--accent-blue);
-    color: #fff;
-    font-weight: 600;
-}
-
-/* ============================================================
-   FLIP KEY CARDS — Compact 2x3 grid with front/back
-   ============================================================ */
-
-.key-flip-grid {
+/* Lays out the flip cards in a six-column grid. */
+.doc-key-flip-grid {
     display: grid;
     grid-template-columns: repeat(6, 1fr);
     gap: 6px;
 }
 
-.key-flip-card {
+/* Establishes a flip card with perspective for its rotating inner face. */
+.doc-key-flip-card {
     perspective: 600px;
     cursor: pointer;
     height: 68px;
 }
 
-.key-flip-inner {
+/* Holds the rotating inner faces and carries the flip transition. */
+.doc-key-flip-inner {
     position: relative;
     width: 100%;
     height: 100%;
@@ -288,227 +151,511 @@ html {
     transform-style: preserve-3d;
 }
 
-.key-flip-card.flipped .key-flip-inner {
-    transform: rotateY(180deg);
+/* Marks a flip card as flipped to its back face. */
+.doc-key-flipped { }
+
+.doc-key-flip-card.doc-key-flipped { /* rotated to the back face */
+    transform: none;
 }
 
-.key-flip-front,
-.key-flip-back {
+/* Styles the front face of a flip card. */
+.doc-key-flip-front {
     position: absolute;
     width: 100%;
     height: 100%;
     backface-visibility: hidden;
     border-radius: 5px;
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--color-border-default);
     display: flex;
     align-items: center;
-    padding: 4px 10px;
-}
-
-.key-flip-front {
-    background: var(--bg-card);
-    gap: 0;
+    background: var(--color-bg-card);
     flex-direction: column;
     justify-content: space-between;
     padding: 8px 6px 6px;
 }
 
-.key-flip-back {
-    background: var(--bg-secondary);
+/* Styles the back face of a flip card, pre-rotated behind the front. */
+.doc-key-flip-back {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    backface-visibility: hidden;
+    border-radius: 5px;
+    border: 1px solid var(--color-border-default);
+    display: flex;
+    align-items: center;
+    background: var(--color-bg-secondary);
     transform: rotateY(180deg);
     padding: 8px 10px;
     overflow: hidden;
     justify-content: center;
 }
 
-.key-flip-front .key-flip-icon {
+/* Centers the mini UI sample on a flip card front. */
+.doc-key-flip-icon {
     flex: 1;
     display: flex;
     align-items: center;
     justify-content: center;
 }
 
-.key-flip-front .key-flip-label {
+/* Styles the label beneath the sample on a flip card front. */
+.doc-key-flip-label {
     font-size: 10px;
     font-weight: 600;
-    color: var(--accent-blue);
+    color: var(--color-accent-blue);
     line-height: 1.2;
     white-space: nowrap;
     text-align: center;
     flex-shrink: 0;
 }
 
-.key-flip-back .key-flip-desc {
+/* Styles the descriptive text on a flip card back. */
+.doc-key-flip-desc {
     font-size: 10px;
-    color: #d4d4d4;
+    color: var(--color-text-primary);
     line-height: 1.4;
     text-align: center;
 }
 
-/* ============================================================
-   CALLOUT MARKER STATES — idle, pulsing, visited
-   ============================================================ */
+/* Styles the live-badge sample as a rounded pill with a pulsing dot. */
+.doc-key-badge-live {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    color: var(--color-text-secondary);
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border-default);
+    border-radius: 10px;
+    padding: 2px 8px;
+}
 
-.callout-marker {
-    position: absolute;
-    width: 28px;
-    height: 28px;
+/* Styles the event-badge sample as a rounded pill with a bolt glyph. */
+.doc-key-badge-event {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    color: var(--color-text-secondary);
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border-default);
+    border-radius: 10px;
+    padding: 2px 8px;
+}
+
+/* Styles the action-badge sample as a rounded pill with an arrows glyph. */
+.doc-key-badge-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    color: var(--color-text-secondary);
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border-default);
+    border-radius: 10px;
+    padding: 2px 8px;
+}
+
+/* Colors the pulsing dot inside the live-badge sample. */
+.doc-key-badge-dot {
+    width: 6px;
+    height: 6px;
     border-radius: 50%;
-    background: rgba(86, 156, 214, 0.9);
-    color: #fff;
+    background: var(--color-accent-green);
+    animation: doc-key-pulse 2s ease-in-out infinite;
+}
+
+/* Colors the bolt glyph inside the event-badge sample. */
+.doc-key-badge-bolt {
+    color: var(--color-status-warning);
+    font-size: 12px;
+}
+
+/* Colors the arrows glyph inside the action-badge sample. */
+.doc-key-badge-arrows {
+    color: var(--color-accent-blue);
+    font-size: 12px;
+}
+
+/* Styles the engine-indicator sample as a compact labeled bar block. */
+.doc-key-engine-indicator {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border-default);
+    border-radius: 4px;
+    padding: 2px 8px;
+}
+
+/* Styles the engine-indicator sample label. */
+.doc-key-engine-label {
+    color: var(--color-text-secondary);
+    font-weight: 600;
+    font-size: 8px;
+}
+
+/* Styles the engine-indicator sample bar. */
+.doc-key-engine-bar {
+    width: 36px;
+    height: 3px;
+    background: var(--color-accent-green);
+    border-radius: 2px;
+    margin: 2px 0;
+}
+
+/* Styles the engine-indicator sample countdown text. */
+.doc-key-engine-cd {
+    color: var(--color-text-muted);
+    font-size: 8px;
+}
+
+/* Styles the metric-card sample as a small bordered value block. */
+.doc-key-metric-card {
+    display: inline-block;
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-accent-green-dim);
+    border-radius: 6px;
+    padding: 4px 10px;
+    text-align: center;
+}
+
+/* Styles the metric-card sample value. */
+.doc-key-metric-value {
     font-size: 14px;
     font-weight: 700;
+    color: var(--color-accent-green);
+}
+
+/* Styles the metric-card sample label. */
+.doc-key-metric-label {
+    font-size: 7px;
+    color: var(--color-text-secondary);
+}
+
+/* Styles the metric-card sample arrow hint. */
+.doc-key-metric-arrow {
+    font-size: 6px;
+    color: var(--color-text-muted);
+    margin-top: 1px;
+}
+
+/* Styles the tooltip-glyph sample as a small circular question mark. */
+.doc-key-tooltip-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-text-muted);
+    color: var(--color-text-muted);
+    font-size: 11px;
+    font-weight: 700;
+    cursor: default;
+}
+
+/* ============================================================================
+   CONTENT: SIDEBAR
+   ----------------------------------------------------------------------------
+   The section sidebar beside the mockup: the intro block and its heading and
+   paragraphs, the at-a-glance heading and hint, the list of clickable section
+   items, each item's hover state, and the numbered badge each item carries.
+   Prefix: doc
+   ============================================================================ */
+
+/* Spaces the sidebar intro block above the section list. */
+.doc-sidebar-intro {
+    margin-bottom: 14px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--color-border-subtle);
+}
+
+/* Styles a heading within the sidebar. */
+.doc-sidebar-heading {
+    font-size: 0.95em;
+    color: var(--color-text-primary);
+    margin: 0 0 8px 0;
+}
+
+/* Styles a paragraph within the sidebar intro block. */
+.doc-sidebar-text {
+    font-size: 0.82em;
+    color: var(--color-text-secondary);
+    line-height: 1.55;
+    margin: 0 0 6px 0;
+}
+
+/* Styles the muted italic hint above the section list. */
+.doc-sidebar-hint {
+    font-size: 0.75em;
+    color: var(--color-text-muted);
+    margin: 0 0 8px 0;
+    font-style: italic;
+    line-height: 1.4;
+}
+
+/* Stacks the clickable section items in a column. */
+.doc-sidebar-items {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+/* Styles a clickable section item as a padded, rounded row. */
+.doc-sidebar-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.82em;
+    color: var(--color-text-secondary);
+    padding: 4px 6px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.doc-sidebar-item:hover { /* hover */
+    background: rgba(var(--color-accent-blue-rgb), 0.1);
+    color: var(--color-text-primary);
+}
+
+/* Styles the numbered badge at the start of a section item. */
+.doc-sidebar-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: rgba(var(--color-accent-blue-rgb), 0.15);
+    color: var(--color-accent-blue);
+    font-size: 11px;
+    font-weight: 600;
+    flex-shrink: 0;
+}
+
+/* ============================================================================
+   CONTENT: MODE TOGGLE
+   ----------------------------------------------------------------------------
+   The tour-versus-show-all mode buttons: the base button and its hover and
+   active states.
+   Prefix: doc
+   ============================================================================ */
+
+/* Styles a mode toggle button. */
+.doc-mode-btn {
+    padding: 5px 14px;
+    border: 1px solid var(--color-border-default);
+    border-radius: 4px;
+    background: var(--color-bg-card);
+    color: var(--color-text-secondary);
+    font-size: 0.82em;
+    font-family: var(--font-main);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.doc-mode-btn:hover { /* hover */
+    background: var(--color-bg-card-hover);
+    border-color: var(--color-accent-blue-dim);
+    color: var(--color-text-primary);
+}
+
+/* Marks a mode button as the active mode. */
+.doc-mode-active { }
+
+.doc-mode-btn.doc-mode-active { /* active mode */
+    background: var(--color-accent-blue-dim);
+    border-color: var(--color-accent-blue);
+    color: var(--color-text-heading);
+    font-weight: 600;
+}
+
+/* ============================================================================
+   CONTENT: CALLOUT MARKERS
+   ----------------------------------------------------------------------------
+   The numbered callout markers overlaid on the mockup: the base marker and its
+   hover state, and the three behavior-driven states the guide script toggles -
+   pulsing to suggest the next tour step, visited once clicked, and a brief
+   flash when an already-visited marker is reclicked. Markers consume the
+   marker keyframes from docs-base.
+   Prefix: doc
+   ============================================================================ */
+
+/* Styles a callout marker as a small circular numbered overlay. */
+.doc-callout-marker {
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: rgba(var(--color-accent-blue-rgb), 0.9);
+    color: var(--color-text-heading);
+    font-size: 11px;
+    font-weight: 800;
     display: flex;
     align-items: center;
     justify-content: center;
-    border: 2px solid #fff;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+    border: 1.5px solid var(--color-text-heading);
+    box-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
     cursor: pointer;
     text-decoration: none;
-    z-index: 2;
+    z-index: 10;
     transition: transform 0.15s ease, background 0.3s ease, box-shadow 0.3s ease;
 }
 
-.callout-marker:hover {
+.doc-callout-marker:hover { /* hover */
     transform: scale(1.15);
-    background: rgba(86, 156, 214, 1);
+    background: rgba(var(--color-accent-blue-rgb), 1);
 }
 
-/* Pulsing state — "click me next" in tour mode */
-@keyframes marker-pulse {
-    0%, 100% {
-        box-shadow: 0 0 4px rgba(86, 156, 214, 0.3), 0 0 8px rgba(86, 156, 214, 0.1);
-    }
-    50% {
-        box-shadow: 0 0 16px rgba(86, 156, 214, 1), 0 0 32px rgba(86, 156, 214, 0.6), 0 0 48px rgba(86, 156, 214, 0.3);
-    }
+/* Marks a callout marker as the suggested next tour step. */
+.doc-marker-pulsing { }
+
+.doc-callout-marker.doc-marker-pulsing { /* pulsing next-step glow */
+    animation: doc-marker-pulse 1.2s ease-in-out infinite;
 }
 
-.mock-container a.callout-marker.marker-pulsing,
-.mock-container a.callout-marker.marker-pulsing:visited {
-    animation: marker-pulse 1.2s ease-in-out infinite;
+/* Marks a callout marker as already visited. */
+.doc-marker-visited { }
+
+.doc-callout-marker.doc-marker-visited { /* visited green */
+    background: rgba(var(--color-accent-green-rgb), 0.9);
 }
 
-/* Visited state — green */
-.mock-container a.callout-marker.marker-visited,
-.mock-container a.callout-marker.marker-visited:visited,
-.mock-container a.callout-marker.marker-visited:hover {
-    background: rgba(76, 175, 80, 0.9);
+.doc-callout-marker.doc-marker-visited:hover { /* visited hover */
+    background: rgba(var(--color-accent-green-rgb), 1);
 }
 
-.mock-container a.callout-marker.marker-visited:hover {
-    background: rgba(76, 175, 80, 1);
+/* Marks a callout marker for a brief revisit flash. */
+.doc-marker-flash { }
+
+.doc-callout-marker.doc-marker-flash { /* revisit flash */
+    animation: doc-marker-flash 0.6s ease-out;
 }
 
-/* Flash on revisit */
-@keyframes marker-flash {
-    0% { box-shadow: 0 0 0 rgba(76, 175, 80, 0); }
-    30% { box-shadow: 0 0 14px rgba(76, 175, 80, 0.8), 0 0 28px rgba(76, 175, 80, 0.3); }
-    100% { box-shadow: 0 1px 6px rgba(0,0,0,0.6); }
-}
+/* ============================================================================
+   CONTENT: SECTION HEADINGS
+   ----------------------------------------------------------------------------
+   The numbered section heading badge used in the slideout and section content,
+   and the hidden content block that holds the authored section detail the
+   slideout draws from.
+   Prefix: doc
+   ============================================================================ */
 
-.mock-container a.callout-marker.marker-flash {
-    animation: marker-flash 0.6s ease-out;
-}
-
-/* Mockup-scoped marker sizing */
-.mock-container a.callout-marker,
-.mock-container a.callout-marker:visited,
-.mock-container a.callout-marker:hover {
-    z-index: 10;
-    width: 20px;
-    height: 20px;
-    font-size: 11px;
-    font-weight: 800;
-    color: #ffffff;
-    border-width: 1.5px;
-    box-shadow: 0 1px 6px rgba(0,0,0,0.6);
-}
-
-/* ===== Numbered Section Headings ===== */
-.section-number {
+/* Styles a numbered section heading badge. */
+.doc-section-number {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     width: 28px;
     height: 28px;
     border-radius: 50%;
-    background: var(--accent-blue);
-    color: #fff;
+    background: var(--color-accent-blue);
+    color: var(--color-text-heading);
     font-size: 14px;
     font-weight: 700;
     margin-right: 8px;
     vertical-align: middle;
-    border: 2px solid #fff;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+    border: 2px solid var(--color-text-heading);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
 }
 
-/* ============================================================
-   SECTION CONTENT — Hidden data source for slideout
-   ============================================================ */
+/* Styles the section title that leads each authored section and its clone. */
+.doc-guide-section-title {
+    font-size: 0.95em;
+    margin: 8px 0 6px 0;
+    color: var(--color-text-primary);
+    line-height: 1.3;
+}
 
-.cc-guide-content {
+/* Hides the authored section content block that feeds the slideout. */
+.doc-cc-guide-content {
     display: none;
 }
 
-/* ============================================================
-   GUIDE SLIDEOUT PANEL — Additive right-side panel
-   
-   Slides in from the right. Sections are added progressively
-   as callout markers are clicked. Each section occupies a fixed
-   slot in numerical order. Unvisited slots show a placeholder.
-   ============================================================ */
+/* Wraps a single authored section keyed by its slideout section id. */
+.doc-guide-section {
+    display: block;
+}
 
-.guide-slideout {
+/* Holds the authored section body the slideout clones into a slot. */
+.doc-guide-section-inner {
+    display: block;
+}
+
+/* ============================================================================
+   CONTENT: GUIDE SLIDEOUT
+   ----------------------------------------------------------------------------
+   The additive slideout panel that reveals section detail as markers are
+   clicked: the off-screen panel and its open state, the header with its title
+   and controls, the close button, the scrolling body, each numbered slot with
+   its placeholder, revealed, and active states, and the revealed section
+   content rendered into a slot.
+   Prefix: doc
+   ============================================================================ */
+
+/* Holds the slideout panel off-screen at the right edge of the viewport. */
+.doc-guide-slideout {
     position: fixed;
     top: 0;
     right: -820px;
     width: 800px;
     height: 100vh;
-    background: var(--bg-secondary);
-    border-left: 1px solid var(--border-color);
+    background: var(--color-bg-secondary);
+    border-left: 1px solid var(--color-border-default);
     z-index: 200;
     display: flex;
     flex-direction: column;
     transition: right 0.3s ease;
-    box-shadow: -4px 0 20px rgba(0,0,0,0.4);
+    box-shadow: -4px 0 20px rgba(0, 0, 0, 0.4);
 }
 
-.guide-slideout.open {
+/* Marks the slideout panel as open. */
+.doc-slideout-open { }
+
+.doc-guide-slideout.doc-slideout-open { /* slid into view */
     right: 0;
 }
 
-.guide-slideout-header {
+/* Rows the slideout title beside its controls in the panel header. */
+.doc-guide-slideout-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     padding: 10px 16px;
-    border-bottom: 1px solid var(--border-color);
+    border-bottom: 1px solid var(--color-border-default);
     flex-shrink: 0;
 }
 
-.guide-slideout-header h3 {
+/* Styles the slideout panel title. */
+.doc-guide-slideout-title {
     margin: 0;
     font-size: 1em;
-    color: var(--text-primary);
+    color: var(--color-text-primary);
     flex-shrink: 0;
 }
 
-.slideout-header-controls {
+/* Rows the mode toggle and close controls in the slideout header. */
+.doc-slideout-header-controls {
     display: flex;
     align-items: center;
     gap: 6px;
 }
 
-.slideout-header-controls .mode-btn {
+/* Shrinks a mode button shown within the slideout header. */
+.doc-slideout-mode-btn {
     padding: 3px 10px;
     font-size: 0.75em;
 }
 
-.guide-slideout-close {
+/* Styles the slideout close button. */
+.doc-guide-slideout-close {
     background: none;
     border: none;
-    color: var(--text-muted);
+    color: var(--color-text-muted);
     font-size: 22px;
     cursor: pointer;
     padding: 0 4px;
@@ -517,289 +664,740 @@ html {
     margin-left: 4px;
 }
 
-.guide-slideout-close:hover {
-    color: var(--text-primary);
+.doc-guide-slideout-close:hover { /* hover */
+    color: var(--color-text-primary);
 }
 
-.guide-slideout-body {
+/* Scrolls the slideout body beneath its fixed header. */
+.doc-guide-slideout-body {
     flex: 1;
     overflow-y: auto;
     padding: 8px 0;
 }
 
-/* --- Individual section slot --- */
-.slideout-slot {
+/* Spaces a single section slot within the slideout body. */
+.doc-slideout-slot {
     padding: 0 16px;
     margin-bottom: 2px;
     transition: background 0.3s ease;
 }
 
-/* Placeholder for unvisited slots */
-.slideout-slot-placeholder {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 0;
-    border-bottom: 1px solid var(--border-subtle);
-    opacity: 0.4;
-}
+/* Marks a slot as revealed with its section content. */
+.doc-slot-revealed { }
 
-.slideout-slot-placeholder .section-number {
-    width: 22px;
-    height: 22px;
-    font-size: 11px;
-    flex-shrink: 0;
-}
-
-.slot-placeholder-text {
-    font-size: 11px;
-    color: var(--text-muted);
-    font-style: italic;
-}
-
-/* Revealed slot content */
-.slideout-slot.slot-revealed {
+.doc-slideout-slot.doc-slot-revealed { /* revealed content */
     opacity: 1;
-    border-bottom: 1px solid var(--border-subtle);
+    border-bottom: 1px solid var(--color-border-subtle);
     padding-bottom: 10px;
     margin-bottom: 4px;
 }
 
-/* Active/highlighted slot */
-.slideout-slot.slot-active {
-    background: rgba(var(--accent-blue-rgb), 0.08);
+/* Marks a slot as the active highlighted slot. */
+.doc-slot-active { }
+
+.doc-slideout-slot.doc-slot-active { /* active highlight */
+    background: rgba(var(--color-accent-blue-rgb), 0.08);
 }
 
-/* --- Content within revealed slots --- */
-.slideout-section-content h2 {
-    font-size: 0.95em;
-    margin: 8px 0 6px 0;
-    color: var(--text-primary);
-    line-height: 1.3;
+/* Styles the placeholder shown in an unvisited slot. */
+.doc-slideout-slot-placeholder {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--color-border-subtle);
+    opacity: 0.4;
 }
 
-.slideout-section-content .section-number {
-    width: 22px;
-    height: 22px;
+/* Styles the italic placeholder text in an unvisited slot. */
+.doc-slot-placeholder-text {
     font-size: 11px;
+    color: var(--color-text-muted);
+    font-style: italic;
 }
 
-.slideout-section-content p {
-    font-size: 0.82em;
-    line-height: 1.55;
-    margin: 0 0 6px 0;
-    color: var(--text-secondary);
+/* Holds the revealed section content rendered into a slot. */
+.doc-slideout-section-content {
+    cursor: pointer;
 }
 
-.slideout-section-content strong {
-    color: var(--text-primary);
-}
+/* ============================================================================
+   CONTENT: PAGE MOCKUP
+   ----------------------------------------------------------------------------
+   The annotated mini-mockup of a real Control Center page: the mockup
+   container and its wide variant, the header bar with its title, live row,
+   server tabs and gauges, and engine indicators, the two-column body, the mock
+   sections with their highlight and flash states, and the section sub-content
+   used across pages - metric grids, extended-event cards, info rows, disk
+   bars, availability-group cards, charts, time-range buttons, agent cards,
+   event logs, and the badges that label them. Mock sections consume the
+   mock-section flash keyframe from docs-base.
+   Prefix: doc
+   ============================================================================ */
 
-.slideout-section-content .callout {
-    font-size: 0.78em;
-    padding: 8px 12px;
-    margin: 6px 0;
-    border-radius: 4px;
-}
-
-.slideout-section-content .callout p {
-    font-size: inherit;
-    margin: 0;
-}
-
-/* ============================================================
-   PAGE MOCKUP — Mini representation of actual CC page layout
-   ============================================================ */
-
-.mock-container {
+/* Styles the mockup container as a bordered dark panel. */
+.doc-mock-container {
     position: relative;
-    background: #1e1e1e;
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius);
+    background: var(--color-bg-primary);
+    border: 1px solid var(--color-border-default);
+    border-radius: var(--size-radius-default);
     padding: 14px;
     font-family: var(--font-main);
     overflow: hidden;
 }
 
-.mock-header {
+/* Widens the mockup container for pages without a two-column body. */
+.doc-mock-wide { }
+
+.doc-mock-container.doc-mock-wide { /* wide layout */
+    min-width: 969px;
+}
+
+/* Rows the mockup header sections across the top of the mockup. */
+.doc-mock-header {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
     margin-bottom: 14px;
     padding-bottom: 10px;
-    border-bottom: 1px solid #333;
+    border-bottom: 1px solid var(--color-border-subtle);
     gap: 10px;
 }
 
-.mock-header-left { flex: 0 0 auto; }
-.mock-header-left .mock-page-title { color: #569cd6; font-size: 15px; font-weight: 600; }
-.mock-header-left .mock-page-subtitle { color: #666; font-size: 10px; }
-
-.mock-header-center { flex: 1; display: flex; justify-content: center; gap: 6px; }
-
-.mock-header-right { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
-
-.mock-live-row { display: flex; align-items: center; gap: 5px; font-size: 10px; color: #666; }
-.mock-live-dot { width: 7px; height: 7px; border-radius: 50%; background: #4ec9b0; animation: key-pulse 2s ease-in-out infinite; }
-
-.mock-server-tab { background: #2d2d2d; border: 1px solid #404040; border-radius: 4px; padding: 3px 6px; text-align: center; min-width: 56px; }
-.mock-server-tab.selected { border-color: #4ec9b0; background: #2a3a35; }
-.mock-server-tab .mock-gauge { width: 36px; height: 20px; margin: 0 auto 2px; border-bottom: 2px solid #333; border-radius: 18px 18px 0 0; position: relative; overflow: hidden; }
-.mock-server-tab .mock-gauge::after { content: ''; position: absolute; bottom: 0; left: 50%; width: 2px; height: 16px; background: #4ec9b0; transform-origin: bottom center; transform: rotate(-40deg); }
-.mock-server-tab.selected .mock-gauge::after { background: #4ec9b0; }
-.mock-server-tab .mock-gauge-pct { font-size: 9px; font-weight: 700; color: #4ec9b0; line-height: 1; }
-.mock-server-tab .mock-gauge-name { font-size: 8px; color: #555; white-space: nowrap; }
-.mock-server-tab.selected .mock-gauge-name { color: #4ec9b0; }
-
-.mock-engine-row { display: flex; gap: 5px; }
-.mock-engine { background: #2d2d2d; border: 1px solid #404040; border-radius: 3px; padding: 3px 7px; text-align: center; }
-.mock-engine-label { font-size: 8px; color: #888; font-weight: 600; text-transform: uppercase; }
-.mock-engine-bar { width: 36px; height: 3px; background: #4ec9b0; border-radius: 1px; margin: 3px auto; }
-.mock-engine-cd { font-size: 8px; color: #555; }
-
-.mock-body { display: flex; gap: 14px; }
-.mock-col-left { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
-.mock-col-right { width: 240px; flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; }
-
-.mock-section { background: #252526; border: 1px solid #404040; border-radius: 5px; padding: 10px 12px; position: relative; transition: border-color 0.3s ease, box-shadow 0.3s ease; }
-.mock-section.mock-highlight { border-color: var(--accent-blue); box-shadow: 0 0 12px rgba(86, 156, 214, 0.3), inset 0 0 8px rgba(86, 156, 214, 0.08); }
-
-/* Brief flash for mock section when clicked from slideout */
-@keyframes mock-section-flash {
-    0% { box-shadow: 0 0 0 rgba(86, 156, 214, 0); }
-    30% { box-shadow: 0 0 20px rgba(86, 156, 214, 0.6), inset 0 0 12px rgba(86, 156, 214, 0.15); }
-    100% { box-shadow: 0 0 12px rgba(86, 156, 214, 0.3), inset 0 0 8px rgba(86, 156, 214, 0.08); }
-}
-.mock-section.mock-flash { animation: mock-section-flash 0.6s ease-out; }
-
-.mock-time-buttons.mock-highlight { outline: 2px solid var(--accent-blue); outline-offset: 3px; border-radius: 4px; }
-
-/* Header area highlight for sections 1 and 2 which are in the header, not mock-section */
-.mock-header-center.mock-highlight, .mock-engine-row.mock-highlight { outline: 2px solid var(--accent-blue); outline-offset: 3px; border-radius: 4px; }
-
-.mock-section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #404040; }
-.mock-section-title { color: #4ec9b0; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
-
-.mock-badge-live { display: inline-flex; align-items: center; gap: 3px; font-size: 9px; color: #666; }
-.mock-badge-live .dot { width: 6px; height: 6px; border-radius: 50%; background: #4ec9b0; animation: key-pulse 2s ease-in-out infinite; }
-.mock-badge-event { font-size: 10px; color: #dcdcaa; }
-.mock-badge-action { font-size: 10px; color: #569cd6; }
-
-.mock-metric-grid { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
-.mock-metric { background: #2d2d2d; border: 1px solid #404040; border-radius: 4px; padding: 8px 10px; text-align: center; width: 140px; min-height: 60px; }
-.mock-metric-label { font-size: 8px; color: #888; text-transform: uppercase; letter-spacing: 0.3px; margin-bottom: 3px; }
-.mock-metric-value { font-size: 20px; font-weight: 400; color: #4ec9b0; line-height: 1.1; }
-.mock-metric-unit { font-size: 8px; color: #555; }
-
-.mock-xe-grid { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
-.mock-xe-card { background: #2d2d2d; border: 1px solid #404040; border-radius: 4px; padding: 5px 8px; text-align: center; width: 90px; }
-.mock-xe-label { font-size: 7px; color: #888; line-height: 1.2; }
-.mock-xe-value { font-size: 15px; font-weight: 400; color: #4ec9b0; }
-
-.mock-info-row { display: flex; justify-content: space-between; padding: 3px 0; font-size: 9px; border-bottom: 1px solid #333; }
-.mock-info-row:last-child { border-bottom: none; }
-.mock-info-label { color: #888; }
-.mock-info-value { color: #d4d4d4; font-weight: 500; }
-
-.mock-disk-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
-.mock-disk-row:last-child { margin-bottom: 0; }
-.mock-disk-label { font-size: 9px; color: #888; width: 28px; flex-shrink: 0; }
-.mock-disk-bar { flex: 1; height: 8px; background: #404040; border-radius: 2px; overflow: hidden; }
-.mock-disk-fill { height: 100%; border-radius: 2px; background: #4ec9b0; }
-.mock-disk-fill.warning { background: #dcdcaa; }
-
-.mock-ag-card { background: #2d2d2d; border: 1px solid #404040; border-radius: 4px; padding: 8px 10px; }
-.mock-ag-row { display: flex; justify-content: space-between; font-size: 9px; padding: 3px 0; }
-.mock-ag-label { color: #888; }
-.mock-ag-value { color: #d4d4d4; }
-.mock-ag-badge { font-size: 7px; font-weight: 600; padding: 1px 5px; border-radius: 8px; background: rgba(78, 201, 176, 0.2); color: #4ec9b0; text-transform: uppercase; }
-
-/* ===== Mock: Chart Placeholder ===== */
-.mock-chart { background: #252526; border-radius: 3px; overflow: hidden; padding: 4px; }
-
-/* ===== Mock: Time Range Buttons ===== */
-.mock-time-buttons { display: inline-flex; gap: 2px; }
-.mock-time-btn { font-size: 7px; color: #666; background: #2d2d2d; border: 1px solid #404040; border-radius: 2px; padding: 1px 4px; }
-.mock-time-btn.active { color: #4ec9b0; border-color: #4ec9b0; background: #2a3a35; }
-
-/* ===== Mock: Agent Status Cards ===== */
-.mock-agent-grid { display: flex; gap: 8px; flex-wrap: wrap; }
-.mock-agent-card { background: #2d2d2d; border: 1px solid #404040; border-radius: 4px; padding: 8px 10px; flex: 1; min-width: 140px; }
-.mock-agent-name { font-size: 10px; color: #4ec9b0; font-weight: 600; margin-bottom: 5px; }
-.mock-agent-row { display: flex; justify-content: space-between; font-size: 8px; padding: 2px 0; }
-.mock-agent-label { color: #888; }
-.mock-agent-status { font-weight: 600; }
-.mock-agent-status.healthy { color: #4ec9b0; }
-.mock-agent-status.warning { color: #dcdcaa; }
-.mock-agent-status.error { color: #f44747; }
-
-/* ===== Mock: Two-Column Lower Grid ===== */
-.mock-lower-grid { display: flex; gap: 10px; margin-top: 10px; }
-.mock-lower-left { flex: 1; display: flex; flex-direction: column; gap: 10px; }
-.mock-lower-right { width: 280px; flex-shrink: 0; }
-.mock-section-tall { height: 100%; display: flex; flex-direction: column; }
-
-/* ===== Mock: Event Log ===== */
-.mock-event-filter { display: flex; gap: 4px; margin-bottom: 6px; }
-.mock-filter-pill { font-size: 7px; color: #888; background: #2d2d2d; border: 1px solid #404040; border-radius: 8px; padding: 1px 6px; }
-.mock-filter-pill.active { color: #4ec9b0; border-color: #4ec9b0; }
-.mock-event-row { display: flex; gap: 6px; font-size: 8px; padding: 3px 0; border-bottom: 1px solid #333; align-items: baseline; }
-.mock-event-row:last-child { border-bottom: none; }
-.mock-event-row.warning { background: rgba(220, 220, 170, 0.05); }
-.mock-event-time { color: #555; flex-shrink: 0; width: 28px; }
-.mock-event-agent { color: #569cd6; flex-shrink: 0; width: 70px; font-weight: 500; }
-.mock-event-text { color: #888; flex: 1; }
-.mock-event-row.warning .mock-event-text { color: #dcdcaa; }
-
-/* ===== Mock: Wide Layout (pages without two-column body) ===== */
-.mock-container.mock-wide { min-width: 969px; }
-
-/* ===== Key: Mini Rendered UI Elements (flip card fronts) ===== */
-
-@keyframes key-pulse {
-    0%, 100% { opacity: 0.4; }
-    50% { opacity: 1; }
+/* Sizes the left header group to its content. */
+.doc-mock-header-left {
+    flex: 0 0 auto;
 }
 
-.key-badge-live { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; color: var(--text-secondary); background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 10px; padding: 2px 8px; }
-.key-badge-live .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-green); animation: key-pulse 2s ease-in-out infinite; }
-
-.key-badge-event { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; color: var(--text-secondary); background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 10px; padding: 2px 8px; }
-.key-badge-event .bolt { color: #dcdcaa; font-size: 12px; }
-
-.key-badge-action { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; color: var(--text-secondary); background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 10px; padding: 2px 8px; }
-.key-badge-action .arrows { color: var(--accent-blue); font-size: 12px; }
-
-.key-engine-indicator { display: inline-flex; flex-direction: column; align-items: center; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 4px; padding: 2px 8px; }
-.key-engine-indicator .eng-label { color: var(--text-secondary); font-weight: 600; font-size: 8px; }
-.key-engine-indicator .eng-bar { width: 36px; height: 3px; background: var(--accent-green); border-radius: 2px; margin: 2px 0; }
-.key-engine-indicator .eng-cd { color: var(--text-muted); font-size: 8px; }
-
-.key-metric-card { display: inline-block; background: var(--bg-secondary); border: 1px solid var(--accent-green-dim); border-radius: 6px; padding: 4px 10px; text-align: center; }
-.key-metric-card .mc-value { font-size: 14px; font-weight: 700; color: var(--accent-green); }
-.key-metric-card .mc-label { font-size: 7px; color: var(--text-secondary); }
-.key-metric-card .mc-arrow { font-size: 6px; color: var(--text-muted); margin-top: 1px; }
-
-.key-tooltip-icon { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; background: var(--bg-secondary); border: 1px solid var(--text-muted); color: var(--text-muted); font-size: 11px; font-weight: 700; cursor: default; }
-
-/* ===== Screenshot Overlay (legacy, kept for non-CC pages) ===== */
-.screenshot-container { position: relative; display: inline-block; width: 100%; margin: 24px 0 40px 0; border: 1px solid var(--border-color); border-radius: var(--radius); }
-.screenshot-container img { width: 100%; display: block; }
-.screenshot-placeholder { padding: 60px 20px; text-align: center; color: var(--text-muted); font-style: italic; }
-
-/* ===== Responsive ===== */
-@media (max-width: 900px) {
-    .key-flip-grid {
-        grid-template-columns: repeat(3, 1fr);
-    }
+/* Styles the mockup page title. */
+.doc-mock-page-title {
+    color: var(--color-accent-blue);
+    font-size: 15px;
+    font-weight: 600;
 }
 
-@media (max-width: 600px) {
-    .key-flip-grid {
-        grid-template-columns: repeat(2, 1fr);
-    }
+/* Styles the mockup page subtitle. */
+.doc-mock-page-subtitle {
+    color: var(--color-text-muted);
+    font-size: 10px;
 }
 
-/* ===== Mock Modal Previews (hidden until marker highlight) ===== */
-.mock-modal-preview { display: none; }
-.mock-modal-preview.mock-highlight { display: block; }
+/* Centers the server tab row in the header. */
+.doc-mock-header-center {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+}
+
+.doc-mock-header-center.doc-mock-highlight { /* highlighted header region */
+    outline: 2px solid var(--color-accent-blue);
+    outline-offset: 3px;
+    border-radius: 4px;
+}
+
+/* Stacks the live row above the engine row in the right header group. */
+.doc-mock-header-right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+}
+
+/* Rows the live indicator and timestamp in the header. */
+.doc-mock-live-row {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 10px;
+    color: var(--color-text-muted);
+}
+
+/* Colors the pulsing live dot in the header live row. */
+.doc-mock-live-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--color-accent-shared);
+    animation: doc-key-pulse 2s ease-in-out infinite;
+}
+
+/* Styles a server tab as a small bordered gauge card. */
+.doc-mock-server-tab {
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border-default);
+    border-radius: 4px;
+    padding: 3px 6px;
+    text-align: center;
+    min-width: 56px;
+}
+
+/* Marks a server tab as the selected server. */
+.doc-mock-selected { }
+
+.doc-mock-server-tab.doc-mock-selected { /* selected server */
+    border-color: var(--color-accent-shared);
+    background: var(--color-bg-selected-tint);
+}
+
+/* Styles the gauge arc within a server tab. */
+.doc-mock-gauge {
+    width: 36px;
+    height: 20px;
+    margin: 0 auto 2px;
+    border-bottom: 2px solid var(--color-border-subtle);
+    border-radius: 18px 18px 0 0;
+    position: relative;
+    overflow: hidden;
+}
+
+/* Draws the gauge needle as a rotated bar within the gauge. */
+.doc-mock-gauge::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    width: 2px;
+    height: 16px;
+    background: var(--color-accent-shared);
+    transform-origin: bottom center;
+    transform: rotate(-40deg);
+}
+
+/* Styles the percentage label within a server tab gauge. */
+.doc-mock-gauge-pct {
+    font-size: 9px;
+    font-weight: 700;
+    color: var(--color-accent-shared);
+    line-height: 1;
+}
+
+/* Styles the server name label within a server tab gauge. */
+.doc-mock-gauge-name {
+    font-size: 8px;
+    color: var(--color-text-muted);
+    white-space: nowrap;
+}
+
+.doc-mock-gauge-name.doc-mock-selected { /* selected server name */
+    color: var(--color-accent-shared);
+}
+
+/* Rows the engine indicators in the header. */
+.doc-mock-engine-row {
+    display: flex;
+    gap: 5px;
+}
+
+.doc-mock-engine-row.doc-mock-highlight { /* highlighted engine region */
+    outline: 2px solid var(--color-accent-blue);
+    outline-offset: 3px;
+    border-radius: 4px;
+}
+
+/* Styles a single engine indicator as a small labeled bar card. */
+.doc-mock-engine {
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border-default);
+    border-radius: 3px;
+    padding: 3px 7px;
+    text-align: center;
+}
+
+/* Styles an engine indicator label. */
+.doc-mock-engine-label {
+    font-size: 8px;
+    color: var(--color-text-secondary);
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+/* Styles an engine indicator bar. */
+.doc-mock-engine-bar {
+    width: 36px;
+    height: 3px;
+    background: var(--color-accent-shared);
+    border-radius: 1px;
+    margin: 3px auto;
+}
+
+/* Styles an engine indicator countdown. */
+.doc-mock-engine-cd {
+    font-size: 8px;
+    color: var(--color-text-muted);
+}
+
+/* Rows the mockup body into left and right columns. */
+.doc-mock-body {
+    display: flex;
+    gap: 14px;
+}
+
+/* Fills the left mockup column, stacking its sections. */
+.doc-mock-col-left {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+/* Sizes the right mockup column, stacking its sections. */
+.doc-mock-col-right {
+    width: 240px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+/* Styles a mock section as a bordered card. */
+.doc-mock-section {
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border-default);
+    border-radius: 5px;
+    padding: 10px 12px;
+    position: relative;
+    transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+/* Marks a mock element as highlighted. */
+.doc-mock-highlight { }
+
+.doc-mock-section.doc-mock-highlight { /* highlighted section */
+    border-color: var(--color-accent-blue);
+    box-shadow: 0 0 12px rgba(var(--color-accent-blue-rgb), 0.3), inset 0 0 8px rgba(var(--color-accent-blue-rgb), 0.08);
+}
+
+/* Marks a mock element for a brief selection flash. */
+.doc-mock-flash { }
+
+.doc-mock-section.doc-mock-flash { /* selection flash */
+    animation: doc-mock-section-flash 0.6s ease-out;
+}
+
+/* Stretches a mock section to fill its column height. */
+.doc-mock-section-tall {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Rows a mock section's title beside its badge. */
+.doc-mock-section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--color-border-default);
+}
+
+/* Styles a mock section title. */
+.doc-mock-section-title {
+    color: var(--color-accent-shared);
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Styles the live badge shown in a mock section header. */
+.doc-mock-badge-live {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 9px;
+    color: var(--color-text-muted);
+}
+
+/* Colors the pulsing dot within a mock live badge. */
+.doc-mock-badge-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--color-accent-shared);
+    animation: doc-key-pulse 2s ease-in-out infinite;
+}
+
+/* Styles the event badge shown in a mock section header. */
+.doc-mock-badge-event {
+    font-size: 10px;
+    color: var(--color-status-warning);
+}
+
+/* Styles the action badge shown in a mock section header. */
+.doc-mock-badge-action {
+    font-size: 10px;
+    color: var(--color-accent-blue);
+}
+
+/* Wraps the metric cards in a centered, wrapping row. */
+.doc-mock-metric-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+}
+
+/* Styles a metric card as a small bordered value block. */
+.doc-mock-metric {
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border-default);
+    border-radius: 4px;
+    padding: 8px 10px;
+    text-align: center;
+    width: 140px;
+    min-height: 60px;
+}
+
+/* Styles a metric card label. */
+.doc-mock-metric-label {
+    font-size: 8px;
+    color: var(--color-text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    margin-bottom: 3px;
+}
+
+/* Styles a metric card value. */
+.doc-mock-metric-value {
+    font-size: 20px;
+    font-weight: 400;
+    color: var(--color-accent-shared);
+    line-height: 1.1;
+}
+
+/* Styles a metric card unit caption. */
+.doc-mock-metric-unit {
+    font-size: 8px;
+    color: var(--color-text-muted);
+}
+
+/* Wraps the extended-event cards in a centered, wrapping row. */
+.doc-mock-xe-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    justify-content: center;
+}
+
+/* Styles an extended-event card as a small bordered value block. */
+.doc-mock-xe-card {
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border-default);
+    border-radius: 4px;
+    padding: 5px 8px;
+    text-align: center;
+    width: 90px;
+}
+
+/* Styles an extended-event card label. */
+.doc-mock-xe-label {
+    font-size: 7px;
+    color: var(--color-text-secondary);
+    line-height: 1.2;
+}
+
+/* Styles an extended-event card value. */
+.doc-mock-xe-value {
+    font-size: 15px;
+    font-weight: 400;
+    color: var(--color-accent-shared);
+}
+
+/* Rows a label and value in a mock info row. */
+.doc-mock-info-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 3px 0;
+    font-size: 9px;
+    border-bottom: 1px solid var(--color-border-subtle);
+}
+
+/* Styles a mock info row label. */
+.doc-mock-info-label {
+    color: var(--color-text-secondary);
+}
+
+/* Styles a mock info row value. */
+.doc-mock-info-value {
+    color: var(--color-text-primary);
+    font-weight: 500;
+}
+
+/* Rows a drive label, bar, and fill in a mock disk row. */
+.doc-mock-disk-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+
+/* Styles a mock disk row drive label. */
+.doc-mock-disk-label {
+    font-size: 9px;
+    color: var(--color-text-secondary);
+    width: 28px;
+    flex-shrink: 0;
+}
+
+/* Styles the track of a mock disk usage bar. */
+.doc-mock-disk-bar {
+    flex: 1;
+    height: 8px;
+    background: var(--color-border-default);
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+/* Styles the fill of a mock disk usage bar. */
+.doc-mock-disk-fill {
+    height: 100%;
+    border-radius: 2px;
+    background: var(--color-accent-shared);
+}
+
+/* Marks a disk fill as in the warning range. */
+.doc-mock-warning { }
+
+.doc-mock-disk-fill.doc-mock-warning { /* warning fill */
+    background: var(--color-status-warning);
+}
+
+/* Styles an availability-group card as a bordered block. */
+.doc-mock-ag-card {
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border-default);
+    border-radius: 4px;
+    padding: 8px 10px;
+}
+
+/* Rows a label and value in a mock availability-group row. */
+.doc-mock-ag-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 9px;
+    padding: 3px 0;
+}
+
+/* Styles a mock availability-group row label. */
+.doc-mock-ag-label {
+    color: var(--color-text-secondary);
+}
+
+/* Styles a mock availability-group row value. */
+.doc-mock-ag-value {
+    color: var(--color-text-primary);
+}
+
+/* Styles a mock availability-group health badge. */
+.doc-mock-ag-badge {
+    font-size: 7px;
+    font-weight: 600;
+    padding: 1px 5px;
+    border-radius: var(--size-radius-default);
+    background: rgba(var(--color-accent-shared-rgb), 0.2);
+    color: var(--color-accent-shared);
+    text-transform: uppercase;
+}
+
+/* Styles a mock chart placeholder as a clipped padded panel. */
+.doc-mock-chart {
+    background: var(--color-bg-secondary);
+    border-radius: 3px;
+    overflow: hidden;
+    padding: 4px;
+}
+
+/* Rows the mock time-range buttons inline. */
+.doc-mock-time-buttons {
+    display: inline-flex;
+    gap: 2px;
+}
+
+.doc-mock-time-buttons.doc-mock-highlight { /* highlighted time buttons */
+    outline: 2px solid var(--color-accent-blue);
+    outline-offset: 3px;
+    border-radius: 4px;
+}
+
+/* Styles a mock time-range button. */
+.doc-mock-time-btn {
+    font-size: 7px;
+    color: var(--color-text-muted);
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border-default);
+    border-radius: 2px;
+    padding: 1px 4px;
+}
+
+/* Marks a time-range button as the active range. */
+.doc-mock-active { }
+
+.doc-mock-time-btn.doc-mock-active { /* active range */
+    color: var(--color-accent-shared);
+    border-color: var(--color-accent-shared);
+    background: var(--color-bg-selected-tint);
+}
+
+/* Wraps the agent status cards in a wrapping row. */
+.doc-mock-agent-grid {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+/* Styles an agent status card as a bordered block. */
+.doc-mock-agent-card {
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border-default);
+    border-radius: 4px;
+    padding: 8px 10px;
+    flex: 1;
+    min-width: 140px;
+}
+
+/* Styles an agent card name. */
+.doc-mock-agent-name {
+    font-size: 10px;
+    color: var(--color-accent-shared);
+    font-weight: 600;
+    margin-bottom: 5px;
+}
+
+/* Rows a label and status in a mock agent row. */
+.doc-mock-agent-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 8px;
+    padding: 2px 0;
+}
+
+/* Styles a mock agent row label. */
+.doc-mock-agent-label {
+    color: var(--color-text-secondary);
+}
+
+/* Styles a mock agent status value. */
+.doc-mock-agent-status {
+    font-weight: 600;
+}
+
+/* Marks an agent status as healthy. */
+.doc-mock-healthy { }
+
+.doc-mock-agent-status.doc-mock-healthy { /* healthy */
+    color: var(--color-accent-shared);
+}
+
+/* Marks an agent status as warning. */
+.doc-mock-agent-status.doc-mock-warning { /* warning */
+    color: var(--color-status-warning);
+}
+
+/* Marks an agent status as error. */
+.doc-mock-error { }
+
+.doc-mock-agent-status.doc-mock-error { /* error */
+    color: var(--color-accent-red);
+}
+
+/* Rows the lower mockup grid into left and right columns. */
+.doc-mock-lower-grid {
+    display: flex;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+/* Fills the lower grid's left column, stacking its sections. */
+.doc-mock-lower-left {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+/* Sizes the lower grid's right column. */
+.doc-mock-lower-right {
+    width: 280px;
+    flex-shrink: 0;
+}
+
+/* Rows the event-filter pills above a mock event log. */
+.doc-mock-event-filter {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 6px;
+}
+
+/* Styles a mock event-filter pill. */
+.doc-mock-filter-pill {
+    font-size: 7px;
+    color: var(--color-text-secondary);
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border-default);
+    border-radius: var(--size-radius-default);
+    padding: 1px 6px;
+}
+
+.doc-mock-filter-pill.doc-mock-active { /* active filter */
+    color: var(--color-accent-shared);
+    border-color: var(--color-accent-shared);
+}
+
+/* Rows the cells of a mock event log entry. */
+.doc-mock-event-row {
+    display: flex;
+    gap: 6px;
+    font-size: 8px;
+    padding: 3px 0;
+    border-bottom: 1px solid var(--color-border-subtle);
+    align-items: baseline;
+}
+
+.doc-mock-event-row.doc-mock-warning { /* warning entry */
+    background: rgba(var(--color-status-warning-rgb), 0.05);
+}
+
+/* Styles a mock event log timestamp cell. */
+.doc-mock-event-time {
+    color: var(--color-text-muted);
+    flex-shrink: 0;
+    width: 28px;
+}
+
+/* Styles a mock event log agent cell. */
+.doc-mock-event-agent {
+    color: var(--color-accent-blue);
+    flex-shrink: 0;
+    width: 70px;
+    font-weight: 500;
+}
+
+/* Styles a mock event log message cell. */
+.doc-mock-event-text {
+    color: var(--color-text-secondary);
+    flex: 1;
+}
+
+.doc-mock-event-text.doc-mock-warning { /* warning message */
+    color: var(--color-status-warning);
+}
+
+/* ============================================================================
+   FEEDBACK_OVERLAYS: MOCK MODAL PREVIEW
+   ----------------------------------------------------------------------------
+   The mock modal preview overlaid on the mockup, hidden until its marker is
+   highlighted. Scope: mockup.
+   Prefix: doc
+   ============================================================================ */
+
+/* Hides the mock modal preview until its marker is highlighted. */
+.doc-mock-modal-preview {
+    display: none;
+}
+
+.doc-mock-modal-preview.doc-mock-highlight { /* revealed preview */
+    display: block;
+}
