@@ -9,29 +9,33 @@
     <link rel="stylesheet" href="../../css/docs-erd.css">
 </head>
 <body>
+<div class="doc-layout">
 
-<div class="doc-page-wrapper doc-arch-page-wrapper">
+    <nav class="doc-nav"></nav>
 
-    <!-- Header -->
-    <div class="doc-page-header">
-        <h1 class="doc-page-title">Batch Monitoring Architecture</h1>
-        <div class="doc-page-subtitle">How three collectors, four tables, and a lot of status codes keep the batch pipeline visible</div>
-    </div>
+    <div class="doc-content">
 
-    <!-- Sticky Section Nav -->
-    <div class="doc-section-nav">
-        <div class="doc-section-nav-top"></div>
-        <div class="doc-section-nav-links">
-            <a href="#erd" class="doc-section-nav-jump">Schema Overview</a>
-            <a href="#nb-lifecycle" class="doc-section-nav-jump">NB Batch Lifecycle</a>
-            <a href="#pmt-lifecycle" class="doc-section-nav-jump">PMT Batch Lifecycle</a>
-            <a href="#bdl-lifecycle" class="doc-section-nav-jump">BDL File Lifecycle</a>
-            <a href="#stall-detection" class="doc-section-nav-jump">Stall Detection</a>
-            <a href="#alert-conditions" class="doc-section-nav-jump">Alert Conditions</a>
-            <a href="#pre-maintenance" class="doc-section-nav-jump">Pre-Maintenance Summary</a>
-            <a href="#connections" class="doc-section-nav-jump">How Everything Connects</a>
+        <div class="doc-header">
+            <div class="doc-header-inner">
+                <h1 class="doc-page-title">Batch Monitoring Architecture</h1>
+                <div class="doc-page-subtitle">How three collectors, four tables, and a lot of status codes keep the batch pipeline visible</div>
+                <div class="doc-subpage-links"></div>
+                <div class="doc-section-jumps">
+                    <span class="doc-section-jumps-label">On This Page:</span>
+                    <a href="#erd" class="doc-section-jump">Schema Overview</a>
+                    <a href="#nb-lifecycle" class="doc-section-jump">NB Batch Lifecycle</a>
+                    <a href="#pmt-lifecycle" class="doc-section-jump">PMT Batch Lifecycle</a>
+                    <a href="#bdl-lifecycle" class="doc-section-jump">BDL File Lifecycle</a>
+                    <a href="#stall-detection" class="doc-section-jump">Stall Detection</a>
+                    <a href="#alert-conditions" class="doc-section-jump">Alert Conditions</a>
+                    <a href="#pre-maintenance" class="doc-section-jump">Pre-Maintenance Summary</a>
+                    <a href="#connections" class="doc-section-jump">How Everything Connects</a>
+                </div>
+            </div>
         </div>
-    </div>
+
+        <div class="doc-body">
+            <div class="doc-body-inner doc-arch-page-wrapper">
 
     <!-- Context Bar -->
     <div class="doc-context-bar">
@@ -46,7 +50,7 @@
 
         <p>The BatchOps schema is simple by design. Three tracking tables (one per batch type), one health dashboard, and no stored procedures or triggers. All logic lives in the PowerShell collectors, which makes the system easy to reason about: the tables store state, the scripts do everything else.</p>
 
-        <div class="erd-root" data-schema="BatchOps"></div>
+        <div class="doc-erd-root" data-schema="BatchOps"></div>
 
         <table class="doc-info-table">
             <thead><tr><th class="doc-info-table-th">Table</th><th class="doc-info-table-th">Role</th><th class="doc-info-table-th">Cardinality</th></tr></thead>
@@ -467,21 +471,15 @@
         </table>
     </div>
 
-    <!-- Reference Page Link -->
-    <div class="doc-ref-link-group">
-        <a href="../ref/batchops-ref.html" class="doc-ref-link">&#x1F4CB; Batch Monitoring Reference &mdash; Full DDL, field definitions, and operational queries</a>
-    </div>
+                <div class="doc-footer"></div>
 
-    <!-- Footer -->
-    <div class="doc-footer">
-        <p><a href="../batchops.html" class="doc-footer-link">&larr; Back to Batch Monitoring</a>
-           &nbsp;&nbsp;&bull;&nbsp;&nbsp;
-           <a href="../index.html" class="doc-footer-link">Hub</a></p>
-        <p class="doc-footer-line">Applications Team, Frost Arnett</p>
+            </div>
+        </div>
+
     </div>
 
 </div>
-
+<script src="../../js/docs-shared.js"></script>
 <script src="../../js/nav.js"></script>
 <script src="../../js/ddl-erd.js"></script>
 </body>
