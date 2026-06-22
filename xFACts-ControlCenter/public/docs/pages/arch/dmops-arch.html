@@ -9,46 +9,46 @@
     <link rel="stylesheet" href="../../css/docs-erd.css">
 </head>
 <body>
+<div class="doc-layout">
 
-<div class="doc-page-wrapper doc-arch-page-wrapper">
+    <nav class="doc-nav"></nav>
 
-    <!-- Header -->
-    <div class="doc-page-header">
-        <h1 class="doc-page-title">DM Operations Architecture</h1>
-        <div class="doc-page-subtitle">How millions of consumer records get surgically removed from a 10TB production database without breaking anything</div>
-    </div>
+    <div class="doc-content">
 
-    <!-- Sticky Section Nav (breadcrumb + section links populated by nav.js / inline) -->
-    <div class="doc-section-nav">
-        <div class="doc-section-nav-top"></div>
-        <div class="doc-section-nav-links">
-            <a href="#erd" class="doc-section-nav-jump">Schema Overview</a>
-            <a href="#archive-process" class="doc-section-nav-jump">Archive Process</a>
-            <a href="#reverification" class="doc-section-nav-jump">Runtime Re-Verification</a>
-            <a href="#delete-sequence" class="doc-section-nav-jump">The Delete Sequence</a>
-            <a href="#bidata-migration" class="doc-section-nav-jump">BIDATA Migration</a>
-            <a href="#non-blocking" class="doc-section-nav-jump">Non-Blocking Design</a>
-            <a href="#shell-purge" class="doc-section-nav-jump">Shell Purge</a>
-            <a href="#scheduling" class="doc-section-nav-jump">Schedule System</a>
-            <a href="#performance" class="doc-section-nav-jump">Performance Notes</a>
-            <a href="#connections" class="doc-section-nav-jump">How Everything Connects</a>
+        <div class="doc-header">
+            <div class="doc-header-inner">
+                <h1 class="doc-page-title">DM Operations Architecture</h1>
+                <div class="doc-page-subtitle">How millions of consumer records get surgically removed from a 10TB production database without breaking anything</div>
+                <div class="doc-subpage-links"></div>
+                <div class="doc-section-jumps">
+                    <span class="doc-section-jumps-label">On This Page:</span>
+                    <a href="#erd" class="doc-section-jump">Schema Overview</a>
+                    <a href="#archive-process" class="doc-section-jump">Archive Process</a>
+                    <a href="#reverification" class="doc-section-jump">Runtime Re-Verification</a>
+                    <a href="#delete-sequence" class="doc-section-jump">The Delete Sequence</a>
+                    <a href="#bidata-migration" class="doc-section-jump">BIDATA Migration</a>
+                    <a href="#non-blocking" class="doc-section-jump">Non-Blocking Design</a>
+                    <a href="#shell-purge" class="doc-section-jump">Shell Purge</a>
+                    <a href="#scheduling" class="doc-section-jump">Schedule System</a>
+                    <a href="#performance" class="doc-section-jump">Performance Notes</a>
+                    <a href="#connections" class="doc-section-jump">How Everything Connects</a>
+                </div>
+            </div>
         </div>
-    </div>
 
+        <div class="doc-body">
+            <div class="doc-body-inner doc-arch-page-wrapper">
     <!-- Context Bar -->
     <div class="doc-context-bar">
         The narrative page tells you <em>what</em> DM Operations does and <em>why</em>. This page tells you <em>how</em>. One unified PowerShell script, a companion shell purge utility, eleven tables, and a carefully ordered sequence of DELETE operations that navigate the foreign key maze of a 1,500-table OLTP database &mdash; all while keeping the reporting warehouse intact.
     </div>
 
-    <!-- ============================================ -->
-    <!-- SECTION: Schema Overview / ERD -->
-    <!-- ============================================ -->
-    <div class="doc-section" id="erd">
+<div class="doc-section" id="erd">
         <h2 class="doc-section-title">Schema Overview</h2>
 
         <p>DM Operations has two components under the <code>DmOps</code> schema: <strong>Archive</strong> (consumer-level archiving with embedded BIDATA migration) and <strong>ShellPurge</strong> (orphaned consumer cleanup). Each has its own set of operational tables, but they share the same schedule grid pattern and GlobalConfig structure.</p>
 
-        <div class="erd-root" data-schema="DmOps" data-category="Archive"></div>
+        <div class="doc-erd-root" data-schema="DmOps" data-category="Archive"></div>
 
         <table class="doc-info-table">
             <thead><tr><th class="doc-info-table-th">Table</th><th class="doc-info-table-th">Role</th><th class="doc-info-table-th">Cardinality</th></tr></thead>
@@ -61,7 +61,7 @@
             </tbody>
         </table>
 
-        <div class="erd-root" data-schema="DmOps" data-category="ShellPurge"></div>
+        <div class="doc-erd-root" data-schema="DmOps" data-category="ShellPurge"></div>
 
         <table class="doc-info-table">
             <thead><tr><th class="doc-info-table-th">Table</th><th class="doc-info-table-th">Role</th><th class="doc-info-table-th">Cardinality</th></tr></thead>
@@ -347,20 +347,15 @@
         </div>
     </div>
 
-    <!-- Footer -->
-    <div class="doc-footer">
-        <p><a href="../dmops.html" class="doc-footer-link">&larr; DM Operations</a>
-           &nbsp;&nbsp;&#8226;&nbsp;&nbsp;
-           <a href="../cc/dmops-cc.html" class="doc-footer-link">Control Center Guide</a>
-           &nbsp;&nbsp;&#8226;&nbsp;&nbsp;
-           <a href="../ref/dmops-ref.html" class="doc-footer-link">Reference</a>
-           &nbsp;&nbsp;&#8226;&nbsp;&nbsp;
-           <a href="../index.html" class="doc-footer-link">Hub</a></p>
-        <p class="doc-footer-line">Applications Team, Frost Arnett</p>
+                <div class="doc-footer"></div>
+
+            </div>
+        </div>
+
     </div>
 
 </div>
-
+<script src="../../js/docs-shared.js"></script>
 <script src="../../js/nav.js"></script>
 <script src="../../js/ddl-erd.js"></script>
 </body>
