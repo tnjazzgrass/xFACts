@@ -3,18 +3,17 @@
    Location: E:\xFACts-ControlCenter\public\docs\css\docs-architecture.css
    Version: Tracked in dbo.System_Metadata (component: Documentation.Site)
 
-   Content components specific to architecture pages: the sticky two-tier
-   section navigation (breadcrumb row populated by nav.js plus static jump
-   links), tech-tip callouts, the architecture flow diagrams with their fork
-   and branch decision points, collapsible expand cards, and diagram
-   placeholders. Loaded after docs-base.css, which owns the token palette, the
-   page wrapper, the shared info table, and the decorative flow color modifiers
-   these flow steps reuse.
+   Content components specific to architecture pages: the in-page section jump
+   row authored in the fixed header, tech-tip callouts, the architecture flow
+   diagrams with their fork and branch decision points, collapsible expand
+   cards, and diagram placeholders. Loaded after docs-base.css, which owns the
+   token palette, the page wrapper, the shared info table, and the decorative
+   flow color modifiers these flow steps reuse.
 
    FILE ORGANIZATION
    -----------------
    LAYOUT: PAGE WRAPPER
-   CONTENT: SECTION NAVIGATION
+   CONTENT: SECTION JUMPS
    CONTENT: TECH TIPS
    CONTENT: ARCHITECTURE FLOW DIAGRAMS
    CONTENT: EXPAND CARDS
@@ -25,101 +24,69 @@
 /* ============================================================================
    LAYOUT: PAGE WRAPPER
    ----------------------------------------------------------------------------
-   Architecture-page override adding bottom padding so the final section can
-   scroll fully beneath the sticky section navigation.
+   Architecture-page override adding trailing bottom space so the last section
+   can scroll up far enough to land at its jump-link target position. The
+   header-offset half of clean jump landing is handled by scroll-padding-top
+   (set by nav.js); this provides the room a short final section needs to reach
+   that position. Value tuned against the rendered header.
    Prefix: doc
    ============================================================================ */
 
-/* Adds bottom padding so the last section scrolls clear of the sticky nav. */
+/* Adds trailing space so the last section can reach its jump-target position. */
 .doc-arch-page-wrapper {
     padding-bottom: 300px;
 }
 
 /* ============================================================================
-   CONTENT: SECTION NAVIGATION
+   CONTENT: SECTION JUMPS
    ----------------------------------------------------------------------------
-   The sticky two-tier section navigation. The top row holds the breadcrumb
-   trail injected by nav.js; the populated state class is added by nav.js when
-   it injects that content. The links row holds the static in-page jump links.
+   The in-page section jump row: a wrapping row of pills authored per page in
+   the fixed header, beneath the injected sub-page links. Each pill anchors to
+   a section in the page body. Stickiness is inherited from the fixed header;
+   the row carries no positioning of its own. Visually subordinate to the
+   sub-page links above (docs-base CHROME: PAGE HEADER): separated by a hairline
+   rule and extra spacing, introduced by a muted label, and rendered as lighter
+   borderless tinted pills so the two header rows read as distinct kinds of
+   navigation (cross-page vs. within-page).
    Prefix: doc
    ============================================================================ */
 
-/* Styles the sticky section navigation as a blurred, bordered bar. */
-.doc-section-nav {
-    position: sticky;
-    top: 0;
-    z-index: 100;
-    backdrop-filter: blur(8px);
-    background: rgba(var(--color-bg-secondary-rgb), 0.95);
-    border: 1px solid var(--color-border-default);
-    border-radius: var(--size-radius-default);
-    padding: 10px 20px 12px;
-    margin-bottom: 35px;
-}
-
-/* Lays out the breadcrumb row that nav.js populates. */
-.doc-section-nav-top {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 0.85em;
-    flex-wrap: wrap;
-}
-
-/* Marks the breadcrumb row as carrying injected content. */
-.doc-populated { }
-
-.doc-section-nav-top.doc-populated { /* has injected breadcrumb content */
-    margin-bottom: 8px;
-    padding-bottom: 8px;
-    border-bottom: 1px solid var(--color-border-subtle);
-}
-
-/* Styles a breadcrumb link within the section navigation. */
-.doc-section-nav-link {
-    color: var(--color-accent-blue);
-    text-decoration: none;
-}
-
-.doc-section-nav-link:hover { /* hover */
-    text-decoration: underline;
-}
-
-/* Styles the current-page label within the section navigation breadcrumb. */
-.doc-section-nav-current {
-    color: var(--color-text-primary);
-    font-weight: 600;
-}
-
-/* Styles the separator between breadcrumb entries. */
-.doc-section-nav-sep {
-    color: var(--color-text-muted);
-}
-
-/* Lays out the static in-page jump links in a wrapping row. */
-.doc-section-nav-links {
+/* Lays out the section jump row beneath a hairline rule that separates it from
+   the sub-page links above. */
+.doc-section-jumps {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
     align-items: center;
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid var(--color-border-subtle);
 }
 
-/* Styles an in-page jump link as a small bordered pill. */
-.doc-section-nav-jump {
+/* Styles the muted lead-in label that names the jump row. */
+.doc-section-jumps-label {
+    color: var(--color-text-muted);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-right: 2px;
+}
+
+/* Styles a section jump as a light, borderless tinted pill - the quieter
+   sibling of the bordered sub-page link pills above it. */
+.doc-section-jump {
     display: inline-block;
-    padding: 4px 14px;
+    padding: 3px 10px;
     background: var(--color-bg-secondary);
-    border: 1px solid var(--color-border-subtle);
     border-radius: var(--size-radius-default);
-    color: var(--color-text-primary);
+    color: var(--color-text-secondary);
     text-decoration: none;
-    font-size: 0.85em;
+    font-size: 12px;
     transition: all 0.15s ease;
 }
 
-.doc-section-nav-jump:hover { /* hover */
+.doc-section-jump:hover { /* hover */
     background: var(--color-bg-card-hover);
-    border-color: var(--color-accent-blue-dim);
     color: var(--color-accent-blue);
 }
 
@@ -476,15 +443,15 @@
 
 /* Tightens jump-link spacing on narrow viewports. */
 @media (max-width: 700px) {
-    /* Tightens the gap between jump links. */
-    .doc-section-nav-links {
+    /* Tightens the gap between section jumps. */
+    .doc-section-jumps {
         gap: 4px;
     }
 
-    /* Shrinks jump-link pills. */
-    .doc-section-nav-jump {
+    /* Shrinks section jump pills. */
+    .doc-section-jump {
         padding: 3px 10px;
-        font-size: 0.8em;
+        font-size: 11px;
     }
 
     /* Stacks architecture flow steps vertically. */
