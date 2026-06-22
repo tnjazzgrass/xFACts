@@ -14,7 +14,7 @@
            ============================================================ */
 
         /* -- Jump Nav ------------------------------------------------ */
-        .guide-jump-nav {
+        .doc-guide-jump-nav {
             display: flex;
             flex-wrap: wrap;
             gap: 6px;
@@ -24,7 +24,7 @@
             border: 1px solid var(--border, #333);
             border-radius: 6px;
         }
-        .guide-jump-nav a {
+        .doc-guide-jump-nav a {
             display: inline-flex;
             align-items: center;
             gap: 6px;
@@ -36,11 +36,11 @@
             border-radius: 4px;
             transition: background 0.15s, border-color 0.15s;
         }
-        .guide-jump-nav a:hover {
+        .doc-guide-jump-nav a:hover {
             background: rgba(86, 156, 214, 0.1);
             border-color: var(--accent-blue, #569cd6);
         }
-        .guide-jump-num {
+        .doc-guide-jump-num {
             display: inline-flex;
             align-items: center;
             justify-content: center;
@@ -54,16 +54,16 @@
         }
 
         /* -- Step Section -------------------------------------------- */
-        .guide-step {
+        .doc-guide-step {
             margin: 40px 0;
             padding-top: 10px;
         }
-        .guide-step h2 {
+        .doc-guide-step h2 {
             display: flex;
             align-items: center;
             gap: 12px;
         }
-        .step-num-badge {
+        .doc-step-num-badge {
             display: inline-flex;
             align-items: center;
             justify-content: center;
@@ -78,7 +78,7 @@
         }
 
         /* -- Mockup Container --------------------------------------- */
-        .guide-mock {
+        .doc-guide-mock {
             margin: 20px 0;
             padding: 16px;
             background: #181818;
@@ -88,7 +88,7 @@
             line-height: 1.5;
             overflow: hidden;
         }
-        .guide-mock-caption {
+        .doc-guide-mock-caption {
             font-size: 0.72rem;
             color: #666;
             text-align: center;
@@ -97,7 +97,7 @@
         }
 
         /* -- Mock Stepper Bar --------------------------------------- */
-        .mock-stepper {
+        .doc-mock-stepper {
             display: flex;
             align-items: center;
             justify-content: center;
@@ -107,224 +107,224 @@
             background: #252526;
             border-radius: 6px;
         }
-        .mock-step-item { display: flex; align-items: center; gap: 6px; }
-        .mock-step-num {
+        .doc-mock-step-item { display: flex; align-items: center; gap: 6px; }
+        .doc-mock-step-num {
             width: 22px; height: 22px; border-radius: 50%;
             display: flex; align-items: center; justify-content: center;
             font-size: 0.68rem; font-weight: 700;
             border: 2px solid #555; color: #888; background: transparent;
         }
-        .mock-step-num.active { border-color: #569cd6; background: #569cd6; color: #1e1e1e; }
-        .mock-step-num.done { border-color: #4ec9b0; background: #4ec9b0; color: #1e1e1e; }
-        .mock-step-lbl { font-size: 0.7rem; color: #888; }
-        .mock-step-lbl.active { color: #569cd6; }
-        .mock-step-lbl.done { color: #4ec9b0; }
-        .mock-step-conn { width: 30px; height: 2px; background: #555; margin: 0 6px; }
-        .mock-step-conn.done { background: #4ec9b0; }
+        .doc-mock-step-num.doc-active { border-color: #569cd6; background: #569cd6; color: #1e1e1e; }
+        .doc-mock-step-num.doc-done { border-color: #4ec9b0; background: #4ec9b0; color: #1e1e1e; }
+        .doc-mock-step-lbl { font-size: 0.7rem; color: #888; }
+        .doc-mock-step-lbl.doc-active { color: #569cd6; }
+        .doc-mock-step-lbl.doc-done { color: #4ec9b0; }
+        .doc-mock-step-conn { width: 30px; height: 2px; background: #555; margin: 0 6px; }
+        .doc-mock-step-conn.doc-done { background: #4ec9b0; }
 
         /* -- Mock Environment Badge --------------------------------- */
-        .mock-env-badge {
+        .doc-mock-env-badge {
             display: inline-block; padding: 2px 10px; border-radius: 3px;
             font-size: 0.7rem; font-weight: 700; letter-spacing: 0.5px;
         }
-        .mock-env-badge.test { background: rgba(220, 220, 170, 0.15); color: #dcdcaa; border: 1px solid rgba(220, 220, 170, 0.3); }
-        .mock-env-badge.stage { background: rgba(206, 145, 120, 0.15); color: #ce9178; border: 1px solid rgba(206, 145, 120, 0.3); }
-        .mock-env-badge.prod { background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); }
+        .doc-mock-env-badge.doc-test { background: rgba(220, 220, 170, 0.15); color: #dcdcaa; border: 1px solid rgba(220, 220, 170, 0.3); }
+        .doc-mock-env-badge.doc-stage { background: rgba(206, 145, 120, 0.15); color: #ce9178; border: 1px solid rgba(206, 145, 120, 0.3); }
+        .doc-mock-env-badge.doc-prod { background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); }
 
         /* -- Mock Cards --------------------------------------------- */
-        .mock-card-row { display: flex; gap: 12px; justify-content: center; padding: 10px; }
-        .mock-card {
+        .doc-mock-card-row { display: flex; gap: 12px; justify-content: center; padding: 10px; }
+        .doc-mock-card {
             padding: 14px 20px; background: #252526; border: 1px solid #404040;
             border-radius: 6px; text-align: center; cursor: default; min-width: 120px;
         }
-        .mock-card.selected { border-color: #569cd6; background: rgba(86, 156, 214, 0.08); }
-        .mock-card.selected-prod { border-color: #ef4444; background: rgba(239, 68, 68, 0.06); }
-        .mock-card-title { font-size: 0.85rem; font-weight: 600; color: #ccc; }
-        .mock-card-sub { font-size: 0.68rem; color: #888; margin-top: 4px; }
+        .doc-mock-card.doc-selected { border-color: #569cd6; background: rgba(86, 156, 214, 0.08); }
+        .doc-mock-card.doc-selected-prod { border-color: #ef4444; background: rgba(239, 68, 68, 0.06); }
+        .doc-mock-card-title { font-size: 0.85rem; font-weight: 600; color: #ccc; }
+        .doc-mock-card-sub { font-size: 0.68rem; color: #888; margin-top: 4px; }
 
         /* -- Mock Upload Zone --------------------------------------- */
-        .mock-upload {
+        .doc-mock-upload {
             border: 2px dashed #555; border-radius: 8px; padding: 30px;
             text-align: center; color: #888;
         }
-        .mock-upload-icon { font-size: 2rem; margin-bottom: 8px; }
-        .mock-upload-btn {
+        .doc-mock-upload-icon { font-size: 2rem; margin-bottom: 8px; }
+        .doc-mock-upload-btn {
             display: inline-block; margin-top: 8px; padding: 6px 16px;
             background: #0e639c; color: #fff; border-radius: 4px;
             font-size: 0.78rem; font-weight: 600;
         }
 
         /* -- Mock Preview Table ------------------------------------- */
-        .mock-table { width: 100%; border-collapse: collapse; font-size: 0.72rem; margin-top: 12px; }
-        .mock-table th { text-align: left; padding: 4px 8px; color: #569cd6; border-bottom: 1px solid #404040; font-weight: 600; background: #333; }
-        .mock-table td { padding: 4px 8px; color: #ccc; border-bottom: 1px solid #2a2a2a; }
+        .doc-mock-table { width: 100%; border-collapse: collapse; font-size: 0.72rem; margin-top: 12px; }
+        .doc-mock-table th { text-align: left; padding: 4px 8px; color: #569cd6; border-bottom: 1px solid #404040; font-weight: 600; background: #333; }
+        .doc-mock-table td { padding: 4px 8px; color: #ccc; border-bottom: 1px solid #2a2a2a; }
 
         /* -- Mock Entity Cards -------------------------------------- */
-        .mock-entity-group-label {
+        .doc-mock-entity-group-label {
             font-size: 0.72rem; color: #569cd6; text-transform: uppercase;
             letter-spacing: 1px; margin: 12px 0 6px 4px; font-weight: 600;
         }
-        .mock-entity-grid { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px; }
-        .mock-entity-card {
+        .doc-mock-entity-grid { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px; }
+        .doc-mock-entity-card {
             padding: 10px 14px; background: #252526; border: 1px solid #404040;
             border-radius: 5px; min-width: 130px; cursor: default; position: relative;
         }
-        .mock-entity-card.selected { border-color: #4ec9b0; background: rgba(78, 201, 176, 0.08); }
-        .mock-entity-name { font-size: 0.78rem; color: #ccc; font-weight: 600; }
-        .mock-entity-card.selected .mock-entity-name { color: #4ec9b0; }
-        .mock-entity-meta { font-size: 0.65rem; color: #666; margin-top: 2px; }
-        .mock-entity-info {
+        .doc-mock-entity-card.doc-selected { border-color: #4ec9b0; background: rgba(78, 201, 176, 0.08); }
+        .doc-mock-entity-name { font-size: 0.78rem; color: #ccc; font-weight: 600; }
+        .doc-mock-entity-card.doc-selected .doc-mock-entity-name { color: #4ec9b0; }
+        .doc-mock-entity-meta { font-size: 0.65rem; color: #666; margin-top: 2px; }
+        .doc-mock-entity-info {
             position: absolute; top: 6px; right: 8px; width: 16px; height: 16px;
             border-radius: 50%; border: 1px solid #555; color: #888;
             font-size: 0.6rem; display: flex; align-items: center; justify-content: center;
         }
-        .mock-badge-fv {
+        .doc-mock-badge-fv {
             display: inline-block; font-size: 0.58rem; padding: 1px 5px; border-radius: 3px;
             background: rgba(206, 145, 120, 0.15); color: #ce9178; margin-left: 6px;
         }
 
         /* -- Mock Mapping Panels ------------------------------------ */
-        .mock-mapping-layout { display: flex; gap: 12px; }
-        .mock-mapping-panel { flex: 1; min-width: 0; }
-        .mock-panel-header {
+        .doc-mock-mapping-layout { display: flex; gap: 12px; }
+        .doc-mock-mapping-panel { flex: 1; min-width: 0; }
+        .doc-mock-panel-header {
             font-size: 0.72rem; font-weight: 600; color: #888; padding: 6px 10px;
             background: #252526; border-radius: 4px 4px 0 0;
             border: 1px solid #404040; border-bottom: none; text-align: center;
         }
-        .mock-panel-header.source { color: #569cd6; }
-        .mock-panel-header.target { color: #ce9178; }
-        .mock-panel-header.mapped { color: #4ec9b0; }
-        .mock-panel-body {
+        .doc-mock-panel-header.doc-source { color: #569cd6; }
+        .doc-mock-panel-header.doc-target { color: #ce9178; }
+        .doc-mock-panel-header.doc-mapped { color: #4ec9b0; }
+        .doc-mock-panel-body {
             padding: 8px 10px; border: 1px solid #404040; border-radius: 0 0 4px 4px;
             background: #1e1e1e; min-height: 60px;
         }
-        .mock-chip {
+        .doc-mock-chip {
             display: inline-block; padding: 4px 10px; margin: 3px;
             border-radius: 4px; font-size: 0.7rem; cursor: default;
         }
-        .mock-chip-source { background: rgba(86, 156, 214, 0.12); border: 1px solid rgba(86, 156, 214, 0.3); color: #569cd6; }
-        .mock-chip-target { background: #252526; border: 1px solid #404040; color: #ce9178; }
-        .mock-chip-target-req { background: #252526; border: 1px solid #404040; border-left: 3px solid #dcdcaa; color: #ce9178; }
-        .mock-chip-mapped { background: rgba(78, 201, 176, 0.06); border: 1px solid rgba(78, 201, 176, 0.2); color: #ccc; }
-        .mock-chip-nullify-badge { color: #c586c0; font-size: 0.62rem; margin-left: 3px; cursor: pointer; }
-        .mock-req-label { font-size: 0.56rem; color: #f48771; font-weight: 600; text-transform: uppercase; margin-left: 4px; letter-spacing: 0.3px; }
+        .doc-mock-chip-source { background: rgba(86, 156, 214, 0.12); border: 1px solid rgba(86, 156, 214, 0.3); color: #569cd6; }
+        .doc-mock-chip-target { background: #252526; border: 1px solid #404040; color: #ce9178; }
+        .doc-mock-chip-target-req { background: #252526; border: 1px solid #404040; border-left: 3px solid #dcdcaa; color: #ce9178; }
+        .doc-mock-chip-mapped { background: rgba(78, 201, 176, 0.06); border: 1px solid rgba(78, 201, 176, 0.2); color: #ccc; }
+        .doc-mock-chip-nullify-badge { color: #c586c0; font-size: 0.62rem; margin-left: 3px; cursor: pointer; }
+        .doc-mock-req-label { font-size: 0.56rem; color: #f48771; font-weight: 600; text-transform: uppercase; margin-left: 4px; letter-spacing: 0.3px; }
 
         /* -- Mock Identifier ---------------------------------------- */
-        .mock-identifier {
+        .doc-mock-identifier {
             display: flex; align-items: center; gap: 10px; padding: 10px 14px;
             border-radius: 6px; margin-bottom: 12px; flex-wrap: wrap;
         }
-        .mock-id-pending { background: #2a2d3a; border: 2px solid #f48771; }
-        .mock-id-confirmed { background: #1e2d2a; border: 2px solid #4ec9b0; }
-        .mock-id-label { font-size: 0.78rem; color: #9cdcfe; font-weight: 600; }
-        .mock-id-note { font-size: 0.72rem; color: #888; }
-        .mock-id-dropdown {
+        .doc-mock-id-pending { background: #2a2d3a; border: 2px solid #f48771; }
+        .doc-mock-id-confirmed { background: #1e2d2a; border: 2px solid #4ec9b0; }
+        .doc-mock-id-label { font-size: 0.78rem; color: #9cdcfe; font-weight: 600; }
+        .doc-mock-id-note { font-size: 0.72rem; color: #888; }
+        .doc-mock-id-dropdown {
             padding: 5px 8px; background: #1e1e1e; border: 1px solid #404040;
             border-radius: 4px; color: #ccc; font-size: 0.72rem; min-width: 200px;
         }
-        .mock-id-target { font-size: 0.7rem; color: #888; }
-        .mock-id-target code { background: #1e1e1e; padding: 1px 5px; border-radius: 3px; color: #4ec9b0; font-size: 0.68rem; }
+        .doc-mock-id-target { font-size: 0.7rem; color: #888; }
+        .doc-mock-id-target code { background: #1e1e1e; padding: 1px 5px; border-radius: 3px; color: #4ec9b0; font-size: 0.68rem; }
 
         /* -- Mock Mode Toggle --------------------------------------- */
-        .mock-mode-toggle { display: inline-flex; gap: 0; margin-top: 4px; }
-        .mock-mode-btn {
+        .doc-mock-mode-toggle { display: inline-flex; gap: 0; margin-top: 4px; }
+        .doc-mock-mode-btn {
             padding: 2px 8px; font-size: 0.6rem; border: 1px solid #404040;
             background: #252526; color: #666;
         }
-        .mock-mode-btn:first-child { border-radius: 3px 0 0 3px; }
-        .mock-mode-btn:last-child { border-radius: 0 3px 3px 0; border-left: none; }
-        .mock-mode-btn:nth-child(2) { border-left: none; }
-        .mock-mode-btn.active-file { background: rgba(86, 156, 214, 0.15); color: #569cd6; border-color: rgba(86, 156, 214, 0.4); }
-        .mock-mode-btn.active-blanket { background: rgba(78, 201, 176, 0.15); color: #4ec9b0; border-color: rgba(78, 201, 176, 0.4); }
-        .mock-mode-btn.active-cond { background: rgba(220, 220, 170, 0.15); color: #dcdcaa; border-color: rgba(220, 220, 170, 0.4); }
+        .doc-mock-mode-btn:first-child { border-radius: 3px 0 0 3px; }
+        .doc-mock-mode-btn:last-child { border-radius: 0 3px 3px 0; border-left: none; }
+        .doc-mock-mode-btn:nth-child(2) { border-left: none; }
+        .doc-mock-mode-btn.doc-active-file { background: rgba(86, 156, 214, 0.15); color: #569cd6; border-color: rgba(86, 156, 214, 0.4); }
+        .doc-mock-mode-btn.doc-active-blanket { background: rgba(78, 201, 176, 0.15); color: #4ec9b0; border-color: rgba(78, 201, 176, 0.4); }
+        .doc-mock-mode-btn.doc-active-cond { background: rgba(220, 220, 170, 0.15); color: #dcdcaa; border-color: rgba(220, 220, 170, 0.4); }
 
         /* -- Mock Assignment Card ----------------------------------- */
-        .mock-assign-card {
+        .doc-mock-assign-card {
             background: #1e1e1e; border: 1px solid #404040; border-radius: 6px;
             overflow: hidden; margin-bottom: 8px;
         }
-        .mock-assign-header {
+        .doc-mock-assign-header {
             display: flex; align-items: center; justify-content: space-between;
             padding: 6px 12px; background: #333; border-bottom: 1px solid #404040;
             font-size: 0.7rem; color: #888; font-weight: 600; text-transform: uppercase;
             letter-spacing: 0.5px;
         }
-        .mock-assign-num {
+        .doc-mock-assign-num {
             display: inline-flex; align-items: center; justify-content: center;
             width: 18px; height: 18px; border-radius: 50%; background: #569cd6;
             color: #fff; font-size: 0.58rem; font-weight: 600; margin-right: 6px;
         }
-        .mock-assign-badge {
+        .doc-mock-assign-badge {
             font-size: 0.56rem; font-weight: 600; padding: 1px 5px; border-radius: 3px;
             text-transform: uppercase; letter-spacing: 0.3px; margin-left: 6px;
         }
-        .mock-assign-badge-blanket { background: rgba(78, 201, 176, 0.15); color: #4ec9b0; }
-        .mock-assign-badge-cond { background: rgba(220, 220, 170, 0.15); color: #dcdcaa; }
-        .mock-assign-badge-file { background: rgba(86, 156, 214, 0.15); color: #569cd6; }
-        .mock-assign-body { padding: 10px 12px; }
-        .mock-assign-remove { color: #666; font-size: 0.8rem; cursor: default; }
+        .doc-mock-assign-badge-blanket { background: rgba(78, 201, 176, 0.15); color: #4ec9b0; }
+        .doc-mock-assign-badge-cond { background: rgba(220, 220, 170, 0.15); color: #dcdcaa; }
+        .doc-mock-assign-badge-file { background: rgba(86, 156, 214, 0.15); color: #569cd6; }
+        .doc-mock-assign-body { padding: 10px 12px; }
+        .doc-mock-assign-remove { color: #666; font-size: 0.8rem; cursor: default; }
 
         /* -- Mock Trigger Grid -------------------------------------- */
-        .mock-trigger-grid { border: 1px solid #404040; border-radius: 4px; overflow: hidden; margin-top: 8px; }
-        .mock-trigger-header {
+        .doc-mock-trigger-grid { border: 1px solid #404040; border-radius: 4px; overflow: hidden; margin-top: 8px; }
+        .doc-mock-trigger-header {
             display: grid; grid-template-columns: 1fr 2fr 50px; padding: 5px 10px;
             background: #333; font-size: 0.62rem; color: #888; font-weight: 600;
             text-transform: uppercase; letter-spacing: 0.5px;
         }
-        .mock-trigger-row {
+        .doc-mock-trigger-row {
             display: grid; grid-template-columns: 1fr 2fr 50px; padding: 5px 10px;
             border-top: 1px solid #333; align-items: center; font-size: 0.7rem;
         }
-        .mock-trigger-row:hover { background: #252526; }
-        .mock-trigger-val code { color: #ce9178; }
-        .mock-trigger-input {
+        .doc-mock-trigger-row:hover { background: #252526; }
+        .doc-mock-trigger-val code { color: #ce9178; }
+        .doc-mock-trigger-input {
             padding: 3px 6px; background: #252526; border: 1px solid #404040;
             border-radius: 3px; color: #4ec9b0; font-size: 0.68rem;
             font-family: 'Consolas', 'Courier New', monospace; width: 90%;
         }
-        .mock-trigger-count { font-size: 0.65rem; color: #888; text-align: right; }
-        .mock-trigger-skip { font-size: 0.65rem; color: #666; font-style: italic; text-align: right; }
+        .doc-mock-trigger-count { font-size: 0.65rem; color: #888; text-align: right; }
+        .doc-mock-trigger-skip { font-size: 0.65rem; color: #666; font-style: italic; text-align: right; }
 
         /* -- Mock Fixed-Value Fields -------------------------------- */
-        .mock-fv-field {
+        .doc-mock-fv-field {
             display: flex; align-items: center; gap: 10px; padding: 6px 0;
             border-bottom: 1px solid #2a2a2a;
         }
-        .mock-fv-label { flex: 0 0 140px; font-size: 0.72rem; color: #888; text-align: right; }
-        .mock-fv-input {
+        .doc-mock-fv-label { flex: 0 0 140px; font-size: 0.72rem; color: #888; text-align: right; }
+        .doc-mock-fv-input {
             flex: 1; padding: 4px 8px; background: #252526; border: 1px solid #404040;
             border-radius: 4px; color: #ccc; font-size: 0.72rem;
         }
 
         /* -- Mock Validation Cards ---------------------------------- */
-        .mock-val-card { margin: 6px 0; border: 1px solid #404040; border-radius: 5px; overflow: hidden; }
-        .mock-val-header {
+        .doc-mock-val-card { margin: 6px 0; border: 1px solid #404040; border-radius: 5px; overflow: hidden; }
+        .doc-mock-val-header {
             display: flex; justify-content: space-between; align-items: center;
             padding: 8px 12px; background: #2a2a2a; cursor: default;
         }
-        .mock-val-title { font-size: 0.75rem; color: #ccc; }
-        .mock-val-count { font-size: 0.68rem; padding: 1px 8px; border-radius: 10px; }
-        .mock-val-count.error { background: rgba(220, 220, 170, 0.15); color: #dcdcaa; }
-        .mock-val-count.info { background: rgba(136, 136, 136, 0.15); color: #888; }
-        .mock-val-body { padding: 10px 12px; border-top: 1px solid #333; font-size: 0.72rem; color: #aaa; }
-        .mock-val-actions { display: flex; gap: 6px; margin-top: 8px; }
-        .mock-btn {
+        .doc-mock-val-title { font-size: 0.75rem; color: #ccc; }
+        .doc-mock-val-count { font-size: 0.68rem; padding: 1px 8px; border-radius: 10px; }
+        .doc-mock-val-count.doc-error { background: rgba(220, 220, 170, 0.15); color: #dcdcaa; }
+        .doc-mock-val-count.doc-info { background: rgba(136, 136, 136, 0.15); color: #888; }
+        .doc-mock-val-body { padding: 10px 12px; border-top: 1px solid #333; font-size: 0.72rem; color: #aaa; }
+        .doc-mock-val-actions { display: flex; gap: 6px; margin-top: 8px; }
+        .doc-mock-btn {
             padding: 3px 10px; border-radius: 4px; font-size: 0.68rem;
             font-weight: 600; border: none; cursor: default;
         }
-        .mock-btn-replace { background: rgba(14, 99, 156, 0.6); color: #fff; }
-        .mock-btn-skip { background: #2d2d2d; color: #d4d4d4; border: 1px solid #404040; }
-        .mock-btn-fill { background: rgba(14, 99, 156, 0.6); color: #fff; }
+        .doc-mock-btn-replace { background: rgba(14, 99, 156, 0.6); color: #fff; }
+        .doc-mock-btn-skip { background: #2d2d2d; color: #d4d4d4; border: 1px solid #404040; }
+        .doc-mock-btn-fill { background: rgba(14, 99, 156, 0.6); color: #fff; }
 
         /* -- Mock Execute Results ----------------------------------- */
-        .mock-result-row {
+        .doc-mock-result-row {
             display: flex; align-items: center; gap: 10px; padding: 8px 12px;
             margin: 4px 0; background: #1e3a2a; border-radius: 5px; border: 1px solid #2d5a3d;
         }
-        .mock-result-icon { font-size: 1rem; color: #4ec9b0; }
-        .mock-result-entity { font-size: 0.78rem; color: #4ec9b0; font-weight: 600; }
-        .mock-result-detail { font-size: 0.7rem; color: #888; }
-        .mock-promote-card {
+        .doc-mock-result-icon { font-size: 1rem; color: #4ec9b0; }
+        .doc-mock-result-entity { font-size: 0.78rem; color: #4ec9b0; font-weight: 600; }
+        .doc-mock-result-detail { font-size: 0.7rem; color: #888; }
+        .doc-mock-promote-card {
             display: flex; align-items: center; justify-content: center; gap: 8px;
             padding: 14px 20px; border: 2px solid #4ec9b0; border-radius: 8px;
             background: rgba(78, 201, 176, 0.06); margin-top: 10px;
@@ -332,86 +332,89 @@
         }
 
         /* -- Inline Key Items --------------------------------------- */
-        .key-item {
+        .doc-key-item {
             display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px;
             margin: 3px; background: var(--surface, #1e1e1e);
             border: 1px solid var(--border, #333); border-radius: 4px; font-size: 0.78rem;
         }
-        .key-item code {
+        .doc-key-item code {
             background: #2a2a2a; padding: 1px 5px; border-radius: 3px;
             font-size: 0.72rem; color: #4ec9b0;
         }
 
         /* -- Progress dots ------------------------------------------ */
-        .mock-progress-dots { display: flex; align-items: center; justify-content: center; gap: 4px; margin: 10px 0; }
-        .mock-pdot { width: 10px; height: 10px; border-radius: 50%; border: 2px solid #555; background: transparent; }
-        .mock-pdot.active { border-color: #569cd6; background: #569cd6; }
-        .mock-pdot.done { border-color: #4ec9b0; background: #4ec9b0; }
-        .mock-pdot-line { width: 16px; height: 2px; background: #555; }
-        .mock-pdot-line.done { background: #4ec9b0; }
+        .doc-mock-progress-dots { display: flex; align-items: center; justify-content: center; gap: 4px; margin: 10px 0; }
+        .doc-mock-pdot { width: 10px; height: 10px; border-radius: 50%; border: 2px solid #555; background: transparent; }
+        .doc-mock-pdot.doc-active { border-color: #569cd6; background: #569cd6; }
+        .doc-mock-pdot.doc-done { border-color: #4ec9b0; background: #4ec9b0; }
+        .doc-mock-pdot-line { width: 16px; height: 2px; background: #555; }
+        .doc-mock-pdot-line.doc-done { background: #4ec9b0; }
 
         /* -- Mock Add Button ---------------------------------------- */
-        .mock-add-btn {
+        .doc-mock-add-btn {
             display: flex; align-items: center; justify-content: center; gap: 6px;
             width: 100%; padding: 6px; border: 1px dashed #404040; border-radius: 5px;
             color: #569cd6; font-size: 0.72rem; cursor: default; margin-top: 6px;
         }
 
         /* -- Mock Field Assignment Section -------------------------- */
-        .mock-fa-section {
+        .doc-mock-fa-section {
             margin-top: 10px; background: #1e1e1e;
             border: 1px solid rgba(220, 220, 170, 0.25); border-radius: 6px; overflow: hidden;
         }
-        .mock-fa-header {
+        .doc-mock-fa-header {
             padding: 6px 10px; background: #333; color: #dcdcaa;
             font-size: 0.7rem; font-weight: 600; text-transform: uppercase;
             letter-spacing: 0.5px; border-bottom: 1px solid #404040;
         }
 
         /* -- Summary Cards (Execute Step) --------------------------- */
-        .mock-mapped-summary {
+        .doc-mock-mapped-summary {
             padding: 8px 12px; border-radius: 5px; margin-bottom: 6px;
             font-size: 0.72rem;
         }
-        .mock-mapped-summary.teal { background: rgba(78, 201, 176, 0.06); border: 1px solid rgba(78, 201, 176, 0.2); color: #4ec9b0; }
-        .mock-mapped-summary.purple { background: rgba(197, 134, 192, 0.06); border: 1px solid rgba(197, 134, 192, 0.2); color: #c586c0; }
-        .mock-mapped-summary strong { color: #d4d4d4; }
-        .mock-mapped-summary code { background: #1e1e1e; padding: 1px 4px; border-radius: 3px; font-size: 0.66rem; }
+        .doc-mock-mapped-summary.doc-teal { background: rgba(78, 201, 176, 0.06); border: 1px solid rgba(78, 201, 176, 0.2); color: #4ec9b0; }
+        .doc-mock-mapped-summary.doc-purple { background: rgba(197, 134, 192, 0.06); border: 1px solid rgba(197, 134, 192, 0.2); color: #c586c0; }
+        .doc-mock-mapped-summary strong { color: #d4d4d4; }
+        .doc-mock-mapped-summary code { background: #1e1e1e; padding: 1px 4px; border-radius: 3px; font-size: 0.66rem; }
 
         /* -- Smooth scroll ------------------------------------------ */
         html { scroll-behavior: smooth; scroll-padding-top: 20px; }
     </style>
 </head>
 <body>
+<div class="doc-layout">
 
-<div class="page-wrapper">
+    <nav class="doc-nav"></nav>
 
-    <div class="page-header">
-        <h1>BDL Import &mdash; User Guide</h1>
-        <div class="subtitle">A step-by-step walkthrough for importing bulk data into Debt Manager</div>
-    </div>
+    <div class="doc-content">
 
-    <div class="doc-nav">
-        <a href="../tools.html">Tools</a>
-        <span class="sep">&bull;</span>
-        <span class="current">BDL Import Guide</span>
-    </div>
+        <div class="doc-header">
+            <div class="doc-header-inner">
+                <h1 class="doc-page-title">BDL Import &mdash; User Guide</h1>
+                <div class="doc-page-subtitle">A step-by-step walkthrough for importing bulk data into Debt Manager</div>
+                <div class="doc-subpage-links"></div>
+            </div>
+        </div>
 
-    <div class="context-bar">
+        <div class="doc-body">
+            <div class="doc-body-inner">
+
+<div class="doc-context-bar">
         The BDL Import wizard lets you upload a vendor data file, map its columns to Debt Manager fields, validate the data, and submit it as a Bulk Data Load &mdash; all from your browser. No more copy-pasting into Access tables. No more hardcoded XML. Just point, click, and let the system do the heavy lifting.
     </div>
 
-    <div class="section">
+    <div class="doc-section">
         <p>This guide walks through every screen of the 5-step wizard. Whether you&rsquo;re importing phone numbers, tagging consumers, or updating account data, the workflow is the same. If you&rsquo;ve used the old Access toolkit, think of this as that &mdash; minus the 90 MB file size and the existential dread of opening a shared database.</p>
         <p><strong>Access:</strong> The BDL Import page is available to the Applications &amp; Integration team (full access to all entity types) and the Business Intelligence team (access to department-specific entity types configured by an administrator). Page access is controlled via RBAC; entity and field access are controlled per department.</p>
     </div>
 
-    <div class="guide-jump-nav">
-        <a href="#step-1"><span class="guide-jump-num">1</span> Environment</a>
-        <a href="#step-2"><span class="guide-jump-num">2</span> Upload File</a>
-        <a href="#step-3"><span class="guide-jump-num">3</span> Select Entities</a>
-        <a href="#step-4"><span class="guide-jump-num">4</span> Map &amp; Validate</a>
-        <a href="#step-5"><span class="guide-jump-num">5</span> Execute</a>
+    <div class="doc-guide-jump-nav">
+        <a href="#step-1"><span class="doc-guide-jump-num">1</span> Environment</a>
+        <a href="#step-2"><span class="doc-guide-jump-num">2</span> Upload File</a>
+        <a href="#step-3"><span class="doc-guide-jump-num">3</span> Select Entities</a>
+        <a href="#step-4"><span class="doc-guide-jump-num">4</span> Map &amp; Validate</a>
+        <a href="#step-5"><span class="doc-guide-jump-num">5</span> Execute</a>
         <a href="#templates">Templates</a>
         <a href="#tips">Tips &amp; Troubleshooting</a>
     </div>
@@ -420,72 +423,72 @@
     <!-- ============================================================ -->
     <!-- STEP 1                                                       -->
     <!-- ============================================================ -->
-    <div class="guide-step" id="step-1">
-        <h2><span class="step-num-badge">1</span> Select Your Environment</h2>
+    <div class="doc-guide-step" id="step-1">
+        <h2><span class="doc-step-num-badge">1</span> Select Your Environment</h2>
 
         <p>The first thing you&rsquo;ll see is three cards &mdash; one for each Debt Manager environment. Click the one you want to target. This determines which server receives the file and processes the import.</p>
 
-        <div class="guide-mock">
-            <div class="mock-stepper">
-                <div class="mock-step-item"><div class="mock-step-num active">1</div><div class="mock-step-lbl active">Environment</div></div>
-                <div class="mock-step-conn"></div>
-                <div class="mock-step-item"><div class="mock-step-num">2</div><div class="mock-step-lbl">Upload File</div></div>
-                <div class="mock-step-conn"></div>
-                <div class="mock-step-item"><div class="mock-step-num">3</div><div class="mock-step-lbl">Select Entities</div></div>
-                <div class="mock-step-conn"></div>
-                <div class="mock-step-item"><div class="mock-step-num">4</div><div class="mock-step-lbl">Map &amp; Validate</div></div>
-                <div class="mock-step-conn"></div>
-                <div class="mock-step-item"><div class="mock-step-num">5</div><div class="mock-step-lbl">Execute</div></div>
+        <div class="doc-guide-mock">
+            <div class="doc-mock-stepper">
+                <div class="doc-mock-step-item"><div class="doc-mock-step-num doc-active">1</div><div class="doc-mock-step-lbl doc-active">Environment</div></div>
+                <div class="doc-mock-step-conn"></div>
+                <div class="doc-mock-step-item"><div class="doc-mock-step-num">2</div><div class="doc-mock-step-lbl">Upload File</div></div>
+                <div class="doc-mock-step-conn"></div>
+                <div class="doc-mock-step-item"><div class="doc-mock-step-num">3</div><div class="doc-mock-step-lbl">Select Entities</div></div>
+                <div class="doc-mock-step-conn"></div>
+                <div class="doc-mock-step-item"><div class="doc-mock-step-num">4</div><div class="doc-mock-step-lbl">Map &amp; Validate</div></div>
+                <div class="doc-mock-step-conn"></div>
+                <div class="doc-mock-step-item"><div class="doc-mock-step-num">5</div><div class="doc-mock-step-lbl">Execute</div></div>
             </div>
-            <div class="mock-card-row">
-                <div class="mock-card selected"><div class="mock-card-title" style="color: #dcdcaa;">TEST</div><div class="mock-card-sub">dm-test-app</div></div>
-                <div class="mock-card"><div class="mock-card-title" style="color: #ce9178;">STAGE</div><div class="mock-card-sub">dm-stage-app3</div></div>
-                <div class="mock-card"><div class="mock-card-title" style="color: #ef4444;">PROD</div><div class="mock-card-sub">avg-prod-lsnr</div></div>
+            <div class="doc-mock-card-row">
+                <div class="doc-mock-card doc-selected"><div class="doc-mock-card-title" style="color: #dcdcaa;">TEST</div><div class="doc-mock-card-sub">dm-test-app</div></div>
+                <div class="doc-mock-card"><div class="doc-mock-card-title" style="color: #ce9178;">STAGE</div><div class="doc-mock-card-sub">dm-stage-app3</div></div>
+                <div class="doc-mock-card"><div class="doc-mock-card-title" style="color: #ef4444;">PROD</div><div class="doc-mock-card-sub">avg-prod-lsnr</div></div>
             </div>
-            <div class="guide-mock-caption">The three environment cards. TEST is selected here, indicated by the highlighted border.</div>
+            <div class="doc-guide-mock-caption">The three environment cards. TEST is selected here, indicated by the highlighted border.</div>
         </div>
 
         <p>Once you select an environment, a color-coded badge appears in the stepper bar and stays visible throughout the wizard. It&rsquo;s a constant reminder of where your data is going &mdash; because accidentally importing 10,000 phone records into production when you meant to test is the kind of Monday nobody wants.</p>
 
         <div style="margin: 12px 0;">
-            <span class="mock-env-badge test">TEST</span>&ensp;
-            <span class="mock-env-badge stage">STAGE</span>&ensp;
-            <span class="mock-env-badge prod">PROD</span>
+            <span class="doc-mock-env-badge doc-test">TEST</span>&ensp;
+            <span class="doc-mock-env-badge doc-stage">STAGE</span>&ensp;
+            <span class="doc-mock-env-badge doc-prod">PROD</span>
             <span style="font-size: 0.78rem; color: #888; margin-left: 12px;">&larr; Environment badge colors</span>
         </div>
 
         <p>Selecting <strong>PROD</strong> shows an advisory modal confirming you intend to target production directly. You can still proceed &mdash; it&rsquo;s a heads-up, not a block. The environment card border and name color switch to red for production as an additional visual cue.</p>
 
-        <div class="callout tip"><p><strong>Best practice:</strong> Always validate new file formats or entity type configurations on TEST first. Once you&rsquo;re confident the import is correct, you can re-run it on PROD &mdash; or use the Promote to Production feature from Step 5.</p></div>
+        <div class="doc-callout doc-tip"><p><strong>Best practice:</strong> Always validate new file formats or entity type configurations on TEST first. Once you&rsquo;re confident the import is correct, you can re-run it on PROD &mdash; or use the Promote to Production feature from Step 5.</p></div>
     </div>
 
 
     <!-- ============================================================ -->
     <!-- STEP 2                                                       -->
     <!-- ============================================================ -->
-    <div class="guide-step" id="step-2">
-        <h2><span class="step-num-badge">2</span> Upload Your Data File</h2>
+    <div class="doc-guide-step" id="step-2">
+        <h2><span class="doc-step-num-badge">2</span> Upload Your Data File</h2>
 
         <p>Drag a file into the upload zone, or click <strong>Browse Files</strong> to select one. Accepted formats are CSV, TXT (tab-delimited), XLS, and XLSX. The file is parsed entirely in your browser &mdash; nothing is uploaded to a server at this step.</p>
 
-        <div class="guide-mock">
-            <div class="mock-upload">
-                <div class="mock-upload-icon">&#128196;</div>
+        <div class="doc-guide-mock">
+            <div class="doc-mock-upload">
+                <div class="doc-mock-upload-icon">&#128196;</div>
                 <div>Drag &amp; drop a CSV or Excel file here</div>
                 <div style="color: #555; margin: 6px 0;">or</div>
-                <div class="mock-upload-btn">Browse Files</div>
+                <div class="doc-mock-upload-btn">Browse Files</div>
                 <div style="font-size: 0.68rem; color: #555; margin-top: 8px;">Accepted formats: .csv, .txt, .xlsx, .xls</div>
             </div>
         </div>
 
         <p>Once a file is loaded, a preview grid appears showing the first several rows. The file info bar above the grid shows the filename, row count (excluding the header row), and column count.</p>
 
-        <div class="guide-mock">
+        <div class="doc-guide-mock">
             <div style="padding: 6px 10px; background: #252526; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                 <span style="color: #ccc; font-size: 0.78rem;">&#128196; vendor_phone_update.xlsx</span>
                 <span style="color: #888; font-size: 0.72rem;">3,863 rows &middot; 5 columns</span>
             </div>
-            <table class="mock-table">
+            <table class="doc-mock-table">
                 <thead><tr><th>agency_id</th><th>phone_number</th><th>phone_type</th><th>consent</th><th>quality_score</th></tr></thead>
                 <tbody>
                     <tr><td>1001234</td><td>6155551234</td><td>CELL</td><td>Y</td><td>0</td></tr>
@@ -493,10 +496,10 @@
                     <tr><td>1001236</td><td>6155559012</td><td>WORK</td><td>Y</td><td>0</td></tr>
                 </tbody>
             </table>
-            <div class="guide-mock-caption">The file preview grid. Scroll horizontally if your file has many columns.</div>
+            <div class="doc-guide-mock-caption">The file preview grid. Scroll horizontally if your file has many columns.</div>
         </div>
 
-        <div class="callout info"><p><strong>Excel dates:</strong> If your file contains date columns, Excel-formatted date serial numbers are automatically converted to <code>YYYY-MM-DD</code> format. You don&rsquo;t need to pre-format them.</p></div>
+        <div class="doc-callout doc-info"><p><strong>Excel dates:</strong> If your file contains date columns, Excel-formatted date serial numbers are automatically converted to <code>YYYY-MM-DD</code> format. You don&rsquo;t need to pre-format them.</p></div>
 
         <p>The file stays in browser memory for the rest of the wizard. If you need to change the file, click <strong>Back</strong> to return here and upload a different one. The practical size limit is approximately 250,000 rows per import. For Excel files, the first sheet is used.</p>
     </div>
@@ -505,57 +508,57 @@
     <!-- ============================================================ -->
     <!-- STEP 3                                                       -->
     <!-- ============================================================ -->
-    <div class="guide-step" id="step-3">
-        <h2><span class="step-num-badge">3</span> Select Entity Types</h2>
+    <div class="doc-guide-step" id="step-3">
+        <h2><span class="doc-step-num-badge">3</span> Select Entity Types</h2>
 
         <p>Entity types are the categories of data you can import &mdash; phone numbers, consumer tags, account tags, addresses, and so on. Each entity type maps to a specific BDL transaction type in Debt Manager.</p>
 
         <p>Cards are grouped into three sections: <strong>Consumer</strong> (entities keyed by consumer number), <strong>Account</strong> (entities keyed by account number), and <strong>Other</strong>. Click a card to select it; click again to deselect. You can select multiple entity types if your file contains data for more than one BDL operation.</p>
 
-        <div class="guide-mock">
+        <div class="doc-guide-mock">
             <div style="padding: 6px 12px; background: #252526; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
                 <span style="color: #aaa; font-size: 0.75rem;">Click entity types to select them for import. You can select multiple.</span>
                 <span style="color: #4ec9b0; font-size: 0.75rem; font-weight: 600;">2 selected</span>
             </div>
-            <div class="mock-entity-group-label">Consumer</div>
-            <div class="mock-entity-grid">
-                <div class="mock-entity-card selected"><div class="mock-entity-info">i</div><div class="mock-entity-name">Phone</div><div class="mock-entity-meta">Phone &middot; 7 fields</div></div>
-                <div class="mock-entity-card selected"><div class="mock-entity-info">i</div><div class="mock-entity-name">Consumer Tag</div><div class="mock-entity-meta">Consumer Tag &middot; 4 fields</div></div>
-                <div class="mock-entity-card"><div class="mock-entity-info">i</div><div class="mock-entity-name">Consumer</div><div class="mock-entity-meta">Consumer Info &middot; 22 fields</div></div>
+            <div class="doc-mock-entity-group-label">Consumer</div>
+            <div class="doc-mock-entity-grid">
+                <div class="doc-mock-entity-card doc-selected"><div class="doc-mock-entity-info">i</div><div class="doc-mock-entity-name">Phone</div><div class="doc-mock-entity-meta">Phone &middot; 7 fields</div></div>
+                <div class="doc-mock-entity-card doc-selected"><div class="doc-mock-entity-info">i</div><div class="doc-mock-entity-name">Consumer Tag</div><div class="doc-mock-entity-meta">Consumer Tag &middot; 4 fields</div></div>
+                <div class="doc-mock-entity-card"><div class="doc-mock-entity-info">i</div><div class="doc-mock-entity-name">Consumer</div><div class="doc-mock-entity-meta">Consumer Info &middot; 22 fields</div></div>
             </div>
-            <div class="mock-entity-group-label">Account</div>
-            <div class="mock-entity-grid">
-                <div class="mock-entity-card"><div class="mock-entity-info">i</div><div class="mock-entity-name">Account Tag</div><div class="mock-entity-meta">Account Tag &middot; 4 fields</div></div>
+            <div class="doc-mock-entity-group-label">Account</div>
+            <div class="doc-mock-entity-grid">
+                <div class="doc-mock-entity-card"><div class="doc-mock-entity-info">i</div><div class="doc-mock-entity-name">Account Tag</div><div class="doc-mock-entity-meta">Account Tag &middot; 4 fields</div></div>
             </div>
-            <div class="guide-mock-caption">Entity selection with Phone and Consumer Tag selected.</div>
+            <div class="doc-guide-mock-caption">Entity selection with Phone and Consumer Tag selected.</div>
         </div>
 
         <p>The <span style="color: #888; border: 1px solid #555; border-radius: 50%; width: 16px; height: 16px; display: inline-flex; align-items: center; justify-content: center; font-size: 0.6rem;">i</span> icon on each card opens a <strong>field info modal</strong> showing all available fields for that entity type. This is a quick way to check what data the entity expects before selecting it. The modal shows display names, descriptions, and import guidance tips (in amber) when populated. Fields that support nullification show a purple <span style="color:#c586c0;">&empty;</span> icon.</p>
 
         <p>Some entity types (like Consumer Tag and Account Tag) use an assignment card interface instead of the drag-and-drop column mapping. When you reach Step 4 for one of these entities, you&rsquo;ll see the assignment cards automatically. See the <a href="#fv-entities">Fixed-Value Entities</a> section below for details.</p>
 
-        <div class="callout tip"><p><strong>Multi-entity workflow:</strong> When you select multiple entities, Step 4 walks through each one individually &mdash; map then validate for Entity 1, then map then validate for Entity 2, and so on. Progress dots at the top of Step 4 show where you are in the sequence. All entity states are preserved if you navigate back.</p></div>
+        <div class="doc-callout doc-tip"><p><strong>Multi-entity workflow:</strong> When you select multiple entities, Step 4 walks through each one individually &mdash; map then validate for Entity 1, then map then validate for Entity 2, and so on. Progress dots at the top of Step 4 show where you are in the sequence. All entity states are preserved if you navigate back.</p></div>
     </div>
 
 
     <!-- ============================================================ -->
     <!-- STEP 4                                                       -->
     <!-- ============================================================ -->
-    <div class="guide-step" id="step-4">
-        <h2><span class="step-num-badge">4</span> Map &amp; Validate</h2>
+    <div class="doc-guide-step" id="step-4">
+        <h2><span class="doc-step-num-badge">4</span> Map &amp; Validate</h2>
 
         <p>This is where the real work happens. For each selected entity type, you&rsquo;ll map columns from your file to BDL fields, then validate the data. The wizard handles one entity at a time &mdash; when you complete mapping and validation for the first entity, it automatically transitions to the next.</p>
 
         <p>When you&rsquo;ve selected multiple entities, progress dots at the top show where you are:</p>
-        <div class="guide-mock" style="padding: 10px;">
-            <div class="mock-progress-dots">
-                <div class="mock-pdot done"></div>
-                <div class="mock-pdot-line done"></div>
-                <div class="mock-pdot active"></div>
-                <div class="mock-pdot-line"></div>
-                <div class="mock-pdot"></div>
+        <div class="doc-guide-mock" style="padding: 10px;">
+            <div class="doc-mock-progress-dots">
+                <div class="doc-mock-pdot doc-done"></div>
+                <div class="doc-mock-pdot-line doc-done"></div>
+                <div class="doc-mock-pdot doc-active"></div>
+                <div class="doc-mock-pdot-line"></div>
+                <div class="doc-mock-pdot"></div>
             </div>
-            <div class="guide-mock-caption">Entity 2 of 3 &mdash; green dots are complete, blue is current, grey is upcoming.</div>
+            <div class="doc-guide-mock-caption">Entity 2 of 3 &mdash; green dots are complete, blue is current, grey is upcoming.</div>
         </div>
 
         <!-- IDENTIFIER -->
@@ -564,15 +567,15 @@
 
         <p>The identifier section adapts based on the entity type. Consumer-level entities (Phone, Consumer Tag, etc.) ask for the <strong>DM Consumer number</strong> and map to <code>cnsmr_idntfr_agncy_id</code>. Account-level entities (Account Tag, etc.) ask for the <strong>DM Account number</strong> and map to <code>cnsmr_accnt_idntfr_agncy_id</code>.</p>
 
-        <div class="guide-mock">
-            <div class="mock-identifier mock-id-confirmed">
+        <div class="doc-guide-mock">
+            <div class="doc-mock-identifier doc-mock-id-confirmed">
                 <span style="font-size: 1.1rem;">&#128273;</span>
-                <span class="mock-id-label">Consumer Identifier</span>
-                <span class="mock-id-note">Which column contains the DM Consumer number?</span>
-                <span class="mock-id-dropdown">agency_id &ensp;(1001234)</span>
-                <span class="mock-id-target">&rarr; <code>cnsmr_idntfr_agncy_id</code></span>
+                <span class="doc-mock-id-label">Consumer Identifier</span>
+                <span class="doc-mock-id-note">Which column contains the DM Consumer number?</span>
+                <span class="doc-mock-id-dropdown">agency_id &ensp;(1001234)</span>
+                <span class="doc-mock-id-target">&rarr; <code>cnsmr_idntfr_agncy_id</code></span>
             </div>
-            <div class="guide-mock-caption">Identifier confirmed (green border). Mapping panels are now enabled.</div>
+            <div class="doc-guide-mock-caption">Identifier confirmed (green border). Mapping panels are now enabled.</div>
         </div>
 
         <p>The identifier section has a red border when nothing is selected and a green border once confirmed. The rest of the mapping interface stays dimmed and disabled until this is set.</p>
@@ -581,31 +584,31 @@
         <h3>File-Mapped Entities</h3>
         <p>For most entity types, you&rsquo;ll see a two-panel layout: <strong>Source Columns</strong> (your file) on the left, and <strong>BDL Fields</strong> (target fields) on the right. Drag source chips from the left and drop them onto target chips on the right. Or click a source chip, then click the target chip you want to map it to. Mapped pairs appear in a <strong>Mapped</strong> section below.</p>
 
-        <div class="guide-mock">
-            <div class="mock-mapping-layout">
-                <div class="mock-mapping-panel">
-                    <div class="mock-panel-header source">SOURCE COLUMNS</div>
-                    <div class="mock-panel-body">
-                        <span class="mock-chip mock-chip-source">phone_type</span>
-                        <span class="mock-chip mock-chip-source">consent</span>
+        <div class="doc-guide-mock">
+            <div class="doc-mock-mapping-layout">
+                <div class="doc-mock-mapping-panel">
+                    <div class="doc-mock-panel-header doc-source">SOURCE COLUMNS</div>
+                    <div class="doc-mock-panel-body">
+                        <span class="doc-mock-chip doc-mock-chip-source">phone_type</span>
+                        <span class="doc-mock-chip doc-mock-chip-source">consent</span>
                     </div>
                 </div>
-                <div class="mock-mapping-panel">
-                    <div class="mock-panel-header target">BDL FIELDS &mdash; PHONE</div>
-                    <div class="mock-panel-body">
-                        <div class="mock-chip mock-chip-target-req" style="margin-bottom: 4px;">Phone Type <span class="mock-req-label">required</span></div>
-                        <div class="mock-chip mock-chip-target" style="margin-bottom: 4px;">Consent Flag <span class="mock-chip-nullify-badge">&empty;</span></div>
-                        <div class="mock-chip mock-chip-target-req">Quality Score <span class="mock-req-label">required</span></div>
+                <div class="doc-mock-mapping-panel">
+                    <div class="doc-mock-panel-header doc-target">BDL FIELDS &mdash; PHONE</div>
+                    <div class="doc-mock-panel-body">
+                        <div class="doc-mock-chip doc-mock-chip-target-req" style="margin-bottom: 4px;">Phone Type <span class="doc-mock-req-label">required</span></div>
+                        <div class="doc-mock-chip doc-mock-chip-target" style="margin-bottom: 4px;">Consent Flag <span class="doc-mock-chip-nullify-badge">&empty;</span></div>
+                        <div class="doc-mock-chip doc-mock-chip-target-req">Quality Score <span class="doc-mock-req-label">required</span></div>
                     </div>
                 </div>
             </div>
             <div style="margin-top: 10px;">
-                <div class="mock-panel-header mapped">MAPPED</div>
-                <div class="mock-panel-body">
-                    <div class="mock-chip mock-chip-mapped">phone_number &rarr; Phone Number</div>
+                <div class="doc-mock-panel-header doc-mapped">MAPPED</div>
+                <div class="doc-mock-panel-body">
+                    <div class="doc-mock-chip doc-mock-chip-mapped">phone_number &rarr; Phone Number</div>
                 </div>
             </div>
-            <div class="guide-mock-caption">Source columns on the left, target BDL fields on the right. One mapping is complete (phone_number &rarr; Phone Number).</div>
+            <div class="doc-guide-mock-caption">Source columns on the left, target BDL fields on the right. One mapping is complete (phone_number &rarr; Phone Number).</div>
         </div>
 
         <p><strong>Visual indicators on target field chips:</strong></p>
@@ -617,16 +620,16 @@
         <h3 id="per-field-mode">Per-Field Mode Override</h3>
         <p>Some fields on file-mapped entities are eligible for a <strong>per-field mode override</strong>. These fields show a compact 3-way toggle directly on their target chip: <strong>File</strong>, <strong>Blanket</strong>, and <strong>Cond</strong> (Conditional).</p>
 
-        <div class="guide-mock" style="padding: 12px;">
-            <div class="mock-chip mock-chip-target" style="display: inline-flex; flex-direction: column; align-items: flex-start; gap: 3px;">
+        <div class="doc-guide-mock" style="padding: 12px;">
+            <div class="doc-mock-chip doc-mock-chip-target" style="display: inline-flex; flex-direction: column; align-items: flex-start; gap: 3px;">
                 <span>Workgroup <span style="font-size:0.6rem;color:#888;">wrkgrp_shrt_nm</span></span>
-                <div class="mock-mode-toggle">
-                    <span class="mock-mode-btn active-file">File</span>
-                    <span class="mock-mode-btn">Blanket</span>
-                    <span class="mock-mode-btn">Cond</span>
+                <div class="doc-mock-mode-toggle">
+                    <span class="doc-mock-mode-btn doc-active-file">File</span>
+                    <span class="doc-mock-mode-btn">Blanket</span>
+                    <span class="doc-mock-mode-btn">Cond</span>
                 </div>
             </div>
-            <div class="guide-mock-caption">A conditional-eligible field with the 3-way mode toggle. File mode is the default.</div>
+            <div class="doc-guide-mock-caption">A conditional-eligible field with the 3-way mode toggle. File mode is the default.</div>
         </div>
 
         <p><strong>File (default):</strong> The field stays in the target panel for normal drag-and-drop mapping from a source column. This is standard behavior &mdash; the value comes from each row of your file.</p>
@@ -635,28 +638,28 @@
 
         <p><strong>Cond (Conditional):</strong> The field value varies per row based on a trigger column. You select a column from your file as the &ldquo;trigger,&rdquo; the system scans the file for unique values in that column, and you map each unique trigger value to a field value using typeahead. Rows whose trigger value isn&rsquo;t mapped are skipped.</p>
 
-        <div class="guide-mock">
-            <div class="mock-fa-section">
-                <div class="mock-fa-header">Field Assignments</div>
+        <div class="doc-guide-mock">
+            <div class="doc-mock-fa-section">
+                <div class="doc-mock-fa-header">Field Assignments</div>
                 <div style="padding: 8px;">
-                    <div class="mock-assign-card">
-                        <div class="mock-assign-header">
-                            <span><span style="color:#dcdcaa;font-weight:600;text-transform:none;letter-spacing:0;">Workgroup</span> <code style="font-size:0.6rem;color:#888;">wrkgrp_shrt_nm</code> <span class="mock-assign-badge mock-assign-badge-blanket">Blanket</span></span>
+                    <div class="doc-mock-assign-card">
+                        <div class="doc-mock-assign-header">
+                            <span><span style="color:#dcdcaa;font-weight:600;text-transform:none;letter-spacing:0;">Workgroup</span> <code style="font-size:0.6rem;color:#888;">wrkgrp_shrt_nm</code> <span class="doc-mock-assign-badge doc-mock-assign-badge-blanket">Blanket</span></span>
                             <span style="color:#569cd6;font-size:0.68rem;">&larr; File</span>
                         </div>
-                        <div class="mock-assign-body">
-                            <div class="mock-fv-field" style="border:none;padding:4px 0;">
-                                <div class="mock-fv-label" style="flex:0 0 120px;">Value for all rows</div>
-                                <div class="mock-fv-input" style="color:#4ec9b0;">COLLECTIONS</div>
+                        <div class="doc-mock-assign-body">
+                            <div class="doc-mock-fv-field" style="border:none;padding:4px 0;">
+                                <div class="doc-mock-fv-label" style="flex:0 0 120px;">Value for all rows</div>
+                                <div class="doc-mock-fv-input" style="color:#4ec9b0;">COLLECTIONS</div>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
-            <div class="guide-mock-caption">A workgroup field in Blanket mode, applied to all rows of a CONSUMER import.</div>
+            <div class="doc-guide-mock-caption">A workgroup field in Blanket mode, applied to all rows of a CONSUMER import.</div>
         </div>
 
-        <div class="callout info"><p><strong>Use case:</strong> You&rsquo;re importing a CONSUMER entity update. Most fields come from the file, but you want to reassign all records to a specific workgroup. Switch the workgroup field to Blanket, type the workgroup name, and the file-mapped fields handle the rest.</p></div>
+        <div class="doc-callout doc-info"><p><strong>Use case:</strong> You&rsquo;re importing a CONSUMER entity update. Most fields come from the file, but you want to reassign all records to a specific workgroup. Switch the workgroup field to Blanket, type the workgroup name, and the file-mapped fields handle the rest.</p></div>
 
         <!-- FIXED-VALUE ENTITIES -->
         <h3 id="fv-entities">Fixed-Value Entities (Tags)</h3>
@@ -664,29 +667,29 @@
 
         <p>Each assignment card has a mode toggle (when the entity supports it):</p>
 
-        <div class="guide-mock">
-            <div class="mock-assign-card">
-                <div class="mock-assign-header">
-                    <span><span class="mock-assign-num">1</span> Assignment <span class="mock-assign-badge mock-assign-badge-blanket">Blanket</span></span>
+        <div class="doc-guide-mock">
+            <div class="doc-mock-assign-card">
+                <div class="doc-mock-assign-header">
+                    <span><span class="doc-mock-assign-num">1</span> Assignment <span class="doc-mock-assign-badge doc-mock-assign-badge-blanket">Blanket</span></span>
                 </div>
                 <div style="display:flex;gap:0;padding:8px 12px 0;">
-                    <span class="mock-mode-btn" style="border-radius:4px 0 0 4px;">File</span>
-                    <span class="mock-mode-btn active-blanket" style="border-left:none;">Blanket</span>
-                    <span class="mock-mode-btn" style="border-radius:0 4px 4px 0;border-left:none;">Conditional</span>
+                    <span class="doc-mock-mode-btn" style="border-radius:4px 0 0 4px;">File</span>
+                    <span class="doc-mock-mode-btn doc-active-blanket" style="border-left:none;">Blanket</span>
+                    <span class="doc-mock-mode-btn" style="border-radius:0 4px 4px 0;border-left:none;">Conditional</span>
                 </div>
-                <div class="mock-assign-body">
-                    <div class="mock-fv-field" style="border:none;padding:4px 0;">
-                        <div class="mock-fv-label">Tag Short Name</div>
-                        <div class="mock-fv-input" style="color:#4ec9b0;">TA_PRIORITY &ensp;<span style="color:#888;font-size:0.65rem;">(Priority Account)</span></div>
+                <div class="doc-mock-assign-body">
+                    <div class="doc-mock-fv-field" style="border:none;padding:4px 0;">
+                        <div class="doc-mock-fv-label">Tag Short Name</div>
+                        <div class="doc-mock-fv-input" style="color:#4ec9b0;">TA_PRIORITY &ensp;<span style="color:#888;font-size:0.65rem;">(Priority Account)</span></div>
                     </div>
-                    <div class="mock-fv-field" style="border:none;padding:4px 0;">
-                        <div class="mock-fv-label">Assignment Date</div>
-                        <div class="mock-fv-input" style="color:#555;font-style:italic;">Optional</div>
+                    <div class="doc-mock-fv-field" style="border:none;padding:4px 0;">
+                        <div class="doc-mock-fv-label">Assignment Date</div>
+                        <div class="doc-mock-fv-input" style="color:#555;font-style:italic;">Optional</div>
                     </div>
                 </div>
             </div>
-            <div class="mock-add-btn">+ Add Another Tag Assignment</div>
-            <div class="guide-mock-caption">A Blanket assignment card for CONSUMER_TAG. Typeahead search finds matching tags from DM.</div>
+            <div class="doc-mock-add-btn">+ Add Another Tag Assignment</div>
+            <div class="doc-guide-mock-caption">A Blanket assignment card for CONSUMER_TAG. Typeahead search finds matching tags from DM.</div>
         </div>
 
         <p><strong>Blanket mode:</strong> Every row in your file gets the same tag value. You enter the tag name (with typeahead against DM&rsquo;s tag table) and any shared fields. Simple and common &mdash; &ldquo;tag all these consumers with TA_PRIORITY.&rdquo;</p>
@@ -695,36 +698,36 @@
 
         <p><strong>Conditional mode:</strong> The tag value varies based on a trigger column. You select a file column as the trigger, the system scans for unique values, and you map each trigger value to a tag using typeahead. This is useful when different rows should get different tags based on some criteria in the file.</p>
 
-        <div class="guide-mock">
-            <div class="mock-assign-card">
-                <div class="mock-assign-header">
-                    <span><span class="mock-assign-num">1</span> Assignment <span class="mock-assign-badge mock-assign-badge-cond">Conditional</span></span>
+        <div class="doc-guide-mock">
+            <div class="doc-mock-assign-card">
+                <div class="doc-mock-assign-header">
+                    <span><span class="doc-mock-assign-num">1</span> Assignment <span class="doc-mock-assign-badge doc-mock-assign-badge-cond">Conditional</span></span>
                 </div>
-                <div class="mock-assign-body">
+                <div class="doc-mock-assign-body">
                     <div style="font-size:0.7rem;color:#dcdcaa;font-weight:600;margin-bottom:6px;">&#9881; Trigger column</div>
-                    <div class="mock-id-dropdown" style="margin-bottom:8px;max-width:280px;">status_code &ensp;(ACTIVE)</div>
-                    <div class="mock-trigger-grid">
-                        <div class="mock-trigger-header"><span>Trigger value</span><span>tag_shrt_nm</span><span style="text-align:right">Rows</span></div>
-                        <div class="mock-trigger-row"><span class="mock-trigger-val"><code>ACTIVE</code></span><span><input class="mock-trigger-input" value="TA_ACTIVE" readonly></span><span class="mock-trigger-count">2,841</span></div>
-                        <div class="mock-trigger-row"><span class="mock-trigger-val"><code>HOLD</code></span><span><input class="mock-trigger-input" value="TA_HOLD" readonly></span><span class="mock-trigger-count">614</span></div>
-                        <div class="mock-trigger-row"><span class="mock-trigger-val"><code>CLOSED</code></span><span><input class="mock-trigger-input" value="" readonly placeholder="(skip)"></span><span class="mock-trigger-skip">skip</span></div>
+                    <div class="doc-mock-id-dropdown" style="margin-bottom:8px;max-width:280px;">status_code &ensp;(ACTIVE)</div>
+                    <div class="doc-mock-trigger-grid">
+                        <div class="doc-mock-trigger-header"><span>Trigger value</span><span>tag_shrt_nm</span><span style="text-align:right">Rows</span></div>
+                        <div class="doc-mock-trigger-row"><span class="doc-mock-trigger-val"><code>ACTIVE</code></span><span><input class="doc-mock-trigger-input" value="TA_ACTIVE" readonly></span><span class="doc-mock-trigger-count">2,841</span></div>
+                        <div class="doc-mock-trigger-row"><span class="doc-mock-trigger-val"><code>HOLD</code></span><span><input class="doc-mock-trigger-input" value="TA_HOLD" readonly></span><span class="doc-mock-trigger-count">614</span></div>
+                        <div class="doc-mock-trigger-row"><span class="doc-mock-trigger-val"><code>CLOSED</code></span><span><input class="doc-mock-trigger-input" value="" readonly placeholder="(skip)"></span><span class="doc-mock-trigger-skip">skip</span></div>
                     </div>
                 </div>
             </div>
-            <div class="guide-mock-caption">Conditional mode. Each trigger value maps to a tag via typeahead. Unmapped values are skipped.</div>
+            <div class="doc-guide-mock-caption">Conditional mode. Each trigger value maps to a tag via typeahead. Unmapped values are skipped.</div>
         </div>
 
         <p><strong>Multiple assignments:</strong> Click <strong>+ Add Another</strong> to stack multiple assignments. Each card is independent &mdash; you can mix modes (one blanket, one conditional, etc.). Each assignment generates its own set of rows in the staging table, so the same consumer can receive multiple tags from a single import.</p>
 
-        <div class="callout info"><p><strong>Tag entity filtering:</strong> When importing Consumer Tags, the typeahead and validation lookups only show consumer-level tags. Likewise, Account Tags only show account-level tags. This prevents accidentally selecting a tag meant for the wrong entity level.</p></div>
+        <div class="doc-callout doc-info"><p><strong>Tag entity filtering:</strong> When importing Consumer Tags, the typeahead and validation lookups only show consumer-level tags. Likewise, Account Tags only show account-level tags. This prevents accidentally selecting a tag meant for the wrong entity level.</p></div>
 
         <!-- NULLIFY -->
         <h3 id="nullify">Nullifying Field Values</h3>
         <p>Sometimes you need to <strong>clear</strong> a field value in DM rather than update it. BDL Import supports this through the <code>&lt;nullify_fields&gt;</code> XML block. There are two mechanisms:</p>
 
-        <div class="callout tip"><p><strong>Blanket nullification:</strong> On target field chips, eligible fields show a purple <span style="color:#c586c0;">&empty;</span> badge. Clicking it marks that field for nullification across <em>every row</em>. The field moves to the Mapped section with a purple &ldquo;&empty; Nullify &rarr; Field Name&rdquo; label. Use this when you want to deliberately wipe a field value for an entire batch.</p></div>
+        <div class="doc-callout doc-tip"><p><strong>Blanket nullification:</strong> On target field chips, eligible fields show a purple <span style="color:#c586c0;">&empty;</span> badge. Clicking it marks that field for nullification across <em>every row</em>. The field moves to the Mapped section with a purple &ldquo;&empty; Nullify &rarr; Field Name&rdquo; label. Use this when you want to deliberately wipe a field value for an entire batch.</p></div>
 
-        <div class="callout info"><p><strong>Record-level nullification:</strong> When a column is mapped but a row has an <strong>empty value</strong>, the system automatically nullifies that field for that row. The logic: if you mapped the column, the file controls that field. Empty means &ldquo;clear it,&rdquo; not &ldquo;leave it alone.&rdquo; Unmapped fields are simply omitted from the XML. This mirrors the legacy Access toolkit behavior.</p></div>
+        <div class="doc-callout doc-info"><p><strong>Record-level nullification:</strong> When a column is mapped but a row has an <strong>empty value</strong>, the system automatically nullifies that field for that row. The logic: if you mapped the column, the file controls that field. Empty means &ldquo;clear it,&rdquo; not &ldquo;leave it alone.&rdquo; Unmapped fields are simply omitted from the XML. This mirrors the legacy Access toolkit behavior.</p></div>
 
         <p>Primary identifiers, required fields, fields flagged as non-nullifiable, and conditional-eligible fields (which use the mode toggle instead) are excluded from nullification. The <span style="color:#c586c0;">&empty;</span> badge only appears on eligible fields.</p>
 
@@ -732,33 +735,33 @@
         <h3>Validation</h3>
         <p>After mapping, click the <strong>Validate [Entity Name]</strong> button to validate. The system stages your data on the server, fetches reference values from DM, and checks every row. Issues appear as accordion cards &mdash; one category at a time, most critical first.</p>
 
-        <div class="guide-mock">
-            <div class="mock-val-card">
-                <div class="mock-val-header">
-                    <div class="mock-val-title">&#9888; Required Empty: <strong>quality_score</strong></div>
-                    <div class="mock-val-count error">247 rows</div>
+        <div class="doc-guide-mock">
+            <div class="doc-mock-val-card">
+                <div class="doc-mock-val-header">
+                    <div class="doc-mock-val-title">&#9888; Required Empty: <strong>quality_score</strong></div>
+                    <div class="doc-mock-val-count doc-error">247 rows</div>
                 </div>
-                <div class="mock-val-body">
+                <div class="doc-mock-val-body">
                     <div style="padding:4px 8px;background:rgba(220,220,170,0.06);border-left:2px solid #dcdcaa;font-size:0.68rem;color:#dcdcaa;margin-bottom:8px;">Required numeric value &mdash; enter 0 if not in source data</div>
-                    <div class="mock-val-actions">
-                        <span class="mock-btn mock-btn-fill">Fill with value...</span>
-                        <span class="mock-btn mock-btn-skip">Skip 247 rows</span>
+                    <div class="doc-mock-val-actions">
+                        <span class="doc-mock-btn doc-mock-btn-fill">Fill with value...</span>
+                        <span class="doc-mock-btn doc-mock-btn-skip">Skip 247 rows</span>
                     </div>
                 </div>
             </div>
-            <div class="mock-val-card">
-                <div class="mock-val-header">
-                    <div class="mock-val-title">&#9888; Invalid Lookup: <strong>phone_type</strong></div>
-                    <div class="mock-val-count error">12 rows</div>
+            <div class="doc-mock-val-card">
+                <div class="doc-mock-val-header">
+                    <div class="doc-mock-val-title">&#9888; Invalid Lookup: <strong>phone_type</strong></div>
+                    <div class="doc-mock-val-count doc-error">12 rows</div>
                 </div>
             </div>
-            <div class="mock-val-card">
-                <div class="mock-val-header">
-                    <div class="mock-val-title">&#128712; Max Length: <strong>phone_number</strong></div>
-                    <div class="mock-val-count info">3 rows</div>
+            <div class="doc-mock-val-card">
+                <div class="doc-mock-val-header">
+                    <div class="doc-mock-val-title">&#128712; Max Length: <strong>phone_number</strong></div>
+                    <div class="doc-mock-val-count doc-info">3 rows</div>
                 </div>
             </div>
-            <div class="guide-mock-caption">Validation results. The first card is expanded showing the import guidance tip and action buttons.</div>
+            <div class="doc-guide-mock-caption">Validation results. The first card is expanded showing the import guidance tip and action buttons.</div>
         </div>
 
         <p><strong>Required Empty</strong> (actionable) &mdash; A required field has no value. <strong>Fill</strong> applies a value to all empty rows for that field, or <strong>Skip</strong> removes the affected rows. The amber tip is the import guidance.</p>
@@ -767,7 +770,7 @@
 
         <p><strong>Max Length</strong> and <strong>Data Type</strong> (informational) &mdash; Warnings about truncation or type mismatches. These won&rsquo;t block the import but DM may reject individual records.</p>
 
-        <div class="callout info"><p><strong>Cascading validation:</strong> After each fill or skip action, the system re-validates automatically. Skipping rows for one field removes them from subsequent checks, so counts may change as you work through issues.</p></div>
+        <div class="doc-callout doc-info"><p><strong>Cascading validation:</strong> After each fill or skip action, the system re-validates automatically. Skipping rows for one field removes them from subsequent checks, so counts may change as you work through issues.</p></div>
 
         <p>Once all actionable issues are resolved (or there are none), validation passes and the entity is marked complete. A summary shows the mapped fields, nullified fields (if any), and row counts. If more entities remain, the wizard transitions to the next one after a brief pause.</p>
     </div>
@@ -776,21 +779,21 @@
     <!-- ============================================================ -->
     <!-- STEP 5                                                       -->
     <!-- ============================================================ -->
-    <div class="guide-step" id="step-5">
-        <h2><span class="step-num-badge">5</span> Review &amp; Execute</h2>
+    <div class="doc-guide-step" id="step-5">
+        <h2><span class="doc-step-num-badge">5</span> Review &amp; Execute</h2>
 
         <p>The final step shows a summary of everything you&rsquo;re about to import, with one tab per entity type. Each tab shows a 4-item grid (Environment, Entity Type, Rows, Staging Table), plus summary cards for mapped fields and nullified fields.</p>
 
-        <div class="guide-mock">
+        <div class="doc-guide-mock">
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:0;background:#1e1e1e;border:1px solid #404040;border-radius:6px;overflow:hidden;margin-bottom:8px;">
                 <div style="display:flex;justify-content:space-between;padding:8px 12px;border-bottom:1px solid #333;"><span style="color:#888;font-size:0.72rem;">Environment</span><span style="color:#dcdcaa;font-size:0.78rem;font-weight:600;">TEST</span></div>
                 <div style="display:flex;justify-content:space-between;padding:8px 12px;border-bottom:1px solid #333;"><span style="color:#888;font-size:0.72rem;">Entity Type</span><code style="color:#4ec9b0;font-size:0.7rem;">PHONE</code></div>
                 <div style="display:flex;justify-content:space-between;padding:8px 12px;"><span style="color:#888;font-size:0.72rem;">Rows</span><span style="color:#ccc;font-size:0.78rem;font-weight:600;">3,863</span></div>
                 <div style="display:flex;justify-content:space-between;padding:8px 12px;"><span style="color:#888;font-size:0.72rem;">Staging Table</span><code style="color:#4ec9b0;font-size:0.65rem;">BDL_PHONE_dcota_...</code></div>
             </div>
-            <div class="mock-mapped-summary teal">&#128279; <strong>Mapped Fields:</strong> <code>Phone Number</code>, <code>Phone Type</code>, <code>Quality Score</code>, <code>Workgroup</code> <span style="color:#dcdcaa;font-size:0.6rem;">(cond)</span></div>
-            <div class="mock-mapped-summary purple">&empty; <strong>Nullify:</strong> <code>Consent Flag</code></div>
-            <div class="guide-mock-caption">Execute summary showing the 4-item grid, mapped fields (with mode tag for conditional field assignment), and nullified fields.</div>
+            <div class="doc-mock-mapped-summary doc-teal">&#128279; <strong>Mapped Fields:</strong> <code>Phone Number</code>, <code>Phone Type</code>, <code>Quality Score</code>, <code>Workgroup</code> <span style="color:#dcdcaa;font-size:0.6rem;">(cond)</span></div>
+            <div class="doc-mock-mapped-summary doc-purple">&empty; <strong>Nullify:</strong> <code>Consent Flag</code></div>
+            <div class="doc-guide-mock-caption">Execute summary showing the 4-item grid, mapped fields (with mode tag for conditional field assignment), and nullified fields.</div>
         </div>
 
         <p><strong>XML Preview:</strong> Click the <strong>Preview XML</strong> button to see the exact XML that will be sent to DM. Useful for verifying output before submitting, especially with a new entity type. The preview can be copied to clipboard.</p>
@@ -799,11 +802,11 @@
 
         <p><strong>Executing:</strong> Click <strong>Submit All</strong> to submit. Each entity type is processed independently &mdash; build XML, write file, register via DM API, trigger import. If one entity fails, the others are unaffected. Tab labels update with checkmarks or X indicators as each completes.</p>
 
-        <div class="guide-mock">
-            <div class="mock-result-row"><div class="mock-result-icon">&#10003;</div><div><div class="mock-result-entity">Phone &mdash; Submitted</div><div class="mock-result-detail">3,863 rows &middot; File Registry ID: 284519</div></div></div>
-            <div class="mock-result-row"><div class="mock-result-icon">&#10003;</div><div><div class="mock-result-entity">Consumer Tag &mdash; Submitted</div><div class="mock-result-detail">3,863 rows &middot; File Registry ID: 284520</div></div></div>
-            <div class="mock-result-row" style="background:#1e3a2a;border-color:#2d5a3d;"><div class="mock-result-icon">&#10003;</div><div><div class="mock-result-entity" style="color:#888;">AR Log (SD-4521)</div><div class="mock-result-detail">Consolidated AR log covering Phone, Consumer Tag</div></div></div>
-            <div class="guide-mock-caption">Unified results after a successful multi-entity import with Jira ticket linking.</div>
+        <div class="doc-guide-mock">
+            <div class="doc-mock-result-row"><div class="doc-mock-result-icon">&#10003;</div><div><div class="doc-mock-result-entity">Phone &mdash; Submitted</div><div class="doc-mock-result-detail">3,863 rows &middot; File Registry ID: 284519</div></div></div>
+            <div class="doc-mock-result-row"><div class="doc-mock-result-icon">&#10003;</div><div><div class="doc-mock-result-entity">Consumer Tag &mdash; Submitted</div><div class="doc-mock-result-detail">3,863 rows &middot; File Registry ID: 284520</div></div></div>
+            <div class="doc-mock-result-row" style="background:#1e3a2a;border-color:#2d5a3d;"><div class="doc-mock-result-icon">&#10003;</div><div><div class="doc-mock-result-entity" style="color:#888;">AR Log (SD-4521)</div><div class="doc-mock-result-detail">Consolidated AR log covering Phone, Consumer Tag</div></div></div>
+            <div class="doc-guide-mock-caption">Unified results after a successful multi-entity import with Jira ticket linking.</div>
         </div>
 
         <p>The DM import is attributed to <strong>your</strong> AD username, not the API service account.</p>
@@ -814,27 +817,27 @@
 
         <p>Click <strong>Align Row Counts</strong> to open a modal. For each fixed-value entity, you can select which file-mapped entity to align to. Alignment joins the staging tables on the shared identifier column and marks rows as skipped in the target that are skipped in the source. Each entity has an <strong>Undo</strong> button to reset alignment if needed.</p>
 
-        <div class="callout tip"><p><strong>Design principle:</strong> File-mapped entities are independent (&ldquo;load this data&rdquo;). Fixed-value entities are derivative (&ldquo;apply this to those records&rdquo;). Alignment keeps them in sync.</p></div>
+        <div class="doc-callout doc-tip"><p><strong>Design principle:</strong> File-mapped entities are independent (&ldquo;load this data&rdquo;). Fixed-value entities are derivative (&ldquo;apply this to those records&rdquo;). Alignment keeps them in sync.</p></div>
 
         <!-- PROMOTE -->
         <h3>Promote to Production</h3>
         <p>After a successful non-PROD import, a <strong>Promote to Production</strong> card appears below the results. It has a cooldown timer that counts down before enabling &mdash; giving you time to verify results in the lower environment first.</p>
 
-        <div class="guide-mock" style="text-align: center; padding: 16px;">
-            <div class="mock-promote-card">&#9650; Promote to Production</div>
-            <div class="guide-mock-caption">Available after a successful TEST or STAGE import. Cooldown timer expires before the button is enabled.</div>
+        <div class="doc-guide-mock" style="text-align: center; padding: 16px;">
+            <div class="doc-mock-promote-card">&#9650; Promote to Production</div>
+            <div class="doc-guide-mock-caption">Available after a successful TEST or STAGE import. Cooldown timer expires before the button is enabled.</div>
         </div>
 
         <p>Clicking it (after cooldown) opens a confirmation modal showing the source environment, entity list with row counts, and a production warning. Confirming swaps the environment to PROD, resets execution state, and re-renders Step 5 so you can review the summary, preview XML, and submit.</p>
 
-        <div class="callout tip"><p><strong>Promote is optional.</strong> You can always go back to Step 1, select PROD, and run the wizard from scratch. Promote just saves you the round trip when the data has already been validated.</p></div>
+        <div class="doc-callout doc-tip"><p><strong>Promote is optional.</strong> You can always go back to Step 1, select PROD, and run the wizard from scratch. Promote just saves you the round trip when the data has already been validated.</p></div>
     </div>
 
 
     <!-- ============================================================ -->
     <!-- TEMPLATES                                                    -->
     <!-- ============================================================ -->
-    <div class="guide-step" id="templates">
+    <div class="doc-guide-step" id="templates">
         <h2>Mapping Templates</h2>
 
         <p>If you frequently import files with the same column layout, templates save you from re-mapping every time. Templates store the column-to-field mapping for a specific entity type and can be applied to new imports with a single click.</p>
@@ -852,7 +855,7 @@
     <!-- ============================================================ -->
     <!-- TIPS                                                         -->
     <!-- ============================================================ -->
-    <div class="guide-step" id="tips">
+    <div class="doc-guide-step" id="tips">
         <h2>Tips &amp; Troubleshooting</h2>
 
         <h3>The Right Column</h3>
@@ -884,17 +887,16 @@
         <p>Three layers control what you can do: <strong>RBAC page access</strong> (who can see the page), <strong>entity access</strong> (which BDL entity types your department can use), and <strong>field access</strong> (which fields within each entity are available). If you don&rsquo;t see an entity type you expect, contact the Applications team. Admin-tier users bypass all access restrictions.</p>
     </div>
 
+                <div class="doc-footer"></div>
 
-    <div class="doc-footer">
-        <p><a href="../tools.html" style="color: var(--accent-blue); text-decoration: none;">&larr; Back to Tools</a>
-           &nbsp;&bull;&nbsp;
-           <a href="../ref/tools-ref.html" style="color: var(--accent-blue); text-decoration: none;">Tools Reference</a>
-           &nbsp;&bull;&nbsp;
-           <a href="../index.html" style="color: var(--accent-blue); text-decoration: none;">Hub</a></p>
-        <p style="margin-top: 8px;">Applications Team, Frost Arnett</p>
+            </div>
+        </div>
+
     </div>
 
 </div>
 
+<script src="../../js/docs-shared.js"></script>
+<script src="../../js/nav.js"></script>
 </body>
 </html>
