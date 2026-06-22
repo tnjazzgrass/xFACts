@@ -209,13 +209,6 @@ function doc_registryToPages(registry) {
    Prefix: doc
    ============================================================================ */
 
-/* Escapes a string for safe interpolation into innerHTML markup. */
-function doc_esc(text) {
-    var div = document.createElement('div');
-    div.textContent = text == null ? '' : String(text);
-    return div.innerHTML;
-}
-
 /* Returns 'doc-nav-collapsed' when the rail is currently collapsed, else an
    empty string, for appending to an element's class list during a build. */
 function doc_collapsedClass() {
