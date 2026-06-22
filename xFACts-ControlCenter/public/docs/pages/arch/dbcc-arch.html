@@ -9,45 +9,45 @@
     <link rel="stylesheet" href="../../css/docs-erd.css">
 </head>
 <body>
+<div class="doc-layout">
 
-<div class="doc-page-wrapper doc-arch-page-wrapper">
+    <nav class="doc-nav"></nav>
 
-    <!-- Header -->
-    <div class="doc-page-header">
-        <h1 class="doc-page-title">DBCC Operations Architecture</h1>
-        <div class="doc-page-subtitle">How integrity checks get scheduled, claimed, executed, and reported &mdash; without stepping on each other</div>
-    </div>
+    <div class="doc-content">
 
-    <!-- Sticky Section Nav -->
-    <div class="doc-section-nav">
-        <div class="doc-section-nav-top"></div>
-        <div class="doc-section-nav-links">
-            <a href="#erd" class="doc-section-nav-jump">Schema Overview</a>
-            <a href="#scheduling" class="doc-section-nav-jump">Scheduling Model</a>
-            <a href="#execution" class="doc-section-nav-jump">Execution Flow</a>
-            <a href="#claim-pattern" class="doc-section-nav-jump">Batch Claim Pattern</a>
-            <a href="#operations" class="doc-section-nav-jump">Operation Types</a>
-            <a href="#ag-execution" class="doc-section-nav-jump">AG Secondary Execution</a>
-            <a href="#alerting" class="doc-section-nav-jump">Alerting &amp; Escalation</a>
-            <a href="#troubleshooting" class="doc-section-nav-jump">Troubleshooting</a>
-            <a href="#connections" class="doc-section-nav-jump">How Everything Connects</a>
+        <div class="doc-header">
+            <div class="doc-header-inner">
+                <h1 class="doc-page-title">DBCC Operations Architecture</h1>
+                <div class="doc-page-subtitle">How integrity checks get scheduled, claimed, executed, and reported &mdash; without stepping on each other</div>
+                <div class="doc-subpage-links"></div>
+                <div class="doc-section-jumps">
+                    <span class="doc-section-jumps-label">On This Page:</span>
+                    <a href="#erd" class="doc-section-jump">Schema Overview</a>
+                    <a href="#scheduling" class="doc-section-jump">Scheduling Model</a>
+                    <a href="#execution" class="doc-section-jump">Execution Flow</a>
+                    <a href="#claim-pattern" class="doc-section-jump">Batch Claim Pattern</a>
+                    <a href="#operations" class="doc-section-jump">Operation Types</a>
+                    <a href="#ag-execution" class="doc-section-jump">AG Secondary Execution</a>
+                    <a href="#alerting" class="doc-section-jump">Alerting &amp; Escalation</a>
+                    <a href="#troubleshooting" class="doc-section-jump">Troubleshooting</a>
+                    <a href="#connections" class="doc-section-jump">How Everything Connects</a>
+                </div>
+            </div>
         </div>
-    </div>
 
+        <div class="doc-body">
+            <div class="doc-body-inner doc-arch-page-wrapper">
     <!-- Context Bar -->
     <div class="doc-context-bar">
         The narrative page tells you <em>what</em> DBCC Operations does and <em>why</em> it matters. This page tells you <em>how</em>. One PowerShell script, two tables, and a configurable schedule that handles everything from a two-second catalog check to a nine-hour full integrity scan &mdash; with concurrent execution safety and AG-aware server resolution.
     </div>
 
-    <!-- ============================================ -->
-    <!-- SECTION: Schema Overview / ERD -->
-    <!-- ============================================ -->
-    <div class="doc-section" id="erd">
+<div class="doc-section" id="erd">
         <h2 class="doc-section-title">Schema Overview</h2>
 
         <p>The DBCC component uses two tables: one for scheduling configuration, one for execution history. Configuration describes what <em>should</em> happen. The execution log records what <em>did</em> happen.</p>
 
-        <div class="erd-root" data-schema="ServerOps" data-category="DBCC"></div>
+        <div class="doc-erd-root" data-schema="ServerOps" data-category="DBCC"></div>
 
         <table class="doc-info-table">
             <thead><tr><th class="doc-info-table-th">Table</th><th class="doc-info-table-th">Role</th><th class="doc-info-table-th">Cardinality</th></tr></thead>
@@ -347,26 +347,15 @@
         </table>
     </div>
 
-    <!-- Reference Page Link -->
-    <div class="doc-ref-link-group">
-        <a href="../ref/dbcc-ref.html" class="doc-ref-link">&#x1F4CB; DBCC Operations Reference &mdash; Full DDL, field definitions, and operational queries</a>
-    </div>
+                <div class="doc-footer"></div>
 
-    <!-- Contributing -->
-    <div class="doc-callout doc-tip">
-        <p><strong>Contributing:</strong> This platform is designed to grow organically. If you have a manual process, monitoring need, or utility that could benefit from centralization, contact the <a href="mailto:applications@frost-arnett.com?subject=xFACts%20New%20Module%20Request&body=I%20would%20like%20to%20submit%20a%20possible%20process%20for%20consideration%20as%20an%20xFACts%20module.%0A%0AProcess%20Name%3A%0ACurrent%20Method%3A%0ABusiness%20Need%3A%0A%0A">Applications Team</a> to discuss adding it as an xFACts module.</p>
-    </div>
+            </div>
+        </div>
 
-    <!-- Footer -->
-    <div class="doc-footer">
-        <p><a href="../dbcc.html" class="doc-footer-link">&larr; Back to DBCC Operations</a>
-           &nbsp;&nbsp;&bull;&nbsp;&nbsp;
-           <a href="../index.html" class="doc-footer-link">Hub</a></p>
-        <p class="doc-footer-line">Applications Team, Frost Arnett</p>
     </div>
 
 </div>
-
+<script src="../../js/docs-shared.js"></script>
 <script src="../../js/nav.js"></script>
 <script src="../../js/ddl-erd.js"></script>
 </body>
