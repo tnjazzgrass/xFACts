@@ -117,6 +117,9 @@ Four section types, in fixed order:
 - `BOOTLOADER` and `CHROME` sections in `docs-shared.js` are drift.
 - The docs-zone shell file declares the `doc` chrome prefix in every banner.
 
+### 4.5 Docs-zone non-shell files
+A docs-zone JS file that is not the shell follows the page-file rules (§4.1) and the page-boot requirement (§11). It universally declares the doc chrome prefix (§5.1).
+
 ---
 
 ## 5. Prefix
