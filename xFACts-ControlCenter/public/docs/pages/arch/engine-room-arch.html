@@ -9,41 +9,41 @@
     <link rel="stylesheet" href="../../css/docs-erd.css">
 </head>
 <body>
+<div class="doc-layout">
 
-<div class="doc-page-wrapper doc-arch-page-wrapper">
+    <nav class="doc-nav"></nav>
 
-    <!-- Header -->
-    <div class="doc-page-header">
-        <h1 class="doc-page-title">Engine Room Architecture</h1>
-        <div class="doc-page-subtitle">How the pieces connect, why they're shaped that way, and what happens when you press the button</div>
-    </div>
+    <div class="doc-content">
 
-    <!-- Sticky Section Nav (breadcrumb populated by nav.js + jump links) -->
-    <div class="doc-section-nav">
-        <div class="doc-section-nav-top"></div>
-        <div class="doc-section-nav-links">
-            <a href="#orchestrator" class="doc-section-nav-jump">Orchestrator</a>
-            <a href="#shared-infrastructure" class="doc-section-nav-jump">Shared Infrastructure</a>
-            <a href="#rbac" class="doc-section-nav-jump">RBAC</a>
-            <a href="#troubleshooting" class="doc-section-nav-jump">Troubleshooting</a>
-            <a href="#connections" class="doc-section-nav-jump">How Everything Connects</a>
+        <div class="doc-header">
+            <div class="doc-header-inner">
+                <h1 class="doc-page-title">Engine Room Architecture</h1>
+                <div class="doc-page-subtitle">How the pieces connect, why they're shaped that way, and what happens when you press the button</div>
+                <div class="doc-subpage-links"></div>
+                <div class="doc-section-jumps">
+                    <span class="doc-section-jumps-label">On This Page:</span>
+                    <a href="#orchestrator" class="doc-section-jump">Orchestrator</a>
+                    <a href="#shared-infrastructure" class="doc-section-jump">Shared Infrastructure</a>
+                    <a href="#rbac" class="doc-section-jump">RBAC</a>
+                    <a href="#troubleshooting" class="doc-section-jump">Troubleshooting</a>
+                    <a href="#connections" class="doc-section-jump">How Everything Connects</a>
+                </div>
+            </div>
         </div>
-    </div>
 
+        <div class="doc-body">
+            <div class="doc-body-inner doc-arch-page-wrapper">
     <!-- Context Bar -->
     <div class="doc-context-bar">
         The Engine Room narrative tells you <em>what</em> lives here and <em>why</em>. This page tells you <em>how</em>. Three systems &mdash; the orchestrator, shared infrastructure, and RBAC &mdash; each with their own tables, their own lifecycle, and their own opinions about how things should work. Here's how the data actually moves.
     </div>
 
-    <!-- ============================================ -->
-    <!-- SECTION: Orchestrator Data Lifecycle -->
-    <!-- ============================================ -->
-    <div class="doc-section" id="orchestrator">
+<div class="doc-section" id="orchestrator">
         <h2 class="doc-section-title">The Orchestrator &mdash; Data Lifecycle</h2>
 
         <p>Three tables. That's all the orchestrator needs to manage every automated process in xFACts. One for configuration, two for history. They're deceptively simple, and understanding how data flows between them explains everything about how Mo works.</p>
 
-        <div class="erd-root" data-schema="Orchestrator"></div>
+        <div class="doc-erd-root" data-schema="Orchestrator"></div>
 
         <h3 class="doc-section-subtitle">ProcessRegistry &mdash; The Living Schedule</h3>
 
@@ -132,7 +132,7 @@
 
         <p>The shared infrastructure tables in the <code>dbo</code> schema don't form a single interconnected system the way the orchestrator tables do. They're more like utilities &mdash; each one serving a specific purpose, consumed by whatever module needs it. But they have relationships worth understanding, and a few of them are more clever than they look.</p>
 
-        <div class="erd-root" data-schema="dbo" data-category="Shared Infrastructure"></div>
+        <div class="doc-erd-root" data-schema="dbo" data-category="Shared Infrastructure"></div>
 
         <h3 class="doc-section-subtitle">GlobalConfig &mdash; How It Gets Read</h3>
 
@@ -213,7 +213,7 @@
 
         <p>Seven tables, one question: "Can this person do this thing?" The answer takes about a millisecond, but the path through the data is worth walking through because every table has a specific job and they chain together in a specific order.</p>
 
-        <div class="erd-root" data-schema="dbo" data-category="RBAC"></div>
+        <div class="doc-erd-root" data-schema="dbo" data-category="RBAC"></div>
 
         <h3 class="doc-section-subtitle">The Lookup Chain</h3>
 
@@ -325,26 +325,15 @@
         <p><strong>Five audit trails, one platform.</strong> CycleLog and TaskLog track automated execution. ActionAuditLog tracks human actions. API_RequestLog tracks outbound integrations. RBAC_AuditLog tracks access decisions. Protection_ViolationLog tracks blocked DDL. No single table tells the whole story, but together they cover everything.</p>
     </div>
 
-    <!-- Reference Page Link -->
-    <div class="doc-ref-link-group">
-        <a href="../ref/engine-room-ref.html" class="doc-ref-link">&#x1F4CB; Engine Room Reference &mdash; Full DDL, field definitions, and operational queries</a>
-    </div>
+                <div class="doc-footer"></div>
 
-    <!-- Contributing -->
-    <div class="doc-callout doc-tip">
-        <p><strong>Contributing:</strong> This platform is designed to grow organically. If you have a manual process, monitoring need, or utility that could benefit from centralization, contact the <a href="mailto:applications@frost-arnett.com?subject=xFACts%20New%20Module%20Request&body=I%20would%20like%20to%20submit%20a%20possible%20process%20for%20consideration%20as%20an%20xFACts%20module.%0A%0AProcess%20Name%3A%0ACurrent%20Method%3A%0ABusiness%20Need%3A%0A%0A">Applications Team</a> to discuss adding it as an xFACts module.</p>
-    </div>
+            </div>
+        </div>
 
-    <!-- Footer -->
-    <div class="doc-footer">
-        <p><a href="../engine-room.html" class="doc-footer-link">&larr; Back to The Engine Room</a>
-           &nbsp;&nbsp;&bull;&nbsp;&nbsp;
-           <a href="../index.html" class="doc-footer-link">Hub</a></p>
-        <p class="doc-footer-line">Applications Team, Frost Arnett</p>
     </div>
 
 </div>
-
+<script src="../../js/docs-shared.js"></script>
 <script src="../../js/nav.js"></script>
 <script src="../../js/ddl-erd.js"></script>
 </body>
