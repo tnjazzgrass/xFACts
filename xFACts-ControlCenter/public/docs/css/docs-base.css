@@ -49,6 +49,7 @@
     --color-bg-card: #2d2d2d;
     --color-bg-card-hover: #333333;
     --color-bg-code: #1a1a1a;
+    --color-bg-selected-tint: #2a3a35;
 
     /* -- Text -- */
     --color-text-primary: #d4d4d4;
@@ -86,6 +87,7 @@
     --color-status-success: #22c55e;
     --color-status-progress: #569cd6;
     --color-status-warning: #dcdcaa;
+    --color-status-warning-rgb: 220, 220, 170;
     --color-status-critical: #f48771;
     --color-status-info: var(--color-text-primary);
 
@@ -161,6 +163,36 @@ pre {
     font-size: 0.85em;
     line-height: 1.6;
     color: var(--color-text-primary);
+}
+
+/* Pulses a callout marker's glow to suggest it is the next tour step. */
+@keyframes doc-marker-pulse {
+    0%, 100% {
+        box-shadow: 0 0 4px rgba(var(--color-accent-blue-rgb), 0.3), 0 0 8px rgba(var(--color-accent-blue-rgb), 0.1);
+    }
+    50% {
+        box-shadow: 0 0 16px rgba(var(--color-accent-blue-rgb), 1), 0 0 32px rgba(var(--color-accent-blue-rgb), 0.6), 0 0 48px rgba(var(--color-accent-blue-rgb), 0.3);
+    }
+}
+
+/* Flashes a callout marker's glow when an already-visited marker is reclicked. */
+@keyframes doc-marker-flash {
+    0% { box-shadow: 0 0 0 rgba(var(--color-accent-green-rgb), 0); }
+    30% { box-shadow: 0 0 14px rgba(var(--color-accent-green-rgb), 0.8), 0 0 28px rgba(var(--color-accent-green-rgb), 0.3); }
+    100% { box-shadow: 0 1px 6px rgba(0, 0, 0, 0.6); }
+}
+
+/* Flashes a mock section's glow when it is selected from the slideout. */
+@keyframes doc-mock-section-flash {
+    0% { box-shadow: 0 0 0 rgba(var(--color-accent-blue-rgb), 0); }
+    30% { box-shadow: 0 0 20px rgba(var(--color-accent-blue-rgb), 0.6), inset 0 0 12px rgba(var(--color-accent-blue-rgb), 0.15); }
+    100% { box-shadow: 0 0 12px rgba(var(--color-accent-blue-rgb), 0.3), inset 0 0 8px rgba(var(--color-accent-blue-rgb), 0.08); }
+}
+
+/* Pulses a live-indicator dot's opacity to convey an active feed. */
+@keyframes doc-key-pulse {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 1; }
 }
 
 /* ============================================================================
