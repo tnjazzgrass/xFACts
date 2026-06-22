@@ -9,45 +9,45 @@
     <link rel="stylesheet" href="../../css/docs-erd.css">
 </head>
 <body>
+<div class="doc-layout">
 
-<div class="doc-page-wrapper doc-arch-page-wrapper">
+    <nav class="doc-nav"></nav>
 
-    <!-- Header -->
-    <div class="doc-page-header">
-        <h1 class="doc-page-title">Replication Monitoring Architecture</h1>
-        <div class="doc-page-subtitle">Four tables, one script, and the distribution database finally gives up its secrets</div>
-    </div>
+    <div class="doc-content">
 
-    <!-- Sticky Section Nav -->
-    <div class="doc-section-nav">
-        <div class="doc-section-nav-top"></div>
-        <div class="doc-section-nav-links">
-            <a href="#erd" class="doc-section-nav-jump">Schema Overview</a>
-            <a href="#collection-cycle" class="doc-section-nav-jump">Collection Cycle</a>
-            <a href="#registry-sync" class="doc-section-nav-jump">Registry Discovery</a>
-            <a href="#agent-health" class="doc-section-nav-jump">Agent Health &amp; Queue</a>
-            <a href="#event-detection" class="doc-section-nav-jump">Event Detection</a>
-            <a href="#tracer-tokens" class="doc-section-nav-jump">Tracer Tokens</a>
-            <a href="#landscape" class="doc-section-nav-jump">Current Landscape</a>
-            <a href="#configuration" class="doc-section-nav-jump">Configuration</a>
-            <a href="#connections" class="doc-section-nav-jump">How Everything Connects</a>
+        <div class="doc-header">
+            <div class="doc-header-inner">
+                <h1 class="doc-page-title">Replication Monitoring Architecture</h1>
+                <div class="doc-page-subtitle">Four tables, one script, and the distribution database finally gives up its secrets</div>
+                <div class="doc-subpage-links"></div>
+                <div class="doc-section-jumps">
+                    <span class="doc-section-jumps-label">On This Page:</span>
+                    <a href="#erd" class="doc-section-jump">Schema Overview</a>
+                    <a href="#collection-cycle" class="doc-section-jump">Collection Cycle</a>
+                    <a href="#registry-sync" class="doc-section-jump">Registry Discovery</a>
+                    <a href="#agent-health" class="doc-section-jump">Agent Health &amp; Queue</a>
+                    <a href="#event-detection" class="doc-section-jump">Event Detection</a>
+                    <a href="#tracer-tokens" class="doc-section-jump">Tracer Tokens</a>
+                    <a href="#landscape" class="doc-section-jump">Current Landscape</a>
+                    <a href="#configuration" class="doc-section-jump">Configuration</a>
+                    <a href="#connections" class="doc-section-jump">How Everything Connects</a>
+                </div>
+            </div>
         </div>
-    </div>
 
+        <div class="doc-body">
+            <div class="doc-body-inner doc-arch-page-wrapper">
     <!-- Context Bar -->
     <div class="doc-context-bar">
         The narrative page tells you <em>what</em> Replication Monitoring does and <em>why</em>. This page tells you <em>how</em>. One collector script runs four monitoring layers in a single pass: registry discovery, agent health snapshots, event detection, and tracer token latency measurement. All source data comes from the distribution database on DM-PROD-DB.
     </div>
 
-    <!-- ============================================ -->
-    <!-- SECTION: Schema Overview / ERD -->
-    <!-- ============================================ -->
-    <div class="doc-section" id="erd">
+<div class="doc-section" id="erd">
         <h2 class="doc-section-title">Schema Overview</h2>
 
         <p>The Replication component is compact and focused. Four tables, one script, no procedures, no triggers. The <code>PublicationRegistry</code> is the hub &mdash; every other table references it via FK. The three history tables are append-only stores capturing different dimensions of the same pipeline.</p>
 
-        <div class="erd-root" data-schema="ServerOps" data-category="Replication"></div>
+        <div class="doc-erd-root" data-schema="ServerOps" data-category="Replication"></div>
 
         <table class="doc-info-table">
             <thead><tr><th class="doc-info-table-th">Table</th><th class="doc-info-table-th">Role</th><th class="doc-info-table-th">Cardinality</th></tr></thead>
@@ -334,26 +334,15 @@
         </table>
     </div>
 
-    <!-- Reference Page Link -->
-    <div class="doc-ref-link-group">
-        <a href="../ref/replication-ref.html" class="doc-ref-link">&#x1F4CB; Replication Monitoring Reference &mdash; Full DDL, field definitions, and operational queries</a>
-    </div>
+                <div class="doc-footer"></div>
 
-    <!-- Contributing -->
-    <div class="doc-callout doc-tip">
-        <p><strong>Contributing:</strong> This platform is designed to grow organically. If you have a manual process, monitoring need, or utility that could benefit from centralization, contact the <a href="mailto:applications@frost-arnett.com?subject=xFACts%20New%20Module%20Request&body=I%20would%20like%20to%20submit%20a%20possible%20process%20for%20consideration%20as%20an%20xFACts%20module.%0A%0AProcess%20Name%3A%0ACurrent%20Method%3A%0ABusiness%20Need%3A%0A%0A">Applications Team</a> to discuss adding it as an xFACts module.</p>
-    </div>
+            </div>
+        </div>
 
-    <!-- Footer -->
-    <div class="doc-footer">
-        <p><a href="../replication.html" class="doc-footer-link">&larr; Back to Replication Monitoring</a>
-           &nbsp;&nbsp;&bull;&nbsp;&nbsp;
-           <a href="../index.html" class="doc-footer-link">Hub</a></p>
-        <p class="doc-footer-line">Applications Team, Frost Arnett</p>
     </div>
 
 </div>
-
+<script src="../../js/docs-shared.js"></script>
 <script src="../../js/nav.js"></script>
 <script src="../../js/ddl-erd.js"></script>
 </body>
