@@ -563,7 +563,7 @@ Add-PodeRoute -Method Post -Path '/api/apps-int/bdl-field-access/toggle' -Authen
 # GET /api/apps-int/dm-servers?environment=X
 # Returns tools-enabled DM app servers for a given environment.
 # Shared endpoint used by all DM job trigger UIs.
-# Uses Get-ToolsServers from xFACts-Helpers.psm1.
+# Uses Get-ToolsServers from the shared file.
 Add-PodeRoute -Method Get -Path '/api/apps-int/dm-servers' -Authentication 'ADLogin' -ScriptBlock {
     if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
     try {
