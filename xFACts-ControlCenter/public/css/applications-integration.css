@@ -28,7 +28,6 @@
    CONTENT: CATALOG ELEMENT TABLE
    CONTENT: CATALOG ELEMENT BADGES
    CONTENT: CATALOG INLINE EDIT
-   CONTENT: TOGGLE SWITCH
    CONTENT: CATALOG STATES
    CONTENT: DM JOB TRIGGERS
    ============================================================================ */
@@ -696,68 +695,6 @@
 
 .aai-edit-cancel:hover { /* hover state -- brighter red */
     color: #dc2626;
-}
-
-/* ============================================================================
-   CONTENT: TOGGLE SWITCH
-   ----------------------------------------------------------------------------
-   Page-local on/off toggle switch used for entity active-state, field
-   visibility, import-required, and department access grants. (Promotion of
-   this pattern to shared cc- chrome is tracked as a platform backlog item.)
-   Prefix: aai
-   ============================================================================ */
-
-/* Clickable wrapper around a toggle switch. */
-.aai-toggle-wrap {
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-}
-
-/* The toggle track (the pill the knob slides within). */
-.aai-toggle-track {
-    width: 34px;
-    height: 18px;
-    border-radius: 9px;
-    position: relative;
-    transition: background var(--duration-fast);
-    display: inline-block;
-}
-
-/* State tag marking a toggle as on. */
-.aai-on { }
-
-.aai-toggle-track.aai-on { /* on state -- green track */
-    background: rgba(74, 222, 128, 0.3);
-    border: var(--size-border-thin) solid rgba(74, 222, 128, 0.4);
-}
-
-/* State tag marking a toggle as off. */
-.aai-off { }
-
-.aai-toggle-track.aai-off { /* off state -- red track */
-    background: rgba(239, 68, 68, 0.15);
-    border: var(--size-border-thin) solid rgba(239, 68, 68, 0.3);
-}
-
-/* The sliding knob inside the toggle track. */
-.aai-toggle-knob {
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-    position: absolute;
-    top: 1px;
-    transition: left var(--duration-fast), background var(--duration-fast);
-}
-
-.aai-toggle-knob.aai-on { /* on state -- knob slid right, green */
-    left: 17px;
-    background: #4ade80;
-}
-
-.aai-toggle-knob.aai-off { /* off state -- knob at left, red */
-    left: 2px;
-    background: #ef4444;
 }
 
 /* ============================================================================
