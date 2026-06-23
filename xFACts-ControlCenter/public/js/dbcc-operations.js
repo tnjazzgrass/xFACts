@@ -1164,9 +1164,9 @@ function dbc_renderEditOpRow(opDef, data) {
 
     var html = '<div class="dbc-edit-op-row">';
     html += '<span class="dbc-edit-op-label">' + opDef.label + '</span>';
-    html += '<span class="dbc-edit-toggle" data-action-click="dbc-toggle-op" data-action-dbc-op="' + opDef.key + '">';
-    html += '<span class="dbc-edit-toggle-track' + (enabled ? ' dbc-on' : '') + '" id="dbc-toggle-' + opDef.key + '">';
-    html += '<span class="dbc-edit-toggle-knob"></span>';
+    html += '<span class="cc-toggle-wrap" data-action-click="dbc-toggle-op" data-action-dbc-op="' + opDef.key + '">';
+    html += '<span class="cc-toggle-track ' + (enabled ? 'cc-on' : 'cc-off') + '" id="dbc-toggle-' + opDef.key + '">';
+    html += '<span class="cc-toggle-knob ' + (enabled ? 'cc-on' : 'cc-off') + '"></span>';
     html += '</span></span>';
 
     html += '<select class="dbc-edit-select" id="dbc-day-' + opDef.key + '"' + disabledAttr + '>';
@@ -1197,7 +1197,7 @@ function dbc_selectCheckMode(target) {
 
     if (selectedMode === 'NONE') {
         var checkdbTrack = document.getElementById('dbc-toggle-' + dbc_OPERATION_KEYS[0].key);
-        if (checkdbTrack && checkdbTrack.classList.contains('dbc-on')) {
+        if (checkdbTrack && checkdbTrack.classList.contains('cc-on')) {
             statusEl.textContent = 'CHECKDB will be disabled when check mode is set to None';
             statusEl.className = 'dbc-edit-status dbc-error';
         }
@@ -1228,8 +1228,15 @@ function dbc_toggleEditOp(target) {
     var timeSelect = document.getElementById('dbc-time-' + opKey);
     var statusEl = document.getElementById('dbc-edit-status');
 
-    if (track.classList.contains('dbc-on')) {
-        track.classList.remove('dbc-on');
+    var knob = track.querySelector('.cc-toggle-knob');
+
+    if (track.classList.contains('cc-on')) {
+        track.classList.remove('cc-on');
+        track.classList.add('cc-off');
+        if (knob) {
+            knob.classList.remove('cc-on');
+            knob.classList.add('cc-off');
+        }
         daySelect.disabled = true;
         timeSelect.disabled = true;
     } else {
@@ -1238,7 +1245,12 @@ function dbc_toggleEditOp(target) {
             statusEl.className = 'dbc-edit-status dbc-error';
             return;
         }
-        track.classList.add('dbc-on');
+        track.classList.remove('cc-off');
+        track.classList.add('cc-on');
+        if (knob) {
+            knob.classList.remove('cc-off');
+            knob.classList.add('cc-on');
+        }
         daySelect.disabled = false;
         timeSelect.disabled = false;
     }
@@ -1316,7 +1328,7 @@ async function dbc_saveScheduleEdits() {
         var opResult = await dbc_postScheduleChange('/api/dbcc/schedule/update', {
             schedule_id: dbc_editScheduleId,
             operation: opDef.op,
-            enabled: track.classList.contains('dbc-on'),
+            enabled: track.classList.contains('cc-on'),
             run_day: daySelect.value ? parseInt(daySelect.value, 10) : null,
             run_time: timeSelect.value || null
         });
