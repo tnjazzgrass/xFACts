@@ -2229,7 +2229,7 @@ function Get-RemainingCounts {
         }
     }
 
-    # ── Archive remaining (independent) ──
+    # -- Archive remaining (independent) --
     # Materialize the TC_ARCH consumer set once, then aggregate accounts off
     # it. The temp-table shape avoids the multi-DISTINCT single-pass plan
     # that scales catastrophically (3 min vs ~20 sec at 9M consumers).
@@ -2306,7 +2306,7 @@ function Get-RemainingCounts {
         }
     }
 
-    # ── Shell remaining (independent) ──
+    # -- Shell remaining (independent) --
     if (-not $shellFresh) {
         try {
             $shellResult = Invoke-CRS5ReadQuery -TargetInstance $shellPurgeTargetInstance -Query @"
@@ -3308,6 +3308,7 @@ function Get-ToolsServers {
             WHERE environment = @env
               AND is_api_primary = 1
               AND tools_enabled = 1
+              AND api_base_url IS NOT NULL
 "@ -Parameters @{ env = $Environment }
     }
     else {
@@ -3321,11 +3322,16 @@ function Get-ToolsServers {
 "@ -Parameters @{ env = $Environment }
     }
 
-    if (-not $servers -or $servers.Count -eq 0) {
+    # Invoke-XFActsQuery returns each row as a hashtable; a single-row result
+    # unwraps to a bare hashtable as it crosses the return boundary, which makes
+    # callers' [0] indexing return $null and .Count report the column-key count.
+    # Force a row array that survives the caller's assignment (leading comma).
+    $rows = @($servers)
+    if ($rows.Count -eq 0) {
         return @()
     }
 
-    return @($servers)
+    return ,$rows
 }
 
 <# ============================================================================
