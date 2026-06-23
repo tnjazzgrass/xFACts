@@ -66,7 +66,6 @@ Add-PodeRoute -Method Get -Path '/server-health' -Authentication 'ADLogin' -Scri
     }
 
     $ctx = Get-UserContext -WebEvent $WebEvent
-
     $navHtml      = Get-NavBarHtml -UserContext $ctx -CurrentPageRoute '/server-health'
     $headerHtml   = Get-PageHeaderHtml -PageRoute '/server-health'
     $browserTitle = Get-PageBrowserTitle -PageRoute '/server-health'
