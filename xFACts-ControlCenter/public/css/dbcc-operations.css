@@ -1081,47 +1081,6 @@
     font-weight: 500;
 }
 
-/* Clickable enable/disable toggle wrapper. */
-.dbc-edit-toggle {
-    cursor: pointer;
-    user-select: none;
-}
-
-/* The toggle track (background pill of the on/off switch). */
-.dbc-edit-toggle-track {
-    display: inline-block;
-    width: 36px;
-    height: 18px;
-    border-radius: 9px;
-    background: var(--color-border-strong);
-    position: relative;
-    transition: background var(--duration-fast);
-    vertical-align: middle;
-}
-
-/* State tag indicating a toggle is on. Used on the toggle track and knob. */
-.dbc-on { }
-
-.dbc-edit-toggle-track.dbc-on { /* On state for the toggle track. */
-    background: var(--color-accent-shared);
-}
-
-/* The sliding knob inside the toggle track. */
-.dbc-edit-toggle-knob {
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-    background: var(--color-text-primary);
-    transition: left var(--duration-fast);
-}
-
-.dbc-edit-toggle-knob.dbc-on { /* Knob position when the toggle is on (state applied directly to the knob). */
-    left: 20px;
-}
-
 /* Day/time dropdown in an edit op row. */
 .dbc-edit-select {
     background: var(--color-bg-card-hover);
