@@ -458,7 +458,7 @@ $results = Invoke-XFActsQuery -Query @"
 - Multi-line SQL queries use the `@"..."@` here-string form.
 - `Invoke-Sqlcmd` calls include `-TrustServerCertificate`.
 - `Invoke-Sqlcmd` calls include `-ApplicationName` for DMV attribution.
-- Queries referencing `@parameter` placeholders are parameterized via `-Parameters @{...}` rather than constructed via string concatenation.
+- Queries referencing sqlcmd `@parameter` placeholders are parameterized via `-Parameters @{...}` rather than constructed via string concatenation; `@@name` globals, `DECLARE @name` locals, and `@name` inside string literals are not placeholders.
 - Queries do not reference linked servers.
 
 ---
