@@ -26,6 +26,7 @@
    CONTENT: SECTIONS
    CONTENT: OVERLAYS
    CONTENT: REDACTION
+   CONTENT: TOGGLE SWITCH
    FEEDBACK_OVERLAYS: IDLE OVERLAY
    ============================================================================ */
 
@@ -79,18 +80,19 @@
     --color-status-idle:        #22c55e;
     --color-status-running:     #569cd6;
     --color-status-overdue:     #dcdcaa;
-    --color-status-critical:    #f48771;
+    --color-status-critical:    #ef4444;;
     --color-status-disabled:    #444;
+    --color-status-online:      #4ade80;
 
     /* -- Color tokens: status glows (alpha-blended companions to status colors) -- */
     --color-glow-status-idle:       rgba(34, 197, 94, 0.4);
     --color-glow-status-running:    rgba(86, 156, 214, 0.4);
     --color-glow-status-overdue:    rgba(220, 220, 170, 0.4);
-    --color-glow-status-critical:   rgba(244, 135, 113, 0.4);
+    --color-glow-status-critical:   rgba(239, 68, 68, 0.4);
 
     /* -- Color tokens: card-state tints (alpha-blended for warning/critical surface treatment) -- */
     --color-tint-warning:       rgba(220, 220, 170, 0.08);
-    --color-tint-critical:      rgba(244, 135, 113, 0.08);
+    --color-tint-critical:      rgba(239, 68, 68, 0.08);
 
     /* -- Color tokens: connection-banner state surfaces -- */
     --color-banner-reconnecting-bg:     rgba(86, 156, 214, 0.15);
@@ -2008,6 +2010,84 @@ a { color: var(--color-text-link); }
 .cc-error { }
 
 .cc-redaction-status.cc-error { /* error state -- critical-status color */
+    color: var(--color-status-critical);
+}
+
+/* ============================================================================
+   CONTENT: TOGGLE SWITCH
+   ----------------------------------------------------------------------------
+   A shared knob-in-track on/off switch: a track pill with a sliding knob,
+   driven by the cc-on / cc-off state tags applied at render time by the
+   consuming page. One canonical size (34x18 track, 14x14 knob). The wrap is
+   the clickable affordance; the optional label sits beside the switch and
+   takes its own on/off color. Pages emit the markup with cc-on or cc-off
+   already applied and flip it however they re-render; this section provides
+   the styling, not the behavior.
+   Prefix: cc
+   ============================================================================ */
+
+/* Clickable wrapper around a toggle switch. */
+.cc-toggle-wrap {
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--size-spacing-sm);
+}
+
+/* The toggle track (the pill the knob slides within). */
+.cc-toggle-track {
+    width: 34px;
+    height: 18px;
+    border-radius: 9px;
+    position: relative;
+    display: inline-block;
+    transition: background var(--duration-fast);
+}
+
+/* The sliding knob inside the toggle track. */
+.cc-toggle-knob {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    position: absolute;
+    top: 1px;
+    background: var(--color-text-on-primary);
+    transition: left var(--duration-fast);
+}
+
+/* The text label beside the switch. */
+.cc-toggle-label {
+    font-size: var(--font-size-body);
+    font-weight: 600;
+}
+
+/* State tag marking a toggle as on. */
+.cc-on { }
+
+/* State tag marking a toggle as off. */
+.cc-off { }
+
+.cc-toggle-track.cc-on { /* on state -- green track */
+    background: var(--color-status-online);
+}
+
+.cc-toggle-track.cc-off { /* off state -- red track */
+    background: var(--color-status-critical);
+}
+
+.cc-toggle-knob.cc-on { /* on state -- knob slid to the right */
+    left: 18px;
+}
+
+.cc-toggle-knob.cc-off { /* off state -- knob at the left */
+    left: 2px;
+}
+
+.cc-toggle-label.cc-on { /* on state -- green label */
+    color: var(--color-status-online);
+}
+
+.cc-toggle-label.cc-off { /* off state -- red label */
     color: var(--color-status-critical);
 }
 
