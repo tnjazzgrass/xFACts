@@ -91,7 +91,7 @@
    Prefix: (none)
    ============================================================================ #>
 
-# 2026-06-20  Docs-zone JS support. Added the docs-shell section taxonomy 
+# 2026-06-20  Docs-zone JS support. Added the docs-shell section taxonomy
 #             as a third valid-section-type set and made the per-file
 #             selection zone-aware (page / cc shell / docs shell).
 #             Gated the ENGINE_PROCESSES validation block to the cc zone so
