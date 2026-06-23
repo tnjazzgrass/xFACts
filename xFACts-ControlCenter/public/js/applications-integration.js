@@ -807,7 +807,7 @@ function aai_renderDeptFields() {
         html += '</td>';
         html += '<td class="aai-catalog-element-td aai-catalog-cell-display">' + (el.display_name ? cc_escapeHtml(el.display_name) : '<span class="aai-catalog-empty-val">(empty)</span>') + '</td>';
         html += '<td class="aai-catalog-element-td aai-catalog-cell-toggle">' +
-            '<span class="aai-toggle-wrap" data-action-click="aai-toggle-dept-field" data-aai-element-name="' + cc_escapeHtml(el.element_name) + '" data-aai-new-state="' + (el.is_granted ? '0' : '1') + '">' +
+            '<span class="cc-toggle-wrap" data-action-click="aai-toggle-dept-field" data-aai-element-name="' + cc_escapeHtml(el.element_name) + '" data-aai-new-state="' + (el.is_granted ? '0' : '1') + '">' +
                 aai_renderToggleMarkup(el.is_granted) +
             '</span></td>';
         html += '<td class="aai-catalog-element-td aai-catalog-cell-desc">' + (el.field_description ? cc_escapeHtml(el.field_description) : '<span class="aai-catalog-empty-val">(empty)</span>') + '</td>';
@@ -868,7 +868,7 @@ function aai_updateDeptFormatFieldCount() {
    FUNCTIONS: CATALOG ELEMENT RENDERING
    ----------------------------------------------------------------------------
    Global-view element table rendering and the shared toggle-switch markup
-   helper. The toggle helper emits the aai-on/aai-off state class on both the
+   helper. The toggle helper emits the cc-on/cc-off state class on both the
    track and the knob so the knob's position is driven by its own state class.
    Prefix: aai
    ============================================================================ */
@@ -919,13 +919,13 @@ function aai_renderElements() {
 
 /* Builds the toggle-switch markup with state on both track and knob. */
 function aai_renderToggleMarkup(isOn) {
-    var stateCls = isOn ? 'aai-on' : 'aai-off';
-    return '<span class="aai-toggle-track ' + stateCls + '"><span class="aai-toggle-knob ' + stateCls + '"></span></span>';
+    var stateCls = isOn ? 'cc-on' : 'cc-off';
+    return '<span class="cc-toggle-track ' + stateCls + '"><span class="cc-toggle-knob ' + stateCls + '"></span></span>';
 }
 
 /* Builds a clickable field-toggle cell for an element in the global view. */
 function aai_renderFieldToggle(el, fieldName, isOn) {
-    return '<span class="aai-toggle-wrap" data-action-click="aai-toggle-field" data-aai-element-id="' + el.element_id + '" data-aai-field-name="' + fieldName + '" data-aai-new-state="' + (isOn ? '0' : '1') + '">' +
+    return '<span class="cc-toggle-wrap" data-action-click="aai-toggle-field" data-aai-element-id="' + el.element_id + '" data-aai-field-name="' + fieldName + '" data-aai-new-state="' + (isOn ? '0' : '1') + '">' +
         aai_renderToggleMarkup(isOn) +
         '</span>';
 }
