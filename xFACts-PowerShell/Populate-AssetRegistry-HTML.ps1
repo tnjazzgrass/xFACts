@@ -2779,7 +2779,7 @@ function Get-PageShellDrift {
         if ($afterNav -ge 0) {
             $tt = $Tokens[$afterNav]
             if ($tt.Kind -eq 'StartTag' -and $tt.TagName -eq 'div' -and
-                (Test-AttrTextMatches -AttrText $tt.AttrText -Pattern 'class\s*=\s*["'']cc-header-bar["'']')) {
+                (Test-AttrTextMatches -AttrText $tt.AttrText -Pattern 'class\s*=\s*["''](?:[^"'']*\s)?cc-header-bar(?:\s[^"'']*)?["'']')) {
                 $headerBarFound = $true
                 $hbStart = $afterNav
                 $hbEnd = Find-MatchingClose -Tokens $Tokens -StartTagIdx $hbStart
@@ -3072,7 +3072,7 @@ function Test-PageShellOrder {
                 'head' { [void]$landmarks.Add('head'); continue }
                 'body' { [void]$landmarks.Add('body'); continue }
                 'div'  {
-                    if (Test-AttrTextMatches -AttrText $t.AttrText -Pattern 'class\s*=\s*["'']cc-header-bar["'']') {
+                    if (Test-AttrTextMatches -AttrText $t.AttrText -Pattern 'class\s*=\s*["''](?:[^"'']*\s)?cc-header-bar(?:\s[^"'']*)?["'']') {
                         [void]$landmarks.Add('header-bar')
                     }
                     continue
@@ -3210,7 +3210,7 @@ function Test-PageShellWhitespace {
             continue
         }
         if ($t.Kind -eq 'StartTag' -and $t.TagName -eq 'div') {
-            if ($headerBarStartIdx -lt 0 -and (Test-AttrTextMatches -AttrText $t.AttrText -Pattern 'class\s*=\s*["'']cc-header-bar["'']')) {
+            if ($headerBarStartIdx -lt 0 -and (Test-AttrTextMatches -AttrText $t.AttrText -Pattern 'class\s*=\s*["''](?:[^"'']*\s)?cc-header-bar(?:\s[^"'']*)?["'']')) {
                 $headerBarStartIdx = $i
                 $headerBarEndIdx   = Find-MatchingClose -Tokens $Tokens -StartTagIdx $i
                 continue
@@ -5244,7 +5244,7 @@ function Invoke-PageChromeValidation {
         $t = $Tokens[$i]
         if ($t.Kind -ne 'StartTag') { continue }
         if ($t.TagName -ne 'div') { continue }
-        if (Test-AttrTextMatches -AttrText $t.AttrText -Pattern 'class\s*=\s*["'']cc-header-bar["'']') {
+        if (Test-AttrTextMatches -AttrText $t.AttrText -Pattern 'class\s*=\s*["''](?:[^"'']*\s)?cc-header-bar(?:\s[^"'']*)?["'']') {
             $headerBarIdx = $i
             break
         }
@@ -5252,13 +5252,23 @@ function Invoke-PageChromeValidation {
     # Get-PageShellDrift handles missing case
     if ($headerBarIdx -lt 0) { return }
 
-    # Validate cc-header-bar's outer-element attributes.
+    # Validate cc-header-bar's outer-element class. The container carries
+    # cc-has-center when a center column is present; the only valid class
+    # forms are exactly 'cc-header-bar' or 'cc-header-bar' plus 'cc-has-center'.
     $hbAttrs = Get-AttributesFromToken -AttrText $Tokens[$headerBarIdx].AttrText
     $hbClass = Get-AttributeByName -Attrs $hbAttrs -Name 'class'
-    if ($null -eq $hbClass -or $hbClass.Value -ne 'cc-header-bar') {
-        $actual = if ($null -eq $hbClass) { '<missing>' } else { $hbClass.Value }
+    $hasCenterClass = $false
+    if ($null -eq $hbClass) {
         Add-DriftCode -Row $fileRow -Code 'MALFORMED_HEADER_BAR_STRUCTURE' `
-            -Context "cc-header-bar class is '$actual'; expected exactly 'cc-header-bar'."
+            -Context "cc-header-bar class is '<missing>'; expected 'cc-header-bar' (optionally with 'cc-has-center')."
+    } else {
+        $hbTokens = @($hbClass.Value -split '\s+' | Where-Object { $_ -ne '' })
+        $hasCenterClass = $hbTokens -contains 'cc-has-center'
+        $extraTokens = @($hbTokens | Where-Object { $_ -ne 'cc-header-bar' -and $_ -ne 'cc-has-center' })
+        if ($hbTokens -notcontains 'cc-header-bar' -or $extraTokens.Count -gt 0) {
+            Add-DriftCode -Row $fileRow -Code 'MALFORMED_HEADER_BAR_STRUCTURE' `
+                -Context "cc-header-bar class is '$($hbClass.Value)'; expected 'cc-header-bar' (optionally with 'cc-has-center')."
+        }
     }
     foreach ($a in $hbAttrs) {
         if ($a.Name -ne 'class') {
@@ -5341,21 +5351,70 @@ function Invoke-PageChromeValidation {
         }
     }
 
-    # Validate second child: <div class="cc-header-right">
-    if ($hbChildren.Count -lt 2) {
+    # Determine whether a cc-header-center child is actually present. When
+    # present, it is the second child (between the $headerHtml div and
+    # cc-header-right); its contents are page-owned and validated by the
+    # general attribute/class rules, so only its presence, position, and own
+    # class/attributes are checked here.
+    $hasCenterChild = $false
+    $centerChildIdx = -1
+    if ($hbChildren.Count -ge 2) {
+        $candTok = $Tokens[$hbChildren[1]]
+        $candAttrs = if (-not [string]::IsNullOrWhiteSpace($candTok.AttrText)) {
+            Get-AttributesFromToken -AttrText $candTok.AttrText
+        } else { @() }
+        $candClass = Get-AttributeByName -Attrs $candAttrs -Name 'class'
+        if ($candTok.TagName -eq 'div' -and $null -ne $candClass -and $candClass.Value -eq 'cc-header-center') {
+            $hasCenterChild = $true
+            $centerChildIdx = $hbChildren[1]
+        }
+    }
+
+    # Pairing rule: cc-has-center on the container and a cc-header-center
+    # child must both be present or both absent.
+    if ($hasCenterClass -and -not $hasCenterChild) {
         Add-DriftCode -Row $fileRow -Code 'MALFORMED_HEADER_BAR_STRUCTURE' `
-            -Context "cc-header-bar is missing its second child; expected <div class=`"cc-header-right`">."
+            -Context "cc-header-bar carries cc-has-center but has no cc-header-center child; the two are paired."
+    }
+    if ($hasCenterChild -and -not $hasCenterClass) {
+        Add-DriftCode -Row $fileRow -Code 'MALFORMED_HEADER_BAR_STRUCTURE' `
+            -Context "cc-header-bar has a cc-header-center child but the container does not carry cc-has-center; the two are paired."
+    }
+
+    # Validate the center column's own attributes (presence/position already
+    # established above; contents are page-owned and out of scope here).
+    if ($centerChildIdx -ge 0) {
+        $centerTok = $Tokens[$centerChildIdx]
+        $centerAttrs = if (-not [string]::IsNullOrWhiteSpace($centerTok.AttrText)) {
+            Get-AttributesFromToken -AttrText $centerTok.AttrText
+        } else { @() }
+        foreach ($a in $centerAttrs) {
+            if ($a.Name -ne 'class') {
+                Add-DriftCode -Row $fileRow -Code 'MALFORMED_HEADER_BAR_STRUCTURE' `
+                    -Context "cc-header-center carries unexpected attribute '$($a.Name)'."
+            }
+        }
+    }
+
+    # The cc-header-right child follows the optional center column: it is the
+    # third child when a center column is present, the second otherwise.
+    $expectedChildCount = if ($hasCenterChild) { 3 } else { 2 }
+    $rightChildPos      = if ($hasCenterChild) { 2 } else { 1 }
+
+    if ($hbChildren.Count -lt ($rightChildPos + 1)) {
+        Add-DriftCode -Row $fileRow -Code 'MALFORMED_HEADER_BAR_STRUCTURE' `
+            -Context "cc-header-bar is missing its cc-header-right child."
         return
     }
-    if ($hbChildren.Count -gt 2) {
+    if ($hbChildren.Count -gt $expectedChildCount) {
         Add-DriftCode -Row $fileRow -Code 'MALFORMED_HEADER_BAR_STRUCTURE' `
-            -Context "cc-header-bar has $($hbChildren.Count) immediate children; expected exactly 2."
+            -Context "cc-header-bar has $($hbChildren.Count) immediate children; expected exactly $expectedChildCount."
     }
-    $rightIdx = $hbChildren[1]
+    $rightIdx = $hbChildren[$rightChildPos]
     $rightTok = $Tokens[$rightIdx]
     if ($rightTok.TagName -ne 'div') {
         Add-DriftCode -Row $fileRow -Code 'MALFORMED_HEADER_BAR_STRUCTURE' `
-            -Context "cc-header-bar second child is <$($rightTok.TagName)>; expected <div>."
+            -Context "cc-header-bar cc-header-right child is <$($rightTok.TagName)>; expected <div>."
         return
     }
     $rightAttrs = if (-not [string]::IsNullOrWhiteSpace($rightTok.AttrText)) {
@@ -5365,7 +5424,7 @@ function Invoke-PageChromeValidation {
     if ($null -eq $rightClass -or $rightClass.Value -ne 'cc-header-right') {
         $actual = if ($null -eq $rightClass) { '<missing>' } else { $rightClass.Value }
         Add-DriftCode -Row $fileRow -Code 'MALFORMED_HEADER_BAR_STRUCTURE' `
-            -Context "cc-header-bar second child class is '$actual'; expected exactly 'cc-header-right'."
+            -Context "cc-header-bar cc-header-right child class is '$actual'; expected exactly 'cc-header-right'."
         return
     }
     foreach ($a in $rightAttrs) {
