@@ -93,6 +93,7 @@ const adm_clickActions = {
     'adm-close-docpipeline':   adm_closeDocPipeline,
     'adm-doc-run':             adm_runDocPipeline,
     'adm-doc-toggle-pill':     adm_docTogglePill,
+    'adm-doc-detail-toggle':   adm_docToggleDetail,
     'adm-open-alertfailures':  adm_openAlertFailures,
     'adm-close-alertfailures': adm_closeAlertFailures,
     'adm-resend-alert':        adm_resendAlert,
@@ -2259,8 +2260,8 @@ function adm_renderGcTree() {
 /* Renders a single setting child card. */
 function adm_renderGcChildCard(s, isInactive) {
     var isExp = adm_gcExpandedId === s.config_id;
-    var toggleState = isInactive ? 'adm-off' : 'adm-on';
-    var toggleHtml = '<span class="adm-gc-active-toggle" data-action-click="adm-gc-toggle-active" data-action-adm-cid="' + s.config_id + '" data-action-adm-state="' + (isInactive ? '1' : '0') + '" title="' + (isInactive ? 'Reactivate' : 'Deactivate') + '"><span class="adm-gc-toggle"><span class="adm-gc-toggle-track ' + toggleState + '"><span class="adm-gc-toggle-knob ' + toggleState + '"></span></span></span></span>';
+    var toggleState = isInactive ? 'cc-off' : 'cc-on';
+    var toggleHtml = '<span class="adm-gc-active-toggle" data-action-click="adm-gc-toggle-active" data-action-adm-cid="' + s.config_id + '" data-action-adm-state="' + (isInactive ? '1' : '0') + '" title="' + (isInactive ? 'Reactivate' : 'Deactivate') + '"><span class="cc-toggle-wrap"><span class="cc-toggle-track ' + toggleState + '"><span class="cc-toggle-knob ' + toggleState + '"></span></span></span></span>';
     if (isInactive) {
         return '<div class="adm-gc-child-card adm-inactive" data-cid="' + s.config_id + '"><div class="adm-gc-child-header" data-action-click="adm-gc-toggle-row" data-action-adm-cid="' + s.config_id + '"><span class="adm-gc-child-desc">' + cc_escapeHtml(s.description || s.setting_name) + '</span><span class="adm-gc-child-name adm-inactive">' + cc_escapeHtml(s.setting_name) + '</span><span class="adm-gc-child-value"><span class="adm-gc-val-inactive">' + cc_escapeHtml(s.setting_value) + '</span></span>' + toggleHtml + '</div><div class="adm-gc-child-body' + (isExp ? ' adm-expanded' : '') + '">' + (isExp ? adm_renderGcDetail(s) : '') + '</div></div>';
     }
@@ -2280,8 +2281,8 @@ function adm_renderGcValue(s) {
     }
     if (s.data_type === 'BIT') {
         var isOn = s.setting_value === '1';
-        var bitState = isOn ? 'adm-on' : 'adm-off';
-        return '<span class="adm-gc-val-bit" data-action-click="adm-gc-toggle-bit" data-action-adm-cid="' + s.config_id + '" title="Click to toggle"><span class="adm-gc-toggle"><span class="adm-gc-toggle-track ' + bitState + '"><span class="adm-gc-toggle-knob ' + bitState + '"></span></span><span class="adm-gc-toggle-label ' + bitState + '">' + (isOn ? 'ON' : 'OFF') + '</span></span></span>';
+        var bitState = isOn ? 'cc-on' : 'cc-off';
+        return '<span class="adm-gc-val-bit" data-action-click="adm-gc-toggle-bit" data-action-adm-cid="' + s.config_id + '" title="Click to toggle"><span class="cc-toggle-wrap"><span class="cc-toggle-track ' + bitState + '"><span class="cc-toggle-knob ' + bitState + '"></span></span><span class="cc-toggle-label ' + bitState + '">' + (isOn ? 'ON' : 'OFF') + '</span></span></span>';
     }
     if (adm_gcEditingId === s.config_id) {
         return '<span class="adm-gc-edit-wrap"><input type="text" class="adm-gc-edit-input" id="adm-gc-edit-' + s.config_id + '" value="' + cc_escapeHtml(s.setting_value) + '" data-action-keydown="adm-gc-edit-keydown" data-action-adm-cid="' + s.config_id + '"><button class="adm-gc-edit-save" data-action-click="adm-gc-save-edit" data-action-adm-cid="' + s.config_id + '" title="Save">&#10003;</button><button class="adm-gc-edit-cancel" data-action-click="adm-gc-cancel-edit" title="Cancel">&#10007;</button></span>';
@@ -2847,26 +2848,26 @@ function adm_renderSchedDetail(p) {
     html += '<div class="adm-sched-settings-title">Configuration</div>';
     html += '<div class="adm-sched-settings-grid">';
     var isFF = p.execution_mode === 'FIRE_AND_FORGET';
-    var ffState = isFF ? 'adm-on' : 'adm-off';
+    var ffState = isFF ? 'cc-on' : 'cc-off';
     html += '<div class="adm-sched-setting-item adm-wide">';
     html += '<span class="adm-sched-setting-label">Execution Mode</span>';
     html += '<span class="adm-sched-setting-control">';
     html += '<span class="adm-sched-toggle-wrap" data-action-click="adm-sched-toggle-mode" data-action-adm-pid="' + p.process_id + '" title="WAIT: Engine waits for process to finish before continuing.&#10;FIRE_AND_FORGET: Engine launches and moves on.">';
-    html += '<span class="adm-gc-toggle-track ' + ffState + '"><span class="adm-gc-toggle-knob ' + ffState + '"></span></span>';
-    html += '<span class="adm-gc-toggle-label ' + ffState + '">' + (isFF ? 'Fire & Forget' : 'Wait for Exit') + '</span></span></span></div>';
+    html += '<span class="cc-toggle-track ' + ffState + '"><span class="cc-toggle-knob ' + ffState + '"></span></span>';
+    html += '<span class="cc-toggle-label ' + ffState + '">' + (isFF ? 'Fire & Forget' : 'Wait for Exit') + '</span></span></span></div>';
     html += adm_schedEditableField(p, 'dependency_group', 'Dep. Group', p.dependency_group);
     html += adm_schedEditableField(p, 'interval_seconds', 'Interval (sec)', p.interval_seconds);
     var schedTime = adm_formatSchedTime(p.scheduled_time);
     html += adm_schedEditableField(p, 'scheduled_time', 'Sched. Time', schedTime || '(none)');
     html += adm_schedEditableField(p, 'timeout_seconds', 'Timeout (sec)', p.timeout_seconds !== null && p.timeout_seconds !== undefined ? p.timeout_seconds : '(none)');
     var isCon = p.allow_concurrent === true || p.allow_concurrent === 1;
-    var conState = isCon ? 'adm-on' : 'adm-off';
+    var conState = isCon ? 'cc-on' : 'cc-off';
     html += '<div class="adm-sched-setting-item adm-wide">';
     html += '<span class="adm-sched-setting-label">Allow Concurrent</span>';
     html += '<span class="adm-sched-setting-control">';
     html += '<span class="adm-sched-toggle-wrap" data-action-click="adm-sched-toggle-concurrent" data-action-adm-pid="' + p.process_id + '">';
-    html += '<span class="adm-gc-toggle-track ' + conState + '"><span class="adm-gc-toggle-knob ' + conState + '"></span></span>';
-    html += '<span class="adm-gc-toggle-label ' + conState + '">' + (isCon ? 'Yes' : 'No') + '</span></span></span></div>';
+    html += '<span class="cc-toggle-track ' + conState + '"><span class="cc-toggle-knob ' + conState + '"></span></span>';
+    html += '<span class="cc-toggle-label ' + conState + '">' + (isCon ? 'Yes' : 'No') + '</span></span></span></div>';
     html += '</div>';
     html += '</div>';
     html += '<div class="adm-sched-card-status" id="adm-sched-card-status-' + p.process_id + '"></div>';
@@ -3086,7 +3087,7 @@ function adm_schedLoadAvailableScripts() {
 /* Renders the add-process form. */
 function adm_renderSchedAddForm(mod) {
     var me = cc_escapeHtml(mod);
-    var ffState = adm_schedAddMode === 'FIRE_AND_FORGET' ? 'adm-on' : 'adm-off';
+    var ffState = adm_schedAddMode === 'FIRE_AND_FORGET' ? 'cc-on' : 'cc-off';
     var html = '<div class="adm-meta-add-form adm-meta-add-child">';
     html += '<div class="adm-meta-add-title">New Process: ' + me + '<button class="adm-gc-add-close" data-action-click="adm-sched-cancel-add" title="Cancel">&times;</button></div>';
     html += '<div class="adm-meta-add-row"><label class="adm-sched-add-label">Script</label>';
@@ -3105,8 +3106,8 @@ function adm_renderSchedAddForm(mod) {
     html += '<input type="text" class="adm-meta-desc-input adm-gc-add-grow" id="adm-sched-new-desc" placeholder="Description (required)" maxlength="500"></div>';
     html += '<div class="adm-meta-add-row"><label class="adm-sched-add-label">Execution Mode</label>';
     html += '<span class="adm-sched-toggle-wrap" data-action-click="adm-sched-add-toggle-mode">';
-    html += '<span class="adm-gc-toggle-track ' + ffState + '" id="adm-sched-new-mode-track"><span class="adm-gc-toggle-knob ' + ffState + '" id="adm-sched-new-mode-knob"></span></span>';
-    html += '<span class="adm-gc-toggle-label ' + ffState + '" id="adm-sched-new-mode-label">' + (adm_schedAddMode === 'FIRE_AND_FORGET' ? 'Fire & Forget' : 'Wait for Exit') + '</span></span></div>';
+    html += '<span class="cc-toggle-track ' + ffState + '" id="adm-sched-new-mode-track"><span class="cc-toggle-knob ' + ffState + '" id="adm-sched-new-mode-knob"></span></span>';
+    html += '<span class="cc-toggle-label ' + ffState + '" id="adm-sched-new-mode-label">' + (adm_schedAddMode === 'FIRE_AND_FORGET' ? 'Fire & Forget' : 'Wait for Exit') + '</span></span></div>';
     html += '<div class="adm-sched-add-grid">';
     html += '<div class="adm-sched-add-cell"><label class="adm-sched-add-cell-label">Dependency Group</label><input type="number" class="adm-sched-add-cell-input" id="adm-sched-new-group" placeholder="Group #" min="1"></div>';
     html += '<div class="adm-sched-add-cell"><label class="adm-sched-add-cell-label">Interval (seconds)</label><input type="number" class="adm-sched-add-cell-input" id="adm-sched-new-interval" placeholder="Seconds" min="0" value="300"></div>';
@@ -3129,15 +3130,15 @@ function adm_schedAddToggleMode() {
     }
     if (adm_schedAddMode === 'FIRE_AND_FORGET') {
         adm_schedAddMode = 'WAIT';
-        track.className = 'adm-gc-toggle-track adm-off';
-        knob.className = 'adm-gc-toggle-knob adm-off';
-        label.className = 'adm-gc-toggle-label adm-off';
+        track.className = 'cc-toggle-track cc-off';
+        knob.className = 'cc-toggle-knob cc-off';
+        label.className = 'cc-toggle-label cc-off';
         label.textContent = 'Wait for Exit';
     } else {
         adm_schedAddMode = 'FIRE_AND_FORGET';
-        track.className = 'adm-gc-toggle-track adm-on';
-        knob.className = 'adm-gc-toggle-knob adm-on';
-        label.className = 'adm-gc-toggle-label adm-on';
+        track.className = 'cc-toggle-track cc-on';
+        knob.className = 'cc-toggle-knob cc-on';
+        label.className = 'cc-toggle-label cc-on';
         label.textContent = 'Fire & Forget';
     }
 }
@@ -3367,6 +3368,18 @@ function adm_docUpdateCards() {
                 card.classList.add('adm-off');
             }
         }
+        if (cb) {
+            var wrap = cb.parentNode;
+            var track = wrap.querySelector('.cc-toggle-track');
+            var knob = wrap.querySelector('.cc-toggle-knob');
+            var state = cb.checked ? 'cc-on' : 'cc-off';
+            if (track) {
+                track.className = 'cc-toggle-track ' + state;
+            }
+            if (knob) {
+                knob.className = 'cc-toggle-knob ' + state;
+            }
+        }
     });
     adm_DOC_STEP_OPTION_MAP.forEach(function(pair) {
         var cb = document.getElementById(pair.step);
@@ -3380,6 +3393,18 @@ function adm_docUpdateCards() {
 /* Toggles a sub-option pill's active state. */
 function adm_docTogglePill(target) {
     target.classList.toggle('adm-active');
+}
+
+/* Expands or collapses a per-step result disclosure (summary row clicked). */
+function adm_docToggleDetail(target) {
+    var arrow = target.querySelector('.adm-doc-detail-arrow');
+    var body = target.nextElementSibling;
+    if (arrow) {
+        arrow.classList.toggle('adm-expanded');
+    }
+    if (body) {
+        body.classList.toggle('adm-expanded');
+    }
 }
 
 /* Wires the step toggles by adding the change action; no per-element listeners. */
@@ -3532,7 +3557,8 @@ function adm_pollDocStatus() {
                 var ok = (r.status === 'success' || r.status === 'warning');
                 var cls = r.status === 'warning' ? 'adm-warn' : (ok ? 'adm-ok' : 'adm-fail');
                 var icon = r.status === 'warning' ? '\u26A0' : (ok ? '\u2713' : '\u2717');
-                var openAttr = ok && r.status !== 'warning' ? '' : ' open';
+                var expanded = !(ok && r.status !== 'warning');
+                var expCls = expanded ? ' adm-expanded' : '';
                 var outputText = '';
                 if (r.output) {
                     if (typeof r.output === 'string') {
@@ -3549,22 +3575,24 @@ function adm_pollDocStatus() {
                         errorText = r.error.value.trim();
                     }
                 }
-                html += '<details class="adm-doc-detail ' + cls + '"' + openAttr + '>';
-                html += '<summary>';
-                html += '<span class="adm-doc-detail-arrow">\u25B6</span>';
+                html += '<div class="adm-doc-detail ' + cls + '">';
+                html += '<div class="adm-doc-detail-summary" data-action-click="adm-doc-detail-toggle">';
+                html += '<span class="adm-doc-detail-arrow' + expCls + '">\u25B6</span>';
                 html += '<span class="adm-doc-detail-icon ' + cls + '">' + icon + '</span>';
                 html += '<span class="adm-doc-detail-label">' + cc_escapeHtml(r.label) + '</span>';
                 if (r.exit_code !== null && r.exit_code !== undefined) {
                     html += '<span class="adm-doc-detail-exit">exit ' + r.exit_code + '</span>';
                 }
-                html += '</summary>';
+                html += '</div>';
+                html += '<div class="adm-doc-detail-body' + expCls + '">';
                 if (outputText) {
                     html += '<pre class="adm-doc-detail-output">' + cc_escapeHtml(outputText) + '</pre>';
                 }
                 if (errorText) {
                     html += '<pre class="adm-doc-detail-error">' + cc_escapeHtml(errorText) + '</pre>';
                 }
-                html += '</details>';
+                html += '</div>';
+                html += '</div>';
             });
             res.innerHTML = html;
         }
