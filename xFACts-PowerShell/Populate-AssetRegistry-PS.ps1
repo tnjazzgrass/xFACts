@@ -2314,6 +2314,42 @@ function Add-PSExportRow {
     return $row
 }
 
+# Determine whether a query text contains a genuine sqlcmd parameter
+# placeholder: an @name token supplied an external value at call time. Three
+# T-SQL constructs share the @ lead but are not placeholders and are excluded:
+# a @@name global (e.g. @@SERVERNAME); a local variable introduced by a
+# DECLARE @name in the same query (name match is case-insensitive); and an
+# @name appearing inside a single-quoted string literal (e.g. an XQuery
+# attribute axis such as (./Record/@id)[1]). Returns $true only when an @name
+# survives all three exclusions.
+function Test-SqlParameterPlaceholder {
+    param([string]$QueryText)
+
+    if ([string]::IsNullOrEmpty($QueryText)) { return $false }
+
+    # Blank out single-quoted string literals so @name tokens inside them
+    # (XQuery axes, embedded text) are not seen. Doubled '' escapes within a
+    # literal collapse naturally as two adjacent empty literals.
+    $scrubbed = [regex]::Replace($QueryText, "'[^']*'", "''")
+
+    # Collect locals declared in this query (case-insensitive).
+    $declared = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    foreach ($m in [regex]::Matches($scrubbed, '(?i)\bDECLARE\s+@(\w+)')) {
+        [void]$declared.Add($m.Groups[1].Value)
+    }
+
+    # Examine each @name token. A preceding @ (i.e. @@name global) disqualifies
+    # it; a matching DECLARE disqualifies it. Anything left is a placeholder.
+    foreach ($m in [regex]::Matches($scrubbed, '@(\w+)')) {
+        $precedingIdx = $m.Index - 1
+        if ($precedingIdx -ge 0 -and $scrubbed[$precedingIdx] -eq '@') { continue }
+        if ($declared.Contains($m.Groups[1].Value)) { continue }
+        return $true
+    }
+
+    return $false
+}
+
 # Emit a SQL_QUERY row representing a call to a known SQL-querying command
 # (Invoke-Sqlcmd and the Invoke-XFActs* family). The row also carries any
 # per-call drift codes for violations: missing -TrustServerCertificate,
@@ -2399,9 +2435,11 @@ function Add-PSSqlCallRow {
         }
     }
 
-    # If the query text references @parameter placeholders but -Parameters
-    # is not declared, that's MISSING_PARAMETER_DECLARATION drift.
-    if ($null -ne $queryText -and $queryText -match '@\w+\b' -and -not $hasParameters) {
+    # If the query text references a genuine sqlcmd @parameter placeholder but
+    # -Parameters is not declared, that's MISSING_PARAMETER_DECLARATION drift.
+    # T-SQL locals (DECLARE @name), @@globals, and @name tokens inside string
+    # literals are not placeholders and do not fire (see Test-SqlParameterPlaceholder).
+    if ($null -ne $queryText -and (Test-SqlParameterPlaceholder -QueryText $queryText) -and -not $hasParameters) {
         Add-DriftCode -Row $row -Code 'MISSING_PARAMETER_DECLARATION' `
             -Context "Query at line $line references @parameter placeholders but -Parameters @{...} is not declared."
     }
