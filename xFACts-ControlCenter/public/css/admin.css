@@ -1983,66 +1983,6 @@
     cursor: pointer;
 }
 
-/* The hand-rolled toggle switch wrapper. */
-.adm-gc-toggle {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--size-spacing-sm);
-}
-
-/* The toggle track (background rail). */
-.adm-gc-toggle-track {
-    width: 34px;
-    height: 18px;
-    border-radius: 9px;
-    position: relative;
-    transition: background var(--duration-fast);
-}
-
-.adm-gc-toggle-track.adm-on { /* toggle track in the on state */
-    background: rgba(74, 222, 128, 0.3);
-    border: var(--size-border-thin) solid rgba(74, 222, 128, 0.4);
-}
-
-.adm-gc-toggle-track.adm-off { /* toggle track in the off state */
-    background: rgba(239, 68, 68, 0.15);
-    border: var(--size-border-thin) solid rgba(239, 68, 68, 0.3);
-}
-
-/* The toggle knob (sliding circle). */
-.adm-gc-toggle-knob {
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-    position: absolute;
-    top: 1px;
-    transition: left var(--duration-fast), background var(--duration-fast);
-}
-
-.adm-gc-toggle-knob.adm-on { /* knob position/color in the on state */
-    left: 17px;
-    background: #4ade80;
-}
-
-.adm-gc-toggle-knob.adm-off { /* knob position/color in the off state */
-    left: 2px;
-    background: #ef4444;
-}
-
-/* The toggle text label beside the switch. */
-.adm-gc-toggle-label {
-    font-size: var(--font-size-body);
-    font-weight: 600;
-}
-
-.adm-gc-toggle-label.adm-on { /* label color in the on state */
-    color: #4ade80;
-}
-
-.adm-gc-toggle-label.adm-off { /* label color in the off state */
-    color: #ef4444;
-}
-
 /* Active/inactive toggle affordance at the end of a setting row. */
 .adm-gc-active-toggle {
     cursor: pointer;
@@ -2720,48 +2660,9 @@
     color: #ef4444;
 }
 
-/* The native-checkbox toggle switch on a step card. */
-.adm-doc-toggle {
-    position: relative;
-    width: 36px;
-    height: 20px;
-    cursor: pointer;
-    flex-shrink: 0;
-}
-
-/* The hidden native checkbox inside the toggle. */
-.adm-doc-toggle input {
+/* The hidden native checkbox backing a step toggle (state read by the pipeline). */
+.adm-doc-toggle-input {
     display: none;
-}
-
-/* The toggle track (background rail). */
-.adm-doc-toggle-track {
-    position: absolute;
-    inset: 0;
-    background: var(--color-border-default);
-    border-radius: 10px;
-    transition: background var(--duration-fast);
-}
-
-.adm-doc-toggle input:checked + .adm-doc-toggle-track { /* track when the checkbox is checked */
-    background: var(--color-accent-platform);
-}
-
-/* The toggle knob (sliding circle). */
-.adm-doc-toggle-knob {
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 16px;
-    height: 16px;
-    background: #ccc;
-    border-radius: 50%;
-    transition: transform var(--duration-fast), background var(--duration-fast);
-}
-
-.adm-doc-toggle input:checked ~ .adm-doc-toggle-knob { /* knob position/color when checked */
-    transform: translateX(16px);
-    background: var(--color-text-on-primary);
 }
 
 /* Sub-option pill row revealed under a step card. */
@@ -2874,7 +2775,7 @@
     color: var(--color-text-subtle);
 }
 
-/* A per-step result disclosure (native <details>). */
+/* A per-step result disclosure. */
 .adm-doc-detail {
     border: var(--size-border-thin) solid var(--color-border-divider);
     border-radius: var(--size-radius-lg);
@@ -2902,7 +2803,8 @@
     border-color: rgba(239, 68, 68, 0.2);
 }
 
-.adm-doc-detail summary { /* the clickable disclosure summary row */
+/* The clickable disclosure summary row. */
+.adm-doc-detail-summary {
     display: flex;
     align-items: center;
     gap: var(--size-spacing-md);
@@ -2914,10 +2816,6 @@
     list-style: none;
 }
 
-.adm-doc-detail summary::-webkit-details-marker { /* hide the native disclosure marker */
-    display: none;
-}
-
 /* Rotating arrow indicator in a result disclosure summary. */
 .adm-doc-detail-arrow {
     font-size: var(--font-size-sm);
@@ -2926,8 +2824,17 @@
     display: inline-block;
 }
 
-.adm-doc-detail[open] .adm-doc-detail-arrow { /* arrow rotated when the disclosure is open */
+.adm-doc-detail-arrow.adm-expanded { /* arrow rotated when the disclosure is expanded */
     transform: rotate(90deg);
+}
+
+/* Collapsible body of a result disclosure (output/error panels). */
+.adm-doc-detail-body {
+    display: none;
+}
+
+.adm-doc-detail-body.adm-expanded { /* body shown when the disclosure is expanded */
+    display: block;
 }
 
 /* Status icon in a result disclosure summary. */
