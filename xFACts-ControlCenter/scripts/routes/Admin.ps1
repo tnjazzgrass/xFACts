@@ -269,7 +269,7 @@ $navHtml
                                     <div class="adm-doc-card-desc">Regenerate JSON data files from Object_Metadata</div>
                                 </div>
                                 <span class="adm-doc-card-status" id="adm-doc-status-generate-ddl"></span>
-                                <label class="adm-doc-toggle"><input type="checkbox" id="adm-doc-step-ddl" checked><div class="adm-doc-toggle-track"></div><div class="adm-doc-toggle-knob"></div></label>
+                                <label class="cc-toggle-wrap"><input type="checkbox" class="adm-doc-toggle-input" id="adm-doc-step-ddl" checked><span class="cc-toggle-track cc-on"></span><span class="cc-toggle-knob cc-on"></span></label>
                             </div>
                         </div>
                         <div class="adm-doc-card" id="adm-doc-card-publish">
@@ -279,7 +279,7 @@ $navHtml
                                     <div class="adm-doc-card-desc">Publish HTML pages to Confluence Server</div>
                                 </div>
                                 <span class="adm-doc-card-status" id="adm-doc-status-publish-confluence"></span>
-                                <label class="adm-doc-toggle"><input type="checkbox" id="adm-doc-step-publish" checked><div class="adm-doc-toggle-track"></div><div class="adm-doc-toggle-knob"></div></label>
+                                <label class="cc-toggle-wrap"><input type="checkbox" class="adm-doc-toggle-input" id="adm-doc-step-publish" checked><span class="cc-toggle-track cc-on"></span><span class="cc-toggle-knob cc-on"></span></label>
                             </div>
                             <div class="adm-doc-card-options" id="adm-doc-step-publish-options">
                                 <button class="adm-doc-pill adm-active" id="adm-doc-opt-confluence" data-action-click="adm-doc-toggle-pill" title="Push pages to Confluence Server via REST API">Publish to Confluence</button>
@@ -293,7 +293,7 @@ $navHtml
                                     <div class="adm-doc-card-desc">Push platform files and manifest to GitHub repository</div>
                                 </div>
                                 <span class="adm-doc-card-status" id="adm-doc-status-publish-github"></span>
-                                <label class="adm-doc-toggle"><input type="checkbox" id="adm-doc-step-github" checked><div class="adm-doc-toggle-track"></div><div class="adm-doc-toggle-knob"></div></label>
+                                <label class="cc-toggle-wrap"><input type="checkbox" class="adm-doc-toggle-input" id="adm-doc-step-github" checked><span class="cc-toggle-track cc-on"></span><span class="cc-toggle-knob cc-on"></span></label>
                             </div>
                         </div>
                         <div class="adm-doc-card" id="adm-doc-card-consolidate">
@@ -303,7 +303,7 @@ $navHtml
                                     <div class="adm-doc-card-desc">Collect all platform files into upload folder</div>
                                 </div>
                                 <span class="adm-doc-card-status" id="adm-doc-status-consolidate-upload"></span>
-                                <label class="adm-doc-toggle"><input type="checkbox" id="adm-doc-step-consolidate" checked><div class="adm-doc-toggle-track"></div><div class="adm-doc-toggle-knob"></div></label>
+                                <label class="cc-toggle-wrap"><input type="checkbox" class="adm-doc-toggle-input" id="adm-doc-step-consolidate" checked><span class="cc-toggle-track cc-on"></span><span class="cc-toggle-knob cc-on"></span></label>
                             </div>
                             <div class="adm-doc-card-options" id="adm-doc-step-consolidate-options">
                                 <button class="adm-doc-pill adm-active" id="adm-doc-opt-sql" data-action-click="adm-doc-toggle-pill" title="Extract SQL object definitions from database">Include SQL Objects</button>
