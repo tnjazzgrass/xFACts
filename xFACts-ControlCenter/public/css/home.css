@@ -150,7 +150,7 @@
 
 /* A single navigation tile linking to a Control Center page. */
 .hom-nav-card {
-    background: #2d2d2d;
+    background: var(--color-bg-card-hover);
     border: var(--size-border-thin) solid var(--color-border-default);
     border-radius: var(--size-radius-xl);
     padding: var(--size-spacing-2xl);
@@ -175,7 +175,7 @@
 .hom-nav-card-desc {
     color: var(--color-text-muted);
     margin: 0;
-    font-size: 14px;
+    font-size: var(--font-size-heading-sm);
 }
 
 /* Departmental-section accent token applied to a card and its title. */
