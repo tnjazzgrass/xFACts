@@ -51,7 +51,70 @@
    Prefix: (none)
    ============================================================================ #>
 
-# 2026-06-22  Structural-dimension token carve-out (immediate fix; B-097 tracks
+# 2026-06-23  Gradient-stop carve-out (CC_CSS_Spec.md Section 10.2 amendment).
+#             A color literal inside a gradient function (linear/radial/conic-
+#             gradient, incl. -webkit- forms) was extracted and matched against
+#             --color-* tokens like any color value -- firing DRIFT_HEX_LITERAL
+#             on decorative gradient stops (e.g. #4ade80 in a toggle-handle
+#             linear-gradient matching --color-status-online). Per the spec,
+#             gradients are tokenized as whole --gradient-* values, so an
+#             individual color stop is not a color-token use. Get-LiteralsInDecl-
+#             aration now tags each color literal with InGradient (via
+#             Get-GradientSpans, a paren-depth walk that keeps nested functional-
+#             color stops interior), and the Tier-1 matcher skips matching when
+#             InGradient is set. The literal is still catalogued as a CSS_LITERAL
+#             row (inventory stays complete, NULL drift_codes, NULL match_ref) --
+#             only the color match is suppressed. A flat color outside any
+#             gradient in the same declaration is unaffected and matches
+#             normally. Whole-gradient reuse tokenization is not yet enforced.
+#             (--size-page-padding-top/x/y) were classified 'size-dimension' and
+#             so matched any width/height literal of equal value -- firing
+#             DRIFT_PX_LITERAL on gauge wraps, activity-content min-heights,
+#             badge dimensions, and toggle widths that merely equal 60/40/20px
+#             by coincidence (e.g. .plt-mini-gauge-wrap width 60px flagged only
+#             because it equals --size-page-padding-top). These tokens name the
+#             page body's outer padding (set once on body in the shell), not a
+#             general dimension scale, so a value match against an unrelated
+#             page dimension is not drift. They join nav/max-width/panel/modal/
+#             slideup/scrollbar in the 'size-structural' family that
+#             Test-LiteralTokenFamilyMatch never matches -- an oversight in the
+#             2026-06-22 carve-out list, now corrected. Genuine spacing-property
+#             literals (padding/margin 20px) still match --size-spacing-2xl and
+#             remain real repoint drift; only the dimension-property coincidences
+#             clear. Verified against the registry: all 13 width/height 60px
+#             rows were coincidental, with zero genuine page-padding matches.
+#             status-glow color tokens (--color-banner-*, --color-glow-*) were
+#             classified 'color-role' and so matched a literal of any color
+#             property -- firing DRIFT_HEX_LITERAL on page badges/pills/icons
+#             whose value merely equalled a banner/glow value by coincidence
+#             (e.g. .jbm-info-icon background rgba(86,156,214,0.15) flagged only
+#             because it equals --color-banner-reconnecting-bg). These tokens
+#             name one feature's color, not a general vocabulary, so a value
+#             match against an unrelated page literal is not drift. They now
+#             classify 'color-structural' (Get-TokenNameFamily) and
+#             Test-LiteralTokenFamilyMatch never matches a literal against a
+#             'color-structural' token -- the exact color analogue of the
+#             2026-06-22 size-structural carve-out. --color-status/accent/tint/
+#             button-* remain 'color-role' and keep matching, so genuine status/
+#             tint repoints are unaffected. The now-non-drift badge literals
+#             become LOCAL inventory rows; multi-file recurrences among them are
+#             the chrome-promotion candidates for a future general tint/glow
+#             vocabulary (B-101), at which point those new general tokens match
+#             normally by their own names.
+#             records the matched token name(s) on the row's MatchReference
+#             property instead of discarding them. The match loop collects
+#             every same-criteria (same-family, same-value) token rather than
+#             breaking on the first, so a value held by more than one
+#             same-purpose token surfaces as a comma-space delimited, sorted
+#             list (e.g. a green matching both --color-status-idle and
+#             --color-status-online) rather than silently resolving to one.
+#             match_reference records the populator's positive finding only;
+#             whether that finding is drift remains drift_codes' verdict. For
+#             CSS a finding coincides with DRIFT_HEX/PX_LITERAL by definition
+#             (the match condition is the drift condition), so match_reference
+#             populates on the literal drift rows. Plumbed end-to-end via the
+#             shared New-AssetRegistryRow factory and Invoke-AssetRegistryBulkInsert
+#             (new match_reference column) in xFACts-AssetRegistryFunctions.ps1.
 #             the durable convention-based replacement). The size-dimension
 #             catch-all conflated genuine general dimensions with single-purpose
 #             structural/chrome tokens (nav rail, page max-width, panel/modal/
@@ -541,20 +604,39 @@ $script:CssVisitor = {
                                         -RawText        "$($child.prop): $($child.value)"
                                     if (-not $litRow) { continue }
 
+                                    # Gradient-stop carve-out (CC_CSS_Spec.md
+                                    # Section 10.2): a color literal inside a
+                                    # gradient function is catalogued (the row
+                                    # above) but is never color drift, because
+                                    # gradients are tokenized as whole
+                                    # --gradient-* values, not by their color
+                                    # stops. The row stays in inventory with
+                                    # NULL drift_codes and NULL match_reference;
+                                    # only the Tier-1 match is suppressed.
+                                    if ($lit.InGradient) { continue }
+
                                     # Tier-1 test: does a shared token of a matching
                                     # family/purpose hold the same value? Color comparison
                                     # is whitespace/case-normalized; size comparison is on
                                     # the trimmed token. Color matching honors sub-family
                                     # (role/state tokens match any color property).
+                                    #
+                                    # All same-criteria matches are collected (not just the
+                                    # first): the matched token name(s) are recorded in
+                                    # match_reference as the populator's positive finding,
+                                    # and a genuine multi-match (one value held by more than
+                                    # one same-purpose token) self-surfaces as a delimited
+                                    # list rather than silently resolving to one.
                                     $litKey   = if ($isColor) { ConvertTo-ColorKey -Literal $lit.Text } else { $lit.Text.Trim().ToLower() }
-                                    $matched  = $false
-                                    foreach ($tokEntry in $varMapForTier1.Values) {
-                                        if (-not (Test-LiteralTokenFamilyMatch -LiteralFamily $lit.Family -TokenFamily $tokEntry.Family)) { continue }
-                                        $tokVal = if ($null -ne $tokEntry.Value) { [string]$tokEntry.Value } else { '' }
+                                    $matchedTokens = [System.Collections.Generic.List[string]]::new()
+                                    foreach ($tokEntry in $varMapForTier1.GetEnumerator()) {
+                                        if (-not (Test-LiteralTokenFamilyMatch -LiteralFamily $lit.Family -TokenFamily $tokEntry.Value.Family)) { continue }
+                                        $tokVal = if ($null -ne $tokEntry.Value.Value) { [string]$tokEntry.Value.Value } else { '' }
                                         $tokKey = if ($isColor) { ConvertTo-ColorKey -Literal $tokVal } else { $tokVal.Trim().ToLower() }
-                                        if ($tokKey -eq $litKey) { $matched = $true; break }
+                                        if ($tokKey -eq $litKey) { [void]$matchedTokens.Add("--$($tokEntry.Key)") }
                                     }
-                                    if ($matched) {
+                                    if ($matchedTokens.Count -gt 0) {
+                                        $litRow.MatchReference = ($matchedTokens | Sort-Object) -join ', '
                                         $code = if ($isColor) { 'DRIFT_HEX_LITERAL' } else { 'DRIFT_PX_LITERAL' }
                                         Add-DriftCode -Row $litRow -Code $code
                                     }
@@ -950,13 +1032,16 @@ function Get-PropertyTokenFamily {
 # duration, shadow, gradient, z). Tier-1 matching compares a literal's family
 # (from the property) against a token's family (from this name classification).
 #
-# Color tokens split two ways by purpose, which the populator relies on and the
-# CC_CSS_Spec.md color-token naming rule guarantees:
+# Color tokens split three ways by purpose, which the populator relies on and
+# the CC_CSS_Spec.md color-token naming rule guarantees:
 #   - Property-specific tokens (--color-bg-*, --color-border-*, --color-text-*)
 #     return a matching color sub-family and match only same-purpose literals.
-#   - Role/state tokens (--color-accent/status/tint/glow/banner/button-*) return
-#     the cross-property marker 'color-role' and match a literal of ANY color
+#   - Role/state tokens (--color-accent/status/tint/button-*) return the
+#     cross-property marker 'color-role' and match a literal of ANY color
 #     property, because such colors are used across properties by design.
+#   - Single-purpose chrome tokens (--color-banner-*, --color-glow-*) return
+#     'color-structural' and match NOTHING: they name one feature's color, so a
+#     coincidental value match against an unrelated page literal is not drift.
 # The font-size prefix is tested before the bare color/size prefixes because
 # '--font-size-*' would otherwise be misread.
 function Get-TokenNameFamily {
@@ -967,26 +1052,39 @@ function Get-TokenNameFamily {
     if ($n -like 'color-bg-*')     { return 'color-bg' }
     if ($n -like 'color-border-*') { return 'color-border' }
     if ($n -like 'color-text-*')   { return 'color-text' }
+    # Single-purpose chrome color tokens (connection-banner state surfaces and
+    # status glows) name one specific feature's color and are NOT a general
+    # color vocabulary, so a page-file badge/pill/icon literal that merely
+    # equals one by value is an unrelated-purpose coincidence, not drift
+    # (mirrors the size-structural carve-out: these match NOTHING rather than
+    # matching any color property the way color-role does). They return the
+    # 'color-structural' family, which Test-LiteralTokenFamilyMatch never
+    # matches a literal against. Tested before the role prefixes below so the
+    # bare 'color-*' catch-all does not reclaim them. When a general tint/glow
+    # vocabulary is established (B-101) those new tokens take their own names
+    # and match normally; only the banner/glow tokens stay non-matchable.
+    if ($n -like 'color-banner-*' -or $n -like 'color-glow-*') { return 'color-structural' }
     if ($n -like 'color-accent-*' -or $n -like 'color-status-*' -or
-        $n -like 'color-tint-*'   -or $n -like 'color-glow-*'   -or
-        $n -like 'color-banner-*' -or $n -like 'color-button-*') { return 'color-role' }
+        $n -like 'color-tint-*'   -or $n -like 'color-button-*') { return 'color-role' }
     if ($n -like 'color-*')      { return 'color-role' }
     # Size sub-families. Specific purpose prefixes are tested before the bare
     # 'size-*' catch-all. Property-specific spacing/radius/border tokens match
     # only same-purpose literals. Structural/chrome dimension tokens (nav rail,
-    # page max-width, and panel/modal/slideup measures) name a single layout
-    # element and are NOT a general dimension scale, so a page-file width/height
-    # literal that merely equals one by value is an unrelated-purpose match and
-    # must not be drift (mirrors the color-role split, but inverted: structural
-    # dimensions match NOTHING rather than matching any property). They return
-    # the 'size-structural' family, which Test-LiteralTokenFamilyMatch never
-    # matches a literal against. Any remaining --size-* token is a genuine
-    # general dimension and keeps 'size-dimension'. (B-097 will replace this
-    # name-based carve-out with a convention-based general-dimension prefix.)
+    # page max-width, page outer padding, and panel/modal/slideup measures) name
+    # a single layout element and are NOT a general dimension scale, so a
+    # page-file width/height literal that merely equals one by value is an
+    # unrelated-purpose match and must not be drift (mirrors the color-role
+    # split, but inverted: structural dimensions match NOTHING rather than
+    # matching any property). They return the 'size-structural' family, which
+    # Test-LiteralTokenFamilyMatch never matches a literal against. Any remaining
+    # --size-* token is a genuine general dimension and keeps 'size-dimension'.
+    # (B-097 will replace this name-based carve-out with a convention-based
+    # general-dimension prefix.)
     if ($n -like 'size-spacing-*') { return 'size-spacing' }
     if ($n -like 'size-radius-*')  { return 'size-radius' }
     if ($n -like 'size-border-*')  { return 'size-border' }
     if ($n -like 'size-nav-*' -or $n -like 'size-max-width' -or
+        $n -like 'size-page-padding-*' -or
         $n -like 'size-panel-*' -or $n -like 'size-modal-*' -or
         $n -like 'size-slideup-*' -or $n -like 'size-scrollbar-*') { return 'size-structural' }
     if ($n -like 'size-*')         { return 'size-dimension' }
@@ -998,13 +1096,17 @@ function Get-TokenNameFamily {
 # that a 'size-structural' token (nav/max-width/panel/modal/slideup/scrollbar --
 # a single named layout element, not a general dimension scale) never matches a
 # literal: a width/height value equal to a structural token's value is an
-# unrelated-purpose coincidence, not drift. Color families match when the token
-# is a cross-property role/state color ('color-role') or when the literal and
-# token share the same color sub-family.
+# unrelated-purpose coincidence, not drift. A 'color-structural' token
+# (connection-banner surfaces, status glows) never matches for the same reason
+# on the color side: a badge/pill/icon value equal to one of these single-
+# purpose chrome colors is coincidence, not drift. Color families otherwise
+# match when the token is a cross-property role/state color ('color-role') or
+# when the literal and token share the same color sub-family.
 function Test-LiteralTokenFamilyMatch {
     param([string]$LiteralFamily, [string]$TokenFamily)
     if ([string]::IsNullOrWhiteSpace($LiteralFamily) -or [string]::IsNullOrWhiteSpace($TokenFamily)) { return $false }
-    if ($TokenFamily -eq 'size-structural') { return $false }
+    if ($TokenFamily -eq 'size-structural')  { return $false }
+    if ($TokenFamily -eq 'color-structural') { return $false }
     $litIsColor = $LiteralFamily.StartsWith('color')
     $tokIsColor = $TokenFamily.StartsWith('color')
     if ($litIsColor -ne $tokIsColor) { return $false }
@@ -1048,27 +1150,86 @@ function Get-LiteralsInDeclaration {
     $results = New-Object System.Collections.Generic.List[object]
 
     if ($family.StartsWith('color')) {
+        # Compute the character ranges spanned by any gradient function in the
+        # value (linear-gradient / radial-gradient / conic-gradient, incl. their
+        # -webkit- prefixed forms). A color literal whose start index falls
+        # inside one of these ranges is a gradient stop: per CC_CSS_Spec.md
+        # Section 10.2 it is catalogued but is never color drift, because gradients are
+        # tokenized as whole --gradient-* values, not by their color stops. The
+        # range walk tracks paren depth from the gradient's opening '(' to its
+        # matching close, so a nested functional color (e.g. an rgba() stop) is
+        # correctly counted as interior rather than ending the gradient early.
+        $gradientSpans = Get-GradientSpans -Value $Value
+
         # Hex colors (#abc, #abcdef, #aabbccdd).
         foreach ($m in [regex]::Matches($Value, '#[0-9a-fA-F]{3,8}\b')) {
-            $results.Add(@{ Text = $m.Value; Family = $family; Property = $Property })
+            $inGradient = Test-IndexInSpans -Index $m.Index -Spans $gradientSpans
+            $results.Add(@{ Text = $m.Value; Family = $family; Property = $Property; InGradient = $inGradient })
         }
         # Functional colors: rgb(), rgba(), hsl(), hsla(). The whole function
         # call is the literal (captured verbatim, whitespace preserved as
         # authored; comparison normalizes separately via ConvertTo-ColorKey).
         foreach ($m in [regex]::Matches($Value, '(?i)\b(?:rgba|rgb|hsla|hsl)\([^()]*\)')) {
-            $results.Add(@{ Text = $m.Value; Family = $family; Property = $Property })
+            $inGradient = Test-IndexInSpans -Index $m.Index -Spans $gradientSpans
+            $results.Add(@{ Text = $m.Value; Family = $family; Property = $Property; InGradient = $inGradient })
         }
     }
     else {
         # Dimensional literals for the size and font-size families: a number
         # (integer or decimal) immediately followed by a recognized unit. Bare
         # unitless numbers carry no unit and are intentionally not matched.
+        # Size literals never occur inside gradients here: a gradient only
+        # appears in a color-family property value (e.g. background), which does
+        # not extract size literals, so InGradient is always false in this arm.
         foreach ($m in [regex]::Matches($Value, '(?i)(?<![\w.#-])\d+(?:\.\d+)?(?:px|rem|em|vh|vw|%)')) {
-            $results.Add(@{ Text = $m.Value; Family = $family; Property = $Property })
+            $results.Add(@{ Text = $m.Value; Family = $family; Property = $Property; InGradient = $false })
         }
     }
 
     return @($results.ToArray())
+}
+
+# Return the character ranges (start/end index pairs) spanned by every gradient
+# function in a declaration value. A range covers from the gradient keyword's
+# opening '(' through its matching close paren, tracking paren depth so nested
+# function calls (functional-color stops such as rgba(...)) do not prematurely
+# end the span. Used by Get-LiteralsInDeclaration to tag gradient-internal
+# color stops (CC_CSS_Spec.md Section 10.2). Returns an array of @{ Start; End }.
+function Get-GradientSpans {
+    param([string]$Value)
+    $spans = New-Object System.Collections.Generic.List[object]
+    if ([string]::IsNullOrEmpty($Value)) { return @($spans.ToArray()) }
+
+    foreach ($km in [regex]::Matches($Value, '(?i)(?:-webkit-)?(?:linear|radial|conic)-gradient\s*\(')) {
+        # The keyword match ends at the opening paren; walk from there to the
+        # matching close, counting depth. Depth starts at 1 for that open paren.
+        $openIdx = $km.Index + $km.Length - 1
+        $depth = 0
+        $endIdx = -1
+        for ($i = $openIdx; $i -lt $Value.Length; $i++) {
+            $ch = $Value[$i]
+            if ($ch -eq '(') { $depth++ }
+            elseif ($ch -eq ')') {
+                $depth--
+                if ($depth -eq 0) { $endIdx = $i; break }
+            }
+        }
+        # If unbalanced (no matching close), span runs to end of value.
+        if ($endIdx -eq -1) { $endIdx = $Value.Length - 1 }
+        $spans.Add(@{ Start = $km.Index; End = $endIdx })
+    }
+
+    return @($spans.ToArray())
+}
+
+# True when a zero-based character index falls within any of the given spans
+# (inclusive). Used to decide whether a color literal is a gradient stop.
+function Test-IndexInSpans {
+    param([int]$Index, $Spans)
+    foreach ($s in $Spans) {
+        if ($Index -ge $s.Start -and $Index -le $s.End) { return $true }
+    }
+    return $false
 }
 
 <# ============================================================================
