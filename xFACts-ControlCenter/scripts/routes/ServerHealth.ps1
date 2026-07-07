@@ -336,6 +336,38 @@ $navHtml
         </div>
     </div>
 
+    <!-- Purpose: tempdb pressure detail slideout -->
+    <div id="srv-slideout-tempdb" class="cc-slide-overlay" data-action-click="srv-close-tempdb-slideout">
+        <div class="cc-dialog cc-dialog-slide cc-wide">
+            <div class="cc-dialog-header">
+                <h3 class="cc-dialog-title">tempdb Pressure</h3>
+                <button class="cc-dialog-close" data-action-click="srv-close-tempdb-slideout">&times;</button>
+            </div>
+            <div class="cc-dialog-body" id="srv-tempdb-panel-body">
+                <div class="srv-loading">Loading...</div>
+            </div>
+            <div class="cc-dialog-actions">
+                <button class="cc-dialog-btn-cancel" data-action-click="srv-refresh-tempdb">&#8635; Refresh</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Purpose: active waits detail slideout -->
+    <div id="srv-slideout-waits" class="cc-slide-overlay" data-action-click="srv-close-waits-slideout">
+        <div class="cc-dialog cc-dialog-slide cc-wide">
+            <div class="cc-dialog-header">
+                <h3 class="cc-dialog-title">Active Waits</h3>
+                <button class="cc-dialog-close" data-action-click="srv-close-waits-slideout">&times;</button>
+            </div>
+            <div class="cc-dialog-body" id="srv-waits-panel-body">
+                <div class="srv-loading">Loading...</div>
+            </div>
+            <div class="cc-dialog-actions">
+                <button class="cc-dialog-btn-cancel" data-action-click="srv-refresh-waits">&#8635; Refresh</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Purpose: Extended Events long running queries slideout -->
     <div id="srv-slideout-xe-lrq" class="cc-slide-overlay" data-action-click="srv-close-xe-lrq-slideout">
         <div class="cc-dialog cc-dialog-slide cc-wide">
