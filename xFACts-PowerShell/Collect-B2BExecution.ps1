@@ -57,7 +57,6 @@
     IMPORTS: SCRIPT DEPENDENCIES
     INITIALIZATION: SCRIPT INITIALIZATION
     CONSTANTS: PROCESSDATA FIELD MAP
-    VARIABLES: SCRIPT STATE
     FUNCTIONS: CONFIGURATION
     FUNCTIONS: SHARED HELPERS
     FUNCTIONS: SCHEDULE SYNC
@@ -75,6 +74,11 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-07-07  Removed the unused $script:b2b_Config declaration and its now-empty
+#             VARIABLES: SCRIPT STATE section banner. The loaded configuration
+#             lives in $script:Config (built in Initialize-b2b_Config); the
+#             b2b_Config variable was never read. Dropped the matching FILE
+#             ORGANIZATION entry.
 # 2026-06-19  Conformed to the xFACts PowerShell file format spec: section banners,
 #             comment-based-help header with .COMPONENT, dedicated CHANGELOG section,
 #             b2b-prefixed local functions and script-scope identifiers, single-line
@@ -191,16 +195,6 @@ $script:b2b_ProcessDataFields = @(
 # Map of ProcessData XML field name to SI_ExecutionTracking column name. XML names are
 # UPPER_CASE; DB columns are lower_case. Populated once in the INITIALIZATION section.
 $script:b2b_ProcessDataColumnMap = @{}
-
-<# ============================================================================
-   VARIABLES: SCRIPT STATE
-   ----------------------------------------------------------------------------
-   Mutable script-scope state populated at runtime: the loaded B2B GlobalConfig settings.
-   Prefix: b2b
-   ============================================================================ #>
-
-# Loaded B2B GlobalConfig settings (alerting toggle, collection lookback window).
-$script:b2b_Config = @{}
 
 <# ============================================================================
    FUNCTIONS: CONFIGURATION
