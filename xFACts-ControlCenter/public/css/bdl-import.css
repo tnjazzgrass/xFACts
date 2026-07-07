@@ -327,7 +327,7 @@
 /* Environment-badge state tint for the PROD environment. */
 .bdl-env-badge-prod {
     background: rgba(239, 68, 68, 0.15);
-    color: #ef4444;
+    color: var(--color-status-critical);
     border: var(--size-border-thin) solid rgba(239, 68, 68, 0.3);
 }
 
@@ -534,17 +534,17 @@
 .bdl-env-card-prod { }
 
 .bdl-env-card-prod:hover { /* PROD card hover (red border) */
-    border-color: #ef4444;
+    border-color: var(--color-status-critical);
 }
 
 /* Selected-state border tint for a PROD card (applied by JS on selection). */
 .bdl-env-card-prod-selected {
-    border-color: #ef4444;
+    border-color: var(--color-status-critical);
 }
 
 /* Selected-state name color for a PROD card (applied by JS on selection). */
 .bdl-env-name-prod-selected {
-    color: #ef4444;
+    color: var(--color-status-critical);
 }
 
 /* Disabled/locked environment card (dimmed, non-interactive). */
@@ -4919,7 +4919,7 @@
 
 .bdl-slideout-delete-btn:hover { /* hover state for the delete-template button */
     background: #3d2020;
-    border-color: #6d3030;
+    border-color: var(--color-button-danger-bg);
 }
 
 /* ============================================================================
@@ -5091,7 +5091,7 @@
 
 /* Failure-tinted cross glyph on a failed execute tab. */
 .bdl-exec-tab-fail {
-    color: #ef4444;
+    color: var(--color-status-critical);
 }
 
 /* Emphasis on the word PRODUCTION in the execute prod warning banner. */
