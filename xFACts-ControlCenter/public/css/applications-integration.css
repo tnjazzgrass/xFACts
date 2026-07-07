@@ -236,14 +236,14 @@
 .aai-success { }
 
 .aai-catalog-status.aai-success { /* success state -- green message text */
-    color: #4ade80;
+    color: var(--color-status-online);
 }
 
 /* State tag marking a status line as an error message. */
 .aai-error { }
 
 .aai-catalog-status.aai-error { /* error state -- red message text */
-    color: #ef4444;
+    color: var(--color-status-critical);
 }
 
 /* ============================================================================
@@ -403,11 +403,11 @@
 }
 
 .aai-catalog-detail-status.aai-success { /* success state -- green message text */
-    color: #4ade80;
+    color: var(--color-status-online);
 }
 
 .aai-catalog-detail-status.aai-error { /* error state -- red message text */
-    color: #ef4444;
+    color: var(--color-status-critical);
 }
 
 /* ============================================================================
@@ -638,7 +638,7 @@
 
 /* Italic placeholder shown when an editable value is empty. */
 .aai-catalog-empty-val {
-    color: #444;
+    color: var(--color-status-disabled);
     font-style: italic;
     font-size: var(--font-size-default);
 }
@@ -673,21 +673,21 @@
 .aai-edit-save {
     background: none;
     border: none;
-    color: #4ade80;
+    color: var(--color-status-online);
     cursor: pointer;
     font-size: var(--font-size-heading-sm);
     padding: 2px var(--size-spacing-xs);
 }
 
 .aai-edit-save:hover { /* hover state -- brighter green */
-    color: #22c55e;
+    color: var(--color-status-idle);
 }
 
 /* The cancel (X) button beside the edit input. */
 .aai-edit-cancel {
     background: none;
     border: none;
-    color: #ef4444;
+    color: var(--color-status-critical);
     cursor: pointer;
     font-size: var(--font-size-heading-sm);
     padding: 2px var(--size-spacing-xs);
@@ -715,7 +715,7 @@
 
 /* Centered error caption shown when a catalog load fails. */
 .aai-catalog-error {
-    color: #ef4444;
+    color: var(--color-status-critical);
     font-size: var(--font-size-content);
     padding: var(--size-spacing-2xl);
     text-align: center;
@@ -774,7 +774,7 @@
 
 .aai-job-env-test:hover { /* hover state -- full yellow accent and tint */
     border-color: var(--color-accent-departmental);
-    background: rgba(220, 220, 170, 0.08);
+    background: var(--color-tint-warning);
 }
 
 /* Color modifier for the STAGE environment button. */
@@ -791,12 +791,12 @@
 /* Color modifier for the PROD environment button. */
 .aai-job-env-prod {
     border-color: rgba(239, 68, 68, 0.3);
-    color: #ef4444;
+    color: var(--color-status-critical);
 }
 
 .aai-job-env-prod:hover { /* hover state -- full red accent and tint */
-    border-color: #ef4444;
-    background: rgba(239, 68, 68, 0.08);
+    border-color: var(--color-status-critical);
+    background: var(--color-tint-critical);
 }
 
 /* Inline environment-name highlight inside a confirm message. */
@@ -813,7 +813,7 @@
 }
 
 .aai-job-env-highlight.aai-job-env-prod { /* PROD highlight -- red */
-    color: #ef4444;
+    color: var(--color-status-critical);
 }
 
 /* Vertical list of per-server progress rows. */
@@ -861,17 +861,17 @@
 
 /* Status color modifier -- success (green). */
 .aai-job-status-success {
-    color: #4ade80;
+    color: var(--color-status-online);
 }
 
 /* Status color modifier -- failed (red). */
 .aai-job-status-failed {
-    color: #ef4444;
+    color: var(--color-status-critical);
 }
 
 /* Final run summary -- all servers succeeded (green). */
 .aai-job-summary-success {
-    color: #4ade80;
+    color: var(--color-status-online);
     font-size: var(--font-size-content-lg);
     font-weight: 600;
     padding: var(--size-spacing-md) 0;
@@ -879,7 +879,7 @@
 
 /* Final run summary -- all servers failed (red). */
 .aai-job-summary-failed {
-    color: #ef4444;
+    color: var(--color-status-critical);
     font-size: var(--font-size-content-lg);
     font-weight: 600;
     padding: var(--size-spacing-md) 0;
@@ -906,7 +906,7 @@
 .aai-job-cooldown-active {
     margin-top: var(--size-spacing-lg);
     padding: 10px var(--size-spacing-lg);
-    background: rgba(220, 220, 170, 0.08);
+    background: var(--color-tint-warning);
     border: var(--size-border-thin) solid rgba(220, 220, 170, 0.2);
     border-radius: var(--size-radius-sm);
     font-size: var(--font-size-content);
