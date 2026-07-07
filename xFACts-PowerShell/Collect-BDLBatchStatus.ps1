@@ -74,6 +74,18 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-07-07  Aligned the EXECUTION section with the NB/PMT collectors: flat
+#             sequential body with operator console summary, step-result
+#             accumulator, RUNNING/IDLE status writes, duration tracking, and
+#             the orchestrator callback. Fixed the callback, which used the
+#             non-existent -OutputSummary parameter and omitted the mandatory
+#             -DurationMs; it now calls Complete-OrchestratorTask with -Output
+#             and -DurationMs. Fixed the Failed and Stall alert queries, which
+#             selected file_name but read filename, producing empty names in
+#             the alert log. Bounded the Failed check to file_registry_status_
+#             code 6 within the lookback window so only recent, not-yet-alerted
+#             failures are surfaced, matching the NB/PMT working-set behavior
+#             and ending the per-cycle re-selection of the full failure history.
 # 2026-06-18  Migrated to the shared xFACts-BatchOpsFunctions.ps1 helpers.
 #             Removed the local Get-bat_BDL_SourceData, Get-bat_BDL_-
 #             AGReplicaRoles, and Get-bat_BDL_StallDurationText; calls now
@@ -708,17 +720,22 @@ function Step-bat_BDL_EvaluateAlerts {
             Write-Log "  Alerting is DISABLED (bdl_alerting_enabled = 0)" "INFO"
         }
 
-        # CHECK 1: Failed (completed_status = 'FAILED')
-        # Covers both stage failures and import failures
+        # CHECK 1: Failed (file_registry_status_code = 6)
+        # File_Registry status 6 = FAILED. Covers both stage and import failures.
+        # Bounded to the lookback window so only recent failures are alert-eligible;
+        # older history never re-enters the check. Fires once per file via alert_count.
         $routing = $script:Config.BDL_Alert_Failed
+        $lookbackDays = $script:Config.BDL_LookbackDays
 
         $failures = Get-SqlData -Query @"
-            SELECT file_registry_id, file_name, entity_type, total_record_count,
+            SELECT file_registry_id, file_name AS filename, entity_type, total_record_count,
                    staging_success_count, staging_failed_count,
                    import_success_count, import_failed_count,
                    error_message, file_created_dttm, bdl_log_status, alert_count
             FROM BatchOps.BDL_BatchTracking
-            WHERE is_complete = 1 AND completed_status = 'FAILED' AND alert_count = 0
+            WHERE file_registry_status_code = 6
+              AND completed_dttm >= DATEADD(DAY, -$lookbackDays, GETDATE())
+              AND alert_count = 0
 "@
 
         if ($failures) {
@@ -760,7 +777,7 @@ function Step-bat_BDL_EvaluateAlerts {
         $stallThreshold = $script:Config.BDL_StallPollThreshold
 
         $stalledFiles = Get-SqlData -Query @"
-            SELECT file_registry_id, file_name, entity_type, total_record_count,
+            SELECT file_registry_id, file_name AS filename, entity_type, total_record_count,
                    bdl_log_status, bdl_log_status_code, file_registry_status_code, file_registry_status,
                    partition_count, partitions_completed,
                    stall_poll_count, last_log_id, last_log_dttm, file_created_dttm, alert_count
@@ -814,58 +831,129 @@ function Step-bat_BDL_EvaluateAlerts {
 <# ============================================================================
    EXECUTION: SCRIPT EXECUTION
    ----------------------------------------------------------------------------
-   Orchestrates the collect/update/evaluate pipeline, records run status in
-   BatchOps.Status, and reports completion to the orchestrator.
+   Orchestrates the collect/update/alert pipeline, records run status in
+   BatchOps.Status, prints an operator summary, and reports completion to the
+   orchestrator.
    Prefix: (none)
    ============================================================================ #>
 
-# Tracks whether all pipeline steps succeeded.
-$overallSuccess = $true
-# Measures total execution time for run-status reporting.
-$stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+# Capture start time for duration reporting.
+$scriptStart = Get-Date
 
-try {
-    $configOk = Initialize-bat_BDL_Configuration
-    if (-not $configOk) {
-        Write-Log "Configuration initialization failed - aborting" "ERROR"
-        $overallSuccess = $false
-        return
-    }
+Write-Console ''
+Write-Console "================================================================" Cyan
+Write-Console "  xFACts BDL Batch Status Collection" Cyan
+Write-Console "================================================================" Cyan
+Write-Console ''
 
-    if ($Execute) {
-        Set-bat_BatchStatus -CollectorName 'Collect-BDLBatchStatus' -State RUNNING
-    }
-
-    $previewOnly = -not $Execute
-
-    $collectResult = Step-bat_BDL_CollectNewFiles -PreviewOnly $previewOnly
-    $updateResult = Step-bat_BDL_UpdateIncompleteFiles -PreviewOnly $previewOnly
-    $alertResult = Step-bat_BDL_EvaluateAlerts -PreviewOnly $previewOnly
-
-    $stopwatch.Stop()
-    Write-Log "Execution complete in $($stopwatch.ElapsedMilliseconds)ms" "INFO"
-    Write-Log "  New files: $($collectResult.NewFiles)" "INFO"
-    Write-Log "  Updated: $($updateResult.Updated), Completed: $($updateResult.Completed)" "INFO"
-    Write-Log "  Alerts detected: $($alertResult.Detected), Fired: $($alertResult.Fired)" "INFO"
-
-    if ($collectResult.Error -or $updateResult.Error -or $alertResult.Error) { $overallSuccess = $false }
+if ($Execute) {
+    Write-Log "Mode: EXECUTE (changes will be applied)" "WARN"
 }
-catch {
-    $overallSuccess = $false
-    Write-Log "Fatal error: $($_.Exception.Message)" "ERROR"
-    $stopwatch.Stop()
+else {
+    Write-Log "Mode: PREVIEW (no changes will be made)" "INFO"
 }
-finally {
-    if ($Execute) {
-        $statusText = if ($overallSuccess) { 'SUCCESS' } else { 'FAILED' }
-        Set-bat_BatchStatus -CollectorName 'Collect-BDLBatchStatus' -State IDLE -Status $statusText -DurationMs $stopwatch.ElapsedMilliseconds
+
+Write-Console ''
+
+# Initialize configuration and server connections
+if (-not (Initialize-bat_BDL_Configuration)) {
+    Write-Log "Configuration initialization failed - exiting" "ERROR"
+
+    if ($TaskId -gt 0) {
+        $totalMs = [int]((Get-Date) - $scriptStart).TotalMilliseconds
+        Complete-OrchestratorTask -ServerInstance $ServerInstance -Database $Database `
+            -TaskId $TaskId -ProcessId $ProcessId `
+            -Status "FAILED" -DurationMs $totalMs `
+            -ErrorMessage "Configuration initialization failed"
     }
 
-    if ($TaskId -gt 0 -and $ProcessId -gt 0) {
-        $exitStatus = if ($overallSuccess) { 'SUCCESS' } else { 'FAILED' }
-        $outputSummary = "New:$($collectResult.NewFiles) Updated:$($updateResult.Updated) Completed:$($updateResult.Completed) Alerts:$($alertResult.Fired)"
-        Complete-OrchestratorTask -TaskId $TaskId -ProcessId $ProcessId `
-            -Status $exitStatus -OutputSummary $outputSummary `
-            -ServerInstance $ServerInstance -Database $Database
-    }
+    exit 1
 }
+
+Write-Console ''
+
+# Preview mode unless -Execute was supplied.
+$previewOnly = -not $Execute
+# Accumulates per-step result objects for the summary.
+$stepResults = @{}
+
+# Mark as RUNNING
+if (-not $previewOnly) {
+    Set-bat_BatchStatus -CollectorName 'Collect-BDLBatchStatus' -State RUNNING
+}
+
+Write-Console "----------------------------------------------------------------" DarkGray
+Write-Console "  Executing Steps" DarkGray
+Write-Console "----------------------------------------------------------------" DarkGray
+Write-Console ''
+
+# Step 1: Collect new files from DM
+$stepResults.Collect = Step-bat_BDL_CollectNewFiles -PreviewOnly $previewOnly
+
+# Step 2: Update all incomplete files
+$stepResults.Update = Step-bat_BDL_UpdateIncompleteFiles -PreviewOnly $previewOnly
+
+# Step 3: Evaluate alert conditions
+$stepResults.Alerts = Step-bat_BDL_EvaluateAlerts -PreviewOnly $previewOnly
+
+# ============================================================================
+# SUMMARY
+# ============================================================================
+
+# Capture end time for duration reporting.
+$scriptEnd = Get-Date
+# Total elapsed wall-clock time.
+$scriptDuration = $scriptEnd - $scriptStart
+# Elapsed time in milliseconds for status reporting.
+$totalMs = [int]$scriptDuration.TotalMilliseconds
+
+# Overall run status; flips to FAILED if any step errored.
+$finalStatus = "SUCCESS"
+if ($stepResults.Collect.Error -or $stepResults.Update.Error -or $stepResults.Alerts.Error) {
+    $finalStatus = "FAILED"
+}
+
+Write-Console ''
+Write-Console "================================================================" Cyan
+Write-Console "  Execution Summary" Cyan
+Write-Console "================================================================" Cyan
+Write-Console ''
+Write-Console "  Read Server:  $($script:ReadServer)"
+Write-Console "  Write Server: $($script:WriteServer)"
+Write-Console ''
+Write-Console "  Results:"
+Write-Console "    New Files:         $($stepResults.Collect.NewFiles)"
+Write-Console "    Files Updated:     $($stepResults.Update.Updated)"
+Write-Console "    Files Completed:   $($stepResults.Update.Completed)"
+Write-Console "    Alerts Detected:   $($stepResults.Alerts.Detected)"
+Write-Console "    Alerts Fired:      $($stepResults.Alerts.Fired)"
+Write-Console ''
+Write-Console "  Duration: $totalMs ms"
+Write-Console ''
+
+if (-not $Execute) {
+    Write-Console "  *** PREVIEW MODE - No changes were made ***" Yellow
+    Write-Console "  Run with -Execute to perform actual updates" Yellow
+    Write-Console ''
+}
+
+# Update Status table
+if (-not $previewOnly) {
+    Set-bat_BatchStatus -CollectorName 'Collect-BDLBatchStatus' -State IDLE -Status $finalStatus -DurationMs $totalMs
+}
+
+Write-Console "================================================================" Cyan
+Write-Console "  BDL Batch Status Collection Complete" Cyan
+Write-Console "================================================================" Cyan
+Write-Console ''
+
+# Orchestrator callback
+if ($TaskId -gt 0) {
+    $outputSummary = "New:$($stepResults.Collect.NewFiles) Updated:$($stepResults.Update.Updated) Completed:$($stepResults.Update.Completed) Alerts:$($stepResults.Alerts.Fired)"
+    Complete-OrchestratorTask -ServerInstance $ServerInstance -Database $Database `
+        -TaskId $TaskId -ProcessId $ProcessId `
+        -Status $finalStatus -DurationMs $totalMs `
+        -Output $outputSummary
+}
+
+if ($finalStatus -eq "FAILED") { exit 1 } else { exit 0 }
