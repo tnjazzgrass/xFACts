@@ -816,3 +816,89 @@ Add-PodeRoute -Method Post -Path '/api/fileops/webhook/save' -Authentication 'AD
         Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = $_.Exception.Message }) -StatusCode 500
     }
 }
+
+Add-PodeRoute -Method Post -Path '/api/fileops/subscription/add' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+    try {
+        $body = $WebEvent.Data
+        $configName = $body.ConfigName
+        $webhookConfigId = $body.WebhookConfigId
+
+        if ([string]::IsNullOrWhiteSpace($configName) -or -not $webhookConfigId -or [int]$webhookConfigId -le 0) {
+            Write-PodeJsonResponse -Value ([PSCustomObject]@{ Success = $false; Error = 'ConfigName and WebhookConfigId are required.' }) -StatusCode 400
+            return
+        }
+
+        # Guard: do not add a channel the monitor already subscribes to (avoids
+        # duplicate delivery to the same channel). Matches on the monitor name
+        # (trigger_type) and the target webhook, active subscriptions only.
+        $existing = Invoke-XFActsQuery -Query @"
+            SELECT subscription_id AS SubscriptionId
+            FROM Teams.WebhookSubscription
+            WHERE source_module = 'FileOps'
+              AND trigger_type = @TriggerType
+              AND config_id = @WebhookConfigId
+              AND is_active = 1
+"@ -Parameters @{ TriggerType = $configName; WebhookConfigId = [int]$webhookConfigId }
+
+        if ($existing -and $existing.Count -gt 0) {
+            Write-PodeJsonResponse -Value ([PSCustomObject]@{ Success = $false; Error = 'This monitor already sends to that channel.' }) -StatusCode 409
+            return
+        }
+
+        # Insert one additional subscription row for this monitor/channel pairing,
+        # matching the shape the monitor-save flow uses when it creates the first one.
+        Invoke-XFActsNonQuery -Query @"
+            INSERT INTO Teams.WebhookSubscription (
+                config_id, channel_name, source_module,
+                alert_category, trigger_type, is_active, description
+            )
+            SELECT
+                @WebhookConfigId,
+                w.webhook_name,
+                'FileOps',
+                NULL,
+                @TriggerType,
+                1,
+                'Added via File Monitoring console'
+            FROM Teams.WebhookConfig w
+            WHERE w.config_id = @WebhookConfigId;
+"@ -Parameters @{
+            WebhookConfigId = [int]$webhookConfigId
+            TriggerType     = $configName
+        } | Out-Null
+
+        $newRow = Invoke-XFActsQuery -Query @"
+            SELECT TOP 1
+                s.subscription_id AS SubscriptionId,
+                s.config_id AS WebhookConfigId,
+                w.webhook_name AS WebhookName,
+                s.channel_name AS ChannelName,
+                s.trigger_type AS TriggerType,
+                s.is_active AS IsActive
+            FROM Teams.WebhookSubscription s
+            INNER JOIN Teams.WebhookConfig w ON s.config_id = w.config_id
+            WHERE s.source_module = 'FileOps'
+              AND s.trigger_type = @TriggerType
+              AND s.config_id = @WebhookConfigId
+            ORDER BY s.subscription_id DESC
+"@ -Parameters @{ TriggerType = $configName; WebhookConfigId = [int]$webhookConfigId }
+
+        $added = if ($newRow -and $newRow.Count -gt 0) {
+            $r = $newRow[0]
+            [PSCustomObject]@{
+                SubscriptionId  = [int]$r['SubscriptionId']
+                WebhookConfigId = [int]$r['WebhookConfigId']
+                WebhookName     = $r['WebhookName']
+                ChannelName     = $r['ChannelName']
+                TriggerType     = $r['TriggerType']
+                IsActive        = [bool]$r['IsActive']
+            }
+        } else { $null }
+
+        Write-PodeJsonResponse -Value ([PSCustomObject]@{ Success = $true; Subscription = $added })
+    }
+    catch {
+        Write-PodeJsonResponse -Value ([PSCustomObject]@{ Success = $false; Error = $_.Exception.Message }) -StatusCode 500
+    }
+}
