@@ -325,7 +325,7 @@
 
 /* Icon glyph at the left of a status card. */
 .bkp-card-icon {
-    font-size: 24px;
+    font-size: var(--font-size-h1);
     opacity: 0.6;
 }
 
@@ -345,7 +345,7 @@
 
 /* Card value text (large, accent-colored). */
 .bkp-card-value {
-    font-size: 24px;
+    font-size: var(--font-size-h1);
     font-weight: 400;
     color: var(--color-accent-shared);
     line-height: 1.2;
