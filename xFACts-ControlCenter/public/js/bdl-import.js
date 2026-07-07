@@ -1632,6 +1632,7 @@ function bdl_refreshMappingPanels() {
     bdl_renderFieldAssignmentsSection(state);
     bdl_renderComposedMessageSection(state);
     bdl_checkMappingComplete();
+    bdl_updateTemplateSectionState();
 }
 
 /* Builds the meta line (type, length, lookup, required) for a target chip. */
