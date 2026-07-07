@@ -163,7 +163,7 @@
                                            "ordinal":  19,
                                            "name":  "dup_check",
                                            "dataType":  "varchar",
-                                           "length":  "50",
+                                           "length":  "255",
                                            "nullable":  true,
                                            "identity":  false,
                                            "description":  "DUP_CHECK from ProcessData. Either a Y/N flag or the name of a duplicate-check SP to invoke."
