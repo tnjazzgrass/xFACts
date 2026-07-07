@@ -86,7 +86,7 @@
 
 /* Reduces section padding for compact panels (status, config cards). */
 .flm-section-compact {
-    padding: 12px 15px;
+    padding: var(--size-spacing-lg) 15px;
 }
 
 /* Lets the detection history section grow to fill available height. */
