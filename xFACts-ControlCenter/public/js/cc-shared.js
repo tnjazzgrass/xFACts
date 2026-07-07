@@ -4,7 +4,7 @@
    Version: Tracked in dbo.System_Metadata (component: ControlCenter)
 
    Platform-wide shared module loaded by every page in the Control Center. It
-   owns the foundation primitives (canonical month/day name lookups, engine
+   owns the foundation primitives (shared month/day name lookups, engine
    threshold defaults), the cross-page mutable state that backs the engine
    indicator and connection lifecycle subsystems, and the chrome utilities
    that pages consume directly: HTML escaping, timestamp formatting, the
