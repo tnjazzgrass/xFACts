@@ -193,7 +193,7 @@
     --shadow-modal:             0 8px 30px rgba(0, 0, 0, 0.5);
     --shadow-popup:             0 4px 20px rgba(0, 0, 0, 0.5);
 
-    /* -- Gradient tokens (canonical multi-color fills used across pages) -- */
+    /* -- Gradient tokens (shared multi-color fills used across pages) -- */
     --gradient-progress-default: linear-gradient(90deg, #2d6b5e, #266053);
 
     /* -- Z-index tokens (layering order, lowest to highest) -- */
@@ -1469,7 +1469,7 @@ a { color: var(--color-text-link); }
     background: none;
     border: none;
     color: var(--color-text-muted);
-    font-size: 24px;
+    font-size: var(--font-size-h1);
     cursor: pointer;
     padding: 0;
     line-height: 1;
@@ -1513,7 +1513,7 @@ a { color: var(--color-text-link); }
     background: none;
     border: none;
     color: var(--color-text-muted);
-    font-size: 24px;
+    font-size: var(--font-size-h1);
     cursor: pointer;
     padding: 0;
     line-height: 1;
@@ -2018,7 +2018,7 @@ a { color: var(--color-text-link); }
    ----------------------------------------------------------------------------
    A shared knob-in-track on/off switch: a track pill with a sliding knob,
    driven by the cc-on / cc-off state tags applied at render time by the
-   consuming page. One canonical size (34x18 track, 14x14 knob). The wrap is
+   consuming page. One shared size (34x18 track, 14x14 knob). The wrap is
    the clickable affordance; the optional label sits beside the switch and
    takes its own on/off color. Pages emit the markup with cc-on or cc-off
    already applied and flip it however they re-render; this section provides
