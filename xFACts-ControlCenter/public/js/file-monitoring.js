@@ -91,7 +91,8 @@ const flm_clickActions = {
  */
 const flm_changeActions = {
     'flm-set-field': flm_setFieldAction,
-    'flm-select-webhook': flm_selectWebhookAction
+    'flm-select-webhook': flm_selectWebhookAction,
+    'flm-add-channel': flm_addChannelAction
 };
 
 /* ============================================================================
@@ -502,7 +503,10 @@ function flm_openConsoleToMonitor(target) {
 }
 
 /* Closes the management console, prompting first if there are unsaved edits. */
-function flm_closeConsole() {
+function flm_closeConsole(target, event) {
+    if (event && target && target.id === 'flm-slideup-console' && event.target !== target) {
+        return;
+    }
     if (Object.keys(flm_dirtyRows).length > 0) {
         cc_showConfirm('You have unsaved changes. Close anyway?').then(function(ok) {
             if (!ok) return;
@@ -697,6 +701,7 @@ function flm_renderSubscriptionZone(c, id, detBadge, escBadge) {
             html += '<div class="flm-sub-det-esc">' + detBadge + escBadge + '</div>';
             html += '</div>';
         });
+        html += flm_renderAddChannelControl(c, id, monitorSubs);
         return html;
     }
 
@@ -721,6 +726,29 @@ function flm_renderSubscriptionZone(c, id, detBadge, escBadge) {
         html += '</div>';
     }
     return html;
+}
+
+/*
+ * Builds the "+ channel" picker shown after a monitor's existing channel
+ * badges. The dropdown lists only active webhooks the monitor is not already
+ * subscribed to, so a channel cannot be added twice. Omitted entirely when the
+ * monitor already covers every available channel.
+ */
+function flm_renderAddChannelControl(c, id, monitorSubs) {
+    if (!flm_webhooks.length) return '';
+    var usedIds = {};
+    monitorSubs.forEach(function(sub) { usedIds[sub.WebhookConfigId] = true; });
+    var available = flm_webhooks.filter(function(wh) { return !usedIds[wh.ConfigId]; });
+    if (!available.length) return '';
+
+    var opts = '<option value="">+ Add channel...</option>';
+    available.forEach(function(wh) {
+        opts += '<option value="' + wh.ConfigId + '">' + cc_escapeHtml(wh.WebhookName) + '</option>';
+    });
+    return '<div class="flm-sub-group">' +
+        '<select class="flm-inline-input" data-action-change="flm-add-channel" ' +
+        'data-action-flm-id="' + id + '" data-action-flm-config="' + flm_escAttr(c.ConfigName) + '">' + opts + '</select>' +
+        '</div>';
 }
 
 /* ============================================================================
@@ -782,6 +810,47 @@ function flm_selectWebhookAction(target) {
         return;
     }
     flm_setField(id, 'WebhookConfigId', target.value ? parseInt(target.value, 10) : null);
+}
+
+/*
+ * Change handler for the "+ Add channel" picker on a monitor that already has
+ * one or more channels. Adds the chosen channel as an additional Teams
+ * subscription for the monitor, then refreshes the subscription cache and
+ * re-renders. The picker only lists channels the monitor does not already have.
+ */
+async function flm_addChannelAction(target) {
+    var webhookConfigId = target.value ? parseInt(target.value, 10) : null;
+    var configName = target.getAttribute('data-action-flm-config');
+    if (!webhookConfigId || !configName) {
+        target.value = '';
+        return;
+    }
+
+    var selWebhook = flm_webhooks.find(function(w) { return w.ConfigId == webhookConfigId; });
+    var channelLabel = selWebhook ? selWebhook.WebhookName : 'this channel';
+
+    var ok = await cc_showConfirm("Add '" + channelLabel + "' to monitor '" + configName + "'? It will begin receiving alerts immediately.");
+    if (!ok) {
+        target.value = '';
+        return;
+    }
+
+    try {
+        var response = await cc_engineFetch('/api/fileops/subscription/add', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ConfigName: configName, WebhookConfigId: webhookConfigId })
+        });
+        if (!response) { target.value = ''; return; }
+        if (!response.Success) {
+            throw new Error(response.Error || 'Failed to add channel');
+        }
+        await flm_loadSubscriptions();
+        flm_renderMonitorList();
+    } catch (error) {
+        target.value = '';
+        cc_showAlert('Failed to add channel: ' + error.message);
+    }
 }
 
 /* Click handler for the row Cancel button. */
