@@ -2230,6 +2230,7 @@ function Get-RemainingCounts {
     }
 
     # -- Archive remaining (independent) --
+
     # Materialize the TC_ARCH consumer set once, then aggregate accounts off
     # it. The temp-table shape avoids the multi-DISTINCT single-pass plan
     # that scales catastrophically (3 min vs ~20 sec at 9M consumers).
@@ -2307,6 +2308,7 @@ function Get-RemainingCounts {
     }
 
     # -- Shell remaining (independent) --
+
     if (-not $shellFresh) {
         try {
             $shellResult = Invoke-CRS5ReadQuery -TargetInstance $shellPurgeTargetInstance -Query @"
