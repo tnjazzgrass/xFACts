@@ -61,6 +61,14 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-07-07  Lock-wait handling split by rebuild mode. Online rebuilds now use
+#             ONLINE = ON (WAIT_AT_LOW_PRIORITY (MAX_DURATION = n MINUTES,
+#             ABORT_AFTER_WAIT = SELF)) so a blocked rebuild waits without
+#             blocking the production queries behind it, then aborts itself and
+#             defers to the next window. Duration is driven by the new
+#             index_wait_low_priority_minutes GlobalConfig setting (default 15).
+#             SET LOCK_TIMEOUT is now applied only to offline rebuilds, keeping
+#             the two lock-wait mechanisms from competing on the same statement.
 # 2026-06-19  Brought into PowerShell spec conformance: rebuilt header, moved
 #             change history into the CHANGELOG section, added section banners,
 #             removed the deployment block and inline dividers. Migrated onto the
@@ -201,10 +209,12 @@ $maxdop = if ($config.ContainsKey('index_default_maxdop')) { $config['index_defa
 $overrunToleranceMinutes = if ($config.ContainsKey('index_overrun_tolerance_minutes')) { $config['index_overrun_tolerance_minutes'] } else { 15 }
 $scanTimeoutBase = if ($config.ContainsKey('index_scan_timeout_base_seconds')) { $config['index_scan_timeout_base_seconds'] } else { 60 }
 $scanPagesPerSecond = if ($config.ContainsKey('index_scan_pages_per_second')) { $config['index_scan_pages_per_second'] } else { 200000 }
+$waitLowPriorityMinutes = if ($config.ContainsKey('index_wait_low_priority_minutes')) { $config['index_wait_low_priority_minutes'] } else { 15 }
 
 Write-Log "  Lock timeout: $lockTimeoutSeconds seconds"
 Write-Log "  MAXDOP: $maxdop"
 Write-Log "  Overrun tolerance: $overrunToleranceMinutes minutes"
+Write-Log "  Online low-priority wait: $waitLowPriorityMinutes minutes"
 if ($MaxMinutes -gt 0) {
     Write-Log "  Time limit: $MaxMinutes minutes"
 } else {
@@ -621,14 +631,26 @@ SELECT SCOPE_IDENTITY() AS detail_id;
             Invoke-SqlNonQuery -Query $inProgressQuery | Out-Null
 
             # Build ALTER INDEX command
-            $onlineClause = if ($rebuildMode -eq "ONLINE") { "ONLINE = ON" } else { "ONLINE = OFF" }
+            # Online rebuilds use WAIT_AT_LOW_PRIORITY so a blocked rebuild waits
+            # without blocking the production queries queued behind it, then aborts
+            # itself when the wait expires (deferring to the next window). Offline
+            # rebuilds cannot use that option, so they rely on SET LOCK_TIMEOUT to
+            # bound their lock wait. The two mechanisms are kept separate so they
+            # do not compete on the same statement.
             $maxdopClause = "MAXDOP = $maxdop"
 
-            $rebuildCommand = @"
+            if ($rebuildMode -eq "ONLINE") {
+                $rebuildCommand = @"
+SET STATISTICS PROFILE ON;
+ALTER INDEX [$indexName] ON [$schemaName].[$tableName] REBUILD WITH (ONLINE = ON (WAIT_AT_LOW_PRIORITY (MAX_DURATION = $waitLowPriorityMinutes MINUTES, ABORT_AFTER_WAIT = SELF)), $maxdopClause);
+"@
+            } else {
+                $rebuildCommand = @"
 SET STATISTICS PROFILE ON;
 SET LOCK_TIMEOUT $($lockTimeoutSeconds * 1000);
-ALTER INDEX [$indexName] ON [$schemaName].[$tableName] REBUILD WITH ($onlineClause, $maxdopClause);
+ALTER INDEX [$indexName] ON [$schemaName].[$tableName] REBUILD WITH (ONLINE = OFF, $maxdopClause);
 "@
+            }
 
             # Execute rebuild
             $rebuildSuccess = $false
