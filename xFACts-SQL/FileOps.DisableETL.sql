@@ -1,6 +1,6 @@
 
 CREATE TRIGGER [FileOps].[DisableETL] ON [FileOps].[MonitorLog] 
-  AFTER UPDATE
+  FOR INSERT
 AS 
 BEGIN
   SET NOCOUNT ON;
