@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-07-07 05:05:43
+Generated: 2026-07-07 17:41:05
 
 ## Module Registry
 
@@ -601,6 +601,12 @@ Generated: 2026-07-07 05:05:43
 | ServerOps | Activity_DMV | threshold_ple_crisis | 100 | INT | Page life expectancy: crisis threshold |
 | ServerOps | Activity_DMV | threshold_ple_critical | 300 | INT | Page life expectancy: critical threshold |
 | ServerOps | Activity_DMV | threshold_ple_warning | 1000 | INT | Page life expectancy: warning threshold |
+| ServerOps | Activity_DMV | threshold_tempdb_used_pct_crisis | 95 | INT | tempdb Pressure card: data-file percent used at or above which status is Crisis. |
+| ServerOps | Activity_DMV | threshold_tempdb_used_pct_critical | 85 | INT | tempdb Pressure card: data-file percent used at or above which status is Critical. |
+| ServerOps | Activity_DMV | threshold_tempdb_used_pct_warning | 70 | INT | tempdb Pressure card: data-file percent used at or above which status is Warning. |
+| ServerOps | Activity_DMV | threshold_waits_pct_crisis | 75 | INT | Active Waits card: percent of active sessions waiting at or above which status is Crisis. |
+| ServerOps | Activity_DMV | threshold_waits_pct_critical | 50 | INT | Active Waits card: percent of active sessions waiting at or above which status is Critical. |
+| ServerOps | Activity_DMV | threshold_waits_pct_warning | 25 | INT | Active Waits card: percent of active sessions waiting at or above which status is Warning. |
 | ServerOps | Activity_DMV | threshold_zombie_count_crisis | 800 | INT | Zombie connections: crisis threshold |
 | ServerOps | Activity_DMV | threshold_zombie_count_critical | 500 | INT | Zombie connections: critical threshold |
 | ServerOps | Activity_DMV | threshold_zombie_count_warning | 200 | INT | Zombie connections: warning threshold |
@@ -660,12 +666,14 @@ Generated: 2026-07-07 05:05:43
 | ServerOps | Index | index_seconds_per_page_offline | 0.00020 | DECIMAL | Time estimate factor for offline rebuilds (seconds per page) |
 | ServerOps | Index | index_seconds_per_page_online | 0.0004 | DECIMAL | Time estimate factor for online rebuilds (seconds per page) |
 | ServerOps | Index | index_sync_interval_minutes | 1440 | INT | Minimum minutes between index discovery runs |
+| ServerOps | Index | index_wait_low_priority_minutes | 15 | INT | Minutes an online index rebuild waits at low priority for its lock before aborting. Online/Enterprise only. |
 | ServerOps | Index | stats_max_days_stale | 60 | INT | Force statistics update if older than this many days |
 | ServerOps | Index | stats_min_rows | 1000 | INT | Minimum table row count for statistics maintenance |
 | ServerOps | Index | stats_modification_pct_threshold | 10 | DECIMAL | Row modification % that triggers statistics update |
 | ServerOps | Index | stats_respect_schedule | 0 | BIT | Restrict statistics updates to maintenance windows only |
-| ServerOps | Index | stats_sample_pct | 0 | INT | Statistics sampling rate (0 = full scan) |
+| ServerOps | Index | stats_sample_pct | 10 | INT | Statistics sampling rate (0 = full scan) |
 | ServerOps | Index | stats_update_interval_minutes | 1440 | INT | Minimum minutes between statistics update runs |
+| ServerOps | Index | stats_update_timeout_seconds | 900 | INT | Command timeout in seconds for UPDATE STATISTICS operations. |
 | ServerOps | Replication | replication_agent_down_alert_minutes | 5 | INT | Minutes replication agent can be down before alerting |
 | ServerOps | Replication | replication_alerting_enabled | 0 | BIT | Master on/off switch for replication alerting |
 | ServerOps | Replication | replication_latency_critical_ms | 120000 | INT | Latency threshold for critical alert (milliseconds) |
