@@ -73,6 +73,17 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-06-23  Added match_reference plumbing (B-100). New-AssetRegistryRow gains
+#             a -MatchReference parameter and a MatchReference row property
+#             (bounded 500, truncated like other bounded columns), and
+#             Invoke-AssetRegistryBulkInsert gains the match_reference DataTable
+#             column and value mapping so the property reaches dbo.Asset_Registry.
+#             General-purpose: holds the name(s) a row's matching criteria
+#             resolved to (token / function / export / handler / action-key /
+#             id), a positive finding only, NULL when nothing resolved. Consumed
+#             first by the CSS populator; JS/PS/HTML populators set it at their
+#             own match points in later phases.
+
 # 2026-06-20  Hardened Get-SectionForLine against PowerShell single-element
 #             collapse: the $Sections parameter is now normalized via @() at
 #             entry so a file with exactly one section banner resolves its
@@ -193,7 +204,8 @@ function New-AssetRegistryRow {
         [Nullable[bool]]$HasDynamicContent = $null,
         [string]$BodyHash,
         [string]$ShapeHash,
-        [string]$SkeletonHash
+        [string]$SkeletonHash,
+        [string]$MatchReference
     )
 
     # Bounded string columns get defensively truncated against their declared
@@ -232,6 +244,7 @@ function New-AssetRegistryRow {
         HasDynamicContent  = $HasDynamicContent
         DriftCodes         = $null
         DriftText          = $null
+        MatchReference     = (Get-TruncatedFieldValue -Value $MatchReference -MaxLength 500)
         OccurrenceIndex    = 1
         BodyHash           = $BodyHash
         ShapeHash          = $ShapeHash
@@ -679,6 +692,7 @@ function Invoke-AssetRegistryBulkInsert {
     [void]$dt.Columns.Add('has_dynamic_content', [bool])
     [void]$dt.Columns.Add('drift_codes',         [string])
     [void]$dt.Columns.Add('drift_text',          [string])
+    [void]$dt.Columns.Add('match_reference',     [string])
     [void]$dt.Columns.Add('occurrence_index',    [int])
     [void]$dt.Columns.Add('body_hash',           [string])
     [void]$dt.Columns.Add('shape_hash',          [string])
@@ -716,6 +730,7 @@ function Invoke-AssetRegistryBulkInsert {
         $row['has_dynamic_content'] = if ($null -eq $r.HasDynamicContent) { [System.DBNull]::Value } else { [bool]$r.HasDynamicContent }
         $row['drift_codes']         = Get-NullableValue $r.DriftCodes
         $row['drift_text']          = Get-NullableValue $r.DriftText
+        $row['match_reference']     = Get-NullableValue $r.MatchReference
         $row['occurrence_index']    = if ($null -eq $r.OccurrenceIndex) { 1 } else { [int]$r.OccurrenceIndex }
         $row['body_hash']           = Get-NullableValue $r.BodyHash
         $row['shape_hash']          = Get-NullableValue $r.ShapeHash
