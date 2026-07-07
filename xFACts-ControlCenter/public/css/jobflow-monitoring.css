@@ -895,7 +895,7 @@
 }
 
 .jfm-stall-history-btn:hover { /* hover state for the stall-history button */
-    background: #444;
+    background: var(--color-status-disabled);
     border-color: var(--color-text-link);
 }
 
