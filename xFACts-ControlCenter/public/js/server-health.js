@@ -75,6 +75,8 @@ const srv_clickActions = {
     'srv-open-trans-panel':               srv_openTransPanel,
     'srv-open-blocking-panel':            srv_openBlockingPanel,
     'srv-open-requests-panel':            srv_openRequestsPanel,
+    'srv-open-tempdb-panel':              srv_openTempdbPanel,
+    'srv-open-waits-panel':               srv_openWaitsPanel,
     'srv-open-xe-detail':                 srv_openXEDetail,
     'srv-select-replica-detail':          srv_selectReplicaAndShowDetail,
     'srv-toggle-blocking-victims':        srv_toggleBlockingVictims,
@@ -91,6 +93,10 @@ const srv_clickActions = {
     'srv-copy-blocker-kill-script':       srv_copyBlockerKillScript,
     'srv-close-requests-slideout':        srv_closeRequestsPanel,
     'srv-refresh-active-requests':        srv_refreshActiveRequests,
+    'srv-close-tempdb-slideout':          srv_closeTempdbPanel,
+    'srv-refresh-tempdb':                 srv_refreshTempdb,
+    'srv-close-waits-slideout':           srv_closeWaitsPanel,
+    'srv-refresh-waits':                  srv_refreshWaits,
     'srv-close-xe-lrq-slideout':          srv_closeXELRQPanel,
     'srv-refresh-xe-lrq':                 srv_refreshXELRQPanel,
     'srv-close-xe-blocking-slideout':     srv_closeXEBlockingPanel,
@@ -127,7 +133,9 @@ const srv_defaultThresholds = {
     zombieIdleMinutes: 60,
     openTransactions: { warning: 1, critical: 5, crisis: 10 },
     openTransIdleMinutes: 5,
-    blockedSessions: { warning: 1, critical: 5, crisis: 10 }
+    blockedSessions: { warning: 1, critical: 5, crisis: 10 },
+    tempdbUsed: { warning: 70, critical: 85, crisis: 95 },
+    activeWaits: { warning: 25, critical: 50, crisis: 75 }
 };
 
 /* ============================================================================
@@ -229,14 +237,29 @@ const srv_metricInfo = {
             { class: 'crisis', text: 'Crisis: >= 10' }
         ]
     },
-    leadBlocker: { title: 'Lead Blocker', desc: 'SPID at head of blocking chain.', trendable: false, thresholds: [] },
-    longestWait: {
-        title: 'Longest Wait Time',
-        desc: 'How long the longest blocked session has waited. Informational only.',
-        trendable: false,
-        thresholds: []
+    activeWaits: {
+        title: 'Active Waits',
+        desc: 'User sessions currently waiting on a meaningful (non-benign) wait. Click for the wait-type breakdown and waiting sessions.',
+        trendable: false, clickAction: 'waits',
+        thresholds: [
+            { class: 'healthy', text: 'Healthy: < 25% of active' },
+            { class: 'warning', text: 'Warning: 25-49% of active' },
+            { class: 'critical', text: 'Critical: 50-74% of active' },
+            { class: 'crisis', text: 'Crisis: >= 75% of active' }
+        ]
     },
-    activeRequests: { title: 'Active Requests', desc: 'Currently executing queries. Click for details.', trendable: false, clickAction: 'activeRequests', thresholds: [] }
+    activeRequests: { title: 'Active Requests', desc: 'Currently executing queries. Click for details.', trendable: false, clickAction: 'activeRequests', thresholds: [] },
+    tempdbUsed: {
+        title: 'tempdb Pressure',
+        desc: 'Percent of tempdb data-file space in use. Click for space breakdown and top consumers.',
+        trendable: false, clickAction: 'tempdb',
+        thresholds: [
+            { class: 'healthy', text: 'Healthy: < 70%' },
+            { class: 'warning', text: 'Warning: 70-84%' },
+            { class: 'critical', text: 'Critical: 85-94%' },
+            { class: 'crisis', text: 'Crisis: >= 95%' }
+        ]
+    }
 };
 
 /* ============================================================================
@@ -373,6 +396,14 @@ async function srv_loadThresholds() {
         if (data.threshold_blocked_sessions_warning) srv_thresholds.blockedSessions.warning = data.threshold_blocked_sessions_warning;
         if (data.threshold_blocked_sessions_critical) srv_thresholds.blockedSessions.critical = data.threshold_blocked_sessions_critical;
         if (data.threshold_blocked_sessions_crisis) srv_thresholds.blockedSessions.crisis = data.threshold_blocked_sessions_crisis;
+
+        if (data.threshold_tempdb_used_pct_warning) srv_thresholds.tempdbUsed.warning = data.threshold_tempdb_used_pct_warning;
+        if (data.threshold_tempdb_used_pct_critical) srv_thresholds.tempdbUsed.critical = data.threshold_tempdb_used_pct_critical;
+        if (data.threshold_tempdb_used_pct_crisis) srv_thresholds.tempdbUsed.crisis = data.threshold_tempdb_used_pct_crisis;
+
+        if (data.threshold_waits_pct_warning) srv_thresholds.activeWaits.warning = data.threshold_waits_pct_warning;
+        if (data.threshold_waits_pct_critical) srv_thresholds.activeWaits.critical = data.threshold_waits_pct_critical;
+        if (data.threshold_waits_pct_crisis) srv_thresholds.activeWaits.crisis = data.threshold_waits_pct_crisis;
     } catch (err) { /* config unavailable; default thresholds stand */ }
 }
 
@@ -618,6 +649,8 @@ function srv_clickAttrs(infoKey, rawValue) {
     if (info.clickAction === 'openTrans') return ' data-action-click="srv-open-trans-panel"';
     if (info.clickAction === 'blocking') return ' data-action-click="srv-open-blocking-panel"';
     if (info.clickAction === 'activeRequests') return ' data-action-click="srv-open-requests-panel"';
+    if (info.clickAction === 'tempdb') return ' data-action-click="srv-open-tempdb-panel"';
+    if (info.clickAction === 'waits') return ' data-action-click="srv-open-waits-panel"';
     if (info.trendable) return ' data-action-click="srv-open-trend-modal" data-action-srv-info="' + infoKey + '" data-action-srv-metric="' + info.trendMetric + '"';
     return '';
 }
@@ -629,7 +662,7 @@ function srv_isClickable(infoKey) {
 }
 
 /* Builds a simple value metric widget. */
-function srv_createSimpleWidget(label, value, unit, status, infoKey, rawValue) {
+function srv_createSimpleWidget(label, value, unit, status, infoKey, rawValue, footer) {
     var color = srv_getStatusColor(status);
     var clickable = srv_isClickable(infoKey);
     var attrs = srv_clickAttrs(infoKey, rawValue || 0);
@@ -639,7 +672,8 @@ function srv_createSimpleWidget(label, value, unit, status, infoKey, rawValue) {
         '<div class="srv-metric-header"><div class="srv-metric-label">' + label + '</div>' + srv_createInfoButton(infoKey) + '</div>' +
         '<div class="srv-metric-value" style="color:' + color + ';margin-top:20px;">' + value + '</div>' +
         '<div class="srv-metric-unit">' + unit + '</div>' +
-        '<div class="srv-metric-status srv-status-' + status + '">' + srv_getStatusText(status) + '</div></div>';
+        '<div class="srv-metric-status srv-status-' + status + '">' + srv_getStatusText(status) + '</div>' +
+        (footer ? '<div class="srv-metric-footer">' + footer + '</div>' : '') + '</div>';
 }
 
 /* Builds the segmented bar gauge markup. */
@@ -857,20 +891,38 @@ async function srv_refreshActivity(server) {
         if (data.Error) { container.innerHTML = '<div class="srv-error">' + data.Error + '</div>'; return; }
 
         var blockedStatus = srv_getStatus(data.blocked_sessions, 'blockedSessions', false);
-        var blockerValue = data.lead_blocker_spid ? 'SPID ' + data.lead_blocker_spid : 'None';
-        var blockerUnit = data.lead_blocker_spid ? 'blocking ' + data.blocked_sessions : 'no blocking';
-        var waitValue = data.longest_wait_seconds < 60 ? srv_formatDecimal(data.longest_wait_seconds, 1) : srv_formatDecimal(data.longest_wait_seconds / 60, 1);
-        var waitUnit = data.longest_wait_seconds === 0 ? 'no waits' : (data.longest_wait_seconds < 60 ? 'seconds' : 'minutes');
+        var blockerFooter = data.lead_blocker_spid
+            ? '<span style="color:' + srv_getStatusColor(blockedStatus) + ';">Lead blocker: SPID ' + data.lead_blocker_spid + '</span>'
+            : '';
+
+        var waitingCount = data.waiting_count || 0;
+        var waitPct = data.active_requests > 0 ? Math.round((waitingCount / data.active_requests) * 100) : 0;
+        var waitsStatus = srv_getStatus(waitPct, 'activeWaits', false);
+        var longestWaitDisplay = data.longest_wait_seconds < 60
+            ? srv_formatDecimal(data.longest_wait_seconds, 1) + 's'
+            : srv_formatDecimal(data.longest_wait_seconds / 60, 1) + 'm';
+        var waitsFooter = waitingCount > 0
+            ? '<span style="color:' + srv_getStatusColor(waitsStatus) + ';">' + waitPct + '% of active &middot; longest ' + longestWaitDisplay + '</span>'
+            : '';
 
         var activeBreakdown = '<span style="color:#4ec9b0">' + (data.running_count || 0) + '</span> running &middot; ' +
                               '<span style="color:#dcdcaa">' + (data.runnable_count || 0) + '</span> runnable &middot; ' +
                               '<span style="color:#f48771">' + (data.suspended_count || 0) + '</span> suspended';
 
+        var tempdbCard = '';
+        try {
+            var td = await cc_engineFetch('/api/server-health/tempdb?server=' + encodeURIComponent(server));
+            if (td && !td.Error && td.used_pct !== null && typeof td.used_pct !== 'undefined') {
+                var tdStatus = srv_getStatus(td.used_pct, 'tempdbUsed', false);
+                tempdbCard = srv_createSpeedometerWidget('tempdb Pressure', srv_formatDecimal(td.used_pct, 1) + '%', '', tdStatus, 'tempdbUsed', td.used_pct);
+            }
+        } catch (tdErr) { tempdbCard = ''; }
+
         container.innerHTML =
-            srv_createSimpleWidget('Blocked Sessions', data.blocked_sessions, 'waiting', blockedStatus, 'blockedSessions') +
-            srv_createSimpleWidget('Lead Blocker', blockerValue, blockerUnit, data.lead_blocker_spid ? blockedStatus : 'healthy', 'leadBlocker') +
-            srv_createSimpleWidget('Longest Wait', waitValue, waitUnit, 'healthy', 'longestWait') +
-            srv_createSimpleWidget('Active Requests', data.active_requests, activeBreakdown, 'healthy', 'activeRequests');
+            srv_createSimpleWidget('Blocked Sessions', data.blocked_sessions, 'waiting', blockedStatus, 'blockedSessions', null, blockerFooter) +
+            srv_createSimpleWidget('Active Waits', waitingCount, 'waiting', waitsStatus, 'activeWaits', waitPct, waitsFooter) +
+            srv_createSimpleWidget('Active Requests', data.active_requests, activeBreakdown, 'healthy', 'activeRequests') +
+            tempdbCard;
     } catch (err) { container.innerHTML = '<div class="srv-error">' + err.message + '</div>'; }
 }
 
@@ -1475,6 +1527,167 @@ async function srv_loadActiveRequests() {
             }
             html += '</div>';
         });
+
+        body.innerHTML = html;
+    } catch (err) {
+        body.innerHTML = '<div class="srv-error">Error: ' + err.message + '</div>';
+    }
+}
+
+/* Opens the tempdb pressure slideout and loads its detail. */
+function srv_openTempdbPanel() {
+    srv_openSlide('srv-slideout-tempdb');
+    srv_loadTempdbDetail();
+}
+
+/* Closes the tempdb pressure slideout, ignoring interior clicks. */
+function srv_closeTempdbPanel(target, event) {
+    if (srv_ignoreSlideClick('srv-slideout-tempdb', target, event)) return;
+    srv_closeSlide('srv-slideout-tempdb');
+}
+
+/* Reloads the tempdb pressure detail. */
+function srv_refreshTempdb() {
+    srv_loadTempdbDetail();
+}
+
+/* Loads and renders the tempdb pressure detail: space breakdown, data files, and top consuming sessions. */
+async function srv_loadTempdbDetail() {
+    var server = srv_getCurrentServer();
+    var body = document.getElementById('srv-tempdb-panel-body');
+    body.innerHTML = '<div class="srv-loading">Loading...</div>';
+    try {
+        var data = await cc_engineFetch('/api/server-health/tempdb?server=' + encodeURIComponent(server));
+        if (!data) return;
+        if (data.Error) { body.innerHTML = '<div class="srv-error">Error: ' + data.Error + '</div>'; return; }
+
+        var usedPct = (data.used_pct === null || typeof data.used_pct === 'undefined') ? 0 : data.used_pct;
+
+        var html = '<div class="srv-panel-summary">' +
+            'tempdb data files ' + srv_formatDecimal(usedPct, 1) + '% used &middot; ' +
+            srv_formatNumber(data.used_mb) + ' MB of ' + srv_formatNumber(data.total_mb) + ' MB' +
+            '</div>';
+
+        html += '<div class="srv-tempdb-breakdown">' +
+            '<div class="srv-tempdb-cat"><span class="srv-tempdb-cat-label">User Objects</span><span class="srv-tempdb-cat-value">' + srv_formatNumber(data.user_obj_mb) + ' MB</span></div>' +
+            '<div class="srv-tempdb-cat"><span class="srv-tempdb-cat-label">Internal Objects</span><span class="srv-tempdb-cat-value">' + srv_formatNumber(data.internal_obj_mb) + ' MB</span></div>' +
+            '<div class="srv-tempdb-cat"><span class="srv-tempdb-cat-label">Version Store</span><span class="srv-tempdb-cat-value">' + srv_formatNumber(data.version_store_mb) + ' MB</span></div>' +
+            '<div class="srv-tempdb-cat"><span class="srv-tempdb-cat-label">Free</span><span class="srv-tempdb-cat-value">' + srv_formatNumber(data.free_mb) + ' MB</span></div>' +
+            '</div>';
+
+        if (data.files && data.files.length > 0) {
+            html += '<div class="srv-tempdb-section-title">Data Files</div>';
+            data.files.forEach(function(f) {
+                var fStatus = f.used_pct >= 95 ? 'crisis' : (f.used_pct >= 85 ? 'critical' : (f.used_pct >= 70 ? 'warning' : 'healthy'));
+                html += '<div class="srv-tempdb-file">' +
+                    '<div class="srv-tempdb-file-header">' +
+                    '<span class="srv-tempdb-file-name">' + cc_escapeHtml(f.file_name || '-') + '</span>' +
+                    '<span class="srv-tempdb-file-pct srv-tempdb-' + fStatus + '">' + srv_formatDecimal(f.used_pct, 1) + '%</span>' +
+                    '</div>' +
+                    '<div class="srv-tempdb-file-detail">' + srv_formatNumber(f.used_mb) + ' MB of ' + srv_formatNumber(f.size_mb) + ' MB &middot; ' + cc_escapeHtml(f.physical_name || '') + '</div>' +
+                    '</div>';
+            });
+        }
+
+        html += '<div class="srv-tempdb-section-title">Top Consuming Sessions</div>';
+        if (data.top_sessions && data.top_sessions.length > 0) {
+            data.top_sessions.forEach(function(s) {
+                html += '<div class="srv-request-card">' +
+                    '<div class="srv-request-header">' +
+                    '<span class="srv-request-spid">SPID ' + s.session_id + ' <span style="font-weight:500;text-transform:uppercase;font-size:10px;margin-left:6px;">' + (s.status || '') + '</span></span>' +
+                    '<span class="srv-request-duration">' + srv_formatNumber(s.total_mb) + ' MB</span>' +
+                    '</div>' +
+                    '<div class="srv-request-details">' +
+                    'Login: <span class="srv-detail-value">' + (s.login_name || '-') + '</span><br>' +
+                    'Host: <span class="srv-detail-value">' + (s.host_name || '-') + '</span><br>' +
+                    'Program: <span class="srv-detail-value">' + (s.program_name || '-').substring(0, 40) + '</span><br>' +
+                    'Database: <span class="srv-detail-value">' + (s.database_name || '-') + '</span>' +
+                    '</div>' +
+                    '<div class="srv-request-stats">' +
+                    '<span>User: <span class="srv-stat-value">' + srv_formatNumber(s.user_mb) + ' MB</span></span>' +
+                    '<span>Internal: <span class="srv-stat-value">' + srv_formatNumber(s.internal_mb) + ' MB</span></span>' +
+                    '</div>';
+                if (s.query_text) {
+                    html += '<div class="srv-request-query">' + cc_escapeHtml(s.query_text) + '</div>';
+                }
+                html += '</div>';
+            });
+        } else {
+            html += '<div class="srv-no-data">No sessions are currently consuming tempdb space.</div>';
+        }
+
+        body.innerHTML = html;
+    } catch (err) {
+        body.innerHTML = '<div class="srv-error">Error: ' + err.message + '</div>';
+    }
+}
+
+/* Opens the active waits slideout and loads its detail. */
+function srv_openWaitsPanel() {
+    srv_openSlide('srv-slideout-waits');
+    srv_loadWaitsDetail();
+}
+
+/* Closes the active waits slideout, ignoring interior clicks. */
+function srv_closeWaitsPanel(target, event) {
+    if (srv_ignoreSlideClick('srv-slideout-waits', target, event)) return;
+    srv_closeSlide('srv-slideout-waits');
+}
+
+/* Reloads the active waits detail. */
+function srv_refreshWaits() {
+    srv_loadWaitsDetail();
+}
+
+/* Loads and renders the active waits detail: the wait-type breakdown and the individual waiting sessions. */
+async function srv_loadWaitsDetail() {
+    var server = srv_getCurrentServer();
+    var body = document.getElementById('srv-waits-panel-body');
+    body.innerHTML = '<div class="srv-loading">Loading...</div>';
+    try {
+        var data = await cc_engineFetch('/api/server-health/wait-types?server=' + encodeURIComponent(server));
+        if (!data) return;
+        if (data.Error) { body.innerHTML = '<div class="srv-error">Error: ' + data.Error + '</div>'; return; }
+
+        var html = '';
+
+        html += '<div class="srv-tempdb-section-title">Wait Types</div>';
+        if (data.wait_types && data.wait_types.length > 0) {
+            data.wait_types.forEach(function(w) {
+                html += '<div class="srv-waittype-row">' +
+                    '<span class="srv-waittype-name">' + cc_escapeHtml(w.wait_type || '-') + '</span>' +
+                    '<span class="srv-waittype-meta">' + w.session_count + ' session' + (w.session_count === 1 ? '' : 's') + ' &middot; longest ' + srv_formatDecimal(w.longest_wait_seconds, 1) + 's</span>' +
+                    '</div>';
+            });
+        } else {
+            html += '<div class="srv-no-data">No sessions are currently on a meaningful wait.</div>';
+        }
+
+        html += '<div class="srv-tempdb-section-title">Waiting Sessions</div>';
+        if (data.waiting_sessions && data.waiting_sessions.length > 0) {
+            data.waiting_sessions.forEach(function(s) {
+                html += '<div class="srv-request-card">' +
+                    '<div class="srv-request-header">' +
+                    '<span class="srv-request-spid">SPID ' + s.session_id + ' <span style="font-weight:500;text-transform:uppercase;font-size:10px;margin-left:6px;">' + (s.status || '') + '</span></span>' +
+                    '<span class="srv-request-duration">' + srv_formatDecimal(s.wait_seconds, 1) + 's</span>' +
+                    '</div>' +
+                    '<div class="srv-request-details">' +
+                    'Wait: <span class="srv-detail-value">' + cc_escapeHtml(s.wait_type || '-') + '</span>' +
+                    (s.wait_resource ? ' on <span class="srv-detail-value">' + cc_escapeHtml(s.wait_resource) + '</span>' : '') +
+                    (s.blocking_session_id ? '<br>Blocked by: <span class="srv-detail-value">SPID ' + s.blocking_session_id + '</span>' : '') + '<br>' +
+                    'Login: <span class="srv-detail-value">' + (s.login_name || '-') + '</span><br>' +
+                    'Host: <span class="srv-detail-value">' + (s.host_name || '-') + '</span><br>' +
+                    'Program: <span class="srv-detail-value">' + (s.program_name || '-').substring(0, 40) + '</span><br>' +
+                    'Database: <span class="srv-detail-value">' + (s.database_name || '-') + '</span>' +
+                    '</div>';
+                if (s.query_text) {
+                    html += '<div class="srv-request-query">' + cc_escapeHtml(s.query_text) + '</div>';
+                }
+                html += '</div>';
+            });
+        } else {
+            html += '<div class="srv-no-data">No waiting sessions.</div>';
+        }
 
         body.innerHTML = html;
     } catch (err) {
