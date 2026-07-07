@@ -58,6 +58,12 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-07-07  Statistics update command timeout is now configurable. Both the
+#             MODIFICATION and STALENESS UPDATE STATISTICS calls previously used
+#             a hardcoded 300-second QueryTimeout, which cut off full-scan updates
+#             on very large tables (Msg -2 Execution Timeout Expired). The timeout
+#             now reads from the new stats_update_timeout_seconds GlobalConfig
+#             setting (default 1800), loaded alongside the other Index settings.
 # 2026-06-19  Brought into PowerShell spec conformance: rebuilt header, moved
 #             change history into the CHANGELOG section, added section banners,
 #             removed the deployment block and inline dividers, and converted the
@@ -244,11 +250,13 @@ $modificationThreshold = if ($config.ContainsKey('stats_modification_pct_thresho
 $minRows = if ($config.ContainsKey('stats_min_rows')) { $config['stats_min_rows'] } else { 1000 }
 $maxDaysStale = if ($config.ContainsKey('stats_max_days_stale')) { $config['stats_max_days_stale'] } else { 30 }
 $globalSamplePct = if ($config.ContainsKey('stats_sample_pct')) { $config['stats_sample_pct'] } else { 0 }
+$statsUpdateTimeout = if ($config.ContainsKey('stats_update_timeout_seconds')) { $config['stats_update_timeout_seconds'] } else { 1800 }
 
 Write-Log "  Modification threshold: $modificationThreshold%"
 Write-Log "  Min rows: $minRows"
 Write-Log "  Max days stale: $maxDaysStale"
 Write-Log "  Global sample %: $(if ($globalSamplePct -eq 0) { 'FULLSCAN' } else { "$globalSamplePct%" })"
+Write-Log "  Update timeout: $statsUpdateTimeout seconds"
 
 # Step 3: Get target databases
 
@@ -512,7 +520,7 @@ SELECT SCOPE_IDENTITY() AS detail_id;
             $errorMsg = $null
 
             try {
-                Invoke-Sqlcmd -ServerInstance $connectionServer -Database $dbName -Query $updateCmd -QueryTimeout 300 -ApplicationName $script:XFActsAppName -ErrorAction Stop -SuppressProviderContextWarning -TrustServerCertificate
+                Invoke-Sqlcmd -ServerInstance $connectionServer -Database $dbName -Query $updateCmd -QueryTimeout $statsUpdateTimeout -ApplicationName $script:XFActsAppName -ErrorAction Stop -SuppressProviderContextWarning -TrustServerCertificate
                 $success = $true
             }
             catch {
@@ -607,7 +615,7 @@ SELECT SCOPE_IDENTITY() AS detail_id;
                 $updateCmd = "UPDATE STATISTICS [$schemaName].[$tableName] [$statName] $sampleClause"
 
                 try {
-                    Invoke-Sqlcmd -ServerInstance $connectionServer -Database $dbName -Query $updateCmd -QueryTimeout 300 -ApplicationName $script:XFActsAppName -ErrorAction Stop -SuppressProviderContextWarning -TrustServerCertificate
+                    Invoke-Sqlcmd -ServerInstance $connectionServer -Database $dbName -Query $updateCmd -QueryTimeout $statsUpdateTimeout -ApplicationName $script:XFActsAppName -ErrorAction Stop -SuppressProviderContextWarning -TrustServerCertificate
 
                     # Update registry
                     $updateRegistryQuery = @"
