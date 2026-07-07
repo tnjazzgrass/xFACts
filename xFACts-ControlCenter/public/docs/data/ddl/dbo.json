@@ -571,6 +571,15 @@
                                        },
                                        {
                                            "ordinal":  29,
+                                           "name":  "match_reference",
+                                           "dataType":  "varchar",
+                                           "length":  "500",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "The name(s) the populator\u0027s matching criteria resolved to for this row -- a token, function, export, dispatch handler, action key, or other named construct the row was matched or resolved against. Records positive findings only, not rejected or weighed candidates; NULL when the criteria resolved to no match. Comma-space delimited when more than one match resolves. This column reports what the populator found; the drift_codes column independently reports whether that finding, or its absence, constitutes drift."
+                                       },
+                                       {
+                                           "ordinal":  30,
                                            "name":  "last_parsed_dttm",
                                            "dataType":  "datetime2",
                                            "nullable":  false,
