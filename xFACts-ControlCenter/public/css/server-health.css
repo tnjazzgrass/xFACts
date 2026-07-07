@@ -29,6 +29,8 @@
    CONTENT: TREND CHART
    CONTENT: TIME WINDOW CONTROL
    CONTENT: ZOMBIE MODAL
+   CONTENT: TEMPDB DETAIL
+   CONTENT: ACTIVE WAITS DETAIL
    ============================================================================ */
 
 /* ============================================================================
@@ -306,6 +308,12 @@
     border-radius: 10px;
     display: inline-block;
     text-transform: uppercase;
+}
+
+/* Small supplementary line at the bottom of a metric card (e.g. lead blocker SPID). */
+.srv-metric-footer {
+    font-size: var(--font-size-sm);
+    margin-top: var(--size-spacing-sm);
 }
 
 /* Status pill coloring for a healthy metric. */
@@ -1753,4 +1761,143 @@
     font-size: var(--font-size-content-lg);
     margin-top: var(--size-spacing-lg);
     text-align: center;
+}
+
+/* ============================================================================
+   CONTENT: TEMPDB DETAIL
+   ----------------------------------------------------------------------------
+   The tempdb pressure slideout content: the space-category breakdown grid, the
+   per-data-file usage rows with status-colored percentages, and the section
+   titles separating breakdown, files, and top consuming sessions.
+   Prefix: srv
+   ============================================================================ */
+
+/* The four-category tempdb space breakdown grid. */
+.srv-tempdb-breakdown {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--size-spacing-sm);
+    margin-bottom: var(--size-spacing-lg);
+}
+
+/* A single category cell in the tempdb breakdown grid. */
+.srv-tempdb-cat {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--size-spacing-sm) var(--size-spacing-md);
+    background: var(--color-bg-card);
+    border: var(--size-border-thin) solid var(--color-border-subtle);
+    border-radius: var(--size-radius-sm);
+}
+
+/* The label of a tempdb breakdown category. */
+.srv-tempdb-cat-label {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-content);
+}
+
+/* The value of a tempdb breakdown category. */
+.srv-tempdb-cat-value {
+    color: var(--color-text-primary);
+    font-size: var(--font-size-content);
+    font-weight: 500;
+}
+
+/* A section title separating breakdown, files, and sessions. */
+.srv-tempdb-section-title {
+    color: var(--color-text-subtle);
+    font-size: var(--font-size-heading-sm);
+    font-weight: 600;
+    margin: var(--size-spacing-lg) 0 var(--size-spacing-sm) 0;
+}
+
+/* A per-data-file usage row in the tempdb detail. */
+.srv-tempdb-file {
+    padding: var(--size-spacing-sm) var(--size-spacing-md);
+    background: var(--color-bg-card);
+    border: var(--size-border-thin) solid var(--color-border-subtle);
+    border-radius: var(--size-radius-sm);
+    margin-bottom: var(--size-spacing-sm);
+}
+
+/* The header row of a tempdb data-file entry. */
+.srv-tempdb-file-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+/* The logical file name in a tempdb data-file entry. */
+.srv-tempdb-file-name {
+    color: var(--color-text-primary);
+    font-size: var(--font-size-content);
+    font-weight: 500;
+}
+
+/* The used-percentage figure in a tempdb data-file entry. */
+.srv-tempdb-file-pct {
+    font-size: var(--font-size-content);
+    font-weight: 600;
+}
+
+/* The size detail line in a tempdb data-file entry. */
+.srv-tempdb-file-detail {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
+    margin-top: var(--size-spacing-xs);
+}
+
+/* Healthy status color for a tempdb file percentage. */
+.srv-tempdb-healthy {
+    color: var(--color-accent-shared);
+}
+
+/* Warning status color for a tempdb file percentage. */
+.srv-tempdb-warning {
+    color: var(--color-accent-departmental);
+}
+
+/* Critical status color for a tempdb file percentage. */
+.srv-tempdb-critical {
+    color: var(--color-status-critical);
+}
+
+/* Crisis status color for a tempdb file percentage. */
+.srv-tempdb-crisis {
+    color: var(--color-status-critical);
+}
+
+/* ============================================================================
+   CONTENT: ACTIVE WAITS DETAIL
+   ----------------------------------------------------------------------------
+   The active waits slideout content: the wait-type breakdown rows (type name
+   plus session count and longest wait). The waiting-session cards reuse the
+   shared request-card styles.
+   Prefix: srv
+   ============================================================================ */
+
+/* A single wait-type breakdown row in the active waits detail. */
+.srv-waittype-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--size-spacing-sm) var(--size-spacing-md);
+    background: var(--color-bg-card);
+    border: var(--size-border-thin) solid var(--color-border-subtle);
+    border-radius: var(--size-radius-sm);
+    margin-bottom: var(--size-spacing-sm);
+}
+
+/* The wait-type name in a breakdown row. */
+.srv-waittype-name {
+    color: var(--color-text-primary);
+    font-size: var(--font-size-content);
+    font-weight: 500;
+}
+
+/* The session count and longest-wait metadata in a breakdown row. */
+.srv-waittype-meta {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
 }
