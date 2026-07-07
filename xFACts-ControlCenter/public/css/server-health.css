@@ -1611,7 +1611,7 @@
 
 /* The current-value readout in the trend header. */
 .srv-trend-current-value {
-    font-size: 24px;
+    font-size: var(--font-size-h1);
     font-weight: 400;
 }
 
@@ -1744,7 +1744,7 @@
 .srv-zombie-count {
     color: var(--color-status-critical);
     font-weight: bold;
-    font-size: 24px;
+    font-size: var(--font-size-h1);
 }
 
 /* The threshold caption under the confirmation message. */
