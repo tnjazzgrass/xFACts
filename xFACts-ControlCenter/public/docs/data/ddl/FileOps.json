@@ -915,8 +915,8 @@
                      {
                          "name":  "DisableETL",
                          "parentTable":  "MonitorLog",
-                         "firesOnInsert":  0,
-                         "firesOnUpdate":  1,
+                         "firesOnInsert":  1,
+                         "firesOnUpdate":  0,
                          "firesOnDelete":  0,
                          "isEnabled":  1
                      }
