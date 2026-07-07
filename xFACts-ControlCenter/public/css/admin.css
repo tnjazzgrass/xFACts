@@ -72,7 +72,7 @@
 .adm-loading {
     color: var(--color-text-muted);
     font-size: var(--font-size-content-lg);
-    padding: 20px;
+    padding: var(--size-spacing-2xl);
 }
 
 /* ============================================================================
@@ -293,7 +293,7 @@
 .adm-on { }
 
 .adm-pwr.adm-on { /* power toggle in the on state */
-    color: #4ade80;
+    color: var(--color-status-online);
     border-color: rgba(74, 222, 128, 0.2);
 }
 
@@ -393,12 +393,12 @@
 
 /* Daily success count text. */
 .adm-count-ok {
-    color: #4ade80;
+    color: var(--color-status-online);
 }
 
 /* Daily failure count text. */
 .adm-count-fail {
-    color: #ef4444;
+    color: var(--color-status-critical);
 }
 
 /* Zero-count placeholder text. */
@@ -507,7 +507,7 @@
 }
 
 .adm-tooltip-status.adm-success { /* tooltip status: success */
-    color: #4ade80;
+    color: var(--color-status-online);
 }
 
 .adm-tooltip-status.adm-running { /* tooltip status: running */
@@ -515,7 +515,7 @@
 }
 
 .adm-tooltip-status.adm-failed { /* tooltip status: failed */
-    color: #ef4444;
+    color: var(--color-status-critical);
 }
 
 .adm-tooltip-status.adm-timeout { /* tooltip status: timeout */
@@ -589,7 +589,7 @@
     width: var(--size-spacing-md);
     height: var(--size-spacing-md);
     border-radius: 50%;
-    background: #4ade80;
+    background: var(--color-status-online);
     box-shadow: 0 0 6px rgba(74, 222, 128, 0.3);
     transition: all var(--duration-default);
 }
@@ -598,7 +598,7 @@
 .adm-draining { }
 
 .adm-engine-status-pip.adm-draining { /* engine pip when drain mode is engaged */
-    background: #ef4444;
+    background: var(--color-status-critical);
     box-shadow: 0 0 6px rgba(239, 68, 68, 0.4);
     animation: adm-pip-pulse-red 2s ease-in-out infinite;
 }
@@ -608,7 +608,7 @@
     width: var(--size-spacing-md);
     height: var(--size-spacing-md);
     border-radius: 50%;
-    background: #4ade80;
+    background: var(--color-status-online);
     box-shadow: 0 0 6px rgba(74, 222, 128, 0.3);
     transition: all var(--duration-default);
 }
@@ -617,7 +617,7 @@
 .adm-stopped { }
 
 .adm-service-status-pip.adm-stopped { /* service pip when the service is stopped */
-    background: #ef4444;
+    background: var(--color-status-critical);
     box-shadow: 0 0 6px rgba(239, 68, 68, 0.4);
 }
 
@@ -635,7 +635,7 @@
     position: absolute;
     top: var(--size-spacing-sm);
     right: var(--size-spacing-md);
-    background: #ef4444;
+    background: var(--color-status-critical);
     color: var(--color-text-on-primary);
     font-size: var(--font-size-default);
     font-weight: 700;
@@ -654,7 +654,7 @@
 .adm-clean { }
 
 .adm-af-badge.adm-clean { /* badge when there are no active failures */
-    background: #4ade80;
+    background: var(--color-status-online);
     box-shadow: 0 0 6px rgba(74, 222, 128, 0.3);
     animation: none;
 }
@@ -898,7 +898,7 @@
 .adm-online { }
 
 .adm-status-light.adm-online { /* status light: engine online */
-    background: #4ade80;
+    background: var(--color-status-online);
     box-shadow: 0 0 8px #4ade80, 0 0 16px rgba(74, 222, 128, 0.3);
 }
 
@@ -915,7 +915,7 @@
 .adm-offline { }
 
 .adm-status-light.adm-offline { /* status light: engine offline */
-    background: #ef4444;
+    background: var(--color-status-critical);
     box-shadow: 0 0 8px #ef4444;
     animation: adm-pulse-red 2s ease-in-out infinite;
 }
@@ -929,7 +929,7 @@
 }
 
 .adm-drain-status.adm-online { /* caption: engine online */
-    color: #4ade80;
+    color: var(--color-status-online);
 }
 
 .adm-drain-status.adm-caution { /* caption: drain engaged */
@@ -937,7 +937,7 @@
 }
 
 .adm-drain-status.adm-offline { /* caption: engine offline */
-    color: #ef4444;
+    color: var(--color-status-critical);
 }
 
 /* Horizontal divider above the service-control section. */
@@ -983,13 +983,13 @@
 
 .adm-svc-badge.adm-running { /* service badge: running */
     background: rgba(74, 222, 128, 0.12);
-    color: #4ade80;
+    color: var(--color-status-online);
     border: var(--size-border-thin) solid rgba(74, 222, 128, 0.25);
 }
 
 .adm-svc-badge.adm-stopped { /* service badge: stopped */
     background: rgba(239, 68, 68, 0.12);
-    color: #ef4444;
+    color: var(--color-status-critical);
     border: var(--size-border-thin) solid rgba(239, 68, 68, 0.3);
 }
 
@@ -1038,9 +1038,9 @@
 .adm-stop { }
 
 .adm-svc-btn.adm-stop { /* stop-service button */
-    background: rgba(239, 68, 68, 0.08);
+    background: var(--color-tint-critical);
     border: var(--size-border-thin) solid rgba(239, 68, 68, 0.25);
-    color: #ef4444;
+    color: var(--color-status-critical);
 }
 
 /* Start variant for a service-control button. */
@@ -1049,14 +1049,14 @@
 .adm-svc-btn.adm-start { /* start-service button */
     background: rgba(74, 222, 128, 0.08);
     border: var(--size-border-thin) solid rgba(74, 222, 128, 0.2);
-    color: #4ade80;
+    color: var(--color-status-online);
 }
 
 /* Restart variant for a service-control button. */
 .adm-restart { }
 
 .adm-svc-btn.adm-restart { /* restart-service button */
-    background: rgba(220, 220, 170, 0.08);
+    background: var(--color-tint-warning);
     border: var(--size-border-thin) solid rgba(220, 220, 170, 0.2);
     color: var(--color-status-overdue);
 }
@@ -1105,14 +1105,14 @@
 }
 
 .adm-meta-status.adm-success { /* status line: success message */
-    color: #4ade80;
+    color: var(--color-status-online);
 }
 
 /* Error state for status lines. */
 .adm-error { }
 
 .adm-meta-status.adm-error { /* status line: error message */
-    color: #ef4444;
+    color: var(--color-status-critical);
 }
 
 /* Results-count text in the metadata header actions. */
@@ -1271,7 +1271,7 @@
     background: rgba(74, 222, 128, 0.08);
     border: var(--size-border-thin) solid rgba(74, 222, 128, 0.25);
     border-radius: var(--size-radius-default);
-    color: #4ade80;
+    color: var(--color-status-online);
     cursor: pointer;
     font-size: var(--font-size-heading-sm);
     font-weight: 700;
@@ -1442,7 +1442,7 @@
     background: rgba(74, 222, 128, 0.1);
     border: var(--size-border-thin) solid rgba(74, 222, 128, 0.3);
     border-radius: var(--size-radius-lg);
-    color: #4ade80;
+    color: var(--color-status-online);
     cursor: pointer;
     font-size: var(--font-size-body);
     font-weight: 600;
@@ -1468,10 +1468,10 @@
 
 /* Cancel button in the version-bump editor. */
 .adm-meta-cancel-btn {
-    background: rgba(239, 68, 68, 0.08);
+    background: var(--color-tint-critical);
     border: var(--size-border-thin) solid rgba(239, 68, 68, 0.3);
     border-radius: var(--size-radius-lg);
-    color: #ef4444;
+    color: var(--color-status-critical);
     cursor: pointer;
     font-size: var(--font-size-body);
     font-weight: 600;
@@ -1500,11 +1500,11 @@
 }
 
 .adm-meta-bump-status.adm-success { /* bump status: success */
-    color: #4ade80;
+    color: var(--color-status-online);
 }
 
 .adm-meta-bump-status.adm-error { /* bump status: error */
-    color: #ef4444;
+    color: var(--color-status-critical);
 }
 
 /* Row holding the description textarea for a new version. */
@@ -1567,19 +1567,19 @@
     border: var(--size-border-thin) solid rgba(74, 222, 128, 0.2);
     border-radius: var(--size-radius-lg);
     background: rgba(74, 222, 128, 0.02);
-    margin: var(--size-spacing-sm) 0 var(--size-spacing-sm) 20px;
+    margin: var(--size-spacing-sm) 0 var(--size-spacing-sm) var(--size-spacing-2xl);
 }
 
 /* Add-form variant nested under a module row. */
 .adm-meta-add-child {
-    margin-left: 20px;
+    margin-left: var(--size-spacing-2xl);
 }
 
 /* Title row of an add form. */
 .adm-meta-add-title {
     font-size: var(--font-size-content);
     font-weight: 600;
-    color: #4ade80;
+    color: var(--color-status-online);
     margin-bottom: 10px;
 }
 
@@ -1678,7 +1678,7 @@
 }
 
 .adm-meta-hist-status.adm-active { /* history status: active version */
-    color: #4ade80;
+    color: var(--color-status-online);
     background: rgba(74, 222, 128, 0.1);
 }
 
@@ -1694,7 +1694,7 @@
 .adm-deprecated { }
 
 .adm-meta-hist-status.adm-deprecated { /* history status: deprecated version */
-    color: #ef4444;
+    color: var(--color-status-critical);
     background: rgba(239, 68, 68, 0.1);
 }
 
@@ -1896,21 +1896,21 @@
 .adm-gc-edit-save {
     background: none;
     border: none;
-    color: #4ade80;
+    color: var(--color-status-online);
     cursor: pointer;
     font-size: var(--font-size-heading-sm);
     padding: 2px var(--size-spacing-xs);
 }
 
 .adm-gc-edit-save:hover { /* hover state for the save button */
-    color: #22c55e;
+    color: var(--color-status-idle);
 }
 
 /* Cancel button for the inline value editor. */
 .adm-gc-edit-cancel {
     background: none;
     border: none;
-    color: #ef4444;
+    color: var(--color-status-critical);
     cursor: pointer;
     font-size: var(--font-size-heading-sm);
     padding: 2px var(--size-spacing-xs);
@@ -2043,7 +2043,7 @@
 /* The deactivate link. */
 .adm-gc-deactivate-link {
     font-size: var(--font-size-body);
-    color: #ef4444;
+    color: var(--color-status-critical);
     cursor: pointer;
     opacity: 0.6;
     transition: opacity var(--duration-instant);
@@ -2136,13 +2136,13 @@
 
 /* Old-value text in a history change. */
 .adm-gc-history-old {
-    color: #ef4444;
+    color: var(--color-status-critical);
     font-family: var(--font-family-monospace);
 }
 
 /* New-value text in a history change. */
 .adm-gc-history-new {
-    color: #4ade80;
+    color: var(--color-status-online);
     font-family: var(--font-family-monospace);
 }
 
@@ -2314,7 +2314,7 @@
 
 .adm-sched-mode-badge.adm-wait { /* wait mode badge */
     color: var(--color-status-overdue);
-    background: rgba(220, 220, 170, 0.08);
+    background: var(--color-tint-warning);
     border: var(--size-border-thin) solid rgba(220, 220, 170, 0.2);
 }
 
@@ -2333,7 +2333,7 @@
 .adm-enabled { }
 
 .adm-sched-status-badge.adm-enabled { /* run-state badge: enabled */
-    color: #4ade80;
+    color: var(--color-status-online);
     background: rgba(74, 222, 128, 0.1);
     border: var(--size-border-thin) solid rgba(74, 222, 128, 0.2);
 }
@@ -2489,11 +2489,11 @@
 }
 
 .adm-sched-card-status.adm-success { /* scheduler card status: success */
-    color: #4ade80;
+    color: var(--color-status-online);
 }
 
 .adm-sched-card-status.adm-error { /* scheduler card status: error */
-    color: #ef4444;
+    color: var(--color-status-critical);
 }
 
 /* Label inside the add-process form. */
@@ -2646,7 +2646,7 @@
 }
 
 .adm-doc-card-status.adm-success { /* step status: success */
-    color: #4ade80;
+    color: var(--color-status-online);
 }
 
 /* Warning state for run and card statuses. */
@@ -2657,7 +2657,7 @@
 }
 
 .adm-doc-card-status.adm-failed { /* step status: failed */
-    color: #ef4444;
+    color: var(--color-status-critical);
 }
 
 /* The hidden native checkbox backing a step toggle (state read by the pipeline). */
@@ -2745,7 +2745,7 @@
 }
 
 .adm-doc-run-status.adm-success { /* run status: success */
-    color: #4ade80;
+    color: var(--color-status-online);
 }
 
 .adm-doc-run-status.adm-warning { /* run status: warning */
@@ -2753,7 +2753,7 @@
 }
 
 .adm-doc-run-status.adm-error { /* run status: error */
-    color: #ef4444;
+    color: var(--color-status-critical);
 }
 
 /* Results area shown after a pipeline run. */
@@ -2843,7 +2843,7 @@
 }
 
 .adm-doc-detail-icon.adm-ok { /* result icon: success */
-    color: #4ade80;
+    color: var(--color-status-online);
 }
 
 .adm-doc-detail-icon.adm-warn { /* result icon: warning */
@@ -2851,7 +2851,7 @@
 }
 
 .adm-doc-detail-icon.adm-fail { /* result icon: failure */
-    color: #ef4444;
+    color: var(--color-status-critical);
 }
 
 /* Step label in a result disclosure summary. */
@@ -2911,7 +2911,7 @@
 /* All-clear empty state in the alert-failures body. */
 .adm-af-empty {
     text-align: center;
-    color: #4ade80;
+    color: var(--color-status-online);
     padding: 40px var(--size-spacing-2xl);
     font-size: var(--font-size-content-lg);
 }
@@ -2983,7 +2983,7 @@
 
 .adm-af-category-badge.adm-critical { /* category badge: critical */
     background: rgba(239, 68, 68, 0.15);
-    color: #ef4444;
+    color: var(--color-status-critical);
     border: var(--size-border-thin) solid rgba(239, 68, 68, 0.25);
 }
 
@@ -3060,8 +3060,8 @@
 
 /* Load-error message inside the alert-failures body. */
 .adm-af-load-error {
-    color: #ef4444;
-    padding: 20px;
+    color: var(--color-status-critical);
+    padding: var(--size-spacing-2xl);
     text-align: center;
 }
 
@@ -3239,7 +3239,7 @@
 
 /* Inline error message inside the detail dock body. */
 .adm-detail-error-msg {
-    color: #ef4444;
+    color: var(--color-status-critical);
     font-size: var(--font-size-body);
     padding: var(--size-spacing-lg);
 }
