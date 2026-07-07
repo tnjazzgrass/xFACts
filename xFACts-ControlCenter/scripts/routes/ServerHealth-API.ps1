@@ -368,6 +368,38 @@ Add-PodeRoute -Method Get -Path '/api/server-health/activity' -Authentication 'A
         $rows = Invoke-Sqlcmd -ServerInstance $serverName -Database 'master' -Query @"
 ;WITH BlockingInfo AS (SELECT r.blocking_session_id, r.session_id, r.wait_time / 1000.0 AS wait_seconds FROM sys.dm_exec_requests r WHERE r.blocking_session_id > 0),
 LeadBlocker AS (SELECT TOP 1 b.blocking_session_id AS lead_blocker_spid FROM BlockingInfo b WHERE NOT EXISTS (SELECT 1 FROM BlockingInfo b2 WHERE b2.session_id = b.blocking_session_id) ORDER BY b.wait_seconds DESC),
+WaitingInfo AS (
+    SELECT r.session_id, r.wait_time / 1000.0 AS wait_seconds
+    FROM sys.dm_exec_requests r
+    INNER JOIN sys.dm_exec_sessions s ON r.session_id = s.session_id
+    WHERE r.session_id > 50
+      AND s.is_user_process = 1
+      AND r.wait_type IS NOT NULL
+      AND r.wait_type NOT IN (
+          'BROKER_EVENTHANDLER','BROKER_RECEIVE_WAITFOR','BROKER_TASK_STOP','BROKER_TO_FLUSH',
+          'BROKER_TRANSMITTER','CHECKPOINT_QUEUE','CHKPT','CLR_AUTO_EVENT','CLR_MANUAL_EVENT',
+          'CLR_SEMAPHORE','CXCONSUMER','DBMIRROR_DBM_EVENT','DBMIRROR_EVENTS_QUEUE',
+          'DBMIRROR_WORKER_QUEUE','DBMIRRORING_CMD','DIRTY_PAGE_POLL','DISPATCHER_QUEUE_SEMAPHORE',
+          'EXECSYNC','FSAGENT','FT_IFTS_SCHEDULER_IDLE_WAIT','FT_IFTSHC_MUTEX',
+          'HADR_CLUSAPI_CALL','HADR_FILESTREAM_IOMGR_IOCOMPLETION','HADR_LOGCAPTURE_WAIT',
+          'HADR_NOTIFICATION_DEQUEUE','HADR_TIMER_TASK','HADR_WORK_QUEUE',
+          'KSOURCE_WAKEUP','LAZYWRITER_SLEEP','LOGMGR_QUEUE','MEMORY_ALLOCATION_EXT',
+          'ONDEMAND_TASK_QUEUE','PARALLEL_REDO_DRAIN_WORKER','PARALLEL_REDO_LOG_CACHE',
+          'PARALLEL_REDO_TRAN_LIST','PARALLEL_REDO_WORKER_SYNC','PARALLEL_REDO_WORKER_WAIT_WORK',
+          'PREEMPTIVE_XE_GETTARGETSTATE','PWAIT_ALL_COMPONENTS_INITIALIZED',
+          'PWAIT_DIRECTLOGCONSUMER_GETNEXT','QDS_PERSIST_TASK_MAIN_LOOP_SLEEP',
+          'QDS_ASYNC_QUEUE','QDS_CLEANUP_STALE_QUERIES_TASK_MAIN_LOOP_SLEEP',
+          'QDS_SHUTDOWN_QUEUE','REDO_THREAD_PENDING_WORK','REQUEST_FOR_DEADLOCK_SEARCH',
+          'RESOURCE_QUEUE','SERVER_IDLE_CHECK','SLEEP_BPOOL_FLUSH','SLEEP_DBSTARTUP',
+          'SLEEP_DCOMSTARTUP','SLEEP_MASTERDBREADY','SLEEP_MASTERMDREADY',
+          'SLEEP_MASTERUPGRADED','SLEEP_MSDBSTARTUP','SLEEP_SYSTEMTASK','SLEEP_TASK',
+          'SLEEP_TEMPDBSTARTUP','SNI_HTTP_ACCEPT','SP_SERVER_DIAGNOSTICS_SLEEP',
+          'SQLTRACE_BUFFER_FLUSH','SQLTRACE_INCREMENTAL_FLUSH_SLEEP',
+          'SQLTRACE_WAIT_ENTRIES','WAIT_FOR_RESULTS','WAITFOR','WAITFOR_TASKSHUTDOWN',
+          'WAIT_XTP_RECOVERY','WAIT_XTP_HOST_WAIT','WAIT_XTP_OFFLINE_CKPT_NEW_LOG',
+          'WAIT_XTP_CKPT_CLOSE','XE_DISPATCHER_JOIN','XE_DISPATCHER_WAIT','XE_TIMER_EVENT'
+      )
+),
 ActiveCounts AS (
     SELECT
         SUM(CASE WHEN status = 'running' THEN 1 ELSE 0 END) AS running_count,
@@ -377,7 +409,8 @@ ActiveCounts AS (
 )
 SELECT (SELECT COUNT(*) FROM BlockingInfo) AS blocked_sessions,
     (SELECT lead_blocker_spid FROM LeadBlocker) AS lead_blocker_spid,
-    ISNULL((SELECT MAX(wait_seconds) FROM BlockingInfo), 0) AS longest_wait_seconds,
+    (SELECT COUNT(*) FROM WaitingInfo) AS waiting_count,
+    ISNULL((SELECT MAX(wait_seconds) FROM WaitingInfo), 0) AS longest_wait_seconds,
     ac.running_count,
     ac.runnable_count,
     ac.suspended_count,
@@ -389,6 +422,7 @@ FROM ActiveCounts ac
             $result = [PSCustomObject]@{
                 blocked_sessions = if ($row.blocked_sessions -is [DBNull]) { 0 } else { [int]$row.blocked_sessions }
                 lead_blocker_spid = if ($row.lead_blocker_spid -is [DBNull]) { $null } else { [int]$row.lead_blocker_spid }
+                waiting_count = if ($row.waiting_count -is [DBNull]) { 0 } else { [int]$row.waiting_count }
                 longest_wait_seconds = if ($row.longest_wait_seconds -is [DBNull]) { 0 } else { [math]::Round([decimal]$row.longest_wait_seconds, 1) }
                 active_requests = if ($row.active_requests -is [DBNull]) { 0 } else { [int]$row.active_requests }
                 running_count = if ($row.running_count -is [DBNull]) { 0 } else { [int]$row.running_count }
@@ -396,7 +430,7 @@ FROM ActiveCounts ac
                 suspended_count = if ($row.suspended_count -is [DBNull]) { 0 } else { [int]$row.suspended_count }
             }
             Write-PodeJsonResponse -Value $result
-        } else { Write-PodeJsonResponse -Value ([PSCustomObject]@{ blocked_sessions = 0; lead_blocker_spid = $null; longest_wait_seconds = 0; active_requests = 0; running_count = 0; runnable_count = 0; suspended_count = 0 }) }
+        } else { Write-PodeJsonResponse -Value ([PSCustomObject]@{ blocked_sessions = 0; lead_blocker_spid = $null; waiting_count = 0; longest_wait_seconds = 0; active_requests = 0; running_count = 0; runnable_count = 0; suspended_count = 0 }) }
     } catch { Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = $_.Exception.Message }) -StatusCode 500 }
 }
 
@@ -1437,5 +1471,254 @@ ORDER BY record.value('(./Record/@id)[1]','int') DESC
         }
 
         Write-PodeJsonResponse -Value $results
+    } catch { Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = $_.Exception.Message }) -StatusCode 500 }
+}
+
+Add-PodeRoute -Method Get -Path '/api/server-health/tempdb' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+    try {
+        $serverName = $WebEvent.Query['server']; if (-not $serverName) { $serverName = 'AVG-PROD-LSNR' }
+
+        # tempdb space DMVs (sys.dm_db_file_space_usage, sys.database_files, FILEPROPERTY)
+        # are database-scoped and only report tempdb when the connection context is tempdb,
+        # so this endpoint connects with -Database 'tempdb' rather than the 'master' the
+        # other server-health endpoints use.
+        $summaryRows = Invoke-Sqlcmd -ServerInstance $serverName -Database 'tempdb' -Query @"
+DECLARE @page_mb DECIMAL(18,6) = 8.0 / 1024.0;
+;WITH FileSpace AS (
+    SELECT
+        CAST(SUM(CAST(df.size AS BIGINT)) AS BIGINT) AS total_pages,
+        CAST(SUM(CAST(FILEPROPERTY(df.name, 'SpaceUsed') AS BIGINT)) AS BIGINT) AS used_pages
+    FROM sys.database_files df
+    WHERE df.type_desc = 'ROWS'
+),
+Categories AS (
+    SELECT
+        CAST(SUM(user_object_reserved_page_count) AS BIGINT) AS user_obj_pages,
+        CAST(SUM(internal_object_reserved_page_count) AS BIGINT) AS internal_obj_pages,
+        CAST(SUM(version_store_reserved_page_count) AS BIGINT) AS version_store_pages,
+        CAST(SUM(unallocated_extent_page_count) AS BIGINT) AS free_pages
+    FROM sys.dm_db_file_space_usage
+)
+SELECT
+    CASE WHEN fs.total_pages > 0 THEN CAST(CAST(fs.used_pages AS FLOAT) / fs.total_pages * 100 AS DECIMAL(5,2)) ELSE 0 END AS used_pct,
+    CAST(fs.total_pages * @page_mb AS DECIMAL(18,2)) AS total_mb,
+    CAST(fs.used_pages * @page_mb AS DECIMAL(18,2)) AS used_mb,
+    CAST(c.user_obj_pages * @page_mb AS DECIMAL(18,2)) AS user_obj_mb,
+    CAST(c.internal_obj_pages * @page_mb AS DECIMAL(18,2)) AS internal_obj_mb,
+    CAST(c.version_store_pages * @page_mb AS DECIMAL(18,2)) AS version_store_mb,
+    CAST(c.free_pages * @page_mb AS DECIMAL(18,2)) AS free_mb
+FROM FileSpace fs CROSS JOIN Categories c
+"@ -QueryTimeout 10 -TrustServerCertificate -ApplicationName 'xFACts Control Center'
+
+        $fileRows = Invoke-Sqlcmd -ServerInstance $serverName -Database 'tempdb' -Query @"
+DECLARE @page_mb DECIMAL(18,6) = 8.0 / 1024.0;
+SELECT
+    df.name AS file_name,
+    df.physical_name,
+    CAST(CAST(df.size AS BIGINT) * @page_mb AS DECIMAL(18,2)) AS size_mb,
+    CAST(CAST(FILEPROPERTY(df.name, 'SpaceUsed') AS BIGINT) * @page_mb AS DECIMAL(18,2)) AS used_mb,
+    CASE WHEN df.size > 0 THEN CAST(CAST(CAST(FILEPROPERTY(df.name, 'SpaceUsed') AS BIGINT) AS FLOAT) / CAST(df.size AS BIGINT) * 100 AS DECIMAL(5,2)) ELSE 0 END AS used_pct
+FROM sys.database_files df
+WHERE df.type_desc = 'ROWS'
+ORDER BY df.file_id
+"@ -QueryTimeout 10 -TrustServerCertificate -ApplicationName 'xFACts Control Center'
+
+        $sessionRows = Invoke-Sqlcmd -ServerInstance $serverName -Database 'tempdb' -Query @"
+DECLARE @page_mb DECIMAL(18,6) = 8.0 / 1024.0;
+;WITH SessionUsage AS (
+    SELECT
+        su.session_id,
+        SUM(su.user_objects_alloc_page_count - su.user_objects_dealloc_page_count) AS user_pages,
+        SUM(su.internal_objects_alloc_page_count - su.internal_objects_dealloc_page_count) AS internal_pages
+    FROM sys.dm_db_session_space_usage su
+    WHERE su.session_id > 50
+    GROUP BY su.session_id
+    HAVING SUM(su.user_objects_alloc_page_count - su.user_objects_dealloc_page_count)
+         + SUM(su.internal_objects_alloc_page_count - su.internal_objects_dealloc_page_count) > 0
+)
+SELECT TOP 10
+    su.session_id,
+    s.login_name,
+    s.host_name,
+    s.program_name,
+    ISNULL(DB_NAME(s.database_id), 'N/A') AS database_name,
+    s.status,
+    CAST(su.user_pages * @page_mb AS DECIMAL(18,2)) AS user_mb,
+    CAST(su.internal_pages * @page_mb AS DECIMAL(18,2)) AS internal_mb,
+    CAST((su.user_pages + su.internal_pages) * @page_mb AS DECIMAL(18,2)) AS total_mb,
+    COALESCE(
+        (SELECT TEXT FROM sys.dm_exec_requests r CROSS APPLY sys.dm_exec_sql_text(r.sql_handle) WHERE r.session_id = su.session_id),
+        (SELECT TOP 1 TEXT FROM sys.dm_exec_connections c CROSS APPLY sys.dm_exec_sql_text(c.most_recent_sql_handle) WHERE c.session_id = su.session_id)
+    ) AS query_text
+FROM SessionUsage su
+INNER JOIN sys.dm_exec_sessions s ON su.session_id = s.session_id
+ORDER BY (su.user_pages + su.internal_pages) DESC
+"@ -QueryTimeout 10 -TrustServerCertificate -ApplicationName 'xFACts Control Center'
+
+        $summary = if ($summaryRows) { $summaryRows | Select-Object -First 1 } else { $null }
+
+        $files = @()
+        foreach ($f in $fileRows) {
+            $files += [PSCustomObject]@{
+                file_name = if ($f.file_name -is [DBNull]) { $null } else { $f.file_name }
+                physical_name = if ($f.physical_name -is [DBNull]) { $null } else { $f.physical_name }
+                size_mb = if ($f.size_mb -is [DBNull]) { 0 } else { [decimal]$f.size_mb }
+                used_mb = if ($f.used_mb -is [DBNull]) { 0 } else { [decimal]$f.used_mb }
+                used_pct = if ($f.used_pct -is [DBNull]) { 0 } else { [decimal]$f.used_pct }
+            }
+        }
+
+        $sessions = @()
+        foreach ($sr in $sessionRows) {
+            $sessions += [PSCustomObject]@{
+                session_id = [int]$sr.session_id
+                login_name = if ($sr.login_name -is [DBNull]) { $null } else { $sr.login_name }
+                host_name = if ($sr.host_name -is [DBNull]) { $null } else { $sr.host_name }
+                program_name = if ($sr.program_name -is [DBNull]) { $null } else { $sr.program_name }
+                database_name = if ($sr.database_name -is [DBNull]) { $null } else { $sr.database_name }
+                status = if ($sr.status -is [DBNull]) { $null } else { $sr.status }
+                user_mb = if ($sr.user_mb -is [DBNull]) { 0 } else { [decimal]$sr.user_mb }
+                internal_mb = if ($sr.internal_mb -is [DBNull]) { 0 } else { [decimal]$sr.internal_mb }
+                total_mb = if ($sr.total_mb -is [DBNull]) { 0 } else { [decimal]$sr.total_mb }
+                query_text = if ($sr.query_text -is [DBNull]) { $null } else { $sr.query_text }
+            }
+        }
+
+        $result = [PSCustomObject]@{
+            used_pct = if ($null -eq $summary -or $summary.used_pct -is [DBNull]) { $null } else { [decimal]$summary.used_pct }
+            total_mb = if ($null -eq $summary -or $summary.total_mb -is [DBNull]) { 0 } else { [decimal]$summary.total_mb }
+            used_mb = if ($null -eq $summary -or $summary.used_mb -is [DBNull]) { 0 } else { [decimal]$summary.used_mb }
+            user_obj_mb = if ($null -eq $summary -or $summary.user_obj_mb -is [DBNull]) { 0 } else { [decimal]$summary.user_obj_mb }
+            internal_obj_mb = if ($null -eq $summary -or $summary.internal_obj_mb -is [DBNull]) { 0 } else { [decimal]$summary.internal_obj_mb }
+            version_store_mb = if ($null -eq $summary -or $summary.version_store_mb -is [DBNull]) { 0 } else { [decimal]$summary.version_store_mb }
+            free_mb = if ($null -eq $summary -or $summary.free_mb -is [DBNull]) { 0 } else { [decimal]$summary.free_mb }
+            files = $files
+            top_sessions = $sessions
+        }
+        Write-PodeJsonResponse -Value $result
+    } catch { Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = $_.Exception.Message }) -StatusCode 500 }
+}
+
+Add-PodeRoute -Method Get -Path '/api/server-health/wait-types' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+    try {
+        $serverName = $WebEvent.Query['server']; if (-not $serverName) { $serverName = 'AVG-PROD-LSNR' }
+
+        # Benign/background wait types (Paul Randal's published sys.dm_os_wait_stats
+        # filter, with CXCONSUMER excluded). Meaningful waits such as HADR_SYNC_COMMIT
+        # and HADR_GROUP_COMMIT are intentionally NOT in this list, so they are counted.
+        $typeRows = Invoke-Sqlcmd -ServerInstance $serverName -Database 'master' -Query @"
+SELECT
+    r.wait_type,
+    COUNT(*) AS session_count,
+    CAST(MAX(r.wait_time) / 1000.0 AS DECIMAL(18,1)) AS longest_wait_seconds,
+    CAST(SUM(r.wait_time) / 1000.0 AS DECIMAL(18,1)) AS total_wait_seconds
+FROM sys.dm_exec_requests r
+INNER JOIN sys.dm_exec_sessions s ON r.session_id = s.session_id
+WHERE r.session_id > 50
+  AND s.is_user_process = 1
+  AND r.wait_type IS NOT NULL
+  AND r.wait_type NOT IN (
+      'BROKER_EVENTHANDLER','BROKER_RECEIVE_WAITFOR','BROKER_TASK_STOP','BROKER_TO_FLUSH',
+      'BROKER_TRANSMITTER','CHECKPOINT_QUEUE','CHKPT','CLR_AUTO_EVENT','CLR_MANUAL_EVENT',
+      'CLR_SEMAPHORE','CXCONSUMER','DBMIRROR_DBM_EVENT','DBMIRROR_EVENTS_QUEUE',
+      'DBMIRROR_WORKER_QUEUE','DBMIRRORING_CMD','DIRTY_PAGE_POLL','DISPATCHER_QUEUE_SEMAPHORE',
+      'EXECSYNC','FSAGENT','FT_IFTS_SCHEDULER_IDLE_WAIT','FT_IFTSHC_MUTEX',
+      'HADR_CLUSAPI_CALL','HADR_FILESTREAM_IOMGR_IOCOMPLETION','HADR_LOGCAPTURE_WAIT',
+      'HADR_NOTIFICATION_DEQUEUE','HADR_TIMER_TASK','HADR_WORK_QUEUE',
+      'KSOURCE_WAKEUP','LAZYWRITER_SLEEP','LOGMGR_QUEUE','MEMORY_ALLOCATION_EXT',
+      'ONDEMAND_TASK_QUEUE','PARALLEL_REDO_DRAIN_WORKER','PARALLEL_REDO_LOG_CACHE',
+      'PARALLEL_REDO_TRAN_LIST','PARALLEL_REDO_WORKER_SYNC','PARALLEL_REDO_WORKER_WAIT_WORK',
+      'PREEMPTIVE_XE_GETTARGETSTATE','PWAIT_ALL_COMPONENTS_INITIALIZED',
+      'PWAIT_DIRECTLOGCONSUMER_GETNEXT','QDS_PERSIST_TASK_MAIN_LOOP_SLEEP',
+      'QDS_ASYNC_QUEUE','QDS_CLEANUP_STALE_QUERIES_TASK_MAIN_LOOP_SLEEP',
+      'QDS_SHUTDOWN_QUEUE','REDO_THREAD_PENDING_WORK','REQUEST_FOR_DEADLOCK_SEARCH',
+      'RESOURCE_QUEUE','SERVER_IDLE_CHECK','SLEEP_BPOOL_FLUSH','SLEEP_DBSTARTUP',
+      'SLEEP_DCOMSTARTUP','SLEEP_MASTERDBREADY','SLEEP_MASTERMDREADY',
+      'SLEEP_MASTERUPGRADED','SLEEP_MSDBSTARTUP','SLEEP_SYSTEMTASK','SLEEP_TASK',
+      'SLEEP_TEMPDBSTARTUP','SNI_HTTP_ACCEPT','SP_SERVER_DIAGNOSTICS_SLEEP',
+      'SQLTRACE_BUFFER_FLUSH','SQLTRACE_INCREMENTAL_FLUSH_SLEEP',
+      'SQLTRACE_WAIT_ENTRIES','WAIT_FOR_RESULTS','WAITFOR','WAITFOR_TASKSHUTDOWN',
+      'WAIT_XTP_RECOVERY','WAIT_XTP_HOST_WAIT','WAIT_XTP_OFFLINE_CKPT_NEW_LOG',
+      'WAIT_XTP_CKPT_CLOSE','XE_DISPATCHER_JOIN','XE_DISPATCHER_WAIT','XE_TIMER_EVENT'
+  )
+GROUP BY r.wait_type
+ORDER BY COUNT(*) DESC, MAX(r.wait_time) DESC
+"@ -QueryTimeout 10 -TrustServerCertificate -ApplicationName 'xFACts Control Center'
+
+        $sessionRows = Invoke-Sqlcmd -ServerInstance $serverName -Database 'master' -Query @"
+SELECT TOP 25
+    r.session_id,
+    s.login_name,
+    s.host_name,
+    s.program_name,
+    ISNULL(DB_NAME(r.database_id), 'N/A') AS database_name,
+    r.status,
+    r.wait_type,
+    CAST(r.wait_time / 1000.0 AS DECIMAL(18,1)) AS wait_seconds,
+    r.wait_resource,
+    r.blocking_session_id,
+    (SELECT TEXT FROM sys.dm_exec_sql_text(r.sql_handle)) AS query_text
+FROM sys.dm_exec_requests r
+INNER JOIN sys.dm_exec_sessions s ON r.session_id = s.session_id
+WHERE r.session_id > 50
+  AND s.is_user_process = 1
+  AND r.wait_type IS NOT NULL
+  AND r.wait_type NOT IN (
+      'BROKER_EVENTHANDLER','BROKER_RECEIVE_WAITFOR','BROKER_TASK_STOP','BROKER_TO_FLUSH',
+      'BROKER_TRANSMITTER','CHECKPOINT_QUEUE','CHKPT','CLR_AUTO_EVENT','CLR_MANUAL_EVENT',
+      'CLR_SEMAPHORE','CXCONSUMER','DBMIRROR_DBM_EVENT','DBMIRROR_EVENTS_QUEUE',
+      'DBMIRROR_WORKER_QUEUE','DBMIRRORING_CMD','DIRTY_PAGE_POLL','DISPATCHER_QUEUE_SEMAPHORE',
+      'EXECSYNC','FSAGENT','FT_IFTS_SCHEDULER_IDLE_WAIT','FT_IFTSHC_MUTEX',
+      'HADR_CLUSAPI_CALL','HADR_FILESTREAM_IOMGR_IOCOMPLETION','HADR_LOGCAPTURE_WAIT',
+      'HADR_NOTIFICATION_DEQUEUE','HADR_TIMER_TASK','HADR_WORK_QUEUE',
+      'KSOURCE_WAKEUP','LAZYWRITER_SLEEP','LOGMGR_QUEUE','MEMORY_ALLOCATION_EXT',
+      'ONDEMAND_TASK_QUEUE','PARALLEL_REDO_DRAIN_WORKER','PARALLEL_REDO_LOG_CACHE',
+      'PARALLEL_REDO_TRAN_LIST','PARALLEL_REDO_WORKER_SYNC','PARALLEL_REDO_WORKER_WAIT_WORK',
+      'PREEMPTIVE_XE_GETTARGETSTATE','PWAIT_ALL_COMPONENTS_INITIALIZED',
+      'PWAIT_DIRECTLOGCONSUMER_GETNEXT','QDS_PERSIST_TASK_MAIN_LOOP_SLEEP',
+      'QDS_ASYNC_QUEUE','QDS_CLEANUP_STALE_QUERIES_TASK_MAIN_LOOP_SLEEP',
+      'QDS_SHUTDOWN_QUEUE','REDO_THREAD_PENDING_WORK','REQUEST_FOR_DEADLOCK_SEARCH',
+      'RESOURCE_QUEUE','SERVER_IDLE_CHECK','SLEEP_BPOOL_FLUSH','SLEEP_DBSTARTUP',
+      'SLEEP_DCOMSTARTUP','SLEEP_MASTERDBREADY','SLEEP_MASTERMDREADY',
+      'SLEEP_MASTERUPGRADED','SLEEP_MSDBSTARTUP','SLEEP_SYSTEMTASK','SLEEP_TASK',
+      'SLEEP_TEMPDBSTARTUP','SNI_HTTP_ACCEPT','SP_SERVER_DIAGNOSTICS_SLEEP',
+      'SQLTRACE_BUFFER_FLUSH','SQLTRACE_INCREMENTAL_FLUSH_SLEEP',
+      'SQLTRACE_WAIT_ENTRIES','WAIT_FOR_RESULTS','WAITFOR','WAITFOR_TASKSHUTDOWN',
+      'WAIT_XTP_RECOVERY','WAIT_XTP_HOST_WAIT','WAIT_XTP_OFFLINE_CKPT_NEW_LOG',
+      'WAIT_XTP_CKPT_CLOSE','XE_DISPATCHER_JOIN','XE_DISPATCHER_WAIT','XE_TIMER_EVENT'
+  )
+ORDER BY r.wait_time DESC
+"@ -QueryTimeout 10 -TrustServerCertificate -ApplicationName 'xFACts Control Center'
+
+        $types = @()
+        foreach ($t in $typeRows) {
+            $types += [PSCustomObject]@{
+                wait_type = if ($t.wait_type -is [DBNull]) { $null } else { $t.wait_type }
+                session_count = if ($t.session_count -is [DBNull]) { 0 } else { [int]$t.session_count }
+                longest_wait_seconds = if ($t.longest_wait_seconds -is [DBNull]) { 0 } else { [decimal]$t.longest_wait_seconds }
+                total_wait_seconds = if ($t.total_wait_seconds -is [DBNull]) { 0 } else { [decimal]$t.total_wait_seconds }
+            }
+        }
+
+        $sessions = @()
+        foreach ($sr in $sessionRows) {
+            $sessions += [PSCustomObject]@{
+                session_id = [int]$sr.session_id
+                login_name = if ($sr.login_name -is [DBNull]) { $null } else { $sr.login_name }
+                host_name = if ($sr.host_name -is [DBNull]) { $null } else { $sr.host_name }
+                program_name = if ($sr.program_name -is [DBNull]) { $null } else { $sr.program_name }
+                database_name = if ($sr.database_name -is [DBNull]) { $null } else { $sr.database_name }
+                status = if ($sr.status -is [DBNull]) { $null } else { $sr.status }
+                wait_type = if ($sr.wait_type -is [DBNull]) { $null } else { $sr.wait_type }
+                wait_seconds = if ($sr.wait_seconds -is [DBNull]) { 0 } else { [decimal]$sr.wait_seconds }
+                wait_resource = if ($sr.wait_resource -is [DBNull]) { $null } else { $sr.wait_resource }
+                blocking_session_id = if ($sr.blocking_session_id -is [DBNull]) { 0 } else { [int]$sr.blocking_session_id }
+                query_text = if ($sr.query_text -is [DBNull]) { $null } else { $sr.query_text }
+            }
+        }
+
+        Write-PodeJsonResponse -Value ([PSCustomObject]@{ wait_types = $types; waiting_sessions = $sessions })
     } catch { Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = $_.Exception.Message }) -StatusCode 500 }
 }
