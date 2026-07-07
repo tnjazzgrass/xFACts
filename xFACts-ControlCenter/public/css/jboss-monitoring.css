@@ -975,12 +975,12 @@
 
 /* Colors the switch status line green on success. */
 .jbm-switch-status-success {
-    color: #4ade80;
+    color: var(--color-status-online);
 }
 
 /* Colors the switch status line red on error. */
 .jbm-switch-status-error {
-    color: #ef4444;
+    color: var(--color-status-critical);
 }
 
 /* Colors the switch status line blue while a switch is in progress. */
