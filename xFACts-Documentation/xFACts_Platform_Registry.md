@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-07-08 08:30:39
+Generated: 2026-07-08 09:54:01
 
 ## Module Registry
 
@@ -260,6 +260,7 @@ Generated: 2026-07-08 08:30:39
 | FileOps | MonitorLog | Database | Table | FileOps | File monitoring event log |
 | FileOps | MonitorStatus | Database | Table | FileOps | Current monitoring status per configuration |
 | FileOps | ServerConfig | Database | Table | FileOps | SFTP server connection configuration |
+| FileOps | TR_FileOps_MonitorLog_DisableETL_OneGI | Database | Trigger | FileOps | Monitors OneGI file escalation and disables automation |
 | FileOps | Scan-SFTPFiles.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Scan-SFTPFiles.ps1 | Scans SFTP directories for expected files |
 | FileOps | FileMonitoring-API.ps1 | WebAsset | API | E:\xFACts-ControlCenter\scripts\routes\FileMonitoring-API.ps1 | File Monitoring CC API endpoints |
 | FileOps | file-monitoring.css | WebAsset | CSS | E:\xFACts-ControlCenter\public\css\file-monitoring.css | File Monitoring CC styles |
