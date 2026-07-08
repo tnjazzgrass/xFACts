@@ -913,12 +913,29 @@
                    ],
     "triggers":  [
                      {
-                         "name":  "DisableETL",
+                         "name":  "TR_FileOps_MonitorLog_DisableETL_OneGI",
                          "parentTable":  "MonitorLog",
+                         "description":  "AFTER INSERT trigger on FileOps.MonitorLog that disables the IBM/B2B ETL automation for the OneGI client\u0027s process rows when any of its four monitored escalation files logs an escalation.",
+                         "module":  "FileOps",
+                         "category":  "FileOps",
                          "firesOnInsert":  1,
                          "firesOnUpdate":  0,
                          "firesOnDelete":  0,
-                         "isEnabled":  1
+                         "isEnabled":  1,
+                         "designNotes":  [
+                                             {
+                                                 "topic":  "Cross-Database Write",
+                                                 "note":  "This trigger runs a cross-database write inside the MonitorLog insert transaction. The escalation check is set-based (EXISTS against the inserted rows) so it fires correctly whether one or up to four files escalate in a single insert, and the UPDATE is idempotent via WHERE ACTIVE_FLAG = 1.",
+                                                 "sortOrder":  1
+                                             }
+                                         ],
+                         "relationshipNotes":  [
+                                                   {
+                                                       "relatedObject":  "Integration.etl.tbl_B2B_CLIENTS_FILES",
+                                                       "note":  "Updates ACTIVE_FLAG on the six OneGI process rows (CLIENT_ID 10678, SEQ_ID 1-6) in the Integration database\u0027s B2B client-files table. Setting ACTIVE_FLAG = 0 stops the IBM/B2B scheduler from automatically triggering those processes. The trigger only reaches this table when a OneGI escalation (config_id 77-80) is logged to FileOps.MonitorLog.",
+                                                       "sortOrder":  1
+                                                   }
+                                               ]
                      }
                  ],
     "functions":  [
