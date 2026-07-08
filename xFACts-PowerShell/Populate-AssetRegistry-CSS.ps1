@@ -51,169 +51,40 @@
    Prefix: (none)
    ============================================================================ #>
 
-# 2026-06-23  Gradient-stop carve-out (CC_CSS_Spec.md Section 10.2 amendment).
-#             A color literal inside a gradient function (linear/radial/conic-
-#             gradient, incl. -webkit- forms) was extracted and matched against
-#             --color-* tokens like any color value -- firing DRIFT_HEX_LITERAL
-#             on decorative gradient stops (e.g. #4ade80 in a toggle-handle
-#             linear-gradient matching --color-status-online). Per the spec,
-#             gradients are tokenized as whole --gradient-* values, so an
-#             individual color stop is not a color-token use. Get-LiteralsInDecl-
-#             aration now tags each color literal with InGradient (via
-#             Get-GradientSpans, a paren-depth walk that keeps nested functional-
-#             color stops interior), and the Tier-1 matcher skips matching when
-#             InGradient is set. The literal is still catalogued as a CSS_LITERAL
-#             row (inventory stays complete, NULL drift_codes, NULL match_ref) --
-#             only the color match is suppressed. A flat color outside any
-#             gradient in the same declaration is unaffected and matches
-#             normally. Whole-gradient reuse tokenization is not yet enforced.
-#             (--size-page-padding-top/x/y) were classified 'size-dimension' and
-#             so matched any width/height literal of equal value -- firing
-#             DRIFT_PX_LITERAL on gauge wraps, activity-content min-heights,
-#             badge dimensions, and toggle widths that merely equal 60/40/20px
-#             by coincidence (e.g. .plt-mini-gauge-wrap width 60px flagged only
-#             because it equals --size-page-padding-top). These tokens name the
-#             page body's outer padding (set once on body in the shell), not a
-#             general dimension scale, so a value match against an unrelated
-#             page dimension is not drift. They join nav/max-width/panel/modal/
-#             slideup/scrollbar in the 'size-structural' family that
-#             Test-LiteralTokenFamilyMatch never matches -- an oversight in the
-#             2026-06-22 carve-out list, now corrected. Genuine spacing-property
-#             literals (padding/margin 20px) still match --size-spacing-2xl and
-#             remain real repoint drift; only the dimension-property coincidences
-#             clear. Verified against the registry: all 13 width/height 60px
-#             rows were coincidental, with zero genuine page-padding matches.
-#             status-glow color tokens (--color-banner-*, --color-glow-*) were
-#             classified 'color-role' and so matched a literal of any color
-#             property -- firing DRIFT_HEX_LITERAL on page badges/pills/icons
-#             whose value merely equalled a banner/glow value by coincidence
-#             (e.g. .jbm-info-icon background rgba(86,156,214,0.15) flagged only
-#             because it equals --color-banner-reconnecting-bg). These tokens
-#             name one feature's color, not a general vocabulary, so a value
-#             match against an unrelated page literal is not drift. They now
-#             classify 'color-structural' (Get-TokenNameFamily) and
-#             Test-LiteralTokenFamilyMatch never matches a literal against a
-#             'color-structural' token -- the exact color analogue of the
-#             2026-06-22 size-structural carve-out. --color-status/accent/tint/
-#             button-* remain 'color-role' and keep matching, so genuine status/
-#             tint repoints are unaffected. The now-non-drift badge literals
-#             become LOCAL inventory rows; multi-file recurrences among them are
-#             the chrome-promotion candidates for a future general tint/glow
-#             vocabulary (B-101), at which point those new general tokens match
-#             normally by their own names.
-#             records the matched token name(s) on the row's MatchReference
-#             property instead of discarding them. The match loop collects
-#             every same-criteria (same-family, same-value) token rather than
-#             breaking on the first, so a value held by more than one
-#             same-purpose token surfaces as a comma-space delimited, sorted
-#             list (e.g. a green matching both --color-status-idle and
-#             --color-status-online) rather than silently resolving to one.
-#             match_reference records the populator's positive finding only;
-#             whether that finding is drift remains drift_codes' verdict. For
-#             CSS a finding coincides with DRIFT_HEX/PX_LITERAL by definition
-#             (the match condition is the drift condition), so match_reference
-#             populates on the literal drift rows. Plumbed end-to-end via the
-#             shared New-AssetRegistryRow factory and Invoke-AssetRegistryBulkInsert
-#             (new match_reference column) in xFACts-AssetRegistryFunctions.ps1.
-#             the durable convention-based replacement). The size-dimension
-#             catch-all conflated genuine general dimensions with single-purpose
-#             structural/chrome tokens (nav rail, page max-width, panel/modal/
-#             slideup/scrollbar measures), so a page-file width/height literal
-#             that merely equaled one of those by value fired a false
-#             DRIFT_PX_LITERAL -- contradicting the drift definition's own caveat
-#             that a size value matching a token of unrelated purpose is not
-#             drift (e.g. .doc-mock-col-right width:240px flagged only because it
-#             equals --size-nav-width:240px, the nav rail). Get-TokenNameFamily
-#             now classifies size-nav-*/size-max-width/size-panel-*/size-modal-*/
-#             size-slideup-*/size-scrollbar-* into a new 'size-structural'
-#             family, and Test-LiteralTokenFamilyMatch never matches a literal
-#             against a 'size-structural' token. This mirrors the color-role
-#             split (Get-TokenNameFamily) but inverted: structural dimensions
-#             match NOTHING, where role colors match ANYTHING. Remaining --size-*
-#             tokens keep 'size-dimension' and match normally; there are no
-#             general dimension tokens today, so this changes only the chrome
-#             false-positives. Name-based, so the prefix list needs extending
-#             when a new structural dimension token is introduced -- B-097 will
-#             replace it with a convention (only an explicit general-dimension
-#             prefix participates in dimension matching).
-# 2026-06-09  Size-literal purpose sub-classification (B-014). The single 'size'
-#             token family is split four ways by property so a size literal
-#             matches only same-purpose --size-* tokens, mirroring the existing
-#             color sub-family narrowing: padding/margin/gap/inset -> size-spacing
-#             (--size-spacing-*); border-radius -> size-radius (--size-radius-*);
-#             border/outline width -> size-border (--size-border-*); width/height
-#             measures -> size-dimension (all remaining layout --size-* tokens:
-#             nav/page-padding, panel/modal/slideup widths and heights, scrollbar
-#             -- collapsed to one family because the width/height properties
-#             cannot distinguish them). Clears the small-value spacing-vs-radius
-#             and spacing-vs-border collision artifacts (1/2/3px etc.); genuine
-#             same-purpose matches (e.g. padding:12px vs --size-spacing-lg) and
-#             all font-size literals remain Tier-1 drift as honest tokenization
-#             candidates. CSS_LITERAL rows still record the coarse 'size' family
-#             in variant_type; the sub-family is used only for token matching.
-# 2026-06-08  Literal inventory and purpose-aware literal drift. Every color
-#             (hex, rgb/rgba, hsl/hsla) and dimensional size (px, rem, em, vh,
-#             vw, %) literal in a non-:root declaration now emits a CSS_LITERAL
-#             row (reference_type LITERAL; component_name = the literal,
-#             variant_type = family color/size/font-size, variant_qualifier_1 =
-#             the property). Tier-1 drift (DRIFT_HEX/PX_LITERAL) attaches only
-#             when a shared token of matching value and purpose exists;
-#             token-less literals are non-drift inventory rows. Color purpose is
-#             matched by sub-family: property-specific tokens (--color-bg-*,
-#             --color-border-*, --color-text-*) match only same-purpose literals,
-#             while role/state tokens (--color-accent/status/tint/glow/banner/
-#             button-*) match a literal of any color property. Literals are
-#             cataloged per occurrence directly from the declaration node during
-#             the walk, replacing the former Pass-3 line-key lookup (which
-#             missed literals in multi-line rules). Shared-variable map enriched
-#             to carry each token's value and family alongside its defining file;
-#             the USAGE resolver reads .SourceFile. Added Get-PropertyTokenFamily,
-#             Get-TokenNameFamily, Test-LiteralTokenFamilyMatch, ConvertTo-ColorKey,
-#             Get-LiteralsInDeclaration, and Add-CssLiteralRow; removed
-#             Get-HexLiterals/Get-PxLiterals and the Pass-3 literal blocks.
-# 2026-05-31  Renamed drift code ANCHOR_SECTION_INVALID_PREFIX to
-#             SHELL_SECTION_INVALID_PREFIX and changed "anchor file" wording to
-#             "shell file" throughout, matching CC_CSS_Spec.md. "Anchor" is now
-#             reserved for the CSS_FILE base row; "shell" denotes the
-#             FOUNDATION/CHROME-bearing shared file (scope_tier SHELL).
-# 2026-05-31  Dropped the separate Get-ObjectRegistryMap call. The zone/scope
-#             map now also carries registry_id, so the file makes one
-#             Object_Registry query instead of two. A transitional shim at the
-#             bulk-insert call projects registry_id back to the flat map shape
-#             the bulk insert still expects.
-# 2026-05-30  Converted to the Control Center PowerShell file format spec:
-#             block-comment header and section banners, canonical section
-#             order, dedicated CHANGELOG section, single EXECUTION section
-#             with sub-section markers, and leading purpose comments on
-#             script-scope declarations. Made zone and scope table-driven:
-#             both now come from dbo.Object_Registry rather than a local
-#             path test and hardcoded shared-file lists. Removed Get-CssZone
-#             and the shared-file list constants. Added FILE_NOT_REGISTERED
-#             for files absent from Object_Registry.
-# 2026-05-22  File-level discipline and construct-specific checks added:
-#             MISSING_BLANK_LINE_SEPARATOR, EMPTY_SECTION,
-#             MISSING_TRAILING_NEWLINE, PSEUDO_ELEMENT_OUT_OF_ORDER,
-#             VARIANT_BEFORE_BASE, DUPLICATE_ROOT_BLOCK. Broadened
-#             MISSING_PURPOSE_COMMENT to :root, @keyframes, and @media; @media
-#             now emits its own row.
-# 2026-05-22  Class-on-class compounds emit USAGE rows, not DEFINITION rows;
-#             PREFIX_MISMATCH now checks every class token in a compound;
-#             added ANCHOR_SECTION_INVALID_PREFIX and UNDEFINED_CLASS_USAGE.
-# 2026-05-11  Added CSS_FILE pure-anchor row, emitted once per scanned file
-#             ahead of FILE_HEADER. Moved EXCESS_BLANK_LINES and
-#             FORBIDDEN_COMMENT_STYLE from FILE_HEADER onto CSS_FILE.
-# 2026-05-07  Replaced the catch-all MALFORMED_SECTION_BANNER with seven
-#             granular banner-shape codes; UNKNOWN_SECTION_TYPE now also
-#             emitted from the banner parser. Banner detection made permissive.
-# 2026-05-07  Rebuilt Pass 3 codebase checks on a one-time row index;
-#             scoped per-rule attachments to the rule's own row slice.
-# 2026-05-07  Adopted the shared visitor-pattern walker, section-list builder,
-#             and file-header parser. Added prefix registry validation and
-#             several formatting/forbidden-selector checks.
+# 2026-06-23  Three literal-matcher false-positive carve-outs: gradient color
+#             stops, page-padding size tokens, and banner/glow color tokens no
+#             longer fire literal drift on coincidental value matches. Matched
+#             token names now recorded on match_reference.
+# 2026-06-22  Added the size-structural token family (nav, max-width, panel,
+#             modal, slideup, scrollbar) that never matches dimension literals,
+#             clearing false dimension-repoint drift on structural measures.
+# 2026-06-09  Size-literal purpose sub-classification: size literals match only
+#             same-purpose tokens (spacing, radius, border, dimension).
+# 2026-06-08  Literal inventory and purpose-aware literal drift: every color and
+#             size literal in a non-root declaration emits a CSS_LITERAL row.
+#             Literal drift attaches only when a matching-value, matching-purpose
+#             token exists; token-less literals emit non-drift inventory rows.
+# 2026-05-31  Renamed ANCHOR_SECTION_INVALID_PREFIX to SHELL_SECTION_INVALID_PREFIX;
+#             "anchor" now denotes the base row, "shell" the shared file.
+#             Zone/scope map now carries registry_id, collapsing two
+#             Object_Registry queries into one.
+# 2026-05-30  Converted to the PowerShell file format spec. Zone and scope are
+#             now sourced from Object_Registry rather than path tests and
+#             hardcoded lists. Added FILE_NOT_REGISTERED.
+# 2026-05-22  Added file-level and construct checks: blank-line separator, empty
+#             section, trailing newline, pseudo-element order, variant-before-base,
+#             duplicate root block. Broadened MISSING_PURPOSE_COMMENT coverage.
+#             Class-on-class compounds emit USAGE rows; PREFIX_MISMATCH checks
+#             every token in a compound; added UNDEFINED_CLASS_USAGE.
+# 2026-05-11  Added the CSS_FILE anchor row, emitted once per file ahead of
+#             FILE_HEADER.
+# 2026-05-07  Replaced MALFORMED_SECTION_BANNER with granular banner-shape codes.
+#             Rebuilt Pass 3 checks on a one-time row index.
+#             Adopted the shared walker, section-list builder, and file-header
+#             parser. Added prefix-registry validation.
 # 2026-05-05  AST walk resilience and FILE_HEADER purpose-paragraph extraction.
 # 2026-05-04  Complete purpose_description coverage; FILE_HEADER signature NULL.
-# 2026-05-03  @media permitted in any section; FEEDBACK_OVERLAYS section type;
-#             FOUNDATION reset exemptions; forbid :not() and stacked pseudos.
+# 2026-05-03  @media permitted in any section; FOUNDATION reset exemptions.
 # 2026-05-02  Initial production implementation.
 
 <# ============================================================================
@@ -417,8 +288,7 @@ $script:CssVisitor = {
 
         'comment' {
             # COMMENT_BANNER rows are emitted from the section list at file
-            # start, not here. Each non-banner comment is a leaf for the walker;
-            # we have nothing more to do.
+            # start, not here.
             return 'SKIP_CHILDREN'
         }
 
@@ -480,10 +350,8 @@ $script:CssVisitor = {
                 }
             }
 
-            # :root checks (CC_CSS_Spec.md Section 10.2). The :root rule
-            # produces a CSS_RULE row via the primary-less branch of
-            # Add-RowsForSelector. Per the spec :root must be preceded by a
-            # purpose comment and only one :root may exist per file.
+            # :root checks: :root must be preceded by a purpose comment, and
+            # only one :root may exist per file.
             $selectorIsRoot = ($Node.selector -and $Node.selector.Trim() -eq ':root')
             if ($selectorIsRoot) {
                 # Locate the CSS_RULE row we just emitted for :root (the
@@ -511,11 +379,8 @@ $script:CssVisitor = {
                 }
             }
 
-            # Process the rule's declarations (variables, var() refs, animation
-            # keyframe refs, color/size literal capture, blank-line / compound-
-            # declaration drift). We handle decls here rather than letting the
-            # walker recurse, so we can apply rule-scoped checks like
-            # BLANK_LINE_INSIDE_RULE.
+            # Process the rule's declarations here (not via the walker) so
+            # rule-scoped checks like BLANK_LINE_INSIDE_RULE can apply.
             $declLines = New-Object System.Collections.Generic.List[int]
             $declSpans = New-Object System.Collections.Generic.List[object]
             if ($Node.nodes) {
@@ -567,30 +432,16 @@ $script:CssVisitor = {
                             }
                         }
 
-                        # Literal capture (CSS_LITERAL) with inline Tier-1 drift
-                        # decision. Every color/size literal in a non-:root
-                        # declaration is cataloged as one CSS_LITERAL row. A
-                        # literal is Tier-1 drift (DRIFT_HEX/PX_LITERAL) only
-                        # when a shared token of the SAME family carries the
-                        # SAME value; otherwise it is Tier-2 inventory (the row
-                        # carries no drift code). :root declarations are token
-                        # definitions, not page literals, and are skipped (they
-                        # are already cataloged as CSS_VARIABLE DEFINITION rows).
-                        # Handling the literal here, per occurrence, is what
-                        # makes single-line and multi-line rules behave
-                        # identically -- the row is emitted from the declaration
-                        # node directly, not reconstructed in a later pass.
+                        # Literal capture: every color/size literal in a non-:root
+                        # declaration becomes a CSS_LITERAL row. :root declarations
+                        # are skipped (cataloged as CSS_VARIABLE definitions).
                         if (-not $selectorIsRoot) {
                             $literals = Get-LiteralsInDeclaration -Property $child.prop -Value $child.value
                             if ($literals.Count -gt 0) {
                                 $varMapForTier1 = Get-ZoneSharedVariableMap
                                 foreach ($lit in $literals) {
-                                    # The literal's Family carries a sub-family
-                                    # (color-bg/border/text/fill or
-                                    # size-spacing/radius/border/dimension) used
-                                    # for matching; the row records the coarse
-                                    # family (color/size/font-size) so the
-                                    # catalog's family dimension stays stable.
+                                    # Row records the coarse family (color/size/font-size);
+                                    # the sub-family is used only for matching.
                                     $isColor      = $lit.Family.StartsWith('color')
                                     $isSize       = $lit.Family.StartsWith('size')
                                     $coarseFamily = if ($isColor) { 'color' } elseif ($isSize) { 'size' } else { $lit.Family }
@@ -604,29 +455,14 @@ $script:CssVisitor = {
                                         -RawText        "$($child.prop): $($child.value)"
                                     if (-not $litRow) { continue }
 
-                                    # Gradient-stop carve-out (CC_CSS_Spec.md
-                                    # Section 10.2): a color literal inside a
-                                    # gradient function is catalogued (the row
-                                    # above) but is never color drift, because
-                                    # gradients are tokenized as whole
-                                    # --gradient-* values, not by their color
-                                    # stops. The row stays in inventory with
-                                    # NULL drift_codes and NULL match_reference;
-                                    # only the Tier-1 match is suppressed.
+                                    # Gradient color stops are cataloged (row above)
+                                    # but never drift; only the match is suppressed.
                                     if ($lit.InGradient) { continue }
 
-                                    # Tier-1 test: does a shared token of a matching
-                                    # family/purpose hold the same value? Color comparison
-                                    # is whitespace/case-normalized; size comparison is on
-                                    # the trimmed token. Color matching honors sub-family
-                                    # (role/state tokens match any color property).
-                                    #
-                                    # All same-criteria matches are collected (not just the
-                                    # first): the matched token name(s) are recorded in
-                                    # match_reference as the populator's positive finding,
-                                    # and a genuine multi-match (one value held by more than
-                                    # one same-purpose token) self-surfaces as a delimited
-                                    # list rather than silently resolving to one.
+                                    # Does a shared token of matching family/purpose hold
+                                    # this literal's value? All matches are collected, so a
+                                    # value held by multiple same-purpose tokens surfaces as
+                                    # a list in match_reference.
                                     $litKey   = if ($isColor) { ConvertTo-ColorKey -Literal $lit.Text } else { $lit.Text.Trim().ToLower() }
                                     $matchedTokens = [System.Collections.Generic.List[string]]::new()
                                     foreach ($tokEntry in $varMapForTier1.GetEnumerator()) {
@@ -751,13 +587,9 @@ $script:CssVisitor = {
                 return 'SKIP_CHILDREN'
             }
 
-            # @media: emit a CSS_RULE row representing the @media block
-            # itself, then let the walker recurse so wrapped rules are
-            # processed in the at-rule's context. The row is the host for
-            # MISSING_PURPOSE_COMMENT (CC_CSS_Spec.md Section 12.1) and any
-            # future @media-specific drift codes. Wrapped rules continue to
-            # produce their own CSS_CLASS / CSS_VARIANT / CSS_RULE rows
-            # independently.
+            # @media: emit a CSS_RULE row for the block itself (host for
+            # MISSING_PURPOSE_COMMENT), then recurse so wrapped rules process
+            # in the at-rule's context and emit their own rows.
             if ($Node.name -eq 'media') {
                 $mediaLabel = "@media"
                 if ($Node.params) { $mediaLabel = "$mediaLabel $($Node.params)" }
@@ -850,10 +682,9 @@ $script:CurrentUsedCommentLines = $null
    Prefix: (none)
    ============================================================================ #>
 
-# Walk the PostCSS AST and collect every comment into the normalized shape the
-# shared Get-FileHeaderInfo and New-SectionList expect (.Type / .Text /
-# .LineStart / .LineEnd). PostCSS produces only block comments. Returns a list
-# sorted by LineStart ascending.
+# Collect every PostCSS comment into the normalized shape
+# (.Type / .Text / .LineStart / .LineEnd) that Get-FileHeaderInfo and
+# New-SectionList expect. Returns a list sorted by LineStart.
 function Convert-PostCssCommentsToNormalized {
     param([Parameter(Mandatory)] $AstRoot)
 
@@ -960,28 +791,20 @@ function Get-VarReferences {
     return @($matchSet | ForEach-Object { $_.Groups[1].Value })
 }
 
-# Classify a declaration property into the token family whose tokens it may
-# legitimately consume, or $null when the property is not tokenizable. The
-# family is the purpose dimension of literal drift: a literal is Tier-1 drift
-# only when a token of the SAME family carries the same value. Families are
-# purpose sub-classified so a literal matches only same-purpose tokens: color
-# splits into color-bg/border/text/fill (plus the cross-property color-role on
-# the token side); size splits into size-spacing/radius/border/dimension;
-# font-size is its own family. All map to the token-name categories defined
-# once in the shell FOUNDATION :root (--color-*, --size-*, --font-size-*).
-# Properties not in any family return $null and their literals are not cataloged
-# (bare unitless numbers like line-height / font-weight / z-index / flex are
-# excluded here, as are gradient / shadow / font-family values).
+# Classify a declaration property into the token family it may consume, or
+# $null when the property is not tokenizable. Color splits into
+# color-bg/border/text/fill, size into size-spacing/radius/border/dimension,
+# with font-size its own family, so a literal matches only same-purpose tokens.
+# $null covers bare unitless numbers (line-height, font-weight, z-index, flex)
+# and gradient/shadow/font-family values.
 function Get-PropertyTokenFamily {
     param([string]$Property)
     if ([string]::IsNullOrWhiteSpace($Property)) { return $null }
     $p = $Property.Trim().ToLower()
 
-    # Color-family properties, classified into a color sub-family so a literal
-    # is matched only against tokens of the same color purpose (a background
-    # literal against background tokens, a border literal against border tokens,
-    # etc.). Role/state color tokens are exempt from this narrowing on the token
-    # side (see Get-TokenNameFamily). Returned values all begin 'color-'.
+    # Color properties, sub-classified so a literal matches only same-purpose
+    # tokens. Role/state tokens are exempt from this narrowing on the token
+    # side (see Get-TokenNameFamily).
     $bgProps     = @('background', 'background-color')
     $borderProps = @('border-color', 'border-top-color', 'border-right-color',
                      'border-bottom-color', 'border-left-color', 'outline-color')
@@ -997,18 +820,10 @@ function Get-PropertyTokenFamily {
     # token of equal pixel value (and vice versa).
     if ($p -eq 'font-size') { return 'font-size' }
 
-    # Size/dimension properties consume --size-* tokens, sub-classified by
-    # purpose so a literal matches only same-purpose size tokens (mirroring the
-    # color sub-family narrowing above). The four sub-families are driven by
-    # what the CSS property can actually distinguish:
-    #   size-spacing   <- padding/margin/gap/inset (--size-spacing-*)
-    #   size-radius    <- border-radius           (--size-radius-*)
-    #   size-border    <- border/outline width    (--size-border-*)
-    #   size-dimension <- width/height measures   (all remaining --size-* layout
-    #                     tokens: nav/page-padding, panel/modal/slideup widths
-    #                     and heights, scrollbar). These share the width/height
-    #                     properties and cannot be told apart by property, so
-    #                     they intentionally collapse to one dimension family.
+    # Size properties consume --size-* tokens, sub-classified so a literal
+    # matches only same-purpose size tokens: spacing, radius, border. The
+    # width/height family (size-dimension) collapses several token purposes
+    # that share the width/height properties and can't be told apart by property.
     $spacingProps = @(
         'padding', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left',
         'margin', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left',
@@ -1026,24 +841,14 @@ function Get-PropertyTokenFamily {
     return $null
 }
 
-# Classify a token by its name into the same family vocabulary that
-# Get-PropertyTokenFamily produces for declaration properties, or $null when
-# the token belongs to a family with no literal-matching counterpart (font,
-# duration, shadow, gradient, z). Tier-1 matching compares a literal's family
-# (from the property) against a token's family (from this name classification).
-#
-# Color tokens split three ways by purpose, which the populator relies on and
-# the CC_CSS_Spec.md color-token naming rule guarantees:
-#   - Property-specific tokens (--color-bg-*, --color-border-*, --color-text-*)
-#     return a matching color sub-family and match only same-purpose literals.
-#   - Role/state tokens (--color-accent/status/tint/button-*) return the
-#     cross-property marker 'color-role' and match a literal of ANY color
-#     property, because such colors are used across properties by design.
-#   - Single-purpose chrome tokens (--color-banner-*, --color-glow-*) return
-#     'color-structural' and match NOTHING: they name one feature's color, so a
-#     coincidental value match against an unrelated page literal is not drift.
-# The font-size prefix is tested before the bare color/size prefixes because
-# '--font-size-*' would otherwise be misread.
+# Classify a token by its name into the same family vocabulary
+# Get-PropertyTokenFamily produces, or $null for families with no
+# literal-matching counterpart (font, duration, shadow, gradient, z).
+# Color tokens split three ways: property-specific (color-bg/border/text) match
+# same-purpose literals; role/state (color-accent/status/tint/button) return
+# 'color-role' and match any color property; single-purpose chrome
+# (color-banner/glow) return 'color-structural' and match nothing. font-size is
+# tested before the bare color/size prefixes so '--font-size-*' isn't misread.
 function Get-TokenNameFamily {
     param([string]$TokenName)
     if ([string]::IsNullOrWhiteSpace($TokenName)) { return $null }
@@ -1052,34 +857,17 @@ function Get-TokenNameFamily {
     if ($n -like 'color-bg-*')     { return 'color-bg' }
     if ($n -like 'color-border-*') { return 'color-border' }
     if ($n -like 'color-text-*')   { return 'color-text' }
-    # Single-purpose chrome color tokens (connection-banner state surfaces and
-    # status glows) name one specific feature's color and are NOT a general
-    # color vocabulary, so a page-file badge/pill/icon literal that merely
-    # equals one by value is an unrelated-purpose coincidence, not drift
-    # (mirrors the size-structural carve-out: these match NOTHING rather than
-    # matching any color property the way color-role does). They return the
-    # 'color-structural' family, which Test-LiteralTokenFamilyMatch never
-    # matches a literal against. Tested before the role prefixes below so the
-    # bare 'color-*' catch-all does not reclaim them. When a general tint/glow
-    # vocabulary is established (B-101) those new tokens take their own names
-    # and match normally; only the banner/glow tokens stay non-matchable.
+    # color-banner/glow name one feature's color, not a general vocabulary, so
+    # they return 'color-structural' and match nothing. Tested before the bare
+    # 'color-*' catch-all so it doesn't reclaim them.
     if ($n -like 'color-banner-*' -or $n -like 'color-glow-*') { return 'color-structural' }
     if ($n -like 'color-accent-*' -or $n -like 'color-status-*' -or
         $n -like 'color-tint-*'   -or $n -like 'color-button-*') { return 'color-role' }
     if ($n -like 'color-*')      { return 'color-role' }
-    # Size sub-families. Specific purpose prefixes are tested before the bare
-    # 'size-*' catch-all. Property-specific spacing/radius/border tokens match
-    # only same-purpose literals. Structural/chrome dimension tokens (nav rail,
-    # page max-width, page outer padding, and panel/modal/slideup measures) name
-    # a single layout element and are NOT a general dimension scale, so a
-    # page-file width/height literal that merely equals one by value is an
-    # unrelated-purpose match and must not be drift (mirrors the color-role
-    # split, but inverted: structural dimensions match NOTHING rather than
-    # matching any property). They return the 'size-structural' family, which
-    # Test-LiteralTokenFamilyMatch never matches a literal against. Any remaining
-    # --size-* token is a genuine general dimension and keeps 'size-dimension'.
-    # (B-097 will replace this name-based carve-out with a convention-based
-    # general-dimension prefix.)
+    # Size sub-families, specific prefixes tested before the bare 'size-*'
+    # catch-all. Structural dimension tokens (nav, max-width, page-padding,
+    # panel/modal/slideup) return 'size-structural' and match nothing; any
+    # remaining --size-* token is a general dimension (size-dimension).
     if ($n -like 'size-spacing-*') { return 'size-spacing' }
     if ($n -like 'size-radius-*')  { return 'size-radius' }
     if ($n -like 'size-border-*')  { return 'size-border' }
@@ -1091,17 +879,10 @@ function Get-TokenNameFamily {
     return $null
 }
 
-# Decide whether a literal of the given family matches a token of the given
-# family for Tier-1 drift. Non-color families require exact equality, except
-# that a 'size-structural' token (nav/max-width/panel/modal/slideup/scrollbar --
-# a single named layout element, not a general dimension scale) never matches a
-# literal: a width/height value equal to a structural token's value is an
-# unrelated-purpose coincidence, not drift. A 'color-structural' token
-# (connection-banner surfaces, status glows) never matches for the same reason
-# on the color side: a badge/pill/icon value equal to one of these single-
-# purpose chrome colors is coincidence, not drift. Color families otherwise
-# match when the token is a cross-property role/state color ('color-role') or
-# when the literal and token share the same color sub-family.
+# Decide whether a literal's family matches a token's family. Non-color families
+# require exact equality; 'size-structural' and 'color-structural' tokens never
+# match. Color otherwise matches when the token is 'color-role' (any color
+# property) or shares the literal's color sub-family.
 function Test-LiteralTokenFamilyMatch {
     param([string]$LiteralFamily, [string]$TokenFamily)
     if ([string]::IsNullOrWhiteSpace($LiteralFamily) -or [string]::IsNullOrWhiteSpace($TokenFamily)) { return $false }
@@ -1115,11 +896,9 @@ function Test-LiteralTokenFamilyMatch {
     return ($LiteralFamily -eq $TokenFamily)
 }
 
-# Normalize a color literal to a canonical comparison key so that two writings
-# of the same color compare equal regardless of casing or interior whitespace
-# (e.g. '#FF4444' and '#ff4444'; 'rgba(0, 0, 0, 0.6)' and 'rgba(0,0,0,0.6)').
-# Used only for Tier-1 token-value matching; the row stores the literal as
-# authored (the raw token text), not the normalized form.
+# Normalize a color literal to a comparison key so two writings of the same
+# color compare equal regardless of casing or interior whitespace. The stored
+# row keeps the literal as authored, not the normalized form.
 function ConvertTo-ColorKey {
     param([string]$Literal)
     if ($null -eq $Literal) { return '' }
@@ -1127,19 +906,10 @@ function ConvertTo-ColorKey {
 }
 
 # Find every cataloguable literal in a declaration value, classified by family.
-# Returns a list of objects, each: @{ Text = '<as authored>'; Family =
-# '<color sub-family>'|'size'|'font-size'; Property = '<declaration property>' }.
-# Color families are sub-classified ('color-bg', 'color-border', 'color-text',
-# 'color-fill') and size families are sub-classified ('size-spacing',
-# 'size-radius', 'size-border', 'size-dimension') so a literal is later matched
-# only against tokens of the same purpose. The caller supplies the property so
-# each literal carries its
-# purpose dimension. Color literals (hex, rgb(), rgba(), hsl(), hsla()) are
-# captured only when the property is a color-family property; dimensional
-# literals (px, rem, em, vh, vw, %) only when the property is a size or
-# font-size family property. A property outside every family
-# (Get-PropertyTokenFamily returns $null) yields no literals, which is how
-# non-tokenizable properties and bare unitless numbers are filtered out.
+# Returns a list of @{ Text = '<as authored>'; Family; Property }. Color
+# literals (hex, rgb/rgba, hsl/hsla) are captured only for color properties,
+# dimensional literals (px, rem, em, vh, vw, %) only for size/font-size
+# properties; a property in no family yields no literals.
 function Get-LiteralsInDeclaration {
     param([string]$Property, [string]$Value)
     if ($null -eq $Value) { return @() }
@@ -1150,15 +920,9 @@ function Get-LiteralsInDeclaration {
     $results = New-Object System.Collections.Generic.List[object]
 
     if ($family.StartsWith('color')) {
-        # Compute the character ranges spanned by any gradient function in the
-        # value (linear-gradient / radial-gradient / conic-gradient, incl. their
-        # -webkit- prefixed forms). A color literal whose start index falls
-        # inside one of these ranges is a gradient stop: per CC_CSS_Spec.md
-        # Section 10.2 it is catalogued but is never color drift, because gradients are
-        # tokenized as whole --gradient-* values, not by their color stops. The
-        # range walk tracks paren depth from the gradient's opening '(' to its
-        # matching close, so a nested functional color (e.g. an rgba() stop) is
-        # correctly counted as interior rather than ending the gradient early.
+        # Compute character ranges of any gradient function in the value. A color
+        # literal whose start index falls inside a range is a gradient stop and
+        # is tagged InGradient (cataloged but never color drift).
         $gradientSpans = Get-GradientSpans -Value $Value
 
         # Hex colors (#abc, #abcdef, #aabbccdd).
@@ -1175,12 +939,9 @@ function Get-LiteralsInDeclaration {
         }
     }
     else {
-        # Dimensional literals for the size and font-size families: a number
-        # (integer or decimal) immediately followed by a recognized unit. Bare
-        # unitless numbers carry no unit and are intentionally not matched.
-        # Size literals never occur inside gradients here: a gradient only
-        # appears in a color-family property value (e.g. background), which does
-        # not extract size literals, so InGradient is always false in this arm.
+        # Dimensional literals (number + unit) for size/font-size families.
+        # Bare unitless numbers are intentionally not matched. InGradient is
+        # always false here (gradients only appear in color-property values).
         foreach ($m in [regex]::Matches($Value, '(?i)(?<![\w.#-])\d+(?:\.\d+)?(?:px|rem|em|vh|vw|%)')) {
             $results.Add(@{ Text = $m.Value; Family = $family; Property = $Property; InGradient = $false })
         }
@@ -1189,12 +950,9 @@ function Get-LiteralsInDeclaration {
     return @($results.ToArray())
 }
 
-# Return the character ranges (start/end index pairs) spanned by every gradient
-# function in a declaration value. A range covers from the gradient keyword's
-# opening '(' through its matching close paren, tracking paren depth so nested
-# function calls (functional-color stops such as rgba(...)) do not prematurely
-# end the span. Used by Get-LiteralsInDeclaration to tag gradient-internal
-# color stops (CC_CSS_Spec.md Section 10.2). Returns an array of @{ Start; End }.
+# Return the character ranges of every gradient function in a declaration value,
+# each @{ Start; End }. Tracks paren depth so nested calls (e.g. rgba() stops)
+# don't end the span early.
 function Get-GradientSpans {
     param([string]$Value)
     $spans = New-Object System.Collections.Generic.List[object]
@@ -1240,12 +998,9 @@ function Test-IndexInSpans {
    Prefix: (none)
    ============================================================================ #>
 
-# Look up the comment immediately preceding a construct at line $Line, in
-# the normalized comment list. Returns $true / $false (presence) plus the
-# clean comment text. A "preceding comment" is one whose LineEnd is exactly
-# $Line - 1 and which is NOT a banner-shaped comment. Marks the comment's
-# line as consumed in $script:CurrentUsedCommentLines so it does not later
-# count as a stray comment.
+# Look up the comment immediately preceding a construct at $Line (LineEnd ==
+# $Line - 1, non-banner) in the normalized comment list. Returns presence plus
+# the clean text, and marks the comment consumed so it won't count as stray.
 function Test-HasPrecedingPurposeComment {
     param([int]$Line)
 
@@ -1263,10 +1018,9 @@ function Test-HasPrecedingPurposeComment {
     return @{ Present = $false; Text = $null }
 }
 
-# Walk a selector's children, splitting at combinator boundaries. Returns
-# array of compound objects describing what each compound contains: classes,
-# ids, pseudo-classes, pseudo-elements, attribute count, tag/universal flags,
-# and a pseudo-interleaved flag (true if a pseudo-class appeared before the
+# Split a selector at combinator boundaries into compound objects. Each records
+# its classes, ids, pseudo-classes, pseudo-elements, attribute count,
+# tag/universal flags, and a pseudo-interleaved flag (a pseudo-class before the
 # last class token).
 function Get-CompoundList {
     param([Parameter(Mandatory)] $SelectorChildren)
@@ -1392,11 +1146,8 @@ function Get-ZoneSharedKeyframeMap {
    Prefix: (none)
    ============================================================================ #>
 
-# Wrap New-AssetRegistryRow with the per-file context that every CSS row
-# carries (file_name = current file, file_type = CSS, source_section = the
-# section the row's line falls inside, source_file = current file by default).
-# Source-section lookup uses the pre-built section list, replacing the
-# previous running-state model.
+# Wrap New-AssetRegistryRow with the per-file context every CSS row carries:
+# file_name, file_type = CSS, source_section (from the row's line), source_file.
 function New-CssRow {
     param(
         [int]$LineStart = 1,
@@ -1457,12 +1208,9 @@ function Resolve-ClassScope {
     return @{ Scope = 'LOCAL'; SourceFile = $script:CurrentFile }
 }
 
-# Emit the CSS_FILE anchor row for the current file. Exactly one row per
-# scanned .css file. This is the universal "this file was scanned" anchor,
-# parallel to JS_FILE, HTML_FILE, and (future) PS_FILE. The row carries
-# no raw_text, no purpose_description, and no signature - it is purely
-# structural. Pass 3 attaches file-overall drift codes (EXCESS_BLANK_LINES)
-# to this row.
+# Emit the CSS_FILE anchor row, one per scanned file. The row is purely
+# structural (no raw_text, purpose_description, or signature); Pass 3 attaches
+# file-overall drift codes (EXCESS_BLANK_LINES) to it.
 function Add-CssFileRow {
     param([int]$LineEnd)
 
@@ -1528,12 +1276,9 @@ function Add-CssRuleRow {
     return $row
 }
 
-# Emit a CSS_CLASS or CSS_VARIANT row for a single class token. Under the
-# new spec model, each class token in a compound is its own row. When the
-# compound carries a pseudo-class, the row is a CSS_VARIANT with
-# variant_type=pseudo and the pseudo name in qualifier_2; otherwise it
-# is a plain CSS_CLASS row. variant_qualifier_1 is never set under the
-# new model - the old "class modifier" qualifier is gone.
+# Emit a CSS_CLASS or CSS_VARIANT row for a single class token. A compound with
+# a pseudo-class yields a CSS_VARIANT (variant_type=pseudo, pseudo name in
+# qualifier_2); otherwise a plain CSS_CLASS. variant_qualifier_1 is unused.
 function Add-CssClassRow {
     param(
         [Parameter(Mandatory)] [string]$ClassName,
@@ -1663,18 +1408,14 @@ function Add-CssVariableRow {
     return $row
 }
 
-# Emit a CSS_LITERAL inventory row for one literal occurrence in a declaration
-# value. Every cataloguable color or size literal gets exactly one row,
-# regardless of whether it is Tier-1 drift (a token of matching value and
-# purpose exists) or Tier-2 inventory (no such token). The Tier-1 drift code,
-# when applicable, is attached by the caller to the returned row; this emitter
-# only constructs it. Column mapping:
+# Emit a CSS_LITERAL row for one literal occurrence. The drift code, when
+# applicable, is attached by the caller; this emitter only constructs the row.
+# Column mapping:
 #   component_name      = the literal as authored (e.g. '#ff4444', '28px')
 #   variant_type        = the value family ('color' | 'size' | 'font-size')
-#   variant_qualifier_1 = the declaration property (the purpose dimension)
-#   parent_function     = the owning rule selector (the class that hardcodes it)
+#   variant_qualifier_1 = the declaration property
+#   parent_function     = the owning rule selector
 #   reference_type      = 'LITERAL'
-# Literals are always page-local in character; scope follows the file's scope.
 function Add-CssLiteralRow {
     param(
         [Parameter(Mandatory)][string]$LiteralText,
@@ -1754,12 +1495,10 @@ function Add-CssKeyframeRow {
     return $row
 }
 
-# Emit a COMMENT_BANNER row from a Section entry produced by New-SectionList.
-# Banner-level drift codes from Get-BannerInfo come pre-populated on the
-# section's BannerDriftCodes array. SECTION_TYPE_ORDER_VIOLATION,
-# MALFORMED_PREFIX_VALUE, PREFIX_REGISTRY_MISMATCH, and
-# SHELL_SECTION_INVALID_PREFIX are added here based on cross-section /
-# cross-registry information.
+# Emit a COMMENT_BANNER row from a Section entry. Banner-shape drift codes
+# arrive pre-populated on the section; the cross-section/cross-registry codes
+# (SECTION_TYPE_ORDER_VIOLATION, MALFORMED_PREFIX_VALUE, PREFIX_REGISTRY_MISMATCH,
+# SHELL_SECTION_INVALID_PREFIX) are added here.
 function Add-CssCommentBannerRow {
     param([Parameter(Mandatory)] $Section, [Parameter(Mandatory)] [int] $PreviousSectionTypeOrderIdx)
 
@@ -1801,11 +1540,9 @@ function Add-CssCommentBannerRow {
     }
 
     # DUPLICATE_FOUNDATION / DUPLICATE_CHROME
-    # Shell-file enforcement: FOUNDATION and CHROME may appear only in the
-    # shell file. The drift code fires when they appear in any file that is
-    # not the shell. Shell designation is per zone (scope_tier SHELL in
-    # Object_Registry), so each zone's shell legitimately carries its own
-    # FOUNDATION and CHROME without firing. Mirrors the JS populator.
+    # FOUNDATION and CHROME may appear only in the shell file; the code fires
+    # when they appear elsewhere. Shell designation is per zone (scope_tier
+    # SHELL in Object_Registry), so each zone's shell carries its own without firing.
     if ($Section.TypeName -eq 'FOUNDATION' -and -not $script:CurrentFileIsShell) {
         Add-DriftCode -Row $row -Code 'DUPLICATE_FOUNDATION' `
             -Context "FOUNDATION section appears in '$($script:CurrentFile)'; FOUNDATION lives only in the shell file."
@@ -1815,32 +1552,23 @@ function Add-CssCommentBannerRow {
             -Context "CHROME section appears in '$($script:CurrentFile)'; CHROME lives only in the shell file."
     }
 
-    # MALFORMED_PREFIX_VALUE: Prefix line declares something that is neither
-    # a page prefix nor the zone's chrome prefix, or declares multiple
-    # comma-separated values.
-    # CSS callers do NOT pass -AllowNoneSentinel, so the (none) sentinel is
-    # invalid here per the new spec.
+    # MALFORMED_PREFIX_VALUE: Prefix line declares neither a page prefix nor the
+    # zone's chrome prefix, or declares multiple comma-separated values. CSS
+    # callers omit -AllowNoneSentinel, so the (none) sentinel is invalid here.
     if ($Section.Prefix -and -not (Test-PrefixValueIsValid -Prefix $Section.Prefix)) {
         Add-DriftCode -Row $row -Code 'MALFORMED_PREFIX_VALUE' `
             -Context "Banner declares Prefix '$($Section.Prefix)' which is neither a page prefix nor the zone's chrome prefix."
     }
 
-    # Prefix registry validation (CC_CSS_Spec.md Section 5.2).
-    # Two distinct failure modes, two distinct drift codes:
-    #   SHELL_SECTION_INVALID_PREFIX -- section is FOUNDATION/CHROME/
-    #     shell-file FEEDBACK_OVERLAYS but the banner declares a value other
-    #     than the zone's chrome prefix. Applies in shell files; non-shell files
-    #     carrying FOUNDATION or CHROME already fire DUPLICATE_FOUNDATION
-    #     or DUPLICATE_CHROME from the per-banner shell check and don't
-    #     double-fire here.
-    #   PREFIX_REGISTRY_MISMATCH -- page-file banner declares something
-    #     other than the file's registered cc_prefix.
-    #
-    # Skip both checks if the banner's prefix value is malformed (that's
-    # already flagged), if there's no Prefix line at all (already flagged
-    # as MISSING_PREFIX_DECLARATION), or if the file has no Component_Registry
-    # mapping (no source of truth to compare against; the missing registration
-    # surfaces in the miss advisory).
+    # Prefix registry validation. Two failure modes:
+    #   SHELL_SECTION_INVALID_PREFIX -- a shell-only section (FOUNDATION/CHROME/
+    #     shell FEEDBACK_OVERLAYS) declares a value other than the zone's chrome
+    #     prefix. Non-shell files carrying FOUNDATION/CHROME already fire
+    #     DUPLICATE_* and don't double-fire here.
+    #   PREFIX_REGISTRY_MISMATCH -- a page-file banner declares something other
+    #     than the file's registered cc_prefix.
+    # Skipped when the prefix is malformed, absent, or the file has no
+    # Component_Registry mapping (each already flagged elsewhere).
     if ($Section.Prefix -and (Test-PrefixValueIsValid -Prefix $Section.Prefix)) {
         $bannerVal = Get-BannerPrefixValue -Prefix $Section.Prefix
         # The zone's chrome prefix, from the shared zone-to-chrome-prefix map
@@ -1848,9 +1576,7 @@ function Add-CssCommentBannerRow {
         # shell check below is skipped.
         $chromePrefix = Get-ZoneChromePrefix -Zone $script:CurrentFileZone
 
-        # SHELL_SECTION_INVALID_PREFIX: a shell-only section type must declare
-        # the zone's chrome prefix in the zone's shell file. Checked first
-        # because it depends only on section type and file identity, not the
+        # Checked first: depends only on section type and file identity, not the
         # registry.
         if ($script:CurrentFileIsShell -and ($Section.TypeName -in $ShellSectionTypes)) {
             if ($chromePrefix -and ($bannerVal -ne $chromePrefix)) {
@@ -1883,12 +1609,10 @@ function Add-CssCommentBannerRow {
    Prefix: (none)
    ============================================================================ #>
 
-# Decompose a selector into compounds (classes / ids / pseudos), then emit
-# one or more catalog rows. Under the new spec each class token in every
-# compound is a class in its own right and emits its own row. When the
-# compound carries a pseudo-class, every class row in that compound becomes
-# a CSS_VARIANT (variant_type=pseudo). Forbidden constructs attach the
-# appropriate drift codes to each emitted row.
+# Decompose a selector into compounds and emit catalog rows. Each class token
+# in every compound emits its own row; a compound carrying a pseudo-class makes
+# each class row a CSS_VARIANT. Forbidden constructs attach their drift codes to
+# each emitted row.
 function Add-RowsForSelector {
     param(
         [Parameter(Mandatory)] $SelectorNode,
@@ -1957,43 +1681,31 @@ function Add-RowsForSelector {
     $primary = $compounds[$primaryIdx]
 
     # Classify the rule:
-    #   - A single-token rule (one class OR one id in the primary compound,
-    #     optionally with a pseudo-class) is a definition per spec sections
-    #     6.1 / 7.1. A single class is CSS_CLASS DEFINITION; a single class
-    #     plus pseudo-class is CSS_VARIANT DEFINITION; a single id is
-    #     HTML_ID DEFINITION (forbidden in CSS, but a definitional shape).
-    #   - A compound rule (two or more tokens of any kind: class+class,
-    #     class+id, id+id) is NOT a definition of any participating token.
-    #     Each participating token is a class/id in its own right and must
-    #     be defined by a separate standalone rule somewhere. The compound
-    #     rule USES those tokens together to apply combined styling;
-    #     the emitted rows are USAGE.
-    # "Token" here means a real selector token (class or id). Pseudo-classes
-    # and pseudo-elements aren't tokens for this count - they're qualifiers
-    # on a token.
+    #   - Single-token (one class or id, optionally with a pseudo-class) is a
+    #     DEFINITION: class -> CSS_CLASS, class+pseudo -> CSS_VARIANT, id -> HTML_ID.
+    #   - Compound (two or more tokens) is NOT a definition of any token; each
+    #     participating token emits a USAGE row and must be defined by its own
+    #     standalone rule elsewhere.
+    # "Token" = a class or id; pseudo-classes/elements are qualifiers, not tokens.
     $primaryTokenCount     = $primary.Classes.Count + $primary.Ids.Count
     $primaryIsCompound     = ($primaryTokenCount -ge 2)
     $primaryHasPseudoClass = ($primary.Pseudos.Count -gt 0)
 
     # variant_type / variant_qualifier_2 are set when the primary compound
-    # carries a pseudo-class (whether the rule is a definition or a usage).
-    # Stacked pseudos are joined with ':' for the qualifier; the drift code
-    # FORBIDDEN_STACKED_PSEUDO is emitted separately when count >= 2.
+    # carries a pseudo-class. Stacked pseudos are joined with ':';
+    # FORBIDDEN_STACKED_PSEUDO fires separately when count >= 2.
     $primaryPseudo = if ($primaryHasPseudoClass) { ($primary.Pseudos -join ':') } else { $null }
 
     # Reference type for primary-compound rows: DEFINITION for single-class
     # rules (base or variant), USAGE for class-on-class compounds.
     $primaryReferenceType = if ($primaryIsCompound) { 'USAGE' } else { 'DEFINITION' }
 
-    # Comment expectations apply only to definition rules:
-    #   - Base definition (single-class, no pseudo)     -> preceding purpose comment
-    #   - Variant definition (single-class, pseudo)     -> trailing inline comment
-    #   - Compound (class-on-class) USAGE               -> no comment expectation
-    # Per spec, purpose comments are required for base class definitions
-    # (section 6.1) and trailing comments are required for variants
-    # (section 7.1). Compound rules are neither, so no comment-presence
-    # drift fires on their rows. The "missing standalone definition"
-    # signal is surfaced separately by UNDEFINED_CLASS_USAGE in Pass 3.
+    # Comment expectations, definition rules only:
+    #   - Base definition (single-class, no pseudo)  -> preceding purpose comment
+    #   - Variant definition (single-class, pseudo)  -> trailing inline comment
+    #   - Compound (class-on-class) USAGE            -> none
+    # Compound rules' missing standalone definitions surface separately as
+    # UNDEFINED_CLASS_USAGE in Pass 3.
     $purposeDesc      = $null
     $commentDriftCode = $null
     $hasComment       = $true
@@ -2027,10 +1739,8 @@ function Add-RowsForSelector {
             -TokenIndex         $ci
         if (-not $row) { continue }
 
-        # Per-class drift: prefix check against the section's declared prefix.
-        # Applies to every class token in every compound regardless of
-        # reference type. A class participating in a rule must satisfy the
-        # section's prefix discipline whether the rule defines it or uses it.
+        # Per-class prefix check against the section's declared prefix, applied
+        # to every class token regardless of reference type (defines or uses).
         if ($activeSection -and $activeSection.PrefixValue) {
             $pfx = $activeSection.PrefixValue
             $matched = ($className -ceq $pfx) -or
@@ -2048,10 +1758,8 @@ function Add-RowsForSelector {
             Add-DriftCode -Row $row -Code $commentDriftCode
         }
 
-        # Compound-shape drift (applied identically to every class row in
-        # the primary compound). These reflect properties of the rule's
-        # selector shape and apply whether the rule is a definition or a
-        # usage.
+        # Compound-shape drift, applied to every class row in the primary
+        # compound (definition or usage alike).
         if ($primary.Classes.Count -ge 3)    { Add-DriftCode -Row $row -Code 'COMPOUND_DEPTH_3PLUS' }
         if ($primary.PseudoInterleaved)      { Add-DriftCode -Row $row -Code 'PSEUDO_INTERLEAVED' }
         if ($primary.Pseudos.Count -ge 2)    { Add-DriftCode -Row $row -Code 'FORBIDDEN_STACKED_PSEUDO' }
@@ -2063,10 +1771,9 @@ function Add-RowsForSelector {
         if ($primary.HasTag -and -not $inFoundation) {
             Add-DriftCode -Row $row -Code 'FORBIDDEN_ELEMENT_SELECTOR'
         }
-        # Pseudo-element rules attached to a class are base class definitions
-        # per spec section 6.1, so no FORBIDDEN_PSEUDO_ELEMENT_LOCATION fires
-        # here. That code only applies to unattached pseudo-elements (handled
-        # in the primary-less branch above).
+        # Pseudo-element rules attached to a class are base class definitions, so
+        # FORBIDDEN_PSEUDO_ELEMENT_LOCATION doesn't fire here -- it applies only
+        # to unattached pseudo-elements (the primary-less branch above).
 
         # Selector-shape drift that comes from group / descendant context.
         if ($IsPartOfGroup) { Add-DriftCode -Row $row -Code 'FORBIDDEN_GROUP_SELECTOR' }
@@ -2085,11 +1792,8 @@ function Add-RowsForSelector {
         }
     }
 
-    # PRIMARY: id side (each id emits a single HTML_ID row)
-    # IDs in compounds inherit the primary reference type: single-token ID
-    # rules are HTML_ID DEFINITION; ID participating in a compound (e.g.
-    # `#foo.bar`) is HTML_ID USAGE under the same logic that makes the
-    # class side USAGE - the compound isn't a definition of either token.
+    # PRIMARY: id side (each id emits an HTML_ID row). Single-token id rules are
+    # DEFINITION; an id in a compound is USAGE, same as the class side.
     if ($primary.Ids.Count -gt 0) {
         foreach ($idName in $primary.Ids) {
             $idRow = Add-CssHtmlIdRow -IdName $idName -ReferenceType $primaryReferenceType `
@@ -2265,10 +1969,9 @@ foreach ($file in $CssFiles) {
         if ($node.type -eq 'decl' -and $node.prop -and $node.prop.StartsWith('--')) {
             $varName = $node.prop.Substring(2)
             if (-not $varMap.ContainsKey($varName)) {
-                # Store the defining file (consumed by USAGE resolution) plus
-                # the token's value and family (consumed by Tier-1 literal
-                # matching). Family is $null for non-literal-matching token
-                # categories (font / duration / shadow / gradient / z).
+                # Store the defining file (for USAGE resolution) plus the token's
+                # value and family (for literal matching). Family is $null for
+                # non-matching categories (font/duration/shadow/gradient/z).
                 $varMap[$varName] = @{
                     SourceFile = $name
                     Value      = $node.value
@@ -2353,10 +2056,8 @@ foreach ($file in $CssFiles) {
     # Collect comments in the normalized shape, then build the section list.
     $script:CurrentNormalizedComments = Convert-PostCssCommentsToNormalized -AstRoot $ast
 
-    # Compute file line count from AST end position (more reliable than
-    # source-length-as-bytes). Use the maximum end-line across all top-level
-    # nodes as a proxy. If unavailable, fall back to a large number so the
-    # last section's body range extends to end-of-file.
+    # File line count from AST end position (max end-line across top-level
+    # nodes). Falls back to a large number so the last section extends to EOF.
     $maxLine = 0
     if ($ast.nodes) {
         foreach ($n in $ast.nodes) {
@@ -2486,10 +2187,9 @@ foreach ($r in $script:rows) {
 
 # -- FILE_NOT_REGISTERED --
 
-# Files absent from the Object_Registry zone/scope map were stamped
-# zone/scope '<undefined>' during the walk and recorded in
-# $script:objectRegistryMisses. Attach the code to each such file's CSS_FILE
-# anchor row so the gap surfaces in drift analysis, not only the miss report.
+# Files absent from the Object_Registry map were stamped zone/scope
+# '<undefined>' and recorded in $script:objectRegistryMisses. Attach the code
+# to each such file's CSS_FILE anchor row so the gap surfaces in drift analysis.
 foreach ($missing in $script:objectRegistryMisses) {
     if ($script:cssFileRowByFile.ContainsKey($missing)) {
         Add-DriftCode -Row $script:cssFileRowByFile[$missing] -Code 'FILE_NOT_REGISTERED' `
@@ -2513,23 +2213,14 @@ foreach ($fname in $fileMeta.Keys) {
     }
 }
 
-# -- EXCESS_BLANK_LINES and MISSING_BLANK_LINE_SEPARATOR --
+# -- MISSING_BLANK_LINE_SEPARATOR AND EXCESS_BLANK_LINES --
 
-# Two complementary checks share the same iteration over adjacent top-level
-# constructs. The spec mandates exactly one blank line between every two
-# adjacent top-level constructs (CC_CSS_Spec.md Section 13.1):
-#   - Zero blank lines (gap == 1 line)              -> MISSING_BLANK_LINE_SEPARATOR
-#   - More than one blank line (gap > 2 lines)      -> EXCESS_BLANK_LINES
-#
-# A purpose comment is part of the construct it introduces, not a standalone
-# top-level construct. A non-banner comment immediately preceding a rule,
-# at-rule, or :root (with no blank line between them) is bound to that
-# construct; the comment + construct form one logical unit for blank-line
-# discipline. Banner comments are their own units (banners themselves are
-# top-level constructs per the spec).
-#
-# Implementation: walk $ast.nodes to build a list of logical-unit boundaries
-# (UnitStart / UnitEnd pairs), then compare gaps between consecutive units.
+# Blank-line discipline: exactly one blank line between adjacent top-level
+# constructs.
+#   - Zero blank lines (gap == 1 line)         -> MISSING_BLANK_LINE_SEPARATOR
+#   - More than one blank line (gap > 2 lines) -> EXCESS_BLANK_LINES
+# A purpose comment immediately preceding a rule/at-rule/:root binds to it as one
+# unit; banner comments are their own units.
 foreach ($file in $CssFiles) {
     $name = [System.IO.Path]::GetFileName($file)
     if (-not $astCache.ContainsKey($file)) { continue }
@@ -2545,10 +2236,9 @@ foreach ($file in $CssFiles) {
         $nStart = if ($n.source -and $n.source.start) { [int]$n.source.start.line } else { 0 }
         $nEnd   = if ($n.source -and $n.source.end)   { [int]$n.source.end.line   } else { $nStart }
 
-        # If this is a non-banner comment and the next sibling sits exactly
-        # one line below (no blank line), treat the pair as one unit. The
-        # banner check uses Test-IsBannerComment so multi-line banner
-        # comments are NOT collapsed with their following content.
+        # A non-banner comment with the next sibling exactly one line below (no
+        # blank line) is collapsed into one unit. Banner comments (via
+        # Test-IsBannerComment) are not collapsed.
         $isComment = ($n.type -eq 'comment')
         $isBanner  = $false
         if ($isComment) {
@@ -2603,10 +2293,8 @@ foreach ($file in $CssFiles) {
 # -- EMPTY_SECTION --
 
 # A section banner must be followed by at least one cataloguable construct
-# before the next banner or end-of-file (CC_CSS_Spec.md Section 13.1).
-# The section list already records each section's body line range; if no
-# row in the file falls within that range (other than the COMMENT_BANNER
-# row itself), the section is empty.
+# before the next banner or EOF. A section whose body range holds no row other
+# than its own COMMENT_BANNER is empty.
 foreach ($fname in $fileMeta.Keys) {
     $meta = $fileMeta[$fname]
     if (-not $meta.Sections) { continue }
@@ -2645,8 +2333,8 @@ foreach ($fname in $fileMeta.Keys) {
 
 # -- MISSING_TRAILING_NEWLINE --
 
-# The file must end with `}` followed by exactly one newline (CC_CSS_Spec.md
-# Section 13.1). Drift attaches to the CSS_FILE row.
+# The file must end with `}` followed by exactly one newline.
+# Drift attaches to the CSS_FILE row.
 foreach ($file in $CssFiles) {
     $name = [System.IO.Path]::GetFileName($file)
     if (-not $rowsByFile.ContainsKey($name)) { continue }
@@ -2672,19 +2360,13 @@ foreach ($file in $CssFiles) {
 
 # -- PSEUDO_ELEMENT_OUT_OF_ORDER and VARIANT_BEFORE_BASE --
 
-# Per CC_CSS_Spec.md Section 7.1, for each class:
-#   base class definition < pseudo-element rule(s) < pseudo-class variant(s)
-# A pseudo-element appearing before its base, or after a variant on the same
-# class, is drift. A variant appearing before its base is also drift.
-#
-# Detection:
-#   - "Base class definition" = CSS_CLASS DEFINITION row with variant_type
-#     IS NULL AND signature NOT containing '::' (excludes pseudo-element
-#     rules which are also CSS_CLASS DEFINITION).
-#   - "Pseudo-element rule" = CSS_CLASS DEFINITION row whose signature
-#     contains '::'.
-#   - "Variant" = CSS_VARIANT DEFINITION row with variant_type='pseudo'.
-# All comparisons are within a single file, scoped by component_name.
+# Required order per class: base definition < pseudo-element rule(s)
+# pseudo-class variant(s). A pseudo-element before its base or after a variant
+# is drift; a variant before its base is drift.
+# Detection (within one file, by component_name):
+#   - Base definition = CSS_CLASS DEFINITION, variant_type NULL, signature no '::'
+#   - Pseudo-element rule = CSS_CLASS DEFINITION, signature has '::'
+#   - Variant = CSS_VARIANT DEFINITION, variant_type='pseudo'
 foreach ($fname in $fileMeta.Keys) {
     if (-not $rowsByFile.ContainsKey($fname)) { continue }
 
@@ -2722,10 +2404,8 @@ foreach ($fname in $fileMeta.Keys) {
         $info = $classInfo[$cname]
         $baseLine = $info.BaseLine
 
-        # VARIANT_BEFORE_BASE: any variant whose line is less than the base.
-        # If there is no base, the variant is also "before" a non-existent
-        # base - UNDEFINED_CLASS_USAGE covers that case via a different
-        # signal, so we only fire VARIANT_BEFORE_BASE when a base exists.
+        # VARIANT_BEFORE_BASE: a variant whose line precedes the base. Fired only
+        # when a base exists; a missing base is covered by UNDEFINED_CLASS_USAGE.
         if ($null -ne $baseLine) {
             foreach ($v in $info.Variants) {
                 if ($v.LineStart -lt $baseLine) {
@@ -2757,25 +2437,15 @@ foreach ($fname in $fileMeta.Keys) {
 
 # -- UNDEFINED_CLASS_USAGE --
 
-# A class participating in a compound or descendant selector must be defined
-# by a separate standalone rule. The populator surfaces a USAGE row for each
-# class participation (per spec section 7 amended); if no DEFINITION row
-# exists for the class in the appropriate scope, the USAGE is undefined.
-#
+# A class participating in a compound or descendant selector must be defined by
+# a separate standalone rule; if no DEFINITION row exists in the appropriate
+# scope, the USAGE is undefined.
 # Scope rules:
-#   - USAGE row with Scope='SHARED' resolved to a shared file during row
-#     emission, which means a definition exists in the zone's shared map.
-#     No check needed.
-#   - USAGE row with Scope='LOCAL' fell through to the current file. We
-#     require a CSS_CLASS DEFINITION or CSS_VARIANT DEFINITION row in the
-#     same file with the same component_name. Pseudo-element rules attached
-#     to a class are CSS_CLASS DEFINITION rows per spec section 6.1 and
-#     satisfy this check. A CSS_VARIANT DEFINITION for the same class
-#     (e.g. .foo:hover) also satisfies it - the class exists in the file's
-#     vocabulary.
-#
-# Build a per-file definitions map by walking the row collection, then walk
-# every USAGE row once more to check.
+#   - Scope='SHARED' resolved to a shared file at emission (definition exists in
+#     the zone's shared map); no check needed.
+#   - Scope='LOCAL' requires a CSS_CLASS or CSS_VARIANT DEFINITION in the same
+#     file with the same component_name. Pseudo-element rules (CSS_CLASS
+#     DEFINITION) and variants (e.g. .foo:hover) both satisfy it.
 $definedByFile = @{}
 foreach ($r in $script:rows) {
     if ($r.ReferenceType -ne 'DEFINITION') { continue }
