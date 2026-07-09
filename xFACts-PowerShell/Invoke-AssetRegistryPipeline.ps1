@@ -361,20 +361,33 @@ foreach ($stage in $populatorStages) {
 
 Write-StatusFile
 
-# -- Join (wait for all populators) --
+# -- Join (report each populator as it exits) --
 
 if ($trackers.Count -gt 0) {
     Write-Log "Waiting for $($trackers.Count) populator(s) to complete..."
-    while ($trackers | Where-Object { -not $_.Process.HasExited }) {
-        Start-Sleep -Milliseconds 500
-    }
 
-    foreach ($tracker in $trackers) {
-        Complete-StageProcess -Tracker $tracker
-        $r = $script:Status.results[$tracker.Index]
-        Write-Log ("  {0}: {1} (exit {2})" -f $r.label, $r.status, $r.exit_code)
+    # Poll the running set; the moment a populator exits, record its outcome and
+    # rewrite the status file so the Admin page sees that stage flip to its final
+    # state immediately rather than all stages resolving together at the join.
+    $pending = [System.Collections.Generic.List[object]]::new()
+    foreach ($t in $trackers) { [void]$pending.Add($t) }
+
+    while ($pending.Count -gt 0) {
+        $exited = @($pending | Where-Object { $_.Process.HasExited })
+
+        if ($exited.Count -eq 0) {
+            Start-Sleep -Milliseconds 500
+            continue
+        }
+
+        foreach ($tracker in $exited) {
+            Complete-StageProcess -Tracker $tracker
+            $r = $script:Status.results[$tracker.Index]
+            Write-Log ("  {0}: {1} (exit {2})" -f $r.label, $r.status, $r.exit_code)
+            [void]$pending.Remove($tracker)
+        }
+        Write-StatusFile
     }
-    Write-StatusFile
 }
 
 # -- Resolver (gated on no populator hard-failure) --
