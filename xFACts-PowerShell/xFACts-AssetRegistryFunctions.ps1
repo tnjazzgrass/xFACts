@@ -90,7 +90,7 @@
 #             definitions to that section instead of spuriously drawing
 #             MISSING_SECTION_BANNER. No-op for multi-section files. Surfaced
 #             by docs-shared.js, the first single-section file in the platform.
-# 2026-06-20  Added Get-ZoneChromePrefix: the single code-side expression of the
+#             Added Get-ZoneChromePrefix: the single code-side expression of the
 #             CC_CSS_Spec.md / CC_JS_Spec.md Section 5.1 zone-to-chrome-prefix
 #             map (cc -> cc, docs -> doc), consumed by the CSS and JS populators
 #             so the shell-prefix check is zone-aware rather than hardcoding 'cc'.
@@ -303,7 +303,6 @@ function Test-AddDedupeKey {
 #   - drift_text column accumulates pipe-separated descriptions. The default
 #     description comes from $script:DriftDescriptions[$Code]; callers can
 #     override with the optional -Context parameter to add row-specific detail
-#     (e.g. "Function 'bkp_loadData' does not start with section prefix 'bkp_'").
 #
 # Context-append behavior:
 #   - When the caller supplies a -Context string, it is ALWAYS appended to
@@ -759,8 +758,7 @@ function Invoke-AssetRegistryBulkInsert {
 
 # Convert a value to a DBNull-aware DataTable cell value. Empty/whitespace
 # strings collapse to NULL. No length truncation: oversized values surface
-# as a SQL error, which is the correct behavior under spec v1.2's column-
-# width review.
+# as a SQL error.
 function Get-NullableValue {
     param($Value)
     if ($null -eq $Value) { return [System.DBNull]::Value }
@@ -943,7 +941,7 @@ function Test-IsBannerComment {
 #                   BANNER_MISSING_DESCRIPTION      empty description block
 #                   MISSING_PREFIX_DECLARATION      no Prefix: line found
 #
-# The canonical banner form is:
+# The required banner form is:
 #
 #     ============================================================================  (76 '=')
 #     <TYPE>: <NAME>
@@ -1218,8 +1216,8 @@ function Test-IsPrefixNone {
 # one exception: the (none) sentinel is normalized to the empty string so
 # callers can branch on Test-IsPrefixNone without re-tokenizing.
 #
-# Per the new CSS / JS specs (section 5), the Prefix line declares exactly
-# one value. Trailing "-- annotation" text or "(parenthetical)" comments
+# The Prefix line declares exactly one value.
+# Trailing "-- annotation" text or "(parenthetical)" comments
 # are NOT part of the value - they used to be silently stripped here, but
 # silent stripping hides authoring drift. Anything beyond the trimmed
 # single token falls through to Test-PrefixValueIsValid, which fires
@@ -1234,8 +1232,7 @@ function Get-BannerPrefixValue {
 # Test whether a banner-declared Prefix value is well-formed. A value is
 # well-formed when it is the chrome prefix 'cc' or a page-prefix-shaped
 # single token. The validator does not enforce a length or character-set
-# constraint on the page-prefix token (the registry's CK constraint on
-# Component_Registry.cc_prefix does that); it only enforces that the value
+# constraint on the page-prefix token; it only enforces that the value
 # is a single token with no embedded whitespace, no comma-separated
 # alternatives, and no trailing "-- annotation" or "(parenthetical)" text.
 #
@@ -1247,7 +1244,7 @@ function Get-BannerPrefixValue {
 # Whether a given well-formed value is correct for the section it appears
 # in (page prefix in page-file sections, 'cc' in anchor-file chrome
 # sections) is the PREFIX_REGISTRY_MISMATCH / ANCHOR_SECTION_INVALID_PREFIX
-# checks' responsibility, not this function's.
+# checks' responsibility.
 function Test-PrefixValueIsValid {
     param(
         [string]$Prefix,
@@ -1272,17 +1269,7 @@ function Test-PrefixValueIsValid {
     return $true
 }
 
-# Return the chrome prefix for a zone. The chrome prefix is the token that
-# FOUNDATION, CHROME, and shell-file FEEDBACK_OVERLAYS banners declare in the
-# zone's shell file, and that every identifier in the shell file carries.
-# Unlike the page prefix (sourced per component from Component_Registry.cc_prefix),
-# the chrome prefix is a fixed per-zone constant defined by this map -- it is not
-# stored in the registry, because the shell file has no page prefix of its own.
-# The CC_CSS_Spec.md / CC_JS_Spec.md Section 5.1 zone-to-chrome-prefix map is the
-# authority; this function is its single code-side expression, consumed by both
-# the CSS and JS populators. Adding a zone requires a spec amendment and a new
-# entry here. A zone not in the map returns $null, and callers skip the
-# shell-prefix check rather than assume a value.
+# Return the chrome prefix for a zone.
 function Get-ZoneChromePrefix {
     param([string]$Zone)
     $map = @{
@@ -1319,9 +1306,6 @@ function Get-ZoneChromePrefix {
 #   - For PS, the first blank line after at least one entry ends the list
 #     (the .NOTES block is structured differently). Callers that need this
 #     behavior pass -StopOnFirstBlankAfterEntry.
-#
-# This is the single source of truth for the verbatim-entries rule. When
-# the rule changes, change it here.
 function Get-FileOrgList {
     param(
         # NOTE: $Lines is intentionally NOT marked [Parameter(Mandatory)].
@@ -1329,8 +1313,7 @@ function Get-FileOrgList {
         # rule element-by-element for [string[]] arguments, which rejects
         # any input array containing a blank line - and the header body
         # routinely contains blank lines. AllowEmptyCollection / AllowNull
-        # cover the array itself but not its elements; the cleanest fix is
-        # to omit Mandatory on the array parameter.
+        # cover the array itself but not its elements.
         [string[]]$Lines,
         [int]$StartIndex = 0,
         [switch]$StopOnFirstBlankAfterEntry
@@ -1369,7 +1352,7 @@ function Get-FileOrgList {
    Prefix: (none)
    ============================================================================ #>
 
-# Parse the file-header block comment (the leading /* ... */ block at line 1).
+# Parse the file-header block comment.
 # Returns an ordered hashtable:
 #   Description  - purpose paragraph (everything between the title block and
 #                  the FILE ORGANIZATION list, with bookkeeping fields stripped)
@@ -1542,10 +1525,6 @@ function Get-FileHeaderInfo {
 # Used by Get-SectionForLine to look up "what section is this line in" without
 # re-walking the AST. Replaces the running-state model that the CSS populator
 # used previously.
-#
-# Comments contract: same normalized shape as Get-FileHeaderInfo expects -
-# .Type / .Text / .LineStart / .LineEnd. See Get-FileHeaderInfo header
-# comment for details.
 function New-SectionList {
     param(
         [Parameter(Mandatory)]$Comments,
@@ -1610,8 +1589,7 @@ function New-SectionList {
 
 # Locate the section instance that contains a given source line. Returns
 # $null for lines outside any section (e.g., inside the file header, or
-# between banners). Linear scan; section lists are typically <10 entries
-# per file so this is fast enough.
+# between banners). Linear scan.
 function Get-SectionForLine {
     param(
         $Sections,
@@ -1626,9 +1604,8 @@ function Get-SectionForLine {
     if ($null -eq $Sections -or $Sections.Count -eq 0) { return $null }
 
     # Binary search: New-SectionList returns sections sorted by BannerStartLine
-    # (which is monotonic with BodyStartLine since bodies don't overlap), so
-    # we can locate the candidate section in O(log N) instead of O(N). Hot
-    # path - called once per row emission, ~10K calls per JS file.
+    # so we can locate the candidate section in O(log N) instead of O(N). Hot
+    # path - called once per row emission.
     $lo = 0
     $hi = $Sections.Count - 1
     $found = -1
@@ -1772,10 +1749,7 @@ function Invoke-AstWalk {
    Prefix: (none)
    ============================================================================ #>
 #
-# These helpers serve the PowerShell populator (Populate-AssetRegistry-PS.ps1).
-# PowerShell's native AST is fundamentally different from the JSON-from-
-# subprocess AST shapes that JS (acorn) and CSS (PostCSS) produce:
-#
+# These helpers serve the PowerShell populator.
 #   - Real .NET objects with .GetType().Name discrimination
 #     (FunctionDefinitionAst, ParameterAst, CommandAst, etc.)
 #   - Child traversal via .FindAll({ predicate }, $searchNestedScriptBlocks)
@@ -1790,10 +1764,8 @@ function Invoke-AstWalk {
 # refs, and the position helpers extract from .Extent with null safety.
 #
 # Get-PSFileHeaderInfo parses the PowerShell comment-based-help file header
-# (<# .SYNOPSIS .DESCRIPTION .PARAMETER .COMPONENT .NOTES #>). It is a
-# sibling to Get-FileHeaderInfo (CSS/JS-specific). The two formats are
-# different enough that one polymorphic function would be unclear; siblings
-# are cleaner. The FILE ORGANIZATION list parsing inside both functions
+# (<# .SYNOPSIS .DESCRIPTION .PARAMETER .COMPONENT .NOTES #>).
+# The FILE ORGANIZATION list parsing inside both functions
 # delegates to the shared Get-FileOrgList helper so the verbatim-entries
 # rule lives in one place.
 #
@@ -1827,7 +1799,7 @@ function Invoke-AstWalk {
 #                    MISSING_COMPONENT_DECLARATION (when -RequireComponent is set
 #                       and .COMPONENT is absent)
 #
-# The canonical PS header form is:
+# The required PS header form is:
 #
 #     <#
 #     .SYNOPSIS
@@ -2145,7 +2117,7 @@ function Get-PSFileHeaderInfo {
     # .NOTES contains exactly three fields in this order: File Name,
     # Location, FILE ORGANIZATION list. Two checks:
     #   MALFORMED_NOTES_FIELD - missing required fields or unexpected fields.
-    #   NOTES_FIELD_ORDER_VIOLATION - fields present but out of canonical order.
+    #   NOTES_FIELD_ORDER_VIOLATION - fields present but out of order.
     if ($info.Notes) {
         $notesLines = $info.Notes -split "`n"
         $sawFileName = $false
