@@ -111,7 +111,10 @@ function doc_onBodyClick(event) {
 
     var flipCard = event.target.closest('.doc-key-flip-card');
     if (flipCard) {
-        flipCard.classList.toggle('doc-key-flipped');
+        var flipInner = flipCard.querySelector('.doc-key-flip-inner');
+        if (flipInner) {
+            flipInner.classList.toggle('doc-key-flipped');
+        }
         return;
     }
 
