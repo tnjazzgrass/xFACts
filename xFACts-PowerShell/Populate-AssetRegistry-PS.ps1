@@ -54,38 +54,20 @@
    Prefix: (none)
    ============================================================================ #>
 
-# 2026-06-18  Add-PSFunctionRow now captures the full function body in
-#             raw_text (was the signature line, which already lived in
-#             signature) and stamps the body_hash, shape_hash, and
-#             skeleton_hash fingerprints via Get-PSFunctionFingerprints (in
-#             xFACts-AssetRegistryFunctions.ps1). The hashes are set only on
-#             PS_FUNCTION / PS_FUNCTION_VARIANT definition rows; every other
-#             row type leaves them null. New-PSRow gained the three
-#             pass-through hash parameters.
-# 2026-06-16  Made file-role detection Object_Registry-driven. Get-PSFileRole
-#             now derives the role from the file's object_type, scope, and
-#             scope_tier (passed in as the registry entry) instead of filename
-#             and path patterns. scope_tier BOOTSTRAP designates the CC
-#             composition root; object_type plus SHARED scope distinguishes a
-#             shared library from a standalone script. Unregistered files
-#             resolve to role '<undefined>' and skip role-specific section
-#             checks (FILE_NOT_REGISTERED still fires). Removed the now-unused
-#             $SharedLibraryFiles, $SharedModuleFiles, and
-#             $StandalonePathExceptions classification lists.
-# 2026-05-31  Added FORBIDDEN_ENV_ASSIGNMENT. The $env: provider is now
-#             permitted at file scope only for the variables in
-#             $AuthorizedEnvVars (currently NODE_PATH); any other $env: write
-#             is drift. Previously every $env: write fired
-#             FORBIDDEN_SCOPE_QUALIFIER.
-# 2026-05-31  Dropped the separate Get-ObjectRegistryMap call. The zone/scope
-#             map now also carries registry_id, so the file makes one
-#             Object_Registry query instead of two. A transitional shim at the
-#             bulk-insert call projects registry_id back to the flat map shape
-#             the bulk insert still expects.
-# 2026-05-29  Conformed the working file to the Control Center PowerShell file
-#             format spec: block-comment section banners, canonical section
-#             order, single EXECUTION section with sub-section markers, and
-#             leading purpose comments on script-scope declarations.
+# 2026-06-18  Add-PSFunctionRow now captures the full function body in raw_text
+#             and stamps body_hash, shape_hash, and skeleton_hash on
+#             PS_FUNCTION / PS_FUNCTION_VARIANT definition rows.
+# 2026-06-16  File-role detection is now Object_Registry-driven (object_type,
+#             scope, scope_tier) rather than filename/path patterns. Unregistered
+#             files resolve to role '<undefined>' and skip role-specific section
+#             checks. Removed the filename-based classification lists.
+# 2026-05-31  Added FORBIDDEN_ENV_ASSIGNMENT: $env: writes are drift unless the
+#             target is in $AuthorizedEnvVars (currently NODE_PATH). Consolidated
+#             the Object_Registry load into a single query carrying registry_id.
+# 2026-05-29  Conformed the file to the Control Center PowerShell format spec:
+#             section banners, required section order, single EXECUTION section
+#             with sub-section markers, and leading purpose comments on
+#             script-scope declarations.
 
 <# ============================================================================
    PARAMETERS: SCRIPT PARAMETERS
@@ -148,29 +130,22 @@ $PSScanRoots = @(
     'E:\xFACts-ControlCenter\scripts\modules'
 )
 
-# The sanctioned console-output helper functions. Write-Host is forbidden
-# everywhere EXCEPT inside these function bodies -- they are the one place the
-# primitive legitimately lives, since they are what makes Write-Host
-# unnecessary in all other code. A Write-Host call whose enclosing function is
-# one of these is not drift.
+# The sanctioned console-output helpers. Write-Host is forbidden everywhere
+# except inside these function bodies; a Write-Host call whose enclosing
+# function is one of these is not drift.
 $ConsoleHelperFunctions = @(
     'Write-Console',
     'Write-ConsoleBanner',
     'Write-ConsoleRule'
 )
 
-# Routes exempt from the MISSING_AUTHENTICATION check. These are infrastructure
-# routes that legitimately do not (and in most cases cannot) carry AD
-# authentication:
-#   /login                      - the login page itself; requiring auth would
-#                                 redirect-loop (you reach it when NOT logged in).
-#   /logout                     - clears the session; auth to log out is backwards.
-#   /api/internal/engine-event  - machine-to-machine endpoint the orchestrator
-#                                 POSTs to; AD form-login is the wrong auth type
-#                                 for a non-interactive caller. Protected instead
-#                                 by a localhost-only IP check inside the route.
-# Any route NOT in this list still requires -Authentication 'ADLogin'; a new
-# unauthenticated route flags MISSING_AUTHENTICATION on first scan.
+# Routes exempt from the MISSING_AUTHENTICATION check -- infrastructure routes
+# that legitimately carry no AD authentication:
+#   /login   - the login page; requiring auth would redirect-loop.
+#   /logout  - clears the session; auth to log out is backwards.
+#   /api/internal/engine-event - machine-to-machine endpoint; localhost-only
+#                                IP check inside the route instead.
+# A route not listed still requires -Authentication 'ADLogin'.
 $AuthExemptRoutes = @(
     '/login',
     '/logout',
@@ -243,9 +218,9 @@ $IdentifierFreeSectionTypes = @(
     'CHANGELOG','IMPORTS','PARAMETERS','INITIALIZATION','EXECUTION','ROUTE','EXPORTS'
 )
 
-# Canonical banner NAMEs for singleton section types. A mismatch fires
+# Required fixed banner NAMEs for singleton section types. A mismatch fires
 # MALFORMED_SINGLETON_NAME. ROUTE has two valid NAMEs based on role.
-$SingletonSectionCanonicalNames = @{
+$SingletonSectionRequiredNames = @{
     'CHANGELOG'      = @('CHANGE HISTORY')
     'IMPORTS'        = @('SCRIPT DEPENDENCIES')
     'PARAMETERS'     = @('SCRIPT PARAMETERS')
@@ -298,7 +273,6 @@ $GlobalConfigFunctions = @(
 
 # Environment variables a file may write at file scope via the $env: provider.
 # Any $env: write to a name not listed here fires FORBIDDEN_ENV_ASSIGNMENT.
-# Matched case-insensitively (Windows environment names are case-insensitive).
 $AuthorizedEnvVars = @(
     'NODE_PATH'
 )
@@ -317,7 +291,7 @@ $DriftDescriptions = [ordered]@{
     'MALFORMED_FILE_HEADER'             = "The file's header block is missing, malformed, or contains required fields out of order."
     'FORBIDDEN_HEADER_KEYWORD'          = "The file header contains a forbidden comment-based-help keyword (.EXAMPLE, .INPUTS, .OUTPUTS, .LINK, .ROLE, .FUNCTIONALITY, .FORWARDHELPTARGETNAME, .REMOTEHELPRUNSPACE, or .EXTERNALHELP)."
     'MALFORMED_NOTES_FIELD'             = "The .NOTES block is missing required fields (File Name, Location, FILE ORGANIZATION) or contains extra fields."
-    'NOTES_FIELD_ORDER_VIOLATION'       = "The .NOTES block's fields appear out of canonical order. The required order is File Name, Location, FILE ORGANIZATION list."
+    'NOTES_FIELD_ORDER_VIOLATION'       = "The .NOTES block's fields appear out of order. The required order is File Name, Location, FILE ORGANIZATION list."
     'PARAMETER_DOC_ORDER_VIOLATION'     = "The .PARAMETER blocks do not appear in the same order as the parameters in the param() block. Applies to both file-header docblocks and function docblocks."
     'MISSING_COMPONENT_DECLARATION'     = "The file header is missing a .COMPONENT declaration. Every file must declare which Component_Registry component it belongs to."
     'INVALID_COMPONENT_VALUE'           = "The file header's .COMPONENT value does not match any active row in Component_Registry."
@@ -348,7 +322,7 @@ $DriftDescriptions = [ordered]@{
     'FORBIDDEN_SECTION_TYPE'            = "A section type appears in a file role that forbids it (e.g., INITIALIZATION in a page-route file)."
     'MISSING_REQUIRED_SECTION'          = "A section type required for this role is absent from the file (e.g., a module file with no EXPORTS section)."
     'DUPLICATE_SINGULAR_SECTION'        = "A section type marked 'exactly one' appears more than once in the file."
-    'MALFORMED_SINGLETON_NAME'          = "A singleton section's banner title does not match its canonical fixed value."
+    'MALFORMED_SINGLETON_NAME'          = "A singleton section's banner title does not match its required fixed value."
 
     # Prefix
     'MISSING_PREFIX_DECLARATION'        = "A section banner is missing the mandatory Prefix line in its description block."
@@ -462,13 +436,12 @@ $script:dedupeKeys = New-Object 'System.Collections.Generic.HashSet[string]'
 # drift codes to each file's anchor row through this map.
 $script:psFileRowByFile = @{}
 
-# Shared-scope function names per zone. Keyed by zone (cc, docs, standalone);
-# each value is a HashSet of function names defined in SHARED-scope files in
-# that zone. Resolution is strictly within-zone: a call resolves SHARED only
-# against shared functions in the caller's own zone.
+# Shared-scope function names, keyed by zone. Resolution is strictly
+# within-zone: a call resolves SHARED only against shared functions in the
+# caller's own zone.
 $script:sharedFunctionsByZone  = @{}
-# Map of zone -> @{ function name -> defining source file } for SHARED-scope
-# functions. Parallel to $sharedFunctionsByZone; supplies source_file on a
+
+# Parallel to $sharedFunctionsByZone; supplies the defining source file on a
 # within-zone SHARED resolution and the shadow-source file name.
 $script:sharedSourceFileByZone = @{}
 
@@ -488,9 +461,8 @@ $script:CurrentFileZone           = $null
 # on every row the file produces.
 $script:CurrentFileScope          = $null
 # Documentation tier for the current file, read from Object_Registry (PLATFORM,
-# SCOPED, or $null). PLATFORM selects full comment-based-help docblock treatment
-# (spec 8.3); SCOPED and unset select the light single-line purpose comment
-# treatment (spec 8.4).
+# SCOPED, or $null). PLATFORM selects full comment-based-help docblock treatment;
+# SCOPED and unset select the light single-line purpose comment treatment.
 $script:CurrentFileScopeTier      = $null
 # Shorthand for a shared-library or module file.
 $script:CurrentFileIsShared       = $false
@@ -595,10 +567,8 @@ function Get-PSFileRole {
    Prefix: (none)
    ============================================================================ #>
 
-# Parse a PowerShell file using the native AST parser. Returns a hashtable
-# with the AST, the token stream, any parse errors (non-fatal), and the raw
-# source text. The PS parser is resilient -- it returns a usable AST even
-# when there are parse errors, and we proceed with what we get.
+# Parse a PowerShell file with the native AST parser. Returns a hashtable with
+# the AST, token stream, parse errors (non-fatal), and raw source text.
 function Invoke-PSParse {
     param([Parameter(Mandatory)][string]$FilePath)
 
@@ -610,7 +580,7 @@ function Invoke-PSParse {
         $parseErrors = $null
 
         # ParseFile returns the root ScriptBlockAst; tokens and errors are
-        # populated by reference. This is the PS-native parsing entry point.
+        # populated by reference.
         $ast = [System.Management.Automation.Language.Parser]::ParseFile(
             $FilePath, [ref]$tokens, [ref]$parseErrors
         )
@@ -634,15 +604,9 @@ function Invoke-PSParse {
     }
 }
 
-# Convert the PowerShell token stream's Comment tokens into the normalized
-# shape that the helpers' Test-IsBannerComment and New-SectionList expect:
-# .Type      - 'Block' for <# #> comments and comment-based-help blocks
-# 'Line'  for # single-line comments
-# .Text      - inner text with delimiters stripped
-# .LineStart - 1-based start line from .Extent
-# .LineEnd   - 1-based end line from .Extent
-# .ColumnStart - 1-based start column
-# Returns a list sorted by LineStart ascending.
+# Convert the token stream's Comment tokens into the normalized shape that
+# Test-IsBannerComment and New-SectionList consume (delimiters stripped, 1-based
+# line/column from .Extent). Returns a list sorted by LineStart ascending.
 function Convert-PSCommentsToNormalized {
     param([Parameter(Mandatory)]$Tokens)
 
@@ -756,10 +720,8 @@ function Test-HasCmdletBinding {
    Prefix: (none)
    ============================================================================ #>
 
-# Cheap pre-check: does this text look like a SQL query? Conservative pattern
-# matching on common SQL keywords at common positions. False positives are
-# acceptable on first run (per the permissive-first decision); the catalog
-# will reveal noise patterns to tighten later.
+# Does this text look like a SQL query? Conservative keyword matching that
+# deliberately over-matches; false positives are acceptable here.
 function Test-LooksLikeSQL {
     param([string]$Text)
     if ([string]::IsNullOrWhiteSpace($Text)) { return $false }
@@ -772,8 +734,7 @@ function Test-LooksLikeSQL {
     # Check the first ~500 chars (most queries start in that window).
     $checkText = if ($sample.Length -gt 500) { $sample.Substring(0, 500) } else { $sample }
 
-    # Match common starting tokens. \b boundaries to avoid false hits on
-    # things like 'SELECTABLE' (not real but illustrative).
+    # Match common starting tokens. \b boundaries avoid partial-word false hits.
     $patterns = @(
         '(?im)^\s*SELECT\b',
         '(?im)^\s*WITH\b.*\bAS\b',
@@ -799,13 +760,9 @@ function Test-LooksLikeSQL {
     return $false
 }
 
-# Find references to GlobalConfig setting names in a text block. Returns an
-# array of @{ SettingName; LineOffset; ColumnStart } occurrences. Two
-# detection patterns:
-# 1. SQL string with setting_name = 'xxx' (the SQL WHERE clause form)
-# 2. Hardcoded string literals matching known GlobalConfig setting names
-# (broadcasted via the permissive approach; will produce noise on first
-# run)
+# Find GlobalConfig setting-name references in a text block. Returns an array
+# of @{ SettingName; LineOffset; ColumnStart; MatchKind } for each
+# setting_name = 'xxx' occurrence (the SQL WHERE-clause form).
 function Get-GlobalConfigReferences {
     param([string]$Text)
 
@@ -841,10 +798,8 @@ function Get-GlobalConfigReferences {
    Prefix: (none)
    ============================================================================ #>
 
-# PS_FUNCTION (base, regular function) vs PS_FUNCTION_VARIANT (filter).
-# PowerShell distinguishes filter functions structurally: filter funcs
-# have FunctionDefinitionAst.IsFilter = $true. The spec catalogs filter
-# as a variant of the base function type.
+# PS_FUNCTION (base) vs PS_FUNCTION_VARIANT (filter). Filter functions are
+# cataloged as a variant of the base function type.
 function Get-PSFunctionVariantShape {
     param([Parameter(Mandatory)]$FunctionAst)
     if ($FunctionAst.IsFilter -eq $true) {
@@ -853,28 +808,12 @@ function Get-PSFunctionVariantShape {
     return @{ ComponentType = 'PS_FUNCTION'; VariantType = $null }
 }
 
-# Extract the list of exported names from the AST node following a
-# -Function / -Cmdlet / -Alias / -Variable parameter on Export-ModuleMember.
-# Handles every shape PowerShell will hand back from that position:
-#
-# StringConstantExpressionAst      single name, returns [single]
-# ExpandableStringExpressionAst    single name in double quotes, returns [single]
-# ArrayLiteralAst                  comma-separated names, returns each element
-# ParenExpressionAst               unwrap and recurse
-# ArrayExpressionAst               the @(...) form -- unwrap SubExpression and recurse
-# StatementBlockAst                unwrap and recurse into statements
-# PipelineAst                      unwrap into the pipeline's first PipelineElement
-#
-# Returns an array of strings. Skips any element whose text doesn't reduce
-# cleanly to a name (e.g. a function-call expression inside the array);
-# those would be invalid exports anyway.
-#
-# Motivation: the @() form with multi-line interspersed comments is common
-# in real codebases. PowerShell parses @('Foo', 'Bar') as
-# ArrayExpressionAst > StatementBlockAst > PipelineAst > ArrayLiteralAst >
-# [StringConstantExpressionAst]. The naive "is ArrayLiteralAst?" check
-# misses this and emits a single PS_EXPORT row whose ComponentName is the
-# entire @(...) block's text -- 1000+ characters.
+# Extract exported names from the AST node following a -Function / -Cmdlet /
+# -Alias / -Variable parameter on Export-ModuleMember, recursing through the
+# several AST shapes that position can take. Returns an array of name strings;
+# elements that don't reduce cleanly to a name are skipped (invalid exports
+# anyway). The @() form with interspersed comments nests deeply; without the
+# recursion it would emit one row whose name is the entire 1000+ char block.
 function Get-ExportedNamesFromAst {
     param([Parameter(Mandatory)]$Node)
 
@@ -934,8 +873,7 @@ function Get-ExportedNamesFromAst {
         return @($names.ToArray())
     }
 
-    # Command expression wrapping an expression (e.g. when a single value
-    # sits inside an @() block, it's parsed as a CommandExpressionAst)
+    # Command expression: unwrap to its inner expression.
     if ($Node -is [System.Management.Automation.Language.CommandExpressionAst]) {
         return Get-ExportedNamesFromAst -Node $Node.Expression
     }
@@ -1002,18 +940,9 @@ function New-PSCommentIndex {
 }
 
 # Find the block comment immediately preceding a definition. "Immediately
-# preceding" means the comment ends on the line directly above the
-# definition (allowing a single blank-line gap), and the comment has not
-# been claimed by a closer-following definition. Returns the matched index
-# entry (with .Text and .StartLine) or $null.
-#
-# Used for the MISPLACED_DOCBLOCK detection path: when no docblock is
-# found in the canonical inside-body position by Get-PSFunctionDocblock,
-# this helper checks whether a block comment ABOVE the function declaration
-# was the author's (incorrect) attempt at a docblock. If so, fire
-# MISPLACED_DOCBLOCK rather than MISSING_DOCBLOCK so the catalog signals
-# the difference between "no docblock at all" and "docblock in the wrong
-# place."
+# preceding" means the comment ends on the line directly above the definition
+# (allowing a single blank-line gap) and has not been claimed by a
+# closer-following definition. Returns the matched index entry or $null.
 function Get-PrecedingPSBlockComment {
     param(
         [Parameter(Mandatory)]$CommentIndex,
@@ -1039,39 +968,16 @@ function Get-PrecedingPSBlockComment {
     return $null
 }
 
-# Find the docblock for a function and report its position. Per the
-# canonical docblock position is INSIDE the function body, as the third
-# construct after [CmdletBinding()] and param(), positioned before the
-# first body statement. Returns an ordered hashtable:
-# DocBlock - the matched block comment from CommentIndex, or $null
-# Position - 'inside-body' (canonical), 'above-function' (the legacy
-# location, fires MISPLACED_DOCBLOCK), 'misplaced' (block
-# comment inside body but not in the canonical position),
-# or 'missing' (no docblock anywhere associated with this
-# function)
-#
-# Detection algorithm:
-# 1. Compute the line range for the canonical position:
-# - Start line: the line AFTER the param() block's closing ')' if
-# present, otherwise the line of the function's opening '{'.
-# - End line: the line of the first non-blank, non-comment
-# statement in the function body (the body's "first real
-# statement"). If the body is empty, end line is the line of
-# the function's closing '}'.
-# 2. Look for an unused block comment in CommentIndex whose StartLine
-# falls within that range and whose EndLine is less than the first
-# real statement's line. If found, position is 'inside-body'.
-# 3. If nothing found inside the body in the canonical position, fall
-# back to the legacy detector (Get-PrecedingPSBlockComment): a block
-# comment ending 1-2 lines above the function declaration. If found,
-# position is 'above-function'.
-# 4. As a last fallback, scan the entire function body for ANY block
-# comment; if found, position is 'misplaced'. (Catches cases where
-# the docblock was placed after some body code.)
-# 5. If nothing matches, position is 'missing'.
-#
-# In every case where a docblock is found, its .Used flag is set so the
-# comment is not double-claimed by later passes.
+# Find the docblock for a function and report its position. The required
+# docblock position is INSIDE the function body, as the third construct after
+# [CmdletBinding()] and param(), before the first body statement. Returns an
+# ordered hashtable:
+#   DocBlock - the matched block comment from CommentIndex, or $null
+#   Position - 'inside-body' (the required position), 'above-function' (legacy
+#              location, fires MISPLACED_DOCBLOCK), 'misplaced' (block comment
+#              inside body but not in the required position), or 'missing'
+# When a docblock is found its .Used flag is set so later passes don't
+# double-claim it.
 function Get-PSFunctionDocblock {
     param(
         [Parameter(Mandatory)]$FunctionAst,
@@ -1090,7 +996,7 @@ function Get-PSFunctionDocblock {
         return $result
     }
 
-    # Compute the canonical window's start and end lines.
+    # Compute the required window's start and end lines.
     $fnStartLine = Get-PSAstNodeLine -Node $FunctionAst
     $fnEndLine   = Get-PSAstNodeEndLine -Node $FunctionAst
 
@@ -1099,18 +1005,15 @@ function Get-PSFunctionDocblock {
         $paramBlock = $FunctionAst.Body.ParamBlock
     }
 
-    $canonicalStart = if ($paramBlock) {
+    $requiredStart = if ($paramBlock) {
         (Get-PSAstNodeEndLine -Node $paramBlock) + 1
     } else {
         $fnStartLine + 1
     }
 
-    # Find the first real statement in the function body. "Real" means an
-    # AST statement node, not a comment (PowerShell comments live outside
-    # the AST in CommentIndex). The body's EndBlock holds the
-    # post-param-block statements; that's where the docblock's neighbors
-    # are. If EndBlock is null or has no statements, the body is empty
-    # and the canonical window runs to the function's closing brace.
+    # Find the first real statement in the function body. "Real" means an AST
+    # statement node, not a comment (PowerShell comments live outside the AST).
+    # An empty body runs the window to the function's closing brace.
     $firstStmtLine = $fnEndLine
     if ($FunctionAst.Body -and $FunctionAst.Body.EndBlock -and
         $FunctionAst.Body.EndBlock.Statements) {
@@ -1120,16 +1023,15 @@ function Get-PSFunctionDocblock {
         }
     }
 
-    # Pass 1: look for the docblock in the canonical inside-body position.
-    # The block comment must START at or after canonicalStart and END
-    # strictly before firstStmtLine (so the comment ends before the first
-    # real statement begins). Pick the latest-ending block comment if
-    # multiple qualify.
+    # Pass 1: look for the docblock in the required inside-body position. The
+    # block comment must START at or after requiredStart and END strictly
+    # before firstStmtLine. Pick the latest-ending block comment if multiple
+    # qualify.
     $insideBest = $null
     foreach ($c in $CommentIndex) {
         if ($c.Used) { continue }
         if ($c.Type -ne 'Block') { continue }
-        if ($c.StartLine -ge $canonicalStart -and $c.EndLine -lt $firstStmtLine) {
+        if ($c.StartLine -ge $requiredStart -and $c.EndLine -lt $firstStmtLine) {
             if ($null -eq $insideBest -or $c.EndLine -gt $insideBest.EndLine) {
                 $insideBest = $c
             }
@@ -1366,12 +1268,12 @@ function Add-PSCommentBannerRow {
             -Context "Banner '$($Section.FullTitle)' appears more than once in this file."
     }
 
-    # MALFORMED_SINGLETON_NAME: singleton section banner must use the
-    # canonical NAME from . ROUTE has role-conditional valid names.
+    # MALFORMED_SINGLETON_NAME: singleton section banner must use the required
+    # fixed NAME. ROUTE has role-conditional valid names.
     if ($Section.TypeName -and $Section.BannerName -and
         $SingletonSectionTypes -contains $Section.TypeName -and
-        $SingletonSectionCanonicalNames.ContainsKey($Section.TypeName)) {
-        $validNames = $SingletonSectionCanonicalNames[$Section.TypeName]
+        $SingletonSectionRequiredNames.ContainsKey($Section.TypeName)) {
+        $validNames = $SingletonSectionRequiredNames[$Section.TypeName]
         if ($Section.BannerName -cnotin $validNames) {
             # For ROUTE, refine the message based on the file role.
             $expectedDisplay = if ($Section.TypeName -eq 'ROUTE') {
@@ -1382,7 +1284,7 @@ function Add-PSCommentBannerRow {
                 $validNames[0]
             }
             Add-DriftCode -Row $row -Code 'MALFORMED_SINGLETON_NAME' `
-                -Context "Singleton banner '$($Section.TypeName): $($Section.BannerName)' should use canonical NAME '$expectedDisplay'."
+                -Context "Singleton banner '$($Section.TypeName): $($Section.BannerName)' should use required NAME '$expectedDisplay'."
         }
     }
 
@@ -1391,28 +1293,13 @@ function Add-PSCommentBannerRow {
             -Context "Banner prefix '$($Section.Prefix)' is not one of the following: registered page prefix, 'cc' literal, or '(none)'."
     }
 
-    # PREFIX_REGISTRY_MISMATCH / MISPLACED_NONE_PREFIX: registry-driven
-    # validation, scoped by section-type classification.
-    #
-    # The section-type classification splits banner content into two
-    # categories:
-    #
-    # - Identifier-bearing sections (CONSTANTS, VARIABLES, FUNCTIONS)
-    # declare PowerShell identifiers that the platform prefix discipline
-    # governs. Their Prefix value must match the file's registered
-    # cc_prefix. '(none)' on these sections in a registered-prefix file
-    # fires MISPLACED_NONE_PREFIX. A non-matching prefix fires
-    # PREFIX_REGISTRY_MISMATCH.
-    #
-    # - Identifier-free sections (CHANGELOG, IMPORTS, PARAMETERS,
-    # INITIALIZATION, EXECUTION, ROUTE, EXPORTS) declare '(none)'
-    # regardless of the file's registered cc_prefix. Their banner
-    # contents are not prefix-bearing identifiers, so the registry
-    # check is skipped. A non-(none) Prefix value on these sections
-    # would still pass MALFORMED_PREFIX_VALUE (above) since 'bkp' and
-    # 'cc' are syntactically valid; we don't fire a separate code for
-    # a mismatch since the spec position is that (none) is the
-    # canonical declaration on these sections.
+    # PREFIX_REGISTRY_MISMATCH / MISPLACED_NONE_PREFIX: registry-driven,
+    # scoped by section-type classification. Identifier-bearing sections
+    # (CONSTANTS, VARIABLES, FUNCTIONS) must declare the file's registered
+    # cc_prefix: '(none)' on them in a registered-prefix file fires
+    # MISPLACED_NONE_PREFIX, a non-matching prefix fires
+    # PREFIX_REGISTRY_MISMATCH. Identifier-free sections declare '(none)'
+    # regardless and are not checked here.
     if ($script:CurrentRegistryHasMapping -and $Section.Prefix -and
         (Test-PrefixValueIsValid -Prefix $Section.Prefix -AllowNoneSentinel)) {
 
@@ -1444,18 +1331,16 @@ function Add-PSCommentBannerRow {
                 }
             }
         }
-        # Identifier-free sections: no registry check. (none) is canonical
-        # regardless of the file's registered cc_prefix, and a non-(none)
-        # value on these sections is tolerated (the platform prefix
-        # discipline does not govern these sections' content).
+        # Identifier-free sections: no registry check. (none) is the required
+        # declaration regardless of the file's registered cc_prefix; a
+        # non-(none) value on these sections is tolerated.
     }
 
     return $row
 }
 
-# Emit a single PS_CHANGELOG row representing the entire CHANGELOG section
-# of a file. Per-entry granularity was considered and rejected -- one row
-# per file is sufficient. The full section text goes into raw_text.
+# Emit a single PS_CHANGELOG row for the file's entire CHANGELOG section. The
+# full section text goes into raw_text.
 function Add-PSChangelogRow {
     param([Parameter(Mandatory)]$Section)
 
@@ -1489,7 +1374,7 @@ function Add-PSChangelogRow {
     $script:rows.Add($row)
 
     # CHANGELOG entry validation
-    # # - Each entry begins with `# YYYY-MM-DD <description>` (ISO date, two spaces).
+    # - Each entry begins with `# YYYY-MM-DD <description>` (ISO date, two spaces).
     # - Entries are ordered most-recent-first.
     # - No version numbers in entries.
     if ($null -ne $changelogText) {
@@ -1582,11 +1467,9 @@ function Add-PSFunctionRow {
     $key = "$($script:CurrentFile)|$line|$col|$($shape.ComponentType)|$fnName|DEFINITION|"
     if (-not (Test-AddDedupeKey -Key $key)) { return $null }
 
-    # Locate the function's docblock and report its position. Canonical
-    # position is inside the function body, after [CmdletBinding()]
-    # and param(), before the first body statement. Anything else fires
-    # MISPLACED_DOCBLOCK if a docblock was found in some other location, or
-    # MISSING_DOCBLOCK if no docblock was found at all.
+    # Locate the function's docblock and report its position (see
+    # Get-PSFunctionDocblock). Fires MISPLACED_DOCBLOCK or MISSING_DOCBLOCK
+    # per the reported position below.
     $docInfo      = Get-PSFunctionDocblock -FunctionAst $FunctionAst -CommentIndex $script:CurrentCommentIndex
     $docBlock     = $docInfo.DocBlock
     $docBlockText = if ($docBlock) { $docBlock.Text } else { $null }
@@ -1623,22 +1506,18 @@ function Add-PSFunctionRow {
         -SuppressSectionLookup
     $script:rows.Add($row)
 
-    # Documentation rules are determined by scope_tier (spec 8.3 / 8.4).
-    # PLATFORM-tier files (broadly-consumed shared infrastructure) carry a
-    # comment-based-help docblock in the canonical position (after
-    # [CmdletBinding()] and param()) and declare [CmdletBinding()]. SCOPED-tier
-    # files and standalone scripts (scope_tier unset) instead carry a single-line
-    # purpose comment above the declaration and do not use a docblock;
-    # [CmdletBinding()] is permitted but not required.
+    # Documentation rules are determined by scope_tier: PLATFORM-tier files use
+    # a comment-based-help docblock and declare [CmdletBinding()]; SCOPED-tier
+    # and standalone files use a single-line purpose comment instead.
     if ($script:CurrentFileScopeTier -eq 'PLATFORM') {
-        # PLATFORM: docblock mandatory in the canonical position.
+        # PLATFORM: docblock mandatory in the required position.
         if ($docInfo.Position -eq 'above-function') {
             Add-DriftCode -Row $row -Code 'MISPLACED_DOCBLOCK' `
                 -Context "Function '$fnName' has a docblock above the function declaration; the docblock must appear inside the function body after [CmdletBinding()] and param()."
         }
         elseif ($docInfo.Position -eq 'misplaced') {
             Add-DriftCode -Row $row -Code 'MISPLACED_DOCBLOCK' `
-                -Context "Function '$fnName' has a docblock inside the body but not in the canonical position immediately after [CmdletBinding()] and param()."
+                -Context "Function '$fnName' has a docblock inside the body but not in the required position immediately after [CmdletBinding()] and param()."
         }
         elseif ($docInfo.Position -eq 'missing') {
             Add-DriftCode -Row $row -Code 'MISSING_DOCBLOCK' `
@@ -1767,15 +1646,11 @@ function Add-PSFunctionRow {
         }
     }
 
-    # Docblock content validation
-    # docblock must include .SYNOPSIS and .DESCRIPTION. .PARAMETER
-    # blocks correspond 1:1 with declared parameters and appear in param() order.
-    # Forbidden keywords: .COMPONENT, .NOTES, .EXAMPLE, .INPUTS, .OUTPUTS,
-    # .LINK, .ROLE, .FUNCTIONALITY, .FORWARDHELPTARGETNAME,
-    # .REMOTEHELPRUNSPACE, .EXTERNALHELP. Only PLATFORM-tier files use docblocks,
-    # so docblock-content validation applies only to them; a docblock in a
-    # SCOPED-tier or standalone file is flagged by FORBIDDEN_DOCBLOCK_IN_STANDALONE
-    # alone, not subjected to content rules it is not meant to satisfy.
+    # Docblock content validation (PLATFORM tier only). Requires .SYNOPSIS and
+    # .DESCRIPTION; .PARAMETER blocks match declared parameters 1:1 in param()
+    # order; the keywords in $forbiddenDocKeywords are not allowed. A docblock
+    # in a SCOPED-tier or standalone file is handled by
+    # FORBIDDEN_DOCBLOCK_IN_STANDALONE and not subjected to these content rules.
     if ($null -ne $docBlockText -and $script:CurrentFileScopeTier -eq 'PLATFORM') {
         # MISSING_SYNOPSIS / MISSING_DESCRIPTION
         $hasSynopsis    = $docBlockText -match '(?ms)^\s*\.SYNOPSIS\b'
@@ -1994,8 +1869,7 @@ function Add-PSAssignmentRow {
 
     # Purpose comment (granular: CONSTANT/VARIABLE specific). A standalone
     # EXECUTION-section assignment is an execution statement, not a declaration
-    # (per the section 9.3 carve-out above), so the declaration purpose-comment
-    # requirement does not apply to it.
+    # so the declaration purpose-comment requirement does not apply to it.
     $isStandaloneExecution = ($script:CurrentFileRole -eq 'standalone' -and $sectionType -eq 'EXECUTION')
     if ($null -eq $purposeComment -and -not $isStandaloneExecution) {
         # Emit the granular code matching the section type, plus retain
@@ -2012,10 +1886,9 @@ function Add-PSAssignmentRow {
         }
     }
 
-    # Scope qualifier validation
-    # only $script: (lowercase) is permitted at file scope.
-    # $Script: (capital S), $global:, and other qualifiers are drift.
-    # Walk the left-side AST text to find the literal qualifier as written.
+    # Scope qualifier validation. Only $script: (lowercase) is permitted at
+    # file scope; $Script: (capital S), $global:, and other qualifiers are
+    # drift. Walk the left-side AST text to find the literal qualifier as written.
     $leftText = if ($left.Extent) { $left.Extent.Text } else { '' }
     if ($leftText -match '^\$([A-Za-z]+):') {
         $qualifier = $matches[1]
@@ -2043,8 +1916,8 @@ function Add-PSAssignmentRow {
         }
     }
 
-    # Automatic variable assignment
-    # assignment to PowerShell automatic variables is forbidden.
+    # Automatic variable assignment: assignment to PowerShell automatic
+    # variables is forbidden.
     $automaticVars = @(
         'args', '_', 'matches', 'input', 'PSScriptRoot', 'PSCommandPath',
         'MyInvocation', 'PSBoundParameters', 'Error', 'Host', 'HOME',
@@ -2057,10 +1930,7 @@ function Add-PSAssignmentRow {
             -Context "Assignment to PowerShell automatic variable `$$varName is forbidden."
     }
 
-    # Multi-declaration / chained assignment
-    # chained assignments ($a = $b = $c = 0) are forbidden.
-    # An AssignmentStatementAst whose Right is itself another AssignmentStatementAst
-    # signals chained form.
+    # Multi-declaration / chained assignment ($a = $b = $c = 0) is forbidden.
     if ($null -ne $AssignmentAst.Right -and
         $AssignmentAst.Right -is [System.Management.Automation.Language.PipelineAst]) {
         $rightExpr = $AssignmentAst.Right.PipelineElements
@@ -2119,13 +1989,8 @@ function Add-PSRouteRow {
             -Context "Add-PodeRoute call appears in a $($section.TypeName) section; spec requires the ROUTE section."
     }
 
-    # Route argument and body validation
-    # Requires:
-    # - -Authentication 'ADLogin' on every Add-PodeRoute call
-    # - page routes: Get-UserAccess as the first statement, end with Write-PodeHtmlResponse
-    # - api routes: Test-ActionEndpoint somewhere in the scriptblock, end with Write-PodeJsonResponse
-
-    # MISSING_AUTHENTICATION: walk command elements looking for -Authentication 'ADLogin'
+    # Route argument and body validation: authentication, RBAC check, and
+    # response-write, gated by role.
     $hasAdLoginAuth = $false
     if ($null -ne $CommandAst.CommandElements) {
         for ($i = 0; $i -lt $CommandAst.CommandElements.Count - 1; $i++) {
@@ -2169,7 +2034,7 @@ function Add-PSRouteRow {
         $stmtCount = $statements.Count
 
         # MISSING_RBAC_CHECK_PAGE: page route first statement must call Get-UserAccess
-        # MISSING_RBAC_CHECK_API: api route must call Test-ActionEndpoint somewhere
+        # MISSING_RBAC_CHECK_API: api route must call Test-ActionEndpoint first
         if ($script:CurrentFileRole -eq 'page-route') {
             $firstCallsGetUserAccess = $false
             if ($stmtCount -gt 0) {
@@ -2679,8 +2544,7 @@ function Add-PSInlineCommentRow {
 
     $scope = $script:CurrentFileScope
 
-    # Build a parent_function attribution by scanning function ranges.
-    # Reuse the cached function range list built during the walk.
+    # Parent-function attribution: find the enclosing function by line range.
     $parentFn = $null
     if ($null -ne $script:CurrentFunctionRanges) {
         foreach ($rng in $script:CurrentFunctionRanges) {
@@ -2969,13 +2833,9 @@ foreach ($root in $PSScanRoots) {
         Write-Log "Scan root not found, skipping: $root" 'WARN'
         continue
     }
-    # .psd1 files (Pode server config, module manifests) are intentionally
-    # out of scope. They are configuration data, not source code: no
-    # functions, classes, or other catalogable constructs, and no spec to
-    # validate against. They live in Object_Registry (which captures file
-    # identity and ownership) and have no constructs for Asset_Registry to
-    # catalog. If a future spec covers .psd1 structure, scan them via a
-    # dedicated populator with its own file_type, not by re-extending PS.
+    # .psd1 files (Pode config, module manifests) are out of scope: configuration
+    # data, not source, with no catalogable constructs and no spec to validate
+    # against. They live in Object_Registry for identity and ownership only.
     $found = @(Get-ChildItem -Path $root -Include '*.ps1','*.psm1' -Recurse -File |
                  Select-Object -ExpandProperty FullName)
     foreach ($f in $found) {
@@ -3275,13 +3135,9 @@ foreach ($file in $PSFiles) {
             $fnRow = Add-PSFunctionRow -FunctionAst $fn
             if ($null -eq $fnRow) { continue }
 
-            # Emit PS_DOCBLOCK if a docblock exists for this function in any
-            # position. Get-PSFunctionDocblock (called by Add-PSFunctionRow)
-            # already marked the matching comment as Used; we re-find here by
-            # repeating the same three-position search but TOLERATING the
-            # Used flag this time. Position priority matches the helper:
-            # canonical inside-body first, then above-function, then any
-            # other body position.
+            # Emit PS_DOCBLOCK if a docblock exists in any position.
+            # Get-PSFunctionDocblock (called above) already marked the matching
+            # comment Used; re-find here tolerating the Used flag.
             $fnLine    = Get-PSAstNodeLine    -Node $fn
             $fnEndLine = Get-PSAstNodeEndLine -Node $fn
 
@@ -3298,7 +3154,7 @@ foreach ($file in $PSFiles) {
             }
 
             $docCandidate = $null
-            # Pass A.1: canonical inside-body position.
+            # Pass A.1: required inside-body position.
             foreach ($c in $script:CurrentCommentIndex) {
                 if ($c.Type -ne 'Block') { continue }
                 if ($c.StartLine -ge $canonStart -and $c.EndLine -lt $firstStmtLine) {
@@ -3426,18 +3282,8 @@ foreach ($file in $PSFiles) {
                 }
                 '^Export-ModuleMember$' {
                     # Extract -Function / -Cmdlet / -Alias / -Variable names and
-                    # emit one PS_EXPORT row per name. The value expression after
-                    # the parameter can take multiple AST shapes:
-                    #
-                    # -Function 'Foo'              -> StringConstantExpressionAst
-                    # -Function 'Foo','Bar'        -> ArrayLiteralAst
-                    # -Function ('Foo','Bar')      -> ParenExpressionAst wrapping ArrayLiteralAst
-                    # -Function @('Foo','Bar')     -> ArrayExpressionAst wrapping
-                    # StatementBlockAst > PipelineAst > ArrayLiteralAst
-                    #
-                    # The @() form is common in real codebases for multi-line
-                    # exports with interspersed comments. Use a helper to walk
-                    # whichever shape we find and pull out the string literals.
+                    # emit one PS_EXPORT row per name. Get-ExportedNamesFromAst
+                    # walks whichever AST shape the value expression takes.
                     $elements = $cmd.CommandElements
                     $exportKind = 'function'
                     for ($ei = 1; $ei -lt $elements.Count; $ei++) {
@@ -3505,7 +3351,7 @@ foreach ($file in $PSFiles) {
     # AST WALK: PASS D - Dot-source statements
     try {
         # Dot-source statements appear in the AST as CommandAst with InvocationOperator='Dot'.
-        # We catch these here separately because they don't match a command name.
+        # Caught here separately because they don't match a command name.
         $dotSources = Find-PSAstNodes -Ast $parsed.Ast `
             -AstType ([System.Management.Automation.Language.CommandAst]) | Where-Object {
                 $_.InvocationOperator -eq [System.Management.Automation.Language.TokenKind]::Dot
@@ -3556,11 +3402,8 @@ foreach ($file in $PSFiles) {
                     -LineStart $line -LineEnd $endLn -ColumnStart $col `
                     -QueryText $text -ParentFunction $parentFn -Kind 'literal'
 
-                # FORBIDDEN_INLINE_SQL_LITERAL: multi-line SQL embedded in a
-                # single-line string literal (rather than a here-string).
-                # Detection: the string is StringConstantExpressionAst with a
-                # StringConstantType of SingleQuoted or DoubleQuoted (not here-string),
-                # AND the query text contains newline characters.
+                # FORBIDDEN_INLINE_SQL_LITERAL: multi-line SQL in a single-line
+                # (non-here-string) literal.
                 if ($null -ne $sqlRow -and
                     $sn -is [System.Management.Automation.Language.StringConstantExpressionAst]) {
                     $strType = $sn.StringConstantType.ToString()
@@ -3602,24 +3445,11 @@ foreach ($file in $PSFiles) {
     }
 
     # AST WALK: PASS F - Comment-level passes
-    # Walks every comment token in the file and dispatches by shape. Three
-    # broad categories are handled:
-    #
-    # 1. Block comments (<# ... #>)
-    # - File header / section banner / function docblock: already claimed
-    # by their respective row builders; skipped here.
-    # - Anything else: emits a PS_COMMENT_BLOCK row with the
-    # FORBIDDEN_FREESTANDING_COMMENT_BLOCK drift code (block-comment
-    # syntax is reserved for structural docs).
-    #
-    # 2. Line comments (#) at the start of a line, or runs of consecutive
-    # such lines. Coalesced into a single PS_INLINE_COMMENT row per
-    # contiguous run. Special single-line forms (divider patterns,
-    # removed-code headstones) get their own row types instead.
-    #
-    # 3. Trailing line comments (# at the end of a code line). Each emits
-    # its own PS_INLINE_COMMENT row with variant='trailing' and the
-    # FORBIDDEN_TRAILING_COMMENT drift code.
+    # Dispatches every comment token by shape: unclaimed block comments become
+    # PS_COMMENT_BLOCK rows (FORBIDDEN_FREESTANDING_COMMENT_BLOCK); leading line
+    # comments coalesce into PS_INLINE_COMMENT runs, with divider and
+    # removed-code shapes pulled out to their own row types; trailing line
+    # comments each fire FORBIDDEN_TRAILING_COMMENT.
     try {
         # Build source-lines once for trailing-comment detection.
         $srcLines = if ($null -ne $script:CurrentFileSource) {
@@ -3743,7 +3573,7 @@ foreach ($file in $PSFiles) {
                 $driftReasons.Add("marker is followed by a '#' comment on the immediately next line (markers must stand alone)")
             }
 
-            # Surrounding-blank-line check. Look at the raw
+            # Surrounding-blank-line check. Looks at the raw
             # source lines. The line above the marker must be blank OR be
             # the closing line of a section banner (a banner's closing '#>'
             # line is followed by exactly one blank line, so
@@ -3890,8 +3720,8 @@ foreach ($file in $PSFiles) {
         Write-Log "Pass F (comment passes) failed on ${name}: $($_.Exception.Message)" 'WARN'
     }
 
-    # Module-level export checks (module role only)
-    # # - MISSING_EXPORTS_SECTION: module file lacks an EXPORTS section.
+    # Module-level export checks (module role only):
+    # - MISSING_EXPORTS_SECTION: module file lacks an EXPORTS section.
     # - DEFINED_FUNCTION_NOT_EXPORTED: function declared but not exported.
     if ($script:CurrentFileRole -eq 'module' -and $null -ne $psFileRow) {
         # Collect EXPORTS section presence and the names actually exported.
@@ -3930,7 +3760,7 @@ foreach ($file in $PSFiles) {
     }
 
     # TRAILING_WHITESPACE: per-file line scan
-    # Walks each source line; if any line ends with whitespace, attach the
+    # Walks each source line; if any line ends with whitespace, attaches the
     # drift code to the PS_FILE row. One drift code attachment per file
     # regardless of count; the context lists offending line numbers.
     if ($null -ne $psFileRow -and $null -ne $script:CurrentFileSource) {
@@ -3957,8 +3787,8 @@ foreach ($file in $PSFiles) {
     # MISSING_REQUIRED_SECTION: a section type required for this role is absent.
     # DUPLICATE_SINGULAR_SECTION: a singleton section appears more than once.
     # FORBIDDEN_SECTION_TYPE: a section's type isn't valid for this role
-    # (currently emitted as UNKNOWN_SECTION_TYPE via Get-BannerInfo; we also
-    # surface it explicitly on the PS_FILE row here for visibility).
+    # (currently emitted as UNKNOWN_SECTION_TYPE via Get-BannerInfo; also
+    # surfaced explicitly on the PS_FILE row here for visibility).
     if ($null -ne $psFileRow -and $null -ne $script:CurrentSections -and $null -ne $script:CurrentFileRole) {
         # Build per-type section counts.
         $typeCounts = @{}
@@ -4022,9 +3852,8 @@ Write-Log "Pass 3: cross-file compliance checks..."
 
 # FILE_NOT_REGISTERED: any file absent from the Object_Registry zone/scope map
 # was stamped zone/scope '<undefined>' during the walk and recorded in
-# $objectRegistryMisses. Attach the drift code to each such file's PS_FILE
-# anchor row so the registration gap surfaces in drift analysis rather than
-# only in the console miss report.
+# $objectRegistryMisses. Attaches the drift code to each file's PS_FILE
+# anchor row so the registration gap surfaces in drift analysis.
 foreach ($missing in $objectRegistryMisses) {
     if ($script:psFileRowByFile.ContainsKey($missing)) {
         Add-DriftCode -Row $script:psFileRowByFile[$missing] -Code 'FILE_NOT_REGISTERED' `
@@ -4032,17 +3861,11 @@ foreach ($missing in $objectRegistryMisses) {
     }
 }
 
-# EXCESS_BLANK_LINES: walk each file's source and find consecutive runs of
-# truly blank lines (whitespace-only) between top-level constructs. The
-# previous implementation measured the line-number gap between adjacent
-# AST EndBlock.Statements entries; that approach incorrectly counted
-# intervening banner block comments (which are not AST statements but do
-# fill the gap with non-blank content) as if they were blank lines, and
-# fired drift on files that had zero consecutive blank-line runs in the
-# source. The corrected implementation scans the source text directly,
-# counting actual blank-line runs and skipping content inside here-strings
-# and multi-line block comments where blank lines are author content not
-# subject to the top-level discipline.
+# EXCESS_BLANK_LINES: scan each file's source for runs of 2+ consecutive blank
+# lines between top-level constructs. Scanning the source text directly (rather
+# than measuring AST statement gaps) avoids miscounting banner block comments
+# as blank lines. Blank lines inside here-strings and multi-line block comments
+# are author content and are skipped.
 foreach ($file in $PSFiles) {
     $name = [System.IO.Path]::GetFileName($file)
     if (-not $astCache.ContainsKey($file)) { continue }
@@ -4053,7 +3876,7 @@ foreach ($file in $PSFiles) {
 
     $sourceLines = $parsed.Source -split "`r?`n"
 
-    # Build a flag array marking each line as "skip" when it is inside a
+    # Builds a flag array marking each line as "skip" when it is inside a
     # multi-line construct that may legitimately contain its own blank
     # lines. Two skip regions:
     # - Block comments <# ... #>: spec allows blank lines inside banner
@@ -4069,8 +3892,7 @@ foreach ($file in $PSFiles) {
             $isMultilineBlock = $false
             if ($tok.Kind -eq 'Comment') {
                 # PowerShell tokenizer flags <# #> via TokenFlags.None on a
-                # Comment token whose text starts with '<#'. We just check
-                # the source.
+                # Comment token whose text starts with '<#'.
                 $tokText = $tok.Extent.Text
                 if ($tokText -and $tokText.StartsWith('<#')) {
                     $isMultilineBlock = $true
@@ -4096,7 +3918,7 @@ foreach ($file in $PSFiles) {
 
     # Walk the source line-by-line and detect any run of 2+ consecutive
     # blank lines that are not inside a skip region. The first occurrence
-    # triggers the drift; we don't need to find all of them.
+    # triggers the drift.
     $excessFound = $false
     $blankRun = 0
     for ($idx = 0; $idx -lt $sourceLines.Count; $idx++) {
@@ -4125,8 +3947,7 @@ foreach ($file in $PSFiles) {
 
 # SHADOWS_SHARED_FUNCTION: a non-shared file defining a function whose name
 # matches a shared function IN THE SAME ZONE. Cross-zone same-name functions
-# are separate namespaces (never loaded into the same runtime), so they are
-# not shadows.
+# are separate namespaces and are not drift.
 $shadowCandidates = @($script:rows | Where-Object {
     ($_.ComponentType -eq 'PS_FUNCTION' -or $_.ComponentType -eq 'PS_FUNCTION_VARIANT') -and
     $_.ReferenceType -eq 'DEFINITION' -and
@@ -4144,11 +3965,6 @@ foreach ($row in $shadowCandidates) {
     }
 }
 
-# DUPLICATE_FUNCTION_DEFINITION: the same function name declared by more than
-# one PS file across the codebase. Group all PS_FUNCTION / PS_FUNCTION_VARIANT
-# DEFINITION rows by ComponentName; any group spanning two or more distinct
-# files gets the drift code attached to every row in that group, with context
-# naming the other files involved.
 # DUPLICATE_FUNCTION_DEFINITION: the same function name declared by more than
 # one PS file WITHIN THE SAME ZONE. Grouping is by zone + name: a function
 # defined in two files of the same zone is a real runtime collision; the same
