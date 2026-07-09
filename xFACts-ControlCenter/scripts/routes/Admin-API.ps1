@@ -1404,6 +1404,94 @@ Add-PodeRoute -Method Get -Path '/api/admin/doc-pipeline/status' -Authentication
         Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = $_.Exception.Message }) -StatusCode 500
     }
 }
+
+# Asset Registry Pipeline - Launch (fire-and-forget).
+# Launches Invoke-AssetRegistryPipeline.ps1 which runs the selected populator
+# stages in parallel, then the resolver, writing real-time status to a JSON
+# file. Poll /api/admin/asset-registry-pipeline/status for progress.
+
+Add-PodeRoute -Method Post -Path '/api/admin/asset-registry-pipeline' -Authentication 'ADLogin' -ScriptBlock {
+    try {
+        if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
+        $user = "FAC\$($WebEvent.Auth.User.Username)"
+        $body = $WebEvent.Data
+
+        # Validate at least one stage selected
+        $steps = @($body.steps)
+        if ($steps.Count -eq 0) {
+            Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = "No stages selected" }) -StatusCode 400
+            return
+        }
+
+        $stepsJoined = $steps -join ','
+
+        # Full run truncates Asset_Registry once before launching; selective
+        # runs rely on each populator's own per-file-type row clear.
+        $fullRunArg = if ([bool]$body.full_run) { '-FullRun' } else { '' }
+
+        $scriptsRoot = 'E:\xFACts-PowerShell'
+        $wrapperScript = Join-Path $scriptsRoot 'Invoke-AssetRegistryPipeline.ps1'
+
+        if (-not (Test-Path $wrapperScript)) {
+            Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = "Wrapper script not found: Invoke-AssetRegistryPipeline.ps1" }) -StatusCode 500
+            return
+        }
+
+        # Clear any previous status file
+        $statusFile = Join-Path $scriptsRoot 'Logs\asset-registry-pipeline-status.json'
+        if (Test-Path $statusFile) {
+            Remove-Item $statusFile -Force -ErrorAction SilentlyContinue
+        }
+
+        # Launch fire-and-forget
+        $arguments = "-ExecutionPolicy Bypass -File `"$wrapperScript`" -Execute -StepsJson `"$stepsJoined`" $fullRunArg"
+        Start-Process -FilePath "powershell.exe" `
+            -ArgumentList $arguments `
+            -WorkingDirectory $scriptsRoot `
+            -WindowStyle Hidden `
+            -PassThru | Out-Null
+
+        Write-PodeJsonResponse -Value ([PSCustomObject]@{
+            success      = $true
+            performed_by = $user
+            message      = "Asset registry pipeline launched ($($steps.Count) stages)"
+        })
+    }
+    catch {
+        Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = $_.Exception.Message }) -StatusCode 500
+    }
+}
+
+# Asset Registry Pipeline - Status (polling endpoint).
+# Returns the current contents of the pipeline status JSON file.
+# Lightweight read-only - safe to poll every 2 seconds.
+
+Add-PodeRoute -Method Get -Path '/api/admin/asset-registry-pipeline/status' -Authentication 'ADLogin' -ScriptBlock {
+    try {
+        if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
+        $statusFile = 'E:\xFACts-PowerShell\Logs\asset-registry-pipeline-status.json'
+
+        if (-not (Test-Path $statusFile)) {
+            Write-PodeJsonResponse -Value ([PSCustomObject]@{
+                complete = $false
+                pending  = $true
+                message  = 'Waiting for pipeline to start...'
+            })
+            return
+        }
+
+        $json = Get-Content $statusFile -Raw -Encoding UTF8 -ErrorAction Stop
+        $status = $json | ConvertFrom-Json
+
+        Write-PodeJsonResponse -Value $status
+    }
+    catch {
+        Write-PodeJsonResponse -Value ([PSCustomObject]@{ Error = $_.Exception.Message }) -StatusCode 500
+    }
+}
+
 # ALERT FAILURES APIs
 # Added: 2026-03-05
 
