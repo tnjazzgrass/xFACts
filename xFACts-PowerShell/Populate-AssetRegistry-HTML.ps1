@@ -196,12 +196,10 @@ $ActionPermittedOverlayClasses = @(
     'cc-slideup-overlay'
 )
 
-# Landing-page chrome carve-out (CC_HTML_Spec.md Section 1.5 / Section 15.1).
-# The landing page -- the page emitted by the route whose Add-PodeRoute -Path
-# value is '/' -- wears no shared chrome and is exempt from exactly these
-# page-shell drift codes. Every other HTML rule still applies. This set is the
-# 1:1 contract with the spec's Section 15.1 table; changing it requires a spec
-# amendment.
+# Landing-page chrome carve-out. The landing page -- emitted by the route whose
+# Add-PodeRoute -Path is '/' -- wears no shared chrome and is exempt from exactly
+# these page-shell drift codes. Every other HTML rule still applies. Changing
+# this set requires a spec amendment.
 $LandingPageChromeCarveout = @(
     'MALFORMED_DOCTYPE',
     'FORBIDDEN_HARDCODED_TITLE',
@@ -381,7 +379,7 @@ $script:dedupeKeys = New-Object 'System.Collections.Generic.HashSet[string]'
 # drift codes. Page-shell drift codes are file-level concerns.
 $script:htmlFileRowByFile = @{}
 
-# Bare filename of the file currently being walked (e.g., 'BusinessServices.ps1').
+# Bare filename of the file currently being walked.
 $script:CurrentFile         = $null
 
 # Full path of the file currently being walked.
@@ -2002,8 +2000,7 @@ function Get-RootVariableFromExpression {
 }
 
 # Derive the categorical text name from the parent's first class token: strip a
-# leading '<page-prefix>-' (hyphen-anchored, so 'bsv' strips 'bsv-section' but
-# not 'bsvfoo-bar'); fall back to '<tag>-text' when no class is present.
+# leading '<page-prefix>-'; fall back to '<tag>-text' when no class is present.
 function Get-HtmlTextCategoricalName {
     param(
         [string]$ParentTag,
@@ -2522,8 +2519,7 @@ function Add-JsFileUsageRow {
    ============================================================================ #>
 
 # Page-shell validation runs ONLY on files classified as 'Route' (the full-page
-# shape per CC_HTML_Spec Sec. 1). API fragments and Module helpers are not
-# complete pages.
+# shape). API fragments and Module helpers are not complete pages.
 
 # Find the first token whose Kind matches and whose predicate returns $true.
 function Find-TokenIndex {
@@ -3143,9 +3139,8 @@ function Test-PageShellOrder {
 # page.css>, <link page.css>-><link cc-shared.css>, $navHtml-><cc-header-bar>,
 # and </cc-header-bar>->$bannerHtml. Structural tags (DOCTYPE, <html>, <head>,
 # <body>, etc.) and boundaries touching the "page-specific content" slot are NOT
-# checked (ambiguous endpoint; a backlog item will formalize them).
-# Q4 carve-out: multi-emission files skip the check, since concatenation-
-# synthesized boundary whitespace isn't authored content.
+# checked (ambiguous endpoint). Multi-emission files skip the check, since
+# concatenation-synthesized boundary whitespace isn't authored content.
 function Test-PageShellWhitespace {
     param(
         [Parameter(Mandatory)]$Tokens,
@@ -3153,7 +3148,7 @@ function Test-PageShellWhitespace {
         [Parameter(Mandatory)][int]$EmissionCount
     )
     if ($null -eq $Tokens -or $Tokens.Count -eq 0) { return }
-    # Q4 carve-out: skip multi-emission files
+    # Skip multi-emission files (see header comment).
     if ($EmissionCount -ne 1) { return }
 
     # Locate endpoint tokens for each in-scope pair
@@ -3265,13 +3260,9 @@ function Test-PageShellWhitespace {
     & $measureGap $headerBarEndIdx $bannerHtmlIdx 'cc-header-bar -> $bannerHtml'
 }
 
-# Test-AttributeOrder
-# Verifies that attributes on mandated structural elements appear in the
-# order shown in the spec template. Fires MALFORMED_ATTRIBUTE_ORDER on the
-# file's HTML_FILE row for each violation.
-#
 # Check that mandated page-shell elements carry their attributes in template
 # order (link: rel,href; body: class,data-cc-page,data-cc-prefix; script: src).
+# Fires MALFORMED_ATTRIBUTE_ORDER on the file's HTML_FILE row per violation.
 # Absent elements are not checked (Get-PageShellDrift fires MISSING_*).
 function Test-AttributeOrder {
     param(
@@ -4163,13 +4154,13 @@ function Invoke-HtmlTokenWalk {
    FUNCTIONS: OVERLAY POST-WALK VALIDATION
    ----------------------------------------------------------------------------
    Per-construct structure, secondary dialog class, and overlay-block
-   contiguity. Construct shape per CC_HTML_Spec Sec. 5.4.
+   contiguity.
    Prefix: (none)
    ============================================================================ #>
 
-# Test the structural shape of one overlay construct's outer element (Sec.
-# 5.4). Returns $true on conformance; the caller attaches MALFORMED_<KIND>_
-# STRUCTURE on $false. Secondary dialog-class check lives in Test-OverlayDialogClass.
+# Test the structural shape of one overlay construct's outer element.
+# Returns $true on conformance; the caller attaches MALFORMED_<KIND>_STRUCTURE
+# on $false. Secondary dialog-class check lives in Test-OverlayDialogClass.
 function Test-OverlayConstructStructure {
     param(
         [Parameter(Mandatory)]$Tokens,
@@ -4335,11 +4326,11 @@ function Test-OverlayConstructStructure {
     return $true
 }
 
-# Validate a dock construct's structure (CC_HTML_Spec Sec. 5.4.5/5.4.6): a
-# single element carrying cc-dialog and cc-dialog-dock, children being
-# .cc-dialog-header, optional .cc-dialog-subheader, then .cc-dialog-body (no
-# actions footer); header is one .cc-dialog-back then one .cc-dialog-title with
-# an optional .cc-dialog-header-actions last. Drift: MALFORMED_DOCK_STRUCTURE.
+# Validate a dock construct's structure: a single element carrying cc-dialog and
+# cc-dialog-dock, children being .cc-dialog-header, optional .cc-dialog-subheader,
+# then .cc-dialog-body (no actions footer); header is one .cc-dialog-back then one
+# .cc-dialog-title with an optional .cc-dialog-header-actions last.
+# Drift: # MALFORMED_DOCK_STRUCTURE.
 function Test-DockConstructStructure {
     param(
         [Parameter(Mandatory)]$Tokens,
@@ -4510,11 +4501,10 @@ function Test-OverlayDialogClass {
 }
 
 # Test whether the outer overlay element's data-action-click matches its
-# .cc-dialog-close button's, per CC_HTML_Spec Sec. 5.4.4 (backdrop click
-# dismisses via the same action as the X). Footer controls (Cancel/Confirm) are
-# deliberately excluded -- they carry their own actions, not the close action.
-# Returns $true on match or when the elements can't be located (structural fault
-# is the caller's concern).
+# .cc-dialog-close button's (backdrop click dismisses via the same action as the
+# X). Footer controls (Cancel/Confirm) are deliberately excluded -- they carry
+# their own actions, not the close action. Returns $true on match or when the
+# elements can't be located (structural fault is the caller's concern).
 function Test-OverlayBackdropClose {
     param(
         [Parameter(Mandatory)]$Tokens,
@@ -4656,9 +4646,9 @@ function Invoke-OverlayPostWalkValidation {
 
     # Per-construct structural validation
     foreach ($c in $OverlayConstructs) {
-        # Docks (CC_HTML_Spec Sec. 5.4.5) have their own structure and no
-        # outer overlay, secondary dialog class, or backdrop-close. Validate
-        # them separately and skip the backdrop-overlay checks below.
+        # Docks have their own structure and no outer overlay, secondary dialog
+        # class, or backdrop-close. Validate them separately and skip the
+        # backdrop-overlay checks below.
         if ($c.OverlayKind -eq 'dock') {
             $dockOk = Test-DockConstructStructure -Tokens $Tokens -DockTokenIdx $c.OuterTokenIdx
             if (-not $dockOk) {
@@ -4754,9 +4744,8 @@ function Invoke-OverlayPostWalkValidation {
                 }
             }
 
-            # Backdrop-close check (CC_HTML_Spec Sec. 5.4.4): the outer overlay
-            # element must carry a data-action-click matching its
-            # .cc-dialog-close button's close action.
+            # Backdrop-close check: the outer overlay element must carry a
+            # data-action-click matching its .cc-dialog-close button's close action.
             $backdropOk = Test-OverlayBackdropClose `
                 -Tokens $Tokens `
                 -OuterTokenIdx $c.OuterTokenIdx
@@ -5786,8 +5775,7 @@ function Test-RefreshInfoBlock {
     }
 }
 
-# Test-EngineRowContainer - validate cc-engine-row container shape
-# Validates cc-engine-row's outer container is exactly <div class="cc-engine-row">
+# Validate cc-engine-row's outer container is exactly <div class="cc-engine-row">
 # with no other attributes, and its only permitted children are engine cards.
 # Per-card structure is validated separately by Invoke-EngineCardValidation.
 function Test-EngineRowContainer {
@@ -6015,9 +6003,9 @@ foreach ($fileRec in $psFiles) {
     $routes = @(Get-PodeRoutes -Ast $parsed.Ast)
     $routePaths = @($routes | ForEach-Object { $_.Path })
 
-    # Landing-page trigger (CC_HTML_Spec.md Section 1.5): the file hosting the
-    # route whose -Path is '/'. Its page-shell chrome codes are filtered against
-    # $LandingPageChromeCarveout at the Route-validator call site below.
+    # Landing-page trigger: the file hosting the route whose -Path is '/'. Its
+    # page-shell chrome codes are filtered against $LandingPageChromeCarveout at
+    # the Route-validator call site below.
     $isLandingPage = ($routePaths -contains '/')
 
     # Emit the file-level anchor row.
@@ -6097,8 +6085,8 @@ foreach ($fileRec in $psFiles) {
     if ($registeredType -eq 'Route') {
         if ($tokensAll.Count -gt 0) {
             # Page shell drift attaches to HTML_FILE row. On the landing page
-            # (route '/'), codes in the Section 1.5 chrome carve-out are
-            # suppressed; every other code still attaches.
+            # (route '/'), codes in the chrome carve-out are suppressed; every
+            # other code still attaches.
             $shellDrift = Get-PageShellDrift -Tokens $tokensAll
             foreach ($code in $shellDrift) {
                 if ($isLandingPage -and ($LandingPageChromeCarveout -contains $code)) { continue }
@@ -6115,7 +6103,7 @@ foreach ($fileRec in $psFiles) {
             # concatenated stream as well.
             Invoke-OverlayPostWalkValidation -Tokens $tokensAll -OverlayConstructs $allOverlayConstructs -FileLine0 $firstEmissionLine
 
-            # New Route-only validators (Delivery 2).
+            # Route-only validators.
             Test-BodyClassPrefixDiscipline -Tokens $tokensAll -FileRow $row -PagePrefix $script:CurrentCcPrefix
             Test-PageShellOrder            -Tokens $tokensAll -FileRow $row
             Test-PageShellWhitespace       -Tokens $tokensAll -FileRow $row -EmissionCount $emissions.Count
