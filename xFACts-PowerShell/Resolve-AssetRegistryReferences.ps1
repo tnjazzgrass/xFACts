@@ -111,8 +111,7 @@ $script:ErrorActionPreference = 'Stop'
 # live in the SAME file (same component_name, same zone, same file_name) and
 # originate from HTML content (file_type = 'HTML'). This covers a self-
 # contained page that both defines its classes in an inline <style> block and
-# uses them in its own markup -- today, only the Get-AccessDeniedHtml carve-out
-# page (CC_HTML_Spec section 1.4). The carve-out is enforced upstream in the
+# uses them in its own markup. The carve-out is enforced upstream in the
 # HTML populator (it emits these DEFINITION rows for that one function only),
 # so this edge needs no function-specific clause: it can only match rows the
 # populator was permitted to emit. This edge runs BEFORE EdgeHtmlCssClass so
