@@ -171,9 +171,9 @@
                                 <div class="doc-mock-section-header"><span class="doc-mock-section-title">Current Activity</span><span class="doc-mock-badge-live"><span class="doc-mock-badge-dot"></span></span></div>
                                 <div class="doc-mock-metric-grid">
                                     <div class="doc-mock-metric"><div class="doc-mock-metric-label">Blocked Sessions</div><div class="doc-mock-metric-value">0</div><div class="doc-mock-metric-unit">waiting</div></div>
-                                    <div class="doc-mock-metric"><div class="doc-mock-metric-label">Lead Blocker</div><div class="doc-mock-metric-value" style="font-size:13px;">None</div><div class="doc-mock-metric-unit">no blocking</div></div>
-                                    <div class="doc-mock-metric"><div class="doc-mock-metric-label">Longest Wait</div><div class="doc-mock-metric-value">0</div><div class="doc-mock-metric-unit">no waits</div></div>
-                                    <div class="doc-mock-metric"><div class="doc-mock-metric-label">Active Requests</div><div class="doc-mock-metric-value">6</div><div class="doc-mock-metric-unit">3 run &middot; 2 rnbl &middot; 1 susp</div></div>
+                                    <div class="doc-mock-metric"><div class="doc-mock-metric-label">Active Waits</div><div class="doc-mock-metric-value">0</div><div class="doc-mock-metric-unit">waiting</div></div>
+                                    <div class="doc-mock-metric"><div class="doc-mock-metric-label">Active Requests</div><div class="doc-mock-metric-value">6</div><div class="doc-mock-metric-unit">3 run &middot; 1 rnbl &middot; 2 susp</div></div>
+                                    <div class="doc-mock-metric"><div class="doc-mock-metric-label">tempdb Pressure</div><div class="doc-mock-metric-value">0.2%</div><div class="doc-mock-metric-unit">data files used</div></div>
                                 </div>
                             </div>
                             <div class="doc-mock-section" data-section="6" style="position: relative;">
@@ -306,11 +306,11 @@
         </div></div>
         <div class="doc-guide-section" id="doc-section-5"><div class="doc-guide-section-inner">
             <h2 class="doc-guide-section-title"><span class="doc-section-number">5</span>Current Activity</h2>
-            <p>Four metric cards showing what&rsquo;s happening on the server right now.</p>
-            <p><strong>Blocked Sessions</strong> &mdash; Sessions currently waiting on another session to release a lock. When non-zero, someone is blocking someone else. Click to open a panel showing the blocking chain &mdash; who&rsquo;s blocking whom, what query they&rsquo;re running, and how long. Includes a copy-to-clipboard KILL script for the lead blocker.</p>
-            <p><strong>Lead Blocker</strong> &mdash; If blocking is occurring, this identifies the SPID at the head of the chain &mdash; the session everyone else is waiting on. Shows &ldquo;None&rdquo; when there&rsquo;s no blocking. When blocking is active, the card shows the SPID and how many sessions it&rsquo;s holding up.</p>
-            <p><strong>Longest Wait</strong> &mdash; The duration of the longest currently active wait. Displayed in seconds or minutes depending on the value. When this is zero, nobody is waiting for anything &mdash; the server is moving freely.</p>
+            <p>Four metric cards showing what&rsquo;s happening on the server right now. These are live queries against SQL Server&rsquo;s dynamic management views &mdash; point-in-time snapshots, not data from the collector tables &mdash; and each card opens a slideout with the underlying detail.</p>
+            <p><strong>Blocked Sessions</strong> &mdash; Sessions currently waiting on another session to release a lock. When non-zero, someone is blocking someone else. When blocking is active, a small colored footer line appears beneath the count identifying the lead blocker &mdash; the SPID at the head of the chain that everyone else is waiting on. Click to open a slideout showing the blocking chain (who&rsquo;s blocking whom, what query they&rsquo;re running, and how long), with a copy-to-clipboard KILL script for the lead blocker.</p>
+            <p><strong>Active Waits</strong> &mdash; The count of user sessions currently sitting on a meaningful wait. Benign, background, and idle wait types are filtered out (using Paul Randal&rsquo;s published benign-wait list) so the number reflects real contention rather than normal server bookkeeping. A footer shows the percent of active sessions waiting and the longest current wait. The slideout breaks the waits down by type and lists the individual waiting sessions.</p>
             <p><strong>Active Requests</strong> &mdash; Sessions actively executing a query right now. The subtitle breaks these down by status: running (green), runnable (yellow), and suspended (red). Click for a detail panel showing what each session is running, how long, and resource consumption. Includes a manual refresh button since this is a point-in-time snapshot.</p>
+            <p><strong>tempdb Pressure</strong> &mdash; The percent of tempdb&rsquo;s data-file space currently in use, shown as a gauge. Click to open a slideout with the full space breakdown (user objects, internal objects, version store, and free space), per-file usage, and the sessions consuming the most tempdb space right now.</p>
         </div></div>
         <div class="doc-guide-section" id="doc-section-6"><div class="doc-guide-section-inner">
             <h2 class="doc-guide-section-title"><span class="doc-section-number">6</span>Extended Events Activity</h2>
