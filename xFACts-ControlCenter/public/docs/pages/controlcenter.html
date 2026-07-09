@@ -145,10 +145,6 @@
 
         <p>Every automated process in xFACts appears as a card in the Process Grid. Each card shows the process name, its last execution status, a countdown to the next run, and daily success/failure counts. Cards are color-coded &mdash; green for success, red for failure, blue for running, gray for disabled. Click a card to see its recent execution history.</p>
 
-        <h3 class="doc-section-subtitle">Engine Controls</h3>
-
-        <p>The center column has controls for the orchestrator engine itself. A drain mode switch lets you gracefully wind down all processes before a server restart &mdash; no new launches while currently running processes finish up. Service controls let you stop, start, or restart the orchestrator once it&rsquo;s drained. These controls are deliberately restrictive. You can&rsquo;t restart a running engine without draining it first.</p>
-
         <h3 class="doc-section-subtitle">Execution Timeline</h3>
 
         <p>A visual canvas showing every process execution across time. Each process gets a row, and each execution is a colored bar. It&rsquo;s the quickest way to answer &ldquo;what happened in the last 30 minutes?&rdquo; without reading a single log entry. Hover a bar for details, click it for the full story.</p>
@@ -157,14 +153,21 @@
 
         <p>Below the timeline, a row of management tools provides access to the inner workings:</p>
 
+		<p><strong>Engine Controls</strong> &mdash; the controls for the orchestrator engine itself. A drain mode switch lets you gracefully wind down all processes before a server restart &mdash; no new launches while currently running processes finish up. Service controls let you stop, start, or restart the orchestrator once it&rsquo;s drained. These controls are deliberately restrictive. You can&rsquo;t restart a running engine without draining it first.</p>
+
         <p><strong>System Metadata</strong> &mdash; the version tracking system. Every component in xFACts has a version history, and this tool lets you browse it, add new entries, and see the full changelog. It&rsquo;s how we know what changed and when.</p>
 
         <p><strong>Global Configuration</strong> &mdash; the settings that control everything. Alert thresholds, polling intervals, feature flags, display preferences. Change a value here, and the next cycle picks it up. No code changes, no restarts.</p>
 
         <p><strong>Process Scheduler</strong> &mdash; the process registry editor. Add new processes, adjust intervals, change execution modes, configure dependency groups. Every orchestrated process can be managed here without touching a script or a database table directly.</p>
 
-        <p><strong>Documentation Pipeline</strong> &mdash; generates and publishes the documentation you&rsquo;re reading right now. Extracts DDL reference data, builds JSON files, publishes to Confluence, and exports markdown. All from a set of checkboxes and a button.</p>
-    </div>
+        <p><strong>Documentation</strong> &mdash; the pipeline that generates and publishes the documentation you&rsquo;re reading right now. Extracts DDL reference data, builds JSON files, publishes to Confluence, pushes everything to GitHub, and exports markdown. All from a handful of toggles and a button.</p>
+
+        <p><strong>Asset Registry</strong> &mdash; the pipeline that catalogs the platform&rsquo;s own files. It scans every CSS, HTML, JavaScript, and PowerShell file, records how each one is structured, and flags anything that drifts from the platform&rsquo;s format standards. It&rsquo;s how the platform keeps its own house in order &mdash; run it, and you get a fresh picture of where every file stands.</p>
+ 
+		<p><strong>Alert Failures</strong> &mdash; the modal showing Teams and Jira alerts that failed to deliver. When alerts exist, a red badge on the Platform Management card shows the count. This modal also allows failed alerts to be re-sent if needed.</p>
+
+	</div>
 
     <!-- ============================================ -->
     <!-- SECTION: How It's Built -->
