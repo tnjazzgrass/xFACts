@@ -137,6 +137,10 @@ $navHtml
             <div class="adm-card-icon">&#128218;</div>
             <div class="adm-card-title">Documentation</div>
         </button>
+        <button class="adm-card" data-action-click="adm-open-assetregistry">
+            <div class="adm-card-icon">&#128451;</div>
+            <div class="adm-card-title">Asset Registry</div>
+        </button>
         <button class="adm-card" data-action-click="adm-open-alertfailures">
             <div class="adm-card-icon">&#9888;</div>
             <div class="adm-card-title">Alert Failures</div>
@@ -269,7 +273,7 @@ $navHtml
                                     <div class="adm-doc-card-desc">Regenerate JSON data files from Object_Metadata</div>
                                 </div>
                                 <span class="adm-doc-card-status" id="adm-doc-status-generate-ddl"></span>
-                                <label class="cc-toggle-wrap"><input type="checkbox" class="adm-doc-toggle-input" id="adm-doc-step-ddl" checked><span class="cc-toggle-track cc-on"></span><span class="cc-toggle-knob cc-on"></span></label>
+                                <button class="adm-toggle-btn cc-toggle-wrap" data-action-click="adm-doc-toggle-step" id="adm-doc-step-ddl"><span class="cc-toggle-track cc-on"><span class="cc-toggle-knob cc-on"></span></span></button>
                             </div>
                         </div>
                         <div class="adm-doc-card" id="adm-doc-card-publish">
@@ -279,7 +283,7 @@ $navHtml
                                     <div class="adm-doc-card-desc">Publish HTML pages to Confluence Server</div>
                                 </div>
                                 <span class="adm-doc-card-status" id="adm-doc-status-publish-confluence"></span>
-                                <label class="cc-toggle-wrap"><input type="checkbox" class="adm-doc-toggle-input" id="adm-doc-step-publish" checked><span class="cc-toggle-track cc-on"></span><span class="cc-toggle-knob cc-on"></span></label>
+                                <button class="adm-toggle-btn cc-toggle-wrap" data-action-click="adm-doc-toggle-step" id="adm-doc-step-publish"><span class="cc-toggle-track cc-on"><span class="cc-toggle-knob cc-on"></span></span></button>
                             </div>
                             <div class="adm-doc-card-options" id="adm-doc-step-publish-options">
                                 <button class="adm-doc-pill adm-active" id="adm-doc-opt-confluence" data-action-click="adm-doc-toggle-pill" title="Push pages to Confluence Server via REST API">Publish to Confluence</button>
@@ -293,7 +297,7 @@ $navHtml
                                     <div class="adm-doc-card-desc">Push platform files and manifest to GitHub repository</div>
                                 </div>
                                 <span class="adm-doc-card-status" id="adm-doc-status-publish-github"></span>
-                                <label class="cc-toggle-wrap"><input type="checkbox" class="adm-doc-toggle-input" id="adm-doc-step-github" checked><span class="cc-toggle-track cc-on"></span><span class="cc-toggle-knob cc-on"></span></label>
+                                <button class="adm-toggle-btn cc-toggle-wrap" data-action-click="adm-doc-toggle-step" id="adm-doc-step-github"><span class="cc-toggle-track cc-on"><span class="cc-toggle-knob cc-on"></span></span></button>
                             </div>
                         </div>
                         <div class="adm-doc-card" id="adm-doc-card-consolidate">
@@ -303,7 +307,7 @@ $navHtml
                                     <div class="adm-doc-card-desc">Collect all platform files into upload folder</div>
                                 </div>
                                 <span class="adm-doc-card-status" id="adm-doc-status-consolidate-upload"></span>
-                                <label class="cc-toggle-wrap"><input type="checkbox" class="adm-doc-toggle-input" id="adm-doc-step-consolidate" checked><span class="cc-toggle-track cc-on"></span><span class="cc-toggle-knob cc-on"></span></label>
+                                <button class="adm-toggle-btn cc-toggle-wrap" data-action-click="adm-doc-toggle-step" id="adm-doc-step-consolidate"><span class="cc-toggle-track cc-on"><span class="cc-toggle-knob cc-on"></span></span></button>
                             </div>
                             <div class="adm-doc-card-options" id="adm-doc-step-consolidate-options">
                                 <button class="adm-doc-pill adm-active" id="adm-doc-opt-sql" data-action-click="adm-doc-toggle-pill" title="Extract SQL object definitions from database">Include SQL Objects</button>
@@ -318,6 +322,88 @@ $navHtml
                     </div>
 
                     <div class="adm-doc-results" id="adm-doc-results"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Asset Registry pipeline: full-run parent, per-stage selection, run results -->
+    <div id="adm-slideup-assetregistry" class="cc-slideup-overlay" data-action-click="adm-close-assetregistry">
+        <div class="cc-dialog cc-dialog-slideup cc-h-max">
+            <div class="cc-dialog-header">
+                <h3 class="cc-dialog-title">Asset Registry</h3>
+                <button class="cc-dialog-close" data-action-click="adm-close-assetregistry">&times;</button>
+            </div>
+            <div class="cc-dialog-body">
+                <div class="adm-doc-pipeline-body">
+                    <div class="adm-doc-step-list">
+                        <div class="adm-doc-card" id="adm-arp-card-fullrun">
+                            <div class="adm-doc-card-row">
+                                <div class="adm-doc-card-body">
+                                    <div class="adm-doc-card-title">Full Run</div>
+                                    <div class="adm-doc-card-desc">Truncate Asset_Registry and rebuild every stage. Turn off to select individual stages.</div>
+                                </div>
+                                <button class="adm-toggle-btn cc-toggle-wrap" data-action-click="adm-arp-toggle-fullrun" id="adm-arp-fullrun"><span class="cc-toggle-track cc-on"><span class="cc-toggle-knob cc-on"></span></span></button>
+                            </div>
+                        </div>
+                        <div class="adm-doc-card" id="adm-arp-card-css">
+                            <div class="adm-doc-card-row">
+                                <div class="adm-doc-card-body">
+                                    <div class="adm-doc-card-title">CSS Populator</div>
+                                    <div class="adm-doc-card-desc">Catalog CSS files into Asset_Registry</div>
+                                </div>
+                                <span class="adm-doc-card-status" id="adm-arp-status-css"></span>
+                                <button class="adm-toggle-btn cc-toggle-wrap" data-action-click="adm-arp-toggle-step" id="adm-arp-step-css" disabled><span class="cc-toggle-track cc-on"><span class="cc-toggle-knob cc-on"></span></span></button>
+                            </div>
+                        </div>
+                        <div class="adm-doc-card" id="adm-arp-card-html">
+                            <div class="adm-doc-card-row">
+                                <div class="adm-doc-card-body">
+                                    <div class="adm-doc-card-title">HTML Populator</div>
+                                    <div class="adm-doc-card-desc">Catalog HTML files into Asset_Registry</div>
+                                </div>
+                                <span class="adm-doc-card-status" id="adm-arp-status-html"></span>
+                                <button class="adm-toggle-btn cc-toggle-wrap" data-action-click="adm-arp-toggle-step" id="adm-arp-step-html" disabled><span class="cc-toggle-track cc-on"><span class="cc-toggle-knob cc-on"></span></span></button>
+                            </div>
+                        </div>
+                        <div class="adm-doc-card" id="adm-arp-card-js">
+                            <div class="adm-doc-card-row">
+                                <div class="adm-doc-card-body">
+                                    <div class="adm-doc-card-title">JS Populator</div>
+                                    <div class="adm-doc-card-desc">Catalog JavaScript files into Asset_Registry</div>
+                                </div>
+                                <span class="adm-doc-card-status" id="adm-arp-status-js"></span>
+                                <button class="adm-toggle-btn cc-toggle-wrap" data-action-click="adm-arp-toggle-step" id="adm-arp-step-js" disabled><span class="cc-toggle-track cc-on"><span class="cc-toggle-knob cc-on"></span></span></button>
+                            </div>
+                        </div>
+                        <div class="adm-doc-card" id="adm-arp-card-ps">
+                            <div class="adm-doc-card-row">
+                                <div class="adm-doc-card-body">
+                                    <div class="adm-doc-card-title">PS Populator</div>
+                                    <div class="adm-doc-card-desc">Catalog PowerShell files into Asset_Registry</div>
+                                </div>
+                                <span class="adm-doc-card-status" id="adm-arp-status-ps"></span>
+                                <button class="adm-toggle-btn cc-toggle-wrap" data-action-click="adm-arp-toggle-step" id="adm-arp-step-ps" disabled><span class="cc-toggle-track cc-on"><span class="cc-toggle-knob cc-on"></span></span></button>
+                            </div>
+                        </div>
+                        <div class="adm-doc-card" id="adm-arp-card-resolve">
+                            <div class="adm-doc-card-row">
+                                <div class="adm-doc-card-body">
+                                    <div class="adm-doc-card-title">Reference Resolver</div>
+                                    <div class="adm-doc-card-desc">Resolve cross-file references after populators complete</div>
+                                </div>
+                                <span class="adm-doc-card-status" id="adm-arp-status-resolve"></span>
+                                <button class="adm-toggle-btn cc-toggle-wrap" data-action-click="adm-arp-toggle-step" id="adm-arp-step-resolve" disabled><span class="cc-toggle-track cc-on"><span class="cc-toggle-knob cc-on"></span></span></button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="adm-doc-run-row">
+                        <button class="adm-doc-run-btn" id="adm-arp-run-btn" data-action-click="adm-arp-run">Run Selected</button>
+                        <span class="adm-doc-run-status" id="adm-arp-run-status"></span>
+                    </div>
+
+                    <div class="adm-doc-results" id="adm-arp-results"></div>
                 </div>
             </div>
         </div>
