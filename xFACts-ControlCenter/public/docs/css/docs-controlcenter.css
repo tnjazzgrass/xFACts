@@ -154,8 +154,8 @@
 /* Marks a flip card as flipped to its back face. */
 .doc-key-flipped { }
 
-.doc-key-flip-card.doc-key-flipped { /* rotated to the back face */
-    transform: none;
+.doc-key-flip-inner.doc-key-flipped { /* rotated to the back face */
+    transform: rotateY(180deg);
 }
 
 /* Styles the front face of a flip card. */
