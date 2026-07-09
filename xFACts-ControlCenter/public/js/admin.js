@@ -27,7 +27,9 @@
    FUNCTIONS: METADATA DETAIL DOCK
    FUNCTIONS: GLOBAL CONFIGURATION
    FUNCTIONS: PROCESS SCHEDULER
+   FUNCTIONS: TOGGLE STATE
    FUNCTIONS: DOCUMENTATION PIPELINE
+   FUNCTIONS: ASSET REGISTRY PIPELINE
    FUNCTIONS: ALERT FAILURES
    FUNCTIONS: INPUT MODAL
    FUNCTIONS: LOG MODAL
@@ -92,8 +94,15 @@ const adm_clickActions = {
     'adm-open-docpipeline':    adm_openDocPipeline,
     'adm-close-docpipeline':   adm_closeDocPipeline,
     'adm-doc-run':             adm_runDocPipeline,
+    'adm-doc-toggle-step':     adm_docToggleStep,
     'adm-doc-toggle-pill':     adm_docTogglePill,
     'adm-doc-detail-toggle':   adm_docToggleDetail,
+    'adm-open-assetregistry':  adm_openAssetRegistry,
+    'adm-close-assetregistry': adm_closeAssetRegistry,
+    'adm-arp-run':             adm_runAssetRegistry,
+    'adm-arp-toggle-fullrun':  adm_arpToggleFullRun,
+    'adm-arp-toggle-step':     adm_arpToggleStep,
+    'adm-arp-detail-toggle':   adm_arpToggleDetail,
     'adm-open-alertfailures':  adm_openAlertFailures,
     'adm-close-alertfailures': adm_closeAlertFailures,
     'adm-resend-alert':        adm_resendAlert,
@@ -109,8 +118,7 @@ const adm_clickActions = {
 
 /* Change-action dispatch table. */
 const adm_changeActions = {
-    'adm-sched-script-selected': adm_schedScriptSelected,
-    'adm-doc-step-change':       adm_docUpdateCards
+    'adm-sched-script-selected': adm_schedScriptSelected
 };
 
 /* Keydown-action dispatch table. */
@@ -204,6 +212,15 @@ const adm_DOC_ALL_STEPS = [
     { step: 'adm-doc-step-publish',     card: 'adm-doc-card-publish' },
     { step: 'adm-doc-step-github',      card: 'adm-doc-card-github' },
     { step: 'adm-doc-step-consolidate', card: 'adm-doc-card-consolidate' }
+];
+
+/* Asset-registry pipeline stages: orchestrator stage key -> toggle + card + status ids. */
+const adm_ARP_STAGES = [
+    { key: 'css',     step: 'adm-arp-step-css',     card: 'adm-arp-card-css',     status: 'adm-arp-status-css' },
+    { key: 'html',    step: 'adm-arp-step-html',    card: 'adm-arp-card-html',    status: 'adm-arp-status-html' },
+    { key: 'js',      step: 'adm-arp-step-js',      card: 'adm-arp-card-js',      status: 'adm-arp-status-js' },
+    { key: 'ps',      step: 'adm-arp-step-ps',      card: 'adm-arp-card-ps',      status: 'adm-arp-status-ps' },
+    { key: 'resolve', step: 'adm-arp-step-resolve', card: 'adm-arp-card-resolve', status: 'adm-arp-status-resolve' }
 ];
 
 /* ============================================================================
@@ -323,6 +340,15 @@ var adm_docPollTimer = null;
 /* Documentation: steps selected for the active run. */
 var adm_docSelectedSteps = [];
 
+/* Asset registry: whether a pipeline run is in flight. */
+var adm_arpRunning = false;
+
+/* Asset registry: status-poll interval handle, or null. */
+var adm_arpPollTimer = null;
+
+/* Asset registry: stages selected for the active run. */
+var adm_arpSelectedSteps = [];
+
 /* Alert failures: latest failure list. */
 var adm_afData = [];
 
@@ -390,6 +416,7 @@ function adm_init() {
 
     cc_connectEngineEvents();
     adm_initDocStepToggles();
+    adm_initArpStepToggles();
 }
 
 /* ============================================================================
@@ -3286,12 +3313,62 @@ function adm_schedEditKeydown(target, event) {
 }
 
 /* ============================================================================
+   FUNCTIONS: TOGGLE STATE
+   ----------------------------------------------------------------------------
+   Shared helpers for the class-driven cc-toggle switches used by the pipeline
+   modals. State lives in the cc-on / cc-off class on the wrap's track (and
+   knob); these read, set, and flip it. No native checkbox is involved.
+   Prefix: adm
+   ============================================================================ */
+
+/* True when the toggle wrap with the given id is in the on state. */
+function adm_toggleIsOn(wrapId) {
+    var wrap = document.getElementById(wrapId);
+    if (!wrap) {
+        return false;
+    }
+    var track = wrap.querySelector('.cc-toggle-track');
+    return !!(track && track.classList.contains('cc-on'));
+}
+
+/* Sets the toggle wrap with the given id to on or off, moving its knob. */
+function adm_toggleSet(wrapId, on) {
+    var wrap = document.getElementById(wrapId);
+    if (!wrap) {
+        return;
+    }
+    var track = wrap.querySelector('.cc-toggle-track');
+    var knob = wrap.querySelector('.cc-toggle-knob');
+    var state = on ? 'cc-on' : 'cc-off';
+    if (track) {
+        track.className = 'cc-toggle-track ' + state;
+    }
+    if (knob) {
+        knob.className = 'cc-toggle-knob ' + state;
+    }
+}
+
+/* Enables or disables a toggle button via the native disabled property, so a
+   locked toggle dims and stops firing clicks the same way every other disabled
+   button on the page does. The clickAction argument is retained for call-site
+   symmetry but is not needed: the action attribute stays on the button and the
+   disabled property alone gates it. */
+function adm_toggleSetEnabled(wrapId, enabled, clickAction) {
+    var wrap = document.getElementById(wrapId);
+    if (!wrap) {
+        return;
+    }
+    wrap.disabled = !enabled;
+}
+
+/* ============================================================================
    FUNCTIONS: DOCUMENTATION PIPELINE
    ----------------------------------------------------------------------------
    The Documentation slide-up: step toggles with card dimming and sub-option
    reveal, the run action that launches the pipeline and polls for status, and
-   the collapsible per-step results. The step toggles are native checkboxes
-   bound through the delegated change dispatcher.
+   the collapsible per-step results. The step toggles are class-driven
+   cc-toggle switches whose clickable wraps route through the delegated click
+   dispatcher; state lives in the cc-on / cc-off class on each wrap.
    Prefix: adm
    ============================================================================ */
 
@@ -3356,38 +3433,27 @@ function adm_closeDocPipeline(target, event) {
     dialog.classList.remove('cc-open');
 }
 
-/* Updates step-card dimming and sub-option visibility from the toggles. */
+/* Updates step-card dimming and sub-option visibility from the toggle states. */
 function adm_docUpdateCards() {
     adm_DOC_ALL_STEPS.forEach(function(s) {
-        var cb = document.getElementById(s.step);
+        var on = adm_toggleIsOn(s.step);
         var card = document.getElementById(s.card);
-        if (cb && card) {
-            if (cb.checked) {
-                card.classList.remove('adm-off');
-            } else {
-                card.classList.add('adm-off');
-            }
-        }
-        if (cb) {
-            var wrap = cb.parentNode;
-            var track = wrap.querySelector('.cc-toggle-track');
-            var knob = wrap.querySelector('.cc-toggle-knob');
-            var state = cb.checked ? 'cc-on' : 'cc-off';
-            if (track) {
-                track.className = 'cc-toggle-track ' + state;
-            }
-            if (knob) {
-                knob.className = 'cc-toggle-knob ' + state;
-            }
+        if (card) {
+            card.classList.toggle('adm-off', !on);
         }
     });
     adm_DOC_STEP_OPTION_MAP.forEach(function(pair) {
-        var cb = document.getElementById(pair.step);
         var opts = document.getElementById(pair.options);
-        if (cb && opts) {
-            opts.classList.toggle('adm-hidden', !cb.checked);
+        if (opts) {
+            opts.classList.toggle('adm-hidden', !adm_toggleIsOn(pair.step));
         }
     });
+}
+
+/* Flips a documentation step toggle and refreshes the cards. */
+function adm_docToggleStep(target) {
+    adm_toggleSet(target.id, !adm_toggleIsOn(target.id));
+    adm_docUpdateCards();
 }
 
 /* Toggles a sub-option pill's active state. */
@@ -3407,14 +3473,8 @@ function adm_docToggleDetail(target) {
     }
 }
 
-/* Wires the step toggles by adding the change action; no per-element listeners. */
+/* Refreshes step-card dimming from the initial toggle markup. */
 function adm_initDocStepToggles() {
-    adm_DOC_ALL_STEPS.forEach(function(s) {
-        var cb = document.getElementById(s.step);
-        if (cb) {
-            cb.setAttribute('data-action-change', 'adm-doc-step-change');
-        }
-    });
     adm_docUpdateCards();
 }
 
@@ -3424,16 +3484,16 @@ function adm_runDocPipeline() {
         return;
     }
     var steps = [];
-    if (document.getElementById('adm-doc-step-ddl').checked) {
+    if (adm_toggleIsOn('adm-doc-step-ddl')) {
         steps.push('generate_ddl');
     }
-    if (document.getElementById('adm-doc-step-publish').checked) {
+    if (adm_toggleIsOn('adm-doc-step-publish')) {
         steps.push('publish_confluence');
     }
-    if (document.getElementById('adm-doc-step-github').checked) {
+    if (adm_toggleIsOn('adm-doc-step-github')) {
         steps.push('publish_github');
     }
-    if (document.getElementById('adm-doc-step-consolidate').checked) {
+    if (adm_toggleIsOn('adm-doc-step-consolidate')) {
         steps.push('consolidate_upload');
     }
     var st = document.getElementById('adm-doc-run-status');
@@ -3577,6 +3637,329 @@ function adm_pollDocStatus() {
                 }
                 html += '<div class="adm-doc-detail ' + cls + '">';
                 html += '<div class="adm-doc-detail-summary" data-action-click="adm-doc-detail-toggle">';
+                html += '<span class="adm-doc-detail-arrow' + expCls + '">\u25B6</span>';
+                html += '<span class="adm-doc-detail-icon ' + cls + '">' + icon + '</span>';
+                html += '<span class="adm-doc-detail-label">' + cc_escapeHtml(r.label) + '</span>';
+                if (r.exit_code !== null && r.exit_code !== undefined) {
+                    html += '<span class="adm-doc-detail-exit">exit ' + r.exit_code + '</span>';
+                }
+                html += '</div>';
+                html += '<div class="adm-doc-detail-body' + expCls + '">';
+                if (outputText) {
+                    html += '<pre class="adm-doc-detail-output">' + cc_escapeHtml(outputText) + '</pre>';
+                }
+                if (errorText) {
+                    html += '<pre class="adm-doc-detail-error">' + cc_escapeHtml(errorText) + '</pre>';
+                }
+                html += '</div>';
+                html += '</div>';
+            });
+            res.innerHTML = html;
+        }
+    }).catch(function() {});
+}
+
+/* ============================================================================
+   FUNCTIONS: ASSET REGISTRY PIPELINE
+   ----------------------------------------------------------------------------
+   The Asset Registry slide-up: a Full Run parent toggle that locks the five
+   stage toggles on, or unlocks them for selective runs; launching the pipeline
+   (all five stages plus truncate on a full run, or the selected stages with
+   per-file-type clears otherwise); and polling per-stage status to completion.
+   Reuses the adm-doc-* result styling for visual parity with the doc pipeline.
+   Prefix: adm
+   ============================================================================ */
+
+/* Updates all five stage-card dimming states from their toggle states. */
+function adm_arpUpdateCards() {
+    adm_ARP_STAGES.forEach(function(stage) {
+        var card = document.getElementById(stage.card);
+        if (card) {
+            card.classList.toggle('adm-off', !adm_toggleIsOn(stage.step));
+        }
+    });
+}
+
+/* Applies the Full Run parent state to the five stage toggles: when on, each
+   stage is forced on and locked (the whole registry rebuilds); when off, the
+   stages unlock for selection, left on so the user deselects from a full set. */
+function adm_arpApplyFullRun(fullRun) {
+    adm_ARP_STAGES.forEach(function(stage) {
+        if (fullRun) {
+            adm_toggleSet(stage.step, true);
+            adm_toggleSetEnabled(stage.step, false);
+        } else {
+            adm_toggleSetEnabled(stage.step, true, 'adm-arp-toggle-step');
+        }
+    });
+    adm_arpUpdateCards();
+}
+
+/* Full Run toggle clicked: flip it, then relock or unlock the stage toggles. */
+function adm_arpToggleFullRun(target) {
+    var on = !adm_toggleIsOn(target.id);
+    adm_toggleSet(target.id, on);
+    adm_arpApplyFullRun(on);
+}
+
+/* Stage toggle clicked (only reachable when Full Run is off): flip it. */
+function adm_arpToggleStep(target) {
+    adm_toggleSet(target.id, !adm_toggleIsOn(target.id));
+    adm_arpUpdateCards();
+}
+
+/* Applies the initial Full Run state from the static markup. */
+function adm_initArpStepToggles() {
+    adm_arpApplyFullRun(adm_toggleIsOn('adm-arp-fullrun'));
+}
+
+/* Opens the Asset Registry slide-up and resets its result state. */
+function adm_openAssetRegistry() {
+    var res = document.getElementById('adm-arp-results');
+    if (res) {
+        res.innerHTML = '';
+    }
+    var st = document.getElementById('adm-arp-run-status');
+    if (st) {
+        st.textContent = '';
+        st.className = 'adm-doc-run-status';
+    }
+    var btn = document.getElementById('adm-arp-run-btn');
+    if (btn) {
+        btn.disabled = false;
+        btn.textContent = 'Run Selected';
+        btn.setAttribute('data-action-click', 'adm-arp-run');
+    }
+    adm_ARP_STAGES.forEach(function(stage) {
+        var el = document.getElementById(stage.status);
+        if (el) {
+            el.textContent = '';
+            el.className = 'adm-doc-card-status';
+        }
+    });
+    var overlay = document.getElementById('adm-slideup-assetregistry');
+    var dialog = overlay.querySelector('.cc-dialog');
+    overlay.classList.add('cc-open');
+    requestAnimationFrame(function() {
+        dialog.classList.add('cc-open');
+    });
+    adm_toggleSetEnabled('adm-arp-fullrun', true, 'adm-arp-toggle-fullrun');
+    adm_arpApplyFullRun(adm_toggleIsOn('adm-arp-fullrun'));
+}
+
+/* Closes the Asset Registry slide-up (backdrop-guarded; blocked while running). */
+function adm_closeAssetRegistry(target, event) {
+    if (adm_arpRunning) {
+        return;
+    }
+    if (event && target.id === 'adm-slideup-assetregistry' && event.target !== target) {
+        return;
+    }
+    if (adm_arpPollTimer) {
+        clearInterval(adm_arpPollTimer);
+        adm_arpPollTimer = null;
+    }
+    var overlay = document.getElementById('adm-slideup-assetregistry');
+    var dialog = overlay.querySelector('.cc-dialog');
+    dialog.addEventListener('transitionend', function handler() {
+        dialog.removeEventListener('transitionend', handler);
+        overlay.classList.remove('cc-open');
+    });
+    dialog.classList.remove('cc-open');
+}
+
+/* Expands or collapses a per-stage result disclosure (summary row clicked). */
+function adm_arpToggleDetail(target) {
+    var arrow = target.querySelector('.adm-doc-detail-arrow');
+    var body = target.nextElementSibling;
+    if (arrow) {
+        arrow.classList.toggle('adm-expanded');
+    }
+    if (body) {
+        body.classList.toggle('adm-expanded');
+    }
+}
+
+/* Launches the asset-registry pipeline run. */
+function adm_runAssetRegistry() {
+    if (adm_arpRunning) {
+        return;
+    }
+    var fullRun = adm_toggleIsOn('adm-arp-fullrun');
+
+    var steps = [];
+    if (fullRun) {
+        steps = adm_ARP_STAGES.map(function(stage) { return stage.key; });
+    } else {
+        adm_ARP_STAGES.forEach(function(stage) {
+            if (adm_toggleIsOn(stage.step)) {
+                steps.push(stage.key);
+            }
+        });
+    }
+
+    var st = document.getElementById('adm-arp-run-status');
+    if (steps.length === 0) {
+        st.textContent = 'Select at least one stage';
+        st.className = 'adm-doc-run-status adm-error';
+        return;
+    }
+
+    var payload = {
+        steps: steps,
+        full_run: fullRun
+    };
+
+    adm_arpRunning = true;
+    adm_arpSelectedSteps = steps.slice();
+    adm_toggleSetEnabled('adm-arp-fullrun', false);
+    adm_ARP_STAGES.forEach(function(stage) {
+        adm_toggleSetEnabled(stage.step, false);
+    });
+    var btn = document.getElementById('adm-arp-run-btn');
+    btn.disabled = true;
+    btn.textContent = 'Running...';
+    st.textContent = 'Launching pipeline...';
+    st.className = 'adm-doc-run-status adm-running';
+    adm_ARP_STAGES.forEach(function(stage) {
+        if (steps.indexOf(stage.key) === -1) {
+            return;
+        }
+        var el = document.getElementById(stage.status);
+        if (el) {
+            el.textContent = '\u23F3';
+            el.className = 'adm-doc-card-status adm-pending';
+        }
+    });
+    document.getElementById('adm-arp-results').innerHTML = '';
+
+    cc_engineFetch('/api/admin/asset-registry-pipeline', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    }).then(function(data) {
+        if (!data) {
+            return;
+        }
+        if (data.Error) {
+            adm_arpRunning = false;
+            btn.disabled = false;
+            btn.textContent = 'Run Selected';
+            st.textContent = data.Error;
+            st.className = 'adm-doc-run-status adm-error';
+            return;
+        }
+        st.textContent = 'Pipeline running...';
+        st.className = 'adm-doc-run-status adm-running';
+        adm_arpPollTimer = setInterval(adm_pollArpStatus, 2000);
+        setTimeout(adm_pollArpStatus, 500);
+    }).catch(function(err) {
+        adm_arpRunning = false;
+        btn.disabled = false;
+        btn.textContent = 'Run Selected';
+        st.textContent = 'Launch failed: ' + err.message;
+        st.className = 'adm-doc-run-status adm-error';
+    });
+}
+
+/* Maps an orchestrator stage key to its status-glyph element id. */
+function adm_arpStatusElById(stepKey) {
+    for (var i = 0; i < adm_ARP_STAGES.length; i++) {
+        if (adm_ARP_STAGES[i].key === stepKey) {
+            return document.getElementById(adm_ARP_STAGES[i].status);
+        }
+    }
+    return null;
+}
+
+/* Polls pipeline status and renders results on completion. */
+function adm_pollArpStatus() {
+    cc_engineFetch('/api/admin/asset-registry-pipeline/status').then(function(data) {
+        if (!data) {
+            return;
+        }
+        if (data.pending) {
+            return;
+        }
+        var results = data.results || [];
+        var st = document.getElementById('adm-arp-run-status');
+        results.forEach(function(r) {
+            var el = adm_arpStatusElById(r.step);
+            if (!el) {
+                return;
+            }
+            if (r.status === 'running') {
+                el.textContent = '\u23F3';
+                el.className = 'adm-doc-card-status adm-pending';
+            } else if (r.status === 'success') {
+                el.textContent = '\u2713';
+                el.className = 'adm-doc-card-status adm-success';
+            } else if (r.status === 'warning') {
+                el.textContent = '\u26A0';
+                el.className = 'adm-doc-card-status adm-warning';
+            } else if (r.status === 'skipped') {
+                el.textContent = '\u2013';
+                el.className = 'adm-doc-card-status';
+            } else if (r.status === 'failed') {
+                el.textContent = '\u2717';
+                el.className = 'adm-doc-card-status adm-failed';
+            }
+        });
+        var doneCount = 0;
+        results.forEach(function(r) {
+            if (r.status !== 'running') {
+                doneCount++;
+            }
+        });
+        if (!data.complete) {
+            st.textContent = 'Running... (' + doneCount + '/' + adm_arpSelectedSteps.length + ' complete)';
+        }
+        if (data.complete) {
+            clearInterval(adm_arpPollTimer);
+            adm_arpPollTimer = null;
+            adm_arpRunning = false;
+            var btn = document.getElementById('adm-arp-run-btn');
+            btn.disabled = false;
+            btn.textContent = 'OK';
+            btn.setAttribute('data-action-click', 'adm-close-assetregistry');
+            var hasWarnings = results.some(function(r) { return r.status === 'warning'; });
+            if (data.success && !hasWarnings) {
+                st.textContent = 'All stages completed successfully';
+                st.className = 'adm-doc-run-status adm-success';
+            } else if (data.success && hasWarnings) {
+                st.textContent = 'Completed with warnings';
+                st.className = 'adm-doc-run-status adm-warning';
+            } else {
+                st.textContent = 'Pipeline completed with errors';
+                st.className = 'adm-doc-run-status adm-error';
+            }
+            var res = document.getElementById('adm-arp-results');
+            var html = '<div class="adm-doc-results-divider">Results</div>';
+            results.forEach(function(r) {
+                var ok = (r.status === 'success' || r.status === 'warning');
+                var skipped = (r.status === 'skipped');
+                var cls = r.status === 'warning' ? 'adm-warn' : (skipped ? 'adm-ok' : (ok ? 'adm-ok' : 'adm-fail'));
+                var icon = r.status === 'warning' ? '\u26A0' : (skipped ? '\u2013' : (ok ? '\u2713' : '\u2717'));
+                var expanded = !(ok || skipped);
+                var expCls = expanded ? ' adm-expanded' : '';
+                var outputText = '';
+                if (r.output) {
+                    if (typeof r.output === 'string') {
+                        outputText = r.output.trim();
+                    } else if (r.output.value && typeof r.output.value === 'string') {
+                        outputText = r.output.value.trim();
+                    }
+                }
+                var errorText = '';
+                if (r.error) {
+                    if (typeof r.error === 'string') {
+                        errorText = r.error.trim();
+                    } else if (r.error.value && typeof r.error.value === 'string') {
+                        errorText = r.error.value.trim();
+                    }
+                }
+                html += '<div class="adm-doc-detail ' + cls + '">';
+                html += '<div class="adm-doc-detail-summary" data-action-click="adm-arp-detail-toggle">';
                 html += '<span class="adm-doc-detail-arrow' + expCls + '">\u25B6</span>';
                 html += '<span class="adm-doc-detail-icon ' + cls + '">' + icon + '</span>';
                 html += '<span class="adm-doc-detail-label">' + cc_escapeHtml(r.label) + '</span>';
