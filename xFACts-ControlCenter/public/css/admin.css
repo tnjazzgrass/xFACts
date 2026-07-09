@@ -20,7 +20,7 @@
    CONTENT: SYSTEM METADATA
    CONTENT: GLOBAL CONFIGURATION
    CONTENT: PROCESS SCHEDULER
-   CONTENT: DOCUMENTATION PIPELINE
+   CONTENT: PIPELINE MODALS
    CONTENT: ALERT FAILURES
    CONTENT: METADATA DETAIL
    CONTENT: INPUT MODAL
@@ -2563,15 +2563,13 @@
 }
 
 /* ============================================================================
-   CONTENT: DOCUMENTATION PIPELINE
+   CONTENT: PIPELINE MODALS
    ----------------------------------------------------------------------------
-   Content inside the Documentation slide-up: the pipeline step cards with
-   their native checkbox toggles and sub-option pills, the run button and
-   overall status, and the per-step result disclosures. The native-checkbox
-   toggle selectors and the native <details> disclosure selectors emit
-   expected drift (checkbox :checked sibling/child combinators pending the
-   cc-toggle-* chrome promotion; <details>/<summary> element, [open]
-   attribute, and webkit marker pseudo-element pending a class-based rework).
+   Content inside the Documentation and Asset Registry slide-ups: the pipeline
+   step cards, sub-option pills, run button and overall status, and the
+   collapsible per-step result disclosures. Both modals drive their on/off
+   switches through the shared cc-toggle chrome; the only page-local toggle
+   rule here is the locked-state dimming applied to a non-interactive switch.
    Prefix: adm
    ============================================================================ */
 
@@ -2660,9 +2658,18 @@
     color: var(--color-status-critical);
 }
 
-/* The hidden native checkbox backing a step toggle (state read by the pipeline). */
-.adm-doc-toggle-input {
-    display: none;
+/* Button element acting as a cc-toggle click target: strips native button chrome. */
+.adm-toggle-btn {
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+}
+
+.adm-toggle-btn:disabled { /* locked by a parent control: dimmed, non-interactive */
+    opacity: 0.4;
+    cursor: default;
+    pointer-events: none;
 }
 
 /* Sub-option pill row revealed under a step card. */
