@@ -1,9 +1,9 @@
 # B2B Module Roadmap
 
-**Status:** Active — investigation phase (Steps 1-5 complete, Steps 6A-6B complete, Step 6C next)
-**Version:** 2.3
-**Last updated:** 2026-04-24
-**Supersedes:** v2.2 (in-session); v2.1; v2.0; v1 (archived at `WorkingFiles/B2B_Investigation/Legacy/B2B_Roadmap_V1.md`)
+**Status:** Active — **investigation phase CLOSED** (Steps 1-6 complete incl. 6A-6G); decision phase (§7) is next
+**Version:** 2.5
+**Last updated:** 2026-07-10
+**Supersedes:** v2.4; v2.3; v2.2 (in-session); v2.1; v2.0; v1 (archived at `WorkingFiles/B2B_Investigation/Legacy/B2B_Roadmap_V1.md`)
 
 ---
 
@@ -13,38 +13,29 @@
 
 ### What's next
 
-**Step 6C — Core Workflow BPML Analysis**
+**The decision phase (§7).** The Step 6 investigation is closed — every sub-step (6A-6G) is complete, every claim dispositioned, every runtime question answered. The next session begins architecture decisions 7.1-7.7 with a fully verified model.
 
-Step 6B extracted 429 BPML files into `WorkingFiles/B2B_Investigation/Step_06_MAIN_Anatomy/Step_06B_BPML_Bulk_Extraction/BPMLs/` organized by family. Step 6C deep-reads the FA_CLIENTS family (28 BPMLs: 11 active + 17 dormant/inline) plus representative dispatchers from FA_FROM/FA_TO to understand structure, sub-workflow invocation patterns, service calls, fault handlers, and external references.
+### Required context
 
-### Approach (Step 6C specifics)
+1. **`WorkingFiles/B2B_Investigation/Step_06G_Consolidation/Step_06G_Summary.md`** — the consolidated model, collector inputs, defect list, and document map. Read this first; it replaces reading the individual findings docs for orientation.
+2. **This Roadmap** — §7 pending decisions, §4 Known True.
+3. Individual findings docs on demand (map in the Summary §9).
 
-1. **Read FA_CLIENTS_MAIN v48 first** (the orchestrator). Document every rule, every sub-workflow invocation, every service call, every fault handler, every external reference (stored procs, scripts, files). Build a structural map of MAIN as the anchor document.
-2. **Read the 17 dormant FA_CLIENTS inline sub-workflows next.** For each, capture: what triggers it from MAIN, what it does, what other workflows/services/scripts it touches. This is the set that's invisible at runtime — BPML is the only way to know what they do.
-3. **Read the other 10 active FA_CLIENTS workflows** (VITAL, ARCHIVE, EMAIL, JIRA_TICKETS, GET_LIST, ENCOUNTER_LOAD, GROUP_KEYS_SP, INVALID_ACCOUNTS_OB_EOBD_D2S_RPT, CNSMR_ACCNT_AR_IB_BDEO_S2X_BDL, CNSMR_TAG_IB_BDEO_S2X_BDL).
-4. **Read representative dispatcher BPMLs** — one FA_FROM_*_PULL (Pattern 4), one FA_FROM_CLIENTS_FTP_FILES_LIST_IB_D2S (Pattern 3), one FA_TO_*_PUSH (Pattern 5 equivalent). Not comprehensive — just enough to validate dispatcher claims in the ArchitectureOverview.
+### Decision-phase starting notes
 
-Output: `Step_06C_Findings.md` — a structural map document organized around MAIN as the spine, with sub-workflow and dispatcher sections. Individual-workflow deep reads accumulate as sub-sections; the final doc is the canonical structural reference for the FA_CLIENTS world.
+- 7.1 (rebuild vs evolve): the "MAIN as universal grain" premise behind the current collector is refuted; the verified grain is the BATCH_STATUS row (one per pipeline run, DM-reconciled). Clean rebuild remains the standing inclination.
+- 7.4 (dispatchers): resolved structurally — 369 identical wrappers; the wrapper run IS the pipeline run (its WORKFLOW_ID = the GET_LIST-portion RUN_ID).
+- 7.5 (Integration strategy): the reconciliation job means Integration already holds pipeline-final outcomes including DM confirmation — mirror, don't rebuild.
+- Operational fixes queued independently of the module (Summary §4): the GET_LIST fault-ticket bug is the headline item.
 
 ### Session start prompt template
 
-When opening the next session:
+> Starting the B2B decision phase (§7). Cache-busted manifest URL: https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/manifest.json?v=<value>
 
-> Starting Step 6C — Core Workflow BPML Analysis. Cache-busted manifest URL: https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/manifest.json?v=<value>
+### What the decision phase is NOT
 
-### Required context before starting 6C
-
-1. **This Roadmap** (you're reading it) — current state, Known True list, pending decisions
-2. **`WorkingFiles/B2B_Investigation/Step_06_MAIN_Anatomy/Step_06A_Active_Workflow_Catalog/Step_06A_Findings.md`** — workflow inventory (11 active + 17 dormant FA_CLIENTS; 413 active 30d overall)
-3. **`WorkingFiles/B2B_Investigation/Step_06_MAIN_Anatomy/Step_06B_BPML_Bulk_Extraction/Step_06B_Findings.md`** — BPML storage model + extraction output
-4. **`WorkingFiles/B2B_Investigation/Step_06_MAIN_Anatomy/Step_06B_BPML_Bulk_Extraction/BPMLs/`** — the 429 extracted BPML files (this is the primary input for 6C)
-5. **`WorkingFiles/B2B_Investigation/Legacy/B2B_ArchitectureOverview.md`** — keep handy; 6C read patterns should note where BPML structure agrees/disagrees with ArchitectureOverview claims (full claim verification comes in 6D)
-
-### What Step 6 is NOT
-
-- A rebuild of the collector (that comes after investigation closes)
-- A replacement of `SI_ExecutionTracking` or `SI_ScheduleRegistry` (they continue running; decisions about them come later)
-- Process-type-specific traces (those come in a later step once structural understanding is solid)
+- Not DDL yet: designs are validated against `xFACts_Development_Guidelines.md` before any object is built, one object at a time, per standing rules.
+- Not a rewrite of the investigation docs — they are frozen as the evidence base and will be archived when the module ships.
 
 ---
 
@@ -136,15 +127,59 @@ Not the "universal grain" claimed in legacy `B2B_ArchitectureOverview.md`. `FA_C
 - Tier 3: named scheduled pullers/pushers (10-50/day): FA_FROM_*_PULL, FA_TO_*_PUSH, client-specific wrappers
 - Tier 4: daily workflows (1-2/day): vast majority of client-specific FA_FROM_*/FA_TO_*
 
-**2026-04-24 — 11 active FA_CLIENTS top-level workflows; 17 dormant FA_CLIENTS workflows run inline inside MAIN** — source: Step 6A
+**2026-04-24 — 11 active FA_CLIENTS top-level workflows; 17 dormant FA_CLIENTS workflows** — source: Step 6A; roles corrected by Step 6C
 Active top-level: MAIN, VITAL, ARCHIVE, EMAIL, JIRA_TICKETS, GET_LIST, ENCOUNTER_LOAD, CNSMR_ACCNT_AR_IB_BDEO_S2X_BDL, CNSMR_TAG_IB_BDEO_S2X_BDL, GROUP_KEYS_SP, INVALID_ACCOUNTS_OB_EOBD_D2S_RPT.
-Dormant (run inline inside MAIN, not visible in `WF_INST_S`): ACCOUNTS_LOAD, ADDRESS_CHECK, COMM_CALL, DUP_CHECK, ENCOUNTER_ID, ETL_CALL (deprecated), FILE_MERGE, GET_DOCS, POST_TRANSLATION, PREP_COMM_CALL, PREP_SOURCE, REMIT_DATA_VERIFICATION, TABLE_INSERT, TABLE_PULL, TRANS, TRANSLATION_STAGING, WORKERS_COMP. *Inline behavior to be verified in Step 6C from BPML.*
+Step 6C corrected the earlier "all 17 dormant run inline inside MAIN" framing. Verified roles: 13 are invoked from MAIN (GET_DOCS, PREP_SOURCE, TRANS, ARCHIVE*, FILE_MERGE, POST_TRANSLATION, WORKERS_COMP, DUP_CHECK, ADDRESS_CHECK, PREP_COMM_CALL, COMM_CALL, ACCOUNTS_LOAD, TRANSLATION_STAGING — mix of inline and async mechanisms, see Step_06C_Findings §6); ETL_CALL is dispatched by GET_LIST for ETL_PATH clients (not deprecated — it is the Pervasive djengine path); ENCOUNTER_ID is invoked only by ENCOUNTER_LOAD; REMIT_DATA_VERIFICATION is a top-level client-328 wrapper (simply idle in the observed 30d window); TABLE_INSERT and TABLE_PULL are orphaned — referenced by nothing in the corpus. (*ARCHIVE/VITAL/ACCOUNTS_LOAD/ENCOUNTER_LOAD appear in both lists because they run standalone when invoked async and invisibly when invoked inline.)
 
 **2026-04-24 — MAIN currently at WFD_VERSION 48, ran at 2 distinct versions in the 30-day window** — source: Step 6A
 Mid-flight version migration is the observed mechanism — when MAIN is edited, in-flight instances continue running the old version until they complete. BPML extraction must use MAX(WFD_VERSION) per WFD_ID.
 
-**2026-04-24 — FA_CLIENTS_MAIN v48 has 23 top-level rules and 590 total elements** — source: Step 6B
-Rule names verified from BPML source: AnyMoreDocs?, Prep?, PreArchive?, Translate?, DupCheck?, WorkersComp?, PostArchive?, SendEmail?, CommCall?, MergeFiles?, PrepCommCall?, VITAL?, PostArchive2?, Wait?, Continue?, NB?, Encounter?, AddressLookup?, SaveDoc?, PostTranslation?, PostTranslationVITAL?, TranslationStaging?, RemoveSpecialCharacters?. Not 22 rules as legacy ArchitectureOverview implied. Rule semantics to be characterized in Step 6C.
+**2026-04-24 — FA_CLIENTS_MAIN v48 has 23 top-level rules and 590 total elements** — source: Step 6B; refined by Step 6C
+Rule names verified from BPML source: AnyMoreDocs?, Prep?, PreArchive?, Translate?, DupCheck?, WorkersComp?, PostArchive?, SendEmail?, CommCall?, MergeFiles?, PrepCommCall?, VITAL?, PostArchive2?, Wait?, Continue?, NB?, Encounter?, AddressLookup?, SaveDoc?, PostTranslation?, PostTranslationVITAL?, TranslationStaging?, RemoveSpecialCharacters?. Step 6C: 23 rules are defined but only 22 are live — `SaveDoc?` is never referenced by any case. This reconciles the legacy "~22" with 6B's "23".
+
+### 4.2a Execution model and dispatchers (Step 6C)
+
+**2026-07-10 — The execution model is a single spine** — source: Step 6C (BPML corpus)
+Every client pipeline runs: wrapper/schedule sets parameters → inline-invokes `FA_CLIENTS_GET_LIST` → GET_LIST runs `faint.USP_B2B_CLIENTS_GET_SETTINGS` and `faint.USP_B2B_CLIENTS_GET_LIST ?,?,?,?,?` → per queued client row invokes `FA_CLIENTS_MAIN` (or `FA_CLIENTS_ETL_CALL` when ETL_PATH is set) with no INVOKE_MODE specified → unconditionally clears `etl.tbl_B2B_CLIENTS_FILES.RUN_FLAG`. **MAIN is invoked by exactly one workflow in the entire 429-file corpus: GET_LIST.** There is no second entry point.
+
+**2026-07-10 — 361 of 371 wrapper-family BPMLs are identical 2-operation wrappers** — source: Step 6C census (complete, not sampled)
+Shape: AssignService parameter block + `InlineInvokeBusinessProcessService` of GET_LIST. Seven parameter profiles map one-to-one onto the GET_LIST proc signature (CLIENT_ID, SEQ_ID, SEQ_IDS, PROCESS_TYPE, SEQUENTIAL) plus a COMM_METHOD override (3 files). The legacy "Pattern 1-5" dispatcher taxonomy collapses to one structural pattern. The 10 non-standard files are catalogued in Step_06C_Findings §3 for 6F. The Pattern-3 pair and four FA_CLIENTS-named top-level workflows are ordinary client-328 wrappers.
+
+**2026-07-10 — The GET_LIST instance-count shortfall is resolved structurally** — source: Step 6C
+All 367 corpus references to GET_LIST are inline invocations, which produce no WF_INST_S rows. The 85 standalone GET_LIST rows per 30d can only be direct scheduler fires. Runtime confirmation of the schedule itself: 6E.
+
+**2026-07-10 — tbl_B2B_CLIENTS_BATCH_STATUS vocabulary and correlation keys** — source: Step 6C
+Writer-verified values: -2 = skipped because predecessor in a SEQUENTIAL chain failed (written by MAIN's own tail when its poll returned -1 — a cascade-skip marker, **not** a legacy code path); -1 = own fault; 1 = ETL complete (ETL_CALL only); 2 = GET_LIST dispatch complete, or MAIN processed (BDL always; NB/PAYMENT with files, no dup); 3 = MAIN processed, other types; 4 = no files; 5 = duplicate. Correlation: dispatcher WF_INST_S.WORKFLOW_ID = RUN_ID of its inline GET_LIST's row; MAIN's WORKFLOW_ID = its own RUN_ID with PARENT_ID = dispatcher's id; COMM_CALL writes the DM-assigned batch id into BATCH_STATUS.BATCH_ID (the B2B → Batch Monitoring bridge, source-verified). Known columns: CLIENT_ID, SEQ_ID, RUN_ID, PARENT_ID, BATCH_STATUS, FINISH_DATE, BATCH_ID.
+
+**2026-07-10 — Integration stored procedures live in schema `faint`; tables in `etl` (plus `dbo.FAI_FILE_ID`)** — source: Step 6C, refined in 6D
+USP_B2B_CLIENTS_GET_SETTINGS, USP_B2B_CLIENTS_GET_LIST, USP_B2B_CLIENTS_WORKERS_COMP_CHECK, USP_B2B_CLIENTS_GROUP_KEYS (+ USP_FA_JACK_HUGHSTON_IB_EO_ENC_UPD in a 6F workflow). The ArchitectureOverview records the same `faint` schema, agreeing with source.
+
+**2026-07-10 — Three sub-workflow invocation mechanisms exist, plus a default** — source: Step 6C
+(1) `InlineInvokeBusinessProcessService` participant; (2) `InvokeBusinessProcessService` with INVOKE_MODE=INLINE; (3) Compression Service `decompress_result=start_bpml` (PREP_SOURCE bootstraps ARCHIVE this way — ARCHIVE has four call sites, not three); plus InvokeBusinessProcessService with no INVOKE_MODE at all (GET_LIST → MAIN/ETL_CALL, Sterling default). Whether the inline variants differ in WF_INST_S/WORKFLOW_LINKAGE visibility is a 6E question.
+
+**2026-07-10 — The merged-output filename formula** — source: Step 6C (MAIN preamble; consumed by ARCHIVE flag-2, ADDRESS_CHECK, PREP_COMM_CALL DM drops)
+`CLIENT_NAME(spaces→_) + '.DM.' + yyyyMMdd + '_' + <MAIN WORKFLOW_ID> + ('.NB'|'.PAY'|'.BDL'|'.') + '.txt'`.
+
+**2026-07-10 — Source-level defects catalogued** — source: Step 6C, §9
+Four dead rules (MAIN SaveDoc?, GET_LIST UpdateRunFlag?, VITAL NB?, ACCOUNTS_LOAD NB?); PostArchive? rule tautology (fires even when POST_ARCHIVE='N'); two orphaned workflows (TABLE_INSERT, TABLE_PULL); a TICKETS-insert column-count contradiction between MAIN (10 values) and GET_LIST (9 values) — at most one can succeed; an ETL_CALL infinite-poll hazard (waits for predecessor status exactly 3; -1/-2/4/5 stall it forever). Details and 6E follow-ups in Step_06C_Findings §9 and §12.
+
+**2026-07-10 — BATCH_STATUS is a Sterling-to-DM lifecycle tracker with a reconciliation stage** — source: Step 6E (F6)
+SQL Agent job 'INT Clients Update Batch Status' runs `FAINT.USP_B2B_CLIENTS_UPDATE_BATCH_STATUS`, promoting rows at status 2 against DM outcomes in crs5_oltp (new_bsnss_btch, cnsmr_pymnt_btch, file_registry). Final vocabulary in Step_06E_Findings §4a: 0 in-flight (column default), -2 cascade-skip, -1 Sterling fault OR DM-rejected, 1 unreachable, 2 transitional (B2B done, awaiting DM), 3 fully complete, 4 no files OR no handoff, 5 duplicate.
+
+**2026-07-10 — GET_LIST fault tickets broken in production since ~2025-09** — source: Step 6E (R3/F1)
+tbl_B2B_CLIENTS_TICKETS has 11 columns with identity ID; GET_LIST's 9-value positional insert cannot succeed (CLIENT_KEY added ~Aug 2025). Last GET_LIST-origin ticket: 2025-08-23. GET_LIST faults are currently unreported. Fix path: GET_LIST v20 with column-listed inserts.
+
+**2026-07-10 — ETL_CALL confirmed dead** — source: Step 6E (R5/R10)
+The proc's ETLAP arm carries the comment "DISABLING ETLAP 08/26/2024"; ETL_PATH is pivot-derived from nothing current; zero BATCH_STATUS = 1 rows exist in table history.
+
+**2026-07-10 — Dispatch visibility model verified live** — source: Step 6E (R1/R2)
+Inline invocations leave no runtime trace; the no-INVOKE_MODE GET_LIST → MAIN dispatch creates a child WF_INST_S instance plus a WORKFLOW_LINKAGE row (TYPE='Dispatch', ROOT_WF_ID = wrapper). Correlation keys from Step 6C hold exactly.
+
+**2026-07-10 — Wrapper population final: 369; corpus current** — source: Steps 6E-6F
+The 2026-06-22 Sterling edit session (MAIN v49, PREP_SOURCE v35, TRANS v7 — CLN_ARCHIVE cleanup feature + Code-25 translation hardening) and two new client-328/10575 wrappers were caught by a one-query WFD version census and merged into the corpus. GET_LIST unchanged since 2023-12 (still v19).
+
+**2026-07-10 — Work-queue proc internals verified** — source: Step 6E (R10)
+Branch 1 (scheduler, AUTOMATED=1) / Branch 2 (wrappers, AUTOMATED=2); PREV_SEQ via LAG per (CLIENT_ID, GET_DOCS_LOC) with SEQUENTIAL override; the discovered-files table is truncated and reloaded every ~10 minutes by client 328 SEQ 12 (config SQL_QUERY + translation map); 68-parameter pivot. Schedules verified via SI_ScheduleRegistry (GET_LIST hourly :05, 05:05-15:05 M-F).
 
 ### 4.3 Retention and archive
 
@@ -180,7 +215,7 @@ Across 38,211 instance rows, only STATUS values 0 and 1 are observed. Legacy fra
 ### 4.5 Workflow identity and structure
 
 **2026-04-24 — FA_FROM_* / FA_TO_* suffix convention encodes direction and business type** — source: Step 3
-Active suffix codes observed: `_PULL`, `_PUSH`, `_S2D`, `_D2S`, `_IB`, `_OB`, `_BD`, `_EO`, `_NB`, `_NT`, `_RT`, `_RM`, `_SP`, `_TR`, `_RC`, `_FD`. This is the natural classification axis for client-specific workflows. Step 6A's single-trailing-token suffix extraction proved insufficient for multi-suffix names; a more sophisticated parser will be developed in Step 6C.
+Active suffix codes observed: `_PULL`, `_PUSH`, `_S2D`, `_D2S`, `_IB`, `_OB`, `_BD`, `_EO`, `_NB`, `_NT`, `_RT`, `_RM`, `_SP`, `_TR`, `_RC`, `_FD`. This is the natural classification axis for client-specific workflows. Step 6C's dispatcher census showed the suffix encodes business labeling only — structurally all standard wrappers are identical, so suffix parsing matters for cataloguing (6F), not for execution-model analysis.
 
 **2026-04-24 — Every b2bi BPML has `<process>` as its root element** — source: Step 6B
 All 429 extracted BPMLs parse as well-formed XML with root tag `<process name="...">`. Element counts range from 7 (smallest workflow) to 590 (FA_CLIENTS_MAIN v48). Median BPML has 16 elements. Corpus total: 11,045 elements.
@@ -192,7 +227,7 @@ Sterling-shipped workflows (AFT*, some Schedule_*) include copyright/documentati
 
 The previous Roadmap §4.6 ("Carried forward from v1") included claims about ProcessData location, WORKFLOW_CONTEXT marker conventions, ROOT_WF_ID behavior, STATUS/STATE semantics, and MAIN sub-workflow invocation patterns. **These were inherited from pre-investigation documents and legacy single-run traces, not verified in Steps 1-5.** Per the reset, they are null-and-void until re-verified through BPML reading (Step 6C) or runtime observation (Step 6E).
 
-Specifically retracted and requiring re-verification:
+Status update (v2.4): MAIN sub-workflow invocation patterns are now re-verified from BPML source (Step 6C, §4.2a above). Still requiring re-verification:
 - ProcessData is gzip-compressed in TRANS_DATA.DATA_OBJECT, first DOCUMENT row by CREATION_DATE ASC
 - Write-at-termination for WF_INST_S with ~5-10 min lag
 - WORKFLOW_CONTEXT is written in real-time during workflow execution
@@ -222,7 +257,7 @@ b2bi has 773 tables, 186 populated. Zero FKs. Full inventory of the workflow-exe
 ### 5.3 Workflow Universe
 
 **Status:** ✅ Resolved (updated in Step 6A)
-**Findings:** `Step_03_Workflow_Definition_Catalog+Active_Inventory/Step_03_Findings.md`, updated in `Step_06_MAIN_Anatomy/Step_06A_Active_Workflow_Catalog/Step_06A_Findings.md`
+**Findings:** `Step_03_Workflow_Definition_Catalog_and_Active_Inventory/Step_03_Findings.md`, updated in `Step_06A_Active_Workflow_Catalog/Step_06A_Findings.md`
 
 1,433 distinct workflow definitions; 413 active in a 30-day window (up from Step 3's 332 at 48h). Four velocity tiers characterized. FA_* naming convention documented. MAIN is 16% of activity; ARCHIVE and VITAL each run more often than MAIN. 11 active + 17 dormant FA_CLIENTS workflows catalogued for BPML extraction in Step 6B.
 
@@ -242,45 +277,45 @@ Per-document SFTP/translation metadata for a narrow subset of workflow families.
 
 ### 5.6 FA_CLIENTS_MAIN Anatomy (Step 6 umbrella)
 
-**Status:** 🎯 Active — Steps 6A-6B complete, 6C next
+**Status:** ✅ CLOSED — all sub-steps 6A-6G complete (2026-07-10)
 **Findings so far:**
-- `Step_06_MAIN_Anatomy/Step_06A_Active_Workflow_Catalog/Step_06A_Findings.md`
-- `Step_06_MAIN_Anatomy/Step_06B_BPML_Bulk_Extraction/Step_06B_Findings.md`
+- `Step_06A_Active_Workflow_Catalog/Step_06A_Findings.md`
+- `Step_06B_BPMLs/Step_06B_Findings.md`
+- `Step_06C_BPML_Analysis/Step_06C_Findings.md`
 
 Step 6 has been restructured into checkpointed sub-steps after the scope expanded from "MAIN anatomy only" to "verify the full architecture described in the legacy ArchitectureOverview document." The legacy document contains both accurate and known-false content about MAIN, its sub-workflows, and the broader Sterling architecture. Step 6 extracts every factual claim into a verification checklist and resolves each against BPML source or runtime observation.
 
 Sub-step sequence:
 
 - **6A — Active Workflow Catalog** ✅ Complete. 1,433 WFDs catalogued, 413 active in 30d, extraction target list of 429 BPMLs identified (413 active + 17 dormant FA_CLIENTS, minus 1 overlap).
-- **6B — BPML Bulk Extraction** ✅ Complete. BPML storage model discovered (WFD_XML → DATA_TABLE indirection, gzip+Java-preamble encoding). All 429 BPMLs extracted, parsed as well-formed XML, organized by family, and committed to the repo at `Step_06B_BPML_Bulk_Extraction/BPMLs/`. Extraction tool `Step_06B_Extract_BPMLs.ps1` available for re-extraction as b2bi evolves.
-- **6C — Core Workflow BPML Analysis** 🎯 Next. Deep-read the FA_CLIENTS family (all 28 active + dormant) plus representative dispatchers (FA_FROM/FA_TO Pattern 1/3/4 examples). Document each workflow's sequence, rules, sub-workflow invocations (with INVOKE_MODE), service calls, fault handlers, and external executable references.
-- **6D — Claim Verification against ArchitectureOverview.** Extract every factual claim from the legacy document into a markdown checklist. Resolve each: verified / corrected / discarded, with evidence reference.
-- **6E — Runtime Verification.** Target the claims BPML can't answer — schedule frequencies, actual vs. expected invocation counts, STATUS semantics, TYPE/PERSISTENCE_LEVEL meanings, observed failure rates, etc. Queries against b2bi (primarily WORKFLOW_CONTEXT, WF_INST_S, and the existing SI_ExecutionTracking corpus).
-- **6F — Light Catalog of remaining BPMLs.** The ~390 non-FA_CLIENTS active workflows. Not full structural analysis — just enough to classify, note sub-workflow invocations, and group by pattern.
-- **6G — Consolidation.** Single Step 6 Summary document. Claim checklist finalized. ArchitectureOverview either reconciled into a revised authoritative document or retired. Clear handoff to post-Step-6 work.
+- **6B — BPML Bulk Extraction** ✅ Complete. BPML storage model discovered (WFD_XML → DATA_TABLE indirection, gzip+Java-preamble encoding). All 429 BPMLs extracted, parsed as well-formed XML, and organized by family. Extraction tool `Step_06B_Extract_BPMLs.ps1` available for re-extraction as b2bi evolves. (The BPML corpus was later removed from the repo for manifest-size reasons; re-supply as a zip or re-extract.)
+- **6C — Core Workflow BPML Analysis** ✅ Complete. All 28 FA_CLIENTS BPMLs deep-read; all 371 wrapper-family BPMLs shape-verified (census, not sample). Execution model verified as a single spine; dispatcher taxonomy collapsed to one wrapper pattern; BATCH_STATUS vocabulary recovered; invocation mechanisms catalogued; Integration DB surface, executables, maps, and client-config surface inventoried; four dead rules, two orphaned workflows, and several source-level defects found. Output: `Step_06C_BPML_Analysis/Step_06C_Findings.md`.
+- **6D — Claim Verification** ✅ Complete. Every ArchitectureOverview claim dispositioned in `Step_06D_Claim_Verification/Step_06D_Claim_Checklist.md`; final tally 63 verified / 17 corrected / 3 refuted; verdict: retire the document.
+- **6E — Runtime Verification** ✅ Complete (`Step_06E_Runtime_Verification/Step_06E_Findings.md`). All R1-R18 + F1-F6 targets resolved: reconciliation job discovered, final BATCH_STATUS vocabulary, TICKETS bug, ETL_CALL death, dispatch visibility, schedules, proc internals, corpus refresh.
+- **6F — Light Catalog** ✅ Complete (`Step_06F_Light_BPML_Catalog/Step_06F_Findings.md`), executed ahead of 6E. All 429 corpus files accounted for; ENOTICE pipeline mapped; two out-of-family wrappers found.
+- **6G — Consolidation** ✅ Complete: `Step_06G_Consolidation/Step_06G_Summary.md` is the entry point to the verified model; checklist finalized; ArchitectureOverview RETIRED.
 
 **What comes after Step 6:** collector architecture decisions (§7) can finally be addressed with verified structural knowledge of every workflow in play.
 
 ### 5.7 Sub-workflow Families (ARCHIVE, VITAL, EMAIL, ENCOUNTER_LOAD)
 
-**Status:** 🔄 Partially covered by Step 6C (inline sub-workflows from BPML source); standalone runtime deep-dives deferred
-**What we know:** ARCHIVE runs 10,167/30d; VITAL runs 10,179/30d; EMAIL 620/30d; ENCOUNTER_LOAD 82/30d (with 6.1% fail rate — highest among FA_CLIENTS). Their BPMLs have been extracted (Step 6B) and will be deep-read in Step 6C alongside MAIN. Standalone runtime behavior analysis (failure modes across runs, content of their outputs) comes after Step 6 completes.
+**Status:** ✅ Structural coverage complete (Step 6C); standalone runtime deep-dives deferred
+**What we know:** ARCHIVE runs 10,167/30d; VITAL runs 10,179/30d; EMAIL 620/30d; ENCOUNTER_LOAD 82/30d (6.1% fail rate — highest among FA_CLIENTS). Step 6C deep-read all of them: ARCHIVE is a trivial two-extract workflow gated by caller flags (consistent with its zero-failure record); VITAL and ACCOUNTS_LOAD write to the database through translation maps (targets invisible in BPML — 6E); ENCOUNTER_LOAD's failure surfaces are two maps, the ID allocator, and a lock executable; EMAIL is environment-aware with hardcoded SMTP relay/sender. Runtime behavior analysis (failure modes across runs, output content) comes after Step 6 completes.
 
 ### 5.8 Dispatcher Workflows
 
-**Status:** 🔄 Partially covered by Step 6C (BPML reads of representative dispatchers); comprehensive dispatcher analysis deferred
-**What we know from Step 6A:** Pattern 3 (`FA_FROM_CLIENTS_FTP_FILES_LIST_IB_D2S_RC`/`_ARC`) runs 688+656 times per 30d. `FA_CLIENTS_GET_LIST` runs only 85 times in 30d — far fewer than the ArchitectureOverview's claimed 11×/business-day schedule (~242 expected). Hypothesis: Pattern 4 wrappers invoke GET_LIST inline and therefore don't generate WF_INST_S rows. Verifiable via BPML analysis in Step 6C.
+**Status:** ✅ Resolved structurally (Step 6C census)
+**What we know:** All 371 FA_FROM/FA_TO/FA_DM/FA_OTHER/FA_Specialized BPMLs were shape-verified — 361 are identical 2-operation wrappers (parameter assign + inline GET_LIST invoke) with seven parameter profiles; the legacy Pattern 1-5 taxonomy collapses to one structural pattern. The Pattern-3 pair are ordinary client-328 wrappers (SEQ_ID 12/13). The GET_LIST shortfall (85 standalone vs ~242 expected) is explained: all workflow-side invocations are inline and produce no WF_INST_S rows; standalone rows are scheduler fires only. Remaining dispatcher work is runtime-side (schedule cross-reference, 6E) and business cataloguing (6F).
 
 ### 5.9 Process Type Semantics
 
-**Status:** 🔄 Deferred to a later step
-**What we know (unverified):** Legacy `ArchitectureOverview` documents 31 distinct PROCESS_TYPE × COMM_METHOD combinations. Process type is a ProcessData field (runtime), distinct from workflow family (name-based). Verification happens after Step 6 provides the structural baseline.
+**Status:** 🔄 Partially grounded by Step 6C; verification deferred
+**What we know:** Legacy `ArchitectureOverview` documents 31 distinct PROCESS_TYPE × COMM_METHOD combinations. Step 6C verified from source how the major values behave inside MAIN and its sub-workflows (NEW_BUSINESS, PAYMENT, BDL, SFTP_PULL, SFTP_PUSH, FILE_DELETION, SIMPLE_EMAIL, OUTBOUND as COMM_METHOD) and found an older 'TRANSACTION' vocabulary in the orphaned TABLE_PULL. Full combination-matrix verification happens after Step 6 provides the runtime baseline.
 
 ### 5.10 Integration Database Tables
 
-**Status:** 🔄 Not yet addressed in investigation
-**What we know (unverified, from legacy docs):** `Integration` DB on AVG-PROD-LSNR has `etl.tbl_B2B_*` tables. Claim: `WORKFLOW_ID` = `RUN_ID` across systems. `USP_B2B_CLIENTS_GET_LIST` and `USP_B2B_CLIENTS_GET_SETTINGS` stored procedures are invoked from Sterling BPMLs.
-**Deferred until after Step 6.** Step 6C's BPML analysis will verify which Integration artifacts Sterling actually references; then a later step can verify those artifacts exist and their contents.
+**Status:** 🔄 Sterling-side references now verified (Step 6C); Integration-side verification deferred
+**What we know (source-verified):** Sterling BPMLs reference tables `etl.tbl_B2B_CLIENTS_BATCH_STATUS` (incl. BATCH_ID), `_BATCH_FILES`, `_FILES` (RUN_FLAG), `_TICKETS`, `_ACCTS`, `_OUTPUT_FILES` (orphaned writer), `_MERGED_FILES` (orphaned reader), `dbo.FAI_FILE_ID`, and `etl.tbl_ENOTICE_TO_REVSPRING_VALDN(_ARC)`; procs live in schema `faint` (see §4.2a); `WORKFLOW_ID` = `RUN_ID` correlation is confirmed from the BPML side. **Still to verify on the Integration side (post-Step-6 / 6E):** table shapes (TICKETS column count!), the four translation maps' target tables, and the CLIENTS config table that backs USP_B2B_CLIENTS_GET_LIST (~60 consumed fields inventoried in Step_06C_Findings §8.5, including four arbitrary-SQL fields and four executable-path fields).
 
 ### 5.11 VITAL Database
 
@@ -299,16 +334,9 @@ Sub-step sequence:
 
 **Status:** 🔄 Deferred until after Step 6
 
-### 5.15 Open questions raised by Step 6A/6B (to be resolved in 6C-6E)
+### 5.15 Open questions
 
-1. Why do FA_CLIENTS_GET_LIST runs (85 in 30d) fall so far short of the claimed 11×/business-day schedule (~242)? Hypothesis: Pattern 4 inline invocation. Verifiable via BPML analysis in 6C.
-2. What is WFD.TYPE? Why do 16 workflows have TYPE=101 vs 393 at TYPE=1?
-3. What does WFD.STATUS = 2 mean for the three active workflows that have it?
-4. Why does WFD.ONFAULT = 'false' universally? Likely indicates a default-fault-handler toggle separate from BPML-level `<onFault>` blocks.
-5. How does FA_CLIENTS_ARCHIVE handle failure signaling if STATUS=1 is never set? Either extremely reliable, fails silently in a way invisible to WF_INST_S.STATUS, or has its own internal error-handling.
-6. What does FA_CLIENTS_JIRA_TICKETS do? 120 runs in 30d, not mentioned in ArchitectureOverview.
-7. What does FA_CLIENTS_ENCOUNTER_LOAD's 6% fail rate indicate? Highest fail rate among FA_CLIENTS workflows.
-8. What is the `GBMDATA` handle in `WFD_XML`? NULL for most rows; suspected graphical BP designer data. Not required for structural analysis but worth understanding for completeness.
+**Closed as of Step 6G.** All investigation questions resolved (see Step_06E_Findings §4-5 and Step_06D_Claim_Checklist §14). Residual non-blocking notes: R9 (TRANS FILELIST/SIZE quirk) and R12 (child-onFault propagation) remain opportunistic inspection items; the reconciliation job's schedule is one sysjobs query when the design needs the lag number.
 
 ---
 
@@ -346,22 +374,21 @@ Current inclination (not yet decided): full rebuild. The existing collector has 
 
 ### Investigation findings (chronological)
 
-All under `xFACts-Documentation/WorkingFiles/B2B_Investigation/`:
+All under `xFACts-Documentation/WorkingFiles/B2B_Investigation/` (flat sub-step folders):
 
 1. `Step_01_Database_Catalog/Step_01_Findings.md` — 773 tables, Sterling 6.1 confirmed
 2. `Step_02_Retention_and_Archive/Step_02_Findings.md` — 30-day horizon
-3. `Step_03_Workflow_Definition_Catalog+Active_Inventory/Step_03_Findings.md` — workflow taxonomy + velocity tiers
+3. `Step_03_Workflow_Definition_Catalog_and_Active_Inventory/Step_03_Findings.md` — workflow taxonomy + velocity tiers
 4. `Step_04_WF_INACTIVE/Step_04_Findings.md` — audit log, deprioritized
 5. `Step_05_CORRELATION_SET/Step_05_Findings.md` — enrichment role
-6. **`Step_06_MAIN_Anatomy/`** — umbrella folder for Step 6 sub-steps:
+6. Step 6 sub-steps:
    - `Step_06A_Active_Workflow_Catalog/Step_06A_Findings.md` ✅ Complete
-   - `Step_06B_BPML_Bulk_Extraction/Step_06B_Findings.md` ✅ Complete
-     - `BPMLs/` — 429 extracted BPMLs organized by family (primary input for 6C)
-   - `Step_06C_Core_Workflow_BPML_Analysis/` — next
-   - `Step_06D_Claim_Verification/` — to follow
-   - `Step_06E_Runtime_Verification/` — to follow
-   - `Step_06F_Light_BPML_Catalog/` — to follow
-   - `Step_06G_Consolidation/` — to follow
+   - `Step_06B_BPMLs/Step_06B_Findings.md` ✅ Complete (BPML corpus removed from repo; re-suppliable as zip or via `Step_06B_Extract_BPMLs.ps1`)
+   - `Step_06C_BPML_Analysis/Step_06C_Findings.md` ✅ Complete — the structural reference for the FA_CLIENTS world
+   - `Step_06D_Claim_Verification/Step_06D_Claim_Checklist.md` ✅ Complete (final dispositions §14-15)
+   - `Step_06E_Runtime_Verification/Step_06E_Findings.md` ✅ Complete (+ query packs)
+   - `Step_06F_Light_BPML_Catalog/Step_06F_Findings.md` ✅ Complete
+   - `Step_06G_Consolidation/Step_06G_Summary.md` ✅ Complete — **read this first in any future session**
 
 Each findings doc includes: purpose, summary of change, detailed findings, implications for the collector, resolved questions, new questions, and document status.
 
@@ -369,7 +396,7 @@ Each findings doc includes: purpose, summary of change, detailed findings, impli
 
 Under `WorkingFiles/B2B_Investigation/Legacy/`:
 
-- **`B2B_ArchitectureOverview.md`** — **Reclassified as "structured hypothesis document"** rather than reference-with-errors. Every factual claim in it will be extracted into a verification checklist in Step 6D and resolved against BPML or runtime evidence. The document's own deprecation notice calls out known-false claims (MAIN = universal grain, "~48hr retention", "200+ FA_ workflows", dispatch pattern count churn). Until Step 6D resolves the remaining claims, treat nothing in this document as authoritative.
+- **`B2B_ArchitectureOverview.md`** — **RETIRED** (Step 6G verdict, 2026-07-10). Superseded by the Step 6C/6E/6F findings; every claim dispositioned in the 6D checklist. Kept for audit only; cite nothing from it.
 - `B2B_Module_Planning.md` — Historical planning notes.
 - `B2B_Reference_Queries.md` — SQL queries against b2bi/Integration. Partial verification.
 - `B2B_ProcessAnatomy_NewBusiness.md` — Single ACADIA NB trace. Mostly accurate for its narrow scope but *not* a universal template.
@@ -385,15 +412,9 @@ Under `WorkingFiles/B2B_Investigation/Legacy/`:
 
 ## 9. Next Actions
 
-Investigation priorities (in order):
-
-1. **🎯 Step 6C — Core Workflow BPML Analysis (§5.6).** Next up. Deep-read FA_CLIENTS family + representative dispatchers using the 429-file BPML corpus from Step 6B.
-2. **Step 6D — Claim Verification.** Extract and resolve every ArchitectureOverview claim.
-3. **Step 6E — Runtime Verification.** Runtime queries for claims BPML can't answer.
-4. **Step 6F — Light BPML Catalog.** The remaining ~390 non-FA_CLIENTS active BPMLs.
-5. **Step 6G — Consolidation.** Step 6 summary; claim checklist resolved; ArchitectureOverview reconciled.
-6. **Post-Step-6 steps** — sub-workflow runtime deep-dives (ARCHIVE, VITAL, EMAIL, ENCOUNTER_LOAD); dispatcher runtime analysis; process type semantic verification (§5.9); Integration DB verification (§5.10); remaining table investigation (§5.12).
-7. **Decision phase.** §7.x resolved; collector architecture defined.
+1. **🎯 Decision phase (§7.1-7.7).** Begin with 7.1 (rebuild vs evolve) using Step_06G_Summary §3 as the input set.
+2. **Operational fixes** (independent of the module; owner: Dirk/ops): GET_LIST v20 fault-insert fix (headline), ITS/INCEPTION fault-write no-ops, plaintext-credential review, minor quirks per Summary §4.
+3. **Design → build** under standing xFACts rules once §7 decisions land.
 
 ---
 
@@ -401,6 +422,8 @@ Investigation priorities (in order):
 
 | Version | Date | Change |
 |---|---|---|
+| 2.5 | 2026-07-10 | Steps 6D, 6E, 6F, 6G complete — **investigation phase closed.** §5.6 all sub-steps ✅; §4.2a extended with six new Known True entries (BATCH_STATUS lifecycle tracker + reconciliation job, GET_LIST ticket bug, ETL_CALL death, dispatch visibility model, wrapper population 369 + corpus refresh, work-queue proc internals); §5.15 closed; §8 tree updated, ArchitectureOverview marked RETIRED; §9 rewritten for the decision phase; Next Session rewritten to open with Step_06G_Summary. |
+| 2.4 | 2026-07-10 | Step 6C complete. §5.6 updated to show 6C ✅ with census summary; new §4.2a Known True block (execution model single spine, 361/371 wrapper census, GET_LIST shortfall resolution, BATCH_STATUS vocabulary + BATCH_ID bridge, faint proc schema, invocation mechanisms, merged-output filename formula, defects catalog). §4.2 dormant-workflow entry corrected with verified roles (ETL_CALL not deprecated; TABLE_INSERT/TABLE_PULL orphaned; ENCOUNTER_ID under ENCOUNTER_LOAD; REMIT_DATA_VERIFICATION a top-level wrapper); MAIN rule entry refined to 23 defined / 22 live. §4.6 notes MAIN invocation patterns re-verified. §5.7 structural coverage complete; §5.8 resolved structurally; §5.9 partially grounded; §5.10 Sterling-side references verified. §5.15 restructured: 6C resolutions recorded, nine new 6E targets referenced. §8 reference tree corrected to the repo's flat sub-step folder layout (the nested Step_06_MAIN_Anatomy paths never existed) and notes the BPML corpus removal from the repo. Next Session rewritten for 6D start; Next Actions renumbered. |
 | 2.3 | 2026-04-24 | Step 6B complete. §5.6 updated to show 6B ✅; §4.2 adds FA_CLIENTS_MAIN rule-count (23 rules) fact from BPML inspection; §4.4 adds BPML storage model as verified Known True; §4.5 adds `<process>` root confirmation + XML comment prologue observation. §5.7 and §5.8 note that BPML corpus is now available for 6C deep reads. §5.15 adds GBMDATA handle as new open question. §8 reference tree updated to show BPMLs folder. Next Session section rewritten for 6C start. |
 | 2.2 | 2026-04-24 | Step 6A complete. §5.6 restructured to reflect Step 6 split into 6A-6G sub-steps. §4.2 updated to use 30-day active count (413) from Step 6A; added Step 6A findings about FA_CLIENTS active/dormant split and MAIN's version-48 current state. §4.6 "Carried forward from v1" entries retracted as inherited-and-unverified; moved to explicit "Retracted inherited claims" block to be re-verified. §4.4 expanded with Step 6A's STATUS-values-observed finding. §5.3 updated to reference Step 6A supplement. §5.7, §5.8, §5.10 reframed to note that Step 6C's BPML analysis will cover structural aspects. §5.15 added — seven new open questions raised by Step 6A. Legacy ArchitectureOverview reclassified in §8 as "structured hypothesis document" rather than "reference with errors." §7 items consolidated — all remain deferred until Step 6 closes. Operating Principles §2 adjusted: removed "must complete in single session" constraint; added "BPML is an authoritative structural source" principle. Next Session section rewritten for 6B start. Next Actions renumbered. |
 | 2.1 | 2026-04-24 | Added "Next Session" priming section at top. Swapped §9 ordering — MAIN anatomy now precedes sub-workflow deep-dives. §5.6 reframed as active "next up" entry; §5.7 added for sub-workflow families as deferred. §2 Operating Principles added: high-stakes investigations must not split across sessions. Legacy file paths corrected to `Legacy/` subfolder. Step_03 and Step_05 findings paths corrected to match actual GitHub folder names. |
