@@ -144,7 +144,7 @@ const b2b_clickActions = {
     'b2b-run-search':       b2b_runSearch,
     'b2b-reset-filters':    b2b_resetFilters,
     'b2b-runs-page':        b2b_runsPage,
-    'b2b-close-runs-modal': b2b_closeRunsModal,
+    'b2b-close-runs-slideout': b2b_closeRunsModal,
     'b2b-day-page':         b2b_dayPage,
     'b2b-close-day-slideout': b2b_closeDaySlideout,
     'b2b-open-run-detail':  b2b_openRunDetail,
@@ -643,7 +643,7 @@ function b2b_renderHistoryTree() {
         var yr = years[y];
         var yearOpen = b2b_expandedYears[y] === true;
         html += '<button class="b2b-tree-year-row" data-action-click="b2b-toggle-year" data-b2b-year="' + y + '">' +
-                '<span class="b2b-tree-chevron">' + (yearOpen ? '&#9662;' : '&#9656;') + '</span>' +
+                '<span class="b2b-tree-chevron' + (yearOpen ? ' b2b-expanded' : '') + '">&#9654;</span>' +
                 '<span class="b2b-tree-year-label">' + y + '</span>' +
                 '<span class="b2b-tree-counts">' +
                 '<span class="b2b-count-muted">' + yr.total.toLocaleString() + ' runs</span>' +
@@ -672,7 +672,7 @@ function b2b_renderHistoryTree() {
             var monthOpen = b2b_expandedMonths[mKey] === true;
             html += '<button class="b2b-tree-month-row" data-action-click="b2b-toggle-month" data-b2b-month="' + mKey + '">' +
                     '<div class="b2b-tree-label-cell">' +
-                    '<span class="b2b-tree-chevron">' + (monthOpen ? '&#9662;' : '&#9656;') + '</span>' +
+                    '<span class="b2b-tree-chevron' + (monthOpen ? ' b2b-expanded' : '') + '">&#9654;</span>' +
                     '<span>' + cc_escapeHtml(cc_MONTH_NAMES[parseInt(m, 10)]) + '</span>' +
                     '</div>' +
                     b2b_buildTreeCellsHtml(mo) +
@@ -684,7 +684,7 @@ function b2b_renderHistoryTree() {
 
             mo.days.forEach(function(day) {
                 html += '<button class="b2b-tree-day-row" data-action-click="b2b-open-day-runs" data-b2b-date="' + day.date_str + '">' +
-                        '<div class="b2b-tree-day-cell">' + cc_escapeHtml(b2b_formatDisplayDate(day.date_str)) + '</div>' +
+                        '<div class="b2b-tree-day-cell">' + b2b_formatTreeDayLabel(day.date_str) + '</div>' +
                         b2b_buildTreeCellsHtml({
                             total: cc_safeInt(day.total),
                             completed: cc_safeInt(day.completed),
@@ -703,7 +703,7 @@ function b2b_renderHistoryTree() {
 /* Builds the numeric table cells (runs, completed, failed, no files, avg duration) for a tree row. */
 function b2b_buildTreeCellsHtml(node) {
     var avg = node.total > 0 ? Math.round(node.durationWeight / node.total) : 0;
-    return '<div class="b2b-tree-cell-num">' + node.total.toLocaleString() + '</div>' +
+    return '<div class="b2b-tree-cell-primary">' + node.total.toLocaleString() + '</div>' +
            '<div class="b2b-tree-cell-ok">' + node.completed.toLocaleString() + '</div>' +
            '<div class="b2b-tree-cell-crit">' + node.failures.toLocaleString() + '</div>' +
            '<div class="b2b-tree-cell-num">' + node.noFiles.toLocaleString() + '</div>' +
@@ -912,7 +912,7 @@ function b2b_dayPage(target) {
     }
 }
 
-/* Opens the runs modal, sets its caption, and loads the first page. */
+/* Opens the runs slideout, sets its caption, and loads the first page. */
 function b2b_openRunsModal() {
     b2b_modalPageIndex = 0;
 
@@ -926,16 +926,28 @@ function b2b_openRunsModal() {
         content.innerHTML = '<div class="b2b-loading">Loading...</div>';
     }
 
-    document.getElementById('b2b-modal-runs').classList.remove('cc-hidden');
+    var overlay = document.getElementById('b2b-slideout-runs');
+    var dialog = overlay.querySelector('.cc-dialog');
+    overlay.classList.add('cc-open');
+    requestAnimationFrame(function() {
+        dialog.classList.add('cc-open');
+    });
+
     b2b_loadModalRuns();
 }
 
-/* Closes the runs modal on backdrop click or the close button. */
+/* Closes the runs slideout on backdrop click or the close button. */
 function b2b_closeRunsModal(target, event) {
-    if (event && target.id === 'b2b-modal-runs' && event.target !== target) {
+    if (event && target.id === 'b2b-slideout-runs' && event.target !== target) {
         return;
     }
-    document.getElementById('b2b-modal-runs').classList.add('cc-hidden');
+    var overlay = document.getElementById('b2b-slideout-runs');
+    var dialog = overlay.querySelector('.cc-dialog');
+    dialog.addEventListener('transitionend', function handler() {
+        dialog.removeEventListener('transitionend', handler);
+        overlay.classList.remove('cc-open');
+    });
+    dialog.classList.remove('cc-open');
 }
 
 /* Builds the caption text describing the modal's active filters. */
@@ -1188,10 +1200,12 @@ function b2b_openRunDetail(target) {
         return;
     }
 
-    /* If the click came from the runs modal or day slideout, close it first. */
-    var modal = document.getElementById('b2b-modal-runs');
-    if (modal && !modal.classList.contains('cc-hidden')) {
-        modal.classList.add('cc-hidden');
+    /* If the click came from the runs slideout or day slideout, close it first. */
+    var runsOverlay = document.getElementById('b2b-slideout-runs');
+    if (runsOverlay && runsOverlay.classList.contains('cc-open')) {
+        var runsDialog = runsOverlay.querySelector('.cc-dialog');
+        runsDialog.classList.remove('cc-open');
+        runsOverlay.classList.remove('cc-open');
     }
     var dayOverlay = document.getElementById('b2b-slideout-day');
     if (dayOverlay && dayOverlay.classList.contains('cc-open')) {
@@ -1305,6 +1319,19 @@ function b2b_formatDisplayDate(date) {
     }
     var dateObj = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
     return cc_MONTH_NAMES[dateObj.getMonth() + 1] + ' ' + dateObj.getDate() + ', ' + dateObj.getFullYear();
+}
+
+/* Formats a tree day row's label as a compact M/D date with its weekday name. */
+function b2b_formatTreeDayLabel(date) {
+    var parts = b2b_parseDateOnly(date).split('-');
+    if (parts.length !== 3) {
+        return cc_escapeHtml(String(date));
+    }
+    var dateObj = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+    var compact = (dateObj.getMonth() + 1) + '/' + dateObj.getDate();
+    var dow = cc_DAY_NAMES[dateObj.getDay() + 1];
+    return cc_escapeHtml(compact) +
+           '<span class="b2b-tree-day-dow">' + cc_escapeHtml(dow) + '</span>';
 }
 
 /* Formats a minute count as a compact duration string (m, h m, or d h). */
