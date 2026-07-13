@@ -1,0 +1,724 @@
+/* ============================================================================
+   xFACts Control Center - B2B Pipeline Page Styles (b2b-pipeline.css)
+   Location: E:\xFACts-ControlCenter\public\css\b2b-pipeline.css
+   Version: Tracked in dbo.System_Metadata (component: B2B)
+
+   Page styles for the B2B Pipeline dashboard: the two-column layout, the
+   daily pulse summary cards, classification badges, the live-activity and
+   modal run tables, the history summary tree, the runs modal, the run-detail
+   slideout layout, and the recent workflow-changes list.
+
+   FILE ORGANIZATION
+   -----------------
+   LAYOUT: PAGE GRID
+   CONTENT: LOADING AND EMPTY STATES
+   CONTENT: SUMMARY CARDS
+   CONTENT: CLASSIFICATION BADGES
+   CONTENT: RUN TABLES
+   CONTENT: HISTORY FILTER BAR AND PAGER
+   CONTENT: HISTORY SUMMARY TREE
+   CONTENT: RUNS MODAL
+   CONTENT: RUN DETAIL
+   CONTENT: WORKFLOW CHANGES LIST
+   ============================================================================ */
+
+/* ============================================================================
+   LAYOUT: PAGE GRID
+   ----------------------------------------------------------------------------
+   The top-level two-column content layout and the section flex helper that
+   keeps every section's content scrolling inside its own container instead
+   of expanding the page.
+   Prefix: b2b
+   ============================================================================ */
+
+/* Two-column content grid bounded to the viewport below the chrome, weighted toward history. */
+.b2b-grid-layout {
+    display: grid;
+    grid-template-columns: 2fr 3fr;
+    gap: 15px;
+    flex: 1;
+    min-height: 0;
+    height: calc(100vh - 180px);
+    overflow: hidden;
+}
+
+/* A single column that stacks its sections vertically. */
+.b2b-grid-column {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    min-height: 0;
+    overflow: hidden;
+}
+
+/* Section flex helper: stacks a section's children and confines overflow to them. */
+.b2b-section-flex {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+}
+
+/* Tightened section padding for the compact workflow-changes section. */
+.b2b-section-compact {
+    padding: var(--size-spacing-lg) 15px;
+}
+
+/* ============================================================================
+   CONTENT: LOADING AND EMPTY STATES
+   ----------------------------------------------------------------------------
+   Placeholder blocks shown while a section is fetching and when a section
+   has no rows to display.
+   Prefix: b2b
+   ============================================================================ */
+
+/* Centered muted placeholder shown while section data loads. */
+.b2b-loading {
+    color: var(--color-text-muted);
+    text-align: center;
+    padding: var(--size-spacing-2xl);
+}
+
+/* Centered muted placeholder shown when a section has no rows. */
+.b2b-empty {
+    color: var(--color-text-muted);
+    text-align: center;
+    padding: var(--size-spacing-2xl);
+    font-style: italic;
+}
+
+/* ============================================================================
+   CONTENT: SUMMARY CARDS
+   ----------------------------------------------------------------------------
+   The daily pulse card grid: run counts for today plus the current in-flight
+   and awaiting-DM populations. Accent state classes tint the card border by
+   meaning.
+   Prefix: b2b
+   ============================================================================ */
+
+/* Three-across grid holding the daily pulse cards. */
+.b2b-summary-cards {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 10px;
+}
+
+/* A single pulse summary card. */
+.b2b-summary-card {
+    background: var(--color-bg-card-hover);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-lg);
+    padding: var(--size-spacing-lg) 15px;
+    position: relative;
+}
+
+/* State token marking a card or badge as healthy/successful. */
+.b2b-ok {
+}
+
+/* State token marking a card or badge as a warning condition. */
+.b2b-warn {
+}
+
+/* State token marking a card or badge as a critical/failure condition. */
+.b2b-crit {
+}
+
+/* State token marking a card or badge as an active/in-motion condition. */
+.b2b-flight {
+}
+
+/* State token marking a card or badge as a neutral/informational condition. */
+.b2b-neutral {
+}
+
+.b2b-summary-card.b2b-ok { /* success-accented card border */
+    border-color: rgba(78, 201, 138, 0.4);
+}
+
+.b2b-summary-card.b2b-crit { /* failure-accented card border */
+    border-color: rgba(224, 108, 117, 0.5);
+}
+
+.b2b-summary-card.b2b-flight { /* in-motion-accented card border */
+    border-color: rgba(86, 156, 214, 0.5);
+}
+
+.b2b-summary-card.b2b-neutral { /* neutral-accented card border */
+    border-color: rgba(140, 140, 140, 0.35);
+}
+
+/* Small uppercase caption above the card value. */
+.b2b-card-label {
+    font-size: var(--font-size-body);
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: var(--size-spacing-sm);
+}
+
+/* Large count value on the card. */
+.b2b-card-value {
+    font-size: var(--font-size-h1);
+    font-weight: 600;
+    color: var(--color-text-primary);
+}
+
+/* ============================================================================
+   CONTENT: CLASSIFICATION BADGES
+   ----------------------------------------------------------------------------
+   The status-classification badge shown on live-activity rows, modal run
+   rows, and the run-detail slideout. Square-cornered to match the platform
+   badge convention. State tokens from the summary-card section drive color.
+   Prefix: b2b
+   ============================================================================ */
+
+/* Classification badge base: compact square-cornered label. */
+.b2b-badge {
+    display: inline-block;
+    padding: 2px var(--size-spacing-md);
+    border-radius: var(--size-radius-sm);
+    font-size: var(--font-size-body);
+    font-weight: 600;
+    white-space: nowrap;
+    background: rgba(140, 140, 140, 0.15);
+    color: var(--color-text-muted);
+    border: var(--size-border-thin) solid rgba(140, 140, 140, 0.35);
+}
+
+.b2b-badge.b2b-ok { /* successful classification badge */
+    background: rgba(78, 201, 138, 0.15);
+    color: rgba(120, 220, 170, 1);
+    border-color: rgba(78, 201, 138, 0.4);
+}
+
+.b2b-badge.b2b-warn { /* warning classification badge */
+    background: rgba(229, 192, 123, 0.15);
+    color: rgba(229, 192, 123, 1);
+    border-color: rgba(229, 192, 123, 0.4);
+}
+
+.b2b-badge.b2b-crit { /* failure classification badge */
+    background: rgba(224, 108, 117, 0.15);
+    color: rgba(235, 130, 140, 1);
+    border-color: rgba(224, 108, 117, 0.45);
+}
+
+.b2b-badge.b2b-flight { /* in-motion classification badge */
+    background: rgba(86, 156, 214, 0.15);
+    color: rgba(120, 180, 230, 1);
+    border-color: rgba(86, 156, 214, 0.45);
+}
+
+.b2b-badge.b2b-neutral { /* neutral classification badge */
+    background: rgba(140, 140, 140, 0.12);
+    color: var(--color-text-muted);
+    border-color: rgba(140, 140, 140, 0.35);
+}
+
+/* ============================================================================
+   CONTENT: RUN TABLES
+   ----------------------------------------------------------------------------
+   The shared row layout for the live-activity table and the runs-modal
+   results: a column-header row, clickable run rows rendered as full-width
+   buttons, fixed-width column templates that keep every row's cells aligned,
+   and the cell building blocks.
+   Prefix: b2b
+   ============================================================================ */
+
+/* Scrollable container wrapping a run table's or tree's rows. */
+.b2b-table-scroll {
+    overflow-y: auto;
+    min-height: 0;
+    flex: 1;
+}
+
+/* Column header row above a run table. */
+.b2b-table-head {
+    display: grid;
+    gap: var(--size-spacing-md);
+    padding: var(--size-spacing-xs) 10px;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Right-aligned header cell above a right-aligned numeric column. */
+.b2b-head-num {
+    text-align: right;
+}
+
+/* Clickable run row rendered as a full-width button. */
+.b2b-run-row {
+    display: grid;
+    gap: var(--size-spacing-md);
+    width: 100%;
+    text-align: left;
+    align-items: center;
+    padding: var(--size-spacing-sm) 10px;
+    margin-bottom: var(--size-spacing-xs);
+    background: var(--color-bg-card-hover);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-sm);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-body);
+    cursor: pointer;
+    transition: all var(--duration-fast);
+}
+
+.b2b-run-row:hover { /* hover state for a clickable run row */
+    background: var(--color-border-divider);
+    border-color: var(--color-border-strong);
+}
+
+/* Fixed five-column grid template for the live-activity table. */
+.b2b-cols-live {
+    grid-template-columns: minmax(0, 1fr) 110px minmax(0, 1.3fr) 130px 60px;
+}
+
+/* Fixed six-column grid template for the runs-modal results table. */
+.b2b-cols-history {
+    grid-template-columns: 118px minmax(0, 1fr) 105px minmax(0, 1.1fr) 130px 64px;
+}
+
+/* Primary cell text (client name). */
+.b2b-cell-primary {
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Muted secondary cell text (types, dispatcher, timestamps). */
+.b2b-cell-muted {
+    color: var(--color-text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Right-aligned numeric cell (age, duration). */
+.b2b-cell-num {
+    text-align: right;
+    color: var(--color-text-muted);
+    white-space: nowrap;
+}
+
+/* ============================================================================
+   CONTENT: HISTORY FILTER BAR AND PAGER
+   ----------------------------------------------------------------------------
+   The search and filter controls above the history summary tree, and the
+   pager row used inside the runs modal.
+   Prefix: b2b
+   ============================================================================ */
+
+/* Wrapping flex row holding the history search and filter controls. */
+.b2b-filter-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--size-spacing-sm);
+    align-items: center;
+    margin-bottom: var(--size-spacing-sm);
+}
+
+/* Client search text input. */
+.b2b-search-input {
+    flex: 1;
+    min-width: 140px;
+    padding: var(--size-spacing-xs) var(--size-spacing-md);
+    background: var(--color-bg-page);
+    border: var(--size-border-thin) solid var(--color-border-strong);
+    border-radius: var(--size-radius-sm);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-body);
+}
+
+/* Classification and process-type filter dropdowns. */
+.b2b-filter-select {
+    padding: var(--size-spacing-xs) var(--size-spacing-sm);
+    background: var(--color-bg-page);
+    border: var(--size-border-thin) solid var(--color-border-strong);
+    border-radius: var(--size-radius-sm);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-body);
+}
+
+/* Date-range filter input. */
+.b2b-filter-date {
+    padding: 3px var(--size-spacing-sm);
+    background: var(--color-bg-page);
+    border: var(--size-border-thin) solid var(--color-border-strong);
+    border-radius: var(--size-radius-sm);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-body);
+}
+
+/* Search and reset action button in the filter bar. */
+.b2b-filter-btn {
+    padding: var(--size-spacing-xs) 10px;
+    background: var(--color-border-divider);
+    border: var(--size-border-thin) solid var(--color-border-strong);
+    border-radius: var(--size-radius-sm);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body);
+    cursor: pointer;
+    transition: all var(--duration-fast);
+}
+
+.b2b-filter-btn:hover { /* hover state for a filter action button */
+    background: var(--color-bg-card-hover);
+    color: var(--color-text-primary);
+}
+
+/* Pager row at the bottom of the runs modal. */
+.b2b-pager {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: var(--size-spacing-sm);
+}
+
+/* Previous / next paging button. */
+.b2b-pager-btn {
+    padding: var(--size-spacing-xs) 10px;
+    background: var(--color-border-divider);
+    border: var(--size-border-thin) solid var(--color-border-strong);
+    border-radius: var(--size-radius-sm);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body);
+    cursor: pointer;
+    transition: all var(--duration-fast);
+}
+
+.b2b-pager-btn:hover { /* hover state for a paging button */
+    background: var(--color-bg-card-hover);
+    color: var(--color-text-primary);
+}
+
+.b2b-pager-btn:disabled { /* disabled state at the first or last page */
+    opacity: 0.4;
+    cursor: default;
+}
+
+/* Row-count and page-position caption between the paging buttons. */
+.b2b-pager-info {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body);
+}
+
+/* ============================================================================
+   CONTENT: HISTORY SUMMARY TREE
+   ----------------------------------------------------------------------------
+   The year / month / day accordion summarizing run history at a glance,
+   matching the platform history-tree convention: prominent year header rows,
+   then a column-headed table of month rows with day rows nested beneath.
+   Day rows open the day-runs slideout.
+   Prefix: b2b
+   ============================================================================ */
+
+/* Expandable year header row button. */
+.b2b-tree-year-row {
+    display: flex;
+    align-items: center;
+    gap: var(--size-spacing-md);
+    width: 100%;
+    text-align: left;
+    padding: var(--size-spacing-md) var(--size-spacing-lg);
+    margin-bottom: var(--size-spacing-xs);
+    background: var(--color-bg-card-hover);
+    border: var(--size-border-thin) solid var(--color-border-strong);
+    border-radius: var(--size-radius-sm);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-body);
+    cursor: pointer;
+    transition: all var(--duration-fast);
+}
+
+.b2b-tree-year-row:hover { /* hover state for a year header row */
+    background: var(--color-border-divider);
+}
+
+/* The year label text in a year header. */
+.b2b-tree-year-label {
+    font-weight: 700;
+    color: var(--color-accent-platform);
+    font-size: 18px;
+    letter-spacing: 1px;
+}
+
+/* Right-aligned counts cluster on a year header row. */
+.b2b-tree-counts {
+    display: flex;
+    gap: var(--size-spacing-lg);
+    margin-left: auto;
+    white-space: nowrap;
+    font-weight: 600;
+}
+
+/* Success count token in a year counts cluster. */
+.b2b-count-ok {
+    color: rgba(120, 220, 170, 1);
+}
+
+/* Failure count token in a year counts cluster. */
+.b2b-count-crit {
+    color: rgba(235, 130, 140, 1);
+}
+
+/* Muted total count token in a year counts cluster. */
+.b2b-count-muted {
+    color: var(--color-text-muted);
+    font-weight: 400;
+}
+
+/* Column header row above an expanded year's month table. */
+.b2b-tree-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 90px 90px 80px 90px 100px;
+    gap: var(--size-spacing-md);
+    padding: var(--size-spacing-xs) var(--size-spacing-lg);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Expandable month table row button. */
+.b2b-tree-month-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 90px 90px 80px 90px 100px;
+    gap: var(--size-spacing-md);
+    align-items: center;
+    width: 100%;
+    text-align: left;
+    padding: 5px var(--size-spacing-lg);
+    background: transparent;
+    border: none;
+    border-bottom: var(--size-border-thin) solid var(--color-border-default);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-body);
+    cursor: pointer;
+    transition: all var(--duration-fast);
+}
+
+.b2b-tree-month-row:hover { /* hover state for a month row */
+    background: var(--color-bg-card-hover);
+}
+
+/* Day table row button opening the day-runs slideout, nested under its month. */
+.b2b-tree-day-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 90px 90px 80px 90px 100px;
+    gap: var(--size-spacing-md);
+    align-items: center;
+    width: 100%;
+    text-align: left;
+    padding: var(--size-spacing-xs) var(--size-spacing-lg);
+    background: transparent;
+    border: none;
+    border-bottom: var(--size-border-thin) solid var(--color-border-default);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-body);
+    cursor: pointer;
+    transition: all var(--duration-fast);
+}
+
+.b2b-tree-day-row:hover { /* hover state for a day row */
+    background: var(--color-bg-card-hover);
+}
+
+/* Label cell holding the chevron and month name. */
+.b2b-tree-label-cell {
+    display: flex;
+    align-items: center;
+    gap: var(--size-spacing-md);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Indented label cell holding a day date. */
+.b2b-tree-day-cell {
+    display: flex;
+    align-items: center;
+    gap: var(--size-spacing-md);
+    padding-left: 28px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--color-text-muted);
+}
+
+/* Expansion chevron on year and month rows. */
+.b2b-tree-chevron {
+    color: var(--color-text-muted);
+    width: 12px;
+}
+
+/* Right-aligned muted numeric cell in a tree table row. */
+.b2b-tree-cell-num {
+    text-align: right;
+    color: var(--color-text-muted);
+    white-space: nowrap;
+}
+
+/* Right-aligned success count cell in a tree table row. */
+.b2b-tree-cell-ok {
+    text-align: right;
+    color: rgba(120, 220, 170, 1);
+    white-space: nowrap;
+}
+
+/* Right-aligned failure count cell in a tree table row. */
+.b2b-tree-cell-crit {
+    text-align: right;
+    color: rgba(235, 130, 140, 1);
+    white-space: nowrap;
+}
+
+/* ============================================================================
+   CONTENT: RUNS MODAL
+   ----------------------------------------------------------------------------
+   Interior layouts for the runs modal and the day-runs slideout: flex
+   columns so the results scroll inside the dialog while the caption and
+   pager stay pinned.
+   Prefix: b2b
+   ============================================================================ */
+
+/* Modal interior layout capping height and confining scroll to the results. */
+.b2b-runs-layout {
+    display: flex;
+    flex-direction: column;
+    height: 70vh;
+    min-height: 0;
+}
+
+/* Day-runs slideout interior layout filling the dialog body height. */
+.b2b-day-layout {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+}
+
+/* Caption above the modal results describing the active filters. */
+.b2b-runs-caption {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body);
+    margin-bottom: var(--size-spacing-sm);
+}
+
+/* ============================================================================
+   CONTENT: RUN DETAIL
+   ----------------------------------------------------------------------------
+   The run-detail slideout layout: titled sections of fixed two-column
+   label/value rows, the inline classification badge line, and the meaning
+   paragraph.
+   Prefix: b2b
+   ============================================================================ */
+
+/* A titled block within the run-detail slideout. */
+.b2b-detail-section {
+    margin-bottom: 18px;
+}
+
+/* Section title within the run-detail slideout. */
+.b2b-detail-title {
+    font-size: var(--font-size-body);
+    font-weight: 600;
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: var(--size-border-thin) solid var(--color-border-default);
+    padding-bottom: var(--size-spacing-xs);
+    margin-bottom: var(--size-spacing-md);
+}
+
+/* Fixed two-column label/value row in the run-detail slideout. */
+.b2b-detail-row {
+    display: grid;
+    grid-template-columns: 150px minmax(0, 1fr);
+    gap: 10px;
+    padding: 3px 0;
+    align-items: baseline;
+}
+
+/* Muted label cell of a detail row. */
+.b2b-detail-label {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body);
+}
+
+/* Value cell of a detail row. */
+.b2b-detail-value {
+    color: var(--color-text-primary);
+    font-size: var(--font-size-body);
+    overflow-wrap: break-word;
+}
+
+/* Classification badge line at the top of the slideout. */
+.b2b-detail-badge-line {
+    margin-bottom: var(--size-spacing-sm);
+}
+
+/* Plain-English classification meaning paragraph. */
+.b2b-detail-meaning {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body);
+    line-height: 1.5;
+    margin-bottom: var(--size-spacing-xs);
+}
+
+/* ============================================================================
+   CONTENT: WORKFLOW CHANGES LIST
+   ----------------------------------------------------------------------------
+   The recent workflow-definition changes list fed by the version census:
+   one row per change with the workflow name, version movement, editor, and
+   observation time, plus the catalog totals caption.
+   Prefix: b2b
+   ============================================================================ */
+
+/* A single workflow-change row. */
+.b2b-census-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: var(--size-spacing-md);
+    padding: 5px var(--size-spacing-md);
+    margin-bottom: 3px;
+    background: var(--color-bg-card-hover);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-sm);
+}
+
+/* Workflow definition name on a change row. */
+.b2b-census-name {
+    font-weight: 600;
+    color: var(--color-text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Version movement text on a change row. */
+.b2b-census-versions {
+    color: rgba(229, 192, 123, 1);
+    white-space: nowrap;
+    font-size: var(--font-size-body);
+}
+
+/* Editor and observation-time caption on a change row. */
+.b2b-census-meta {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body);
+    white-space: nowrap;
+}
+
+/* Catalog totals caption beneath the change list. */
+.b2b-census-totals {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body);
+    margin-top: var(--size-spacing-sm);
+    text-align: right;
+}
