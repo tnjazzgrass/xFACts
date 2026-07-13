@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-07-12 05:09:37
+Generated: 2026-07-13 07:20:35
 
 ## Module Registry
 
@@ -63,9 +63,14 @@ Generated: 2026-07-12 05:09:37
 
 | component_name | object_name | object_category | object_type | object_path | description |
 | --- | --- | --- | --- | --- | --- |
-| B2B | SI_ExecutionTracking | Database | Table | B2B | Per-workflow execution tracking for IBM Sterling B2B Integrator FA_CLIENTS_MAIN runs. One row per WORKFLOW_ID with full ProcessData configuration, workflow tree linkage, sub-workflow invocation summary, and terminal status sourced from b2bi. |
+| B2B | INT_PipelineTracking | Database | Table | B2B | Comprehensive pipeline-run tracking for the B2B module. One row per Sterling pipeline run, mirrored from Integration.ETL.tbl_B2B_CLIENTS_BATCH_STATUS and enriched with snapshotted client identity and process configuration. Carries a disambiguated status classification verified against Debt Manager batch outcomes and b2bi runtime state, plus completion and alerting lifecycle columns. |
 | B2B | SI_ScheduleRegistry | Database | Table | B2B | Master catalog of IBM Sterling B2B Integrator schedules sourced from b2bi.dbo.SCHEDULE. Stores one row per SCHEDULEID with parsed TIMINGXML structure for auditing, monitoring, and Control Center display. |
-| B2B | Collect-B2BExecution.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Collect-B2BExecution.ps1 | B2B module collector. Runs two workloads each cycle: synchronizes B2B.SI_ScheduleRegistry from b2bi.dbo.SCHEDULE (Block 1), and collects per-workflow execution tracking rows into B2B.SI_ExecutionTracking from b2bi.dbo.WF_INST_S and related tables for FA_CLIENTS_MAIN runs in the configured lookback window (Block 2). Uses an is_complete anti-join to skip terminal workflows on subsequent cycles. Runs under the xFACts orchestrator in FIRE_AND_FORGET mode. |
+| B2B | SI_WorkflowRegistry | Database | Table | B2B | Catalog of Sterling workflow definitions sourced from b2bi.dbo.WFD on FA-INT-DBP. One row per workflow definition carrying its current version, the immediately prior version, and version-change timing - the persistence layer for the workflow version census that detects Sterling definition changes between collector cycles. |
+| B2B | Collect-B2BPipeline.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Collect-B2BPipeline.ps1 | The B2B module collector. Synchronizes the schedule registry from b2bi, maintains the workflow definition catalog and version census in SI_WorkflowRegistry, and mirrors the Integration pipeline lifecycle tracker into INT_PipelineTracking with set-based T-SQL classification: DM outcome verification, the BATCH_FILES pickup check, dispatcher name resolution, and a Sterling runtime cross-check for aged in-flight runs. |
+| B2B | B2BPipeline-API.ps1 | WebAsset | API | E:\xFACts-ControlCenter\scripts\routes\B2BPipeline-API.ps1 | Read-only API surface for the B2B Pipeline page: pulse summary, live incomplete runs, workflow census changes, filtered paged run history, and single-run detail. |
+| B2B | b2b-pipeline.css | WebAsset | CSS | E:\xFACts-ControlCenter\public\css\b2b-pipeline.css | Page styles for the B2B Pipeline dashboard: layout grid, pulse cards, classification badges, run tables, history filter bar, and the workflow-changes list. |
+| B2B | b2b-pipeline.js | WebAsset | JavaScript | E:\xFACts-ControlCenter\public\js\b2b-pipeline.js | Page module for the B2B Pipeline dashboard: section loaders and renderers, history filtering and paging, the run-detail slideout, and the collector engine-card wiring. |
+| B2B | B2BPipeline.ps1 | WebAsset | Route | E:\xFACts-ControlCenter\scripts\routes\B2BPipeline.ps1 | The /b2b-pipeline page route: daily pulse cards, live pipeline activity, recent workflow changes, and the searchable paged run-history table with a run-detail slideout. |
 | BatchOps | BDL_BatchTracking | Database | Table | BatchOps | BDL import lifecycle tracking table with partition-based progress tracking, DM summary count capture, and stall detection. |
 | BatchOps | NB_BatchTracking | Database | Table | BatchOps | NewBatch batch processing status tracking |
 | BatchOps | PMT_BatchTracking | Database | Table | BatchOps | PMT batch processing status tracking |
@@ -445,6 +450,7 @@ Generated: 2026-07-12 05:09:37
 | /replication-monitoring | Replication Monitoring | Replication Monitoring | Agent health, queue depth, end-to-end latency, delivery rate, event log | platform | 90 | cc/replication-cc | True | True |
 | /jboss-monitoring | JBoss Monitoring | JBoss Monitoring | JBoss application server health, responsiveness, and management metrics | platform | 100 | cc/jboss-cc | True | True |
 | /dm-operations | DM Operations | DM Operations | Consumer archiving, shell consumer purge, execution history, schedule management | platform | 110 | cc/dmops-cc | True | True |
+| /b2b-pipeline | B2B Pipeline | B2B Pipeline | Sterling B2B pipeline activity, run classification, and execution history | platform | 120 |  | True | True |
 | /client-portal | Client Portal | Client Portal | Debt Manager Consumer/Account Lookup | tools | 10 |  | True | True |
 | /bdl-import | BDL Import | BDL Import | Guided bulk data load import into Debt Manager | tools | 20 | guides/bdl-import-guide | False | False |
 
@@ -452,7 +458,7 @@ Generated: 2026-07-12 05:09:37
 
 | module_name | process_name | description | script_path | procedure_name | execution_mode | dependency_group | interval_seconds | scheduled_time | timeout_seconds | run_mode | allow_concurrent | cc_engine_slug | cc_engine_label | cc_page_route | cc_sort_order |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| B2B | Collect-B2BExecution | B2B module collector. Synchronizes B2B.SI_ScheduleRegistry from b2bi.dbo.SCHEDULE; execution-tracking steps stubbed pending Block 2. | Collect-B2BExecution.ps1 |  | FIRE_AND_FORGET | 10 | 300 |  | 600 | 1 | False |  |  |  |  |
+| B2B | Collect-B2BPipeline | B2B module collector. Synchronizes B2B.SI_ScheduleRegistry from b2bi.dbo.SCHEDULE; execution-tracking steps stubbed pending Block 2. | Collect-B2BPipeline.ps1 |  | FIRE_AND_FORGET | 10 | 300 |  | 600 | 1 | False | b2b | B2B | /b2b-pipeline | 1 |
 | BatchOps | Collect-BDLBatchStatus | Monitors BDL file lifecycle from registration through terminal state. Collects new files, updates in-flight status with partition progress, captures DM summary counts, and evaluates stall detection. | Collect-BDLBatchStatus.ps1 |  | WAIT | 10 | 300 |  | 120 | 1 | False | bdl | BDL | /batch-monitoring | 3 |
 | BatchOps | Collect-NBBatchStatus | Monitors NB batch lifecycle from creation through terminal state. Collects new batches, updates in-flight status, tracks merge activity for stall detection. | Collect-NBBatchStatus.ps1 |  | WAIT | 10 | 300 |  | 120 | 1 | False | nb | NB | /batch-monitoring | 1 |
 | BatchOps | Collect-PMTBatchStatus | Payment batch lifecycle tracking - collects all batch types, tracks from creation through terminal state | Collect-PMTBatchStatus.ps1 |  | WAIT | 10 | 300 |  | 120 | 1 | False | pmt | PMT | /batch-monitoring | 2 |
@@ -487,7 +493,8 @@ Generated: 2026-07-12 05:09:37
 | module_name | category | setting_name | setting_value | data_type | description |
 | --- | --- | --- | --- | --- | --- |
 | B2B | B2B | b2b_alerting_enabled | 0 | BIT | Master on/off switch for B2B module alerting |
-| B2B | B2B | b2b_collect_lookback_days | 3 | INT | Number of days back that Collect-B2BExecution.ps1 scans for FA_CLIENTS_MAIN workflow runs in b2bi. |
+| B2B | B2B | b2b_collect_lookback_days | 3 | INT | Number of days back that Collect-B2BPipeline.ps1 scans Integration batch-status rows. |
+| B2B | B2B | b2b_inflight_aging_minutes | 720 | INT | Minutes an in-flight (status 0) pipeline run may age before Collect-B2BPipeline.ps1 cross-checks it against Sterling runtime state. |
 | BatchOps | BDL | bdl_alert_failed_routing | 3 | ALERT_MODE | Alert destination(s) when a BDL file reaches FAILED status in File_Registry |
 | BatchOps | BDL | bdl_alert_stall_routing | 1 | ALERT_MODE | Alert destination(s) when BDL partition processing stalls |
 | BatchOps | BDL | bdl_alerting_enabled | 0 | BIT | Master on/off switch for all BDL batch alerting |
@@ -525,6 +532,7 @@ Generated: 2026-07-12 05:09:37
 | ControlCenter | Connection | refresh_reconnect_grace_seconds | 60 | INT | Seconds to show reconnecting banner before displaying an error |
 | ControlCenter | RBAC | rbac_audit_verbosity | all | VARCHAR | What access checks to log: denials_only or all |
 | ControlCenter | RBAC | rbac_enforcement_mode | enforce | VARCHAR | Access control mode: disabled, audit (log only), or enforce (block) |
+| ControlCenter | Refresh | refresh_b2b_seconds | 10 | INT | B2B Pipeline page live window refresh interval (seconds) |
 | ControlCenter | Refresh | refresh_backup_seconds | 5 | INT | Backup Monitoring page live window refresh interval (seconds) |
 | ControlCenter | Refresh | refresh_batch_seconds | 5 | INT | Batch Monitoring page live window refresh interval (seconds) |
 | ControlCenter | Refresh | refresh_bdl-import_seconds | 20 | INT | Polling interval in seconds for the BDL Import History panel |
