@@ -34,11 +34,10 @@
 /* Two-column content grid bounded to the viewport below the chrome, weighted toward history. */
 .b2b-grid-layout {
     display: grid;
-    grid-template-columns: 2fr 3fr;
+    grid-template-columns: 1fr 1fr;
     gap: 15px;
     flex: 1;
     min-height: 0;
-    height: calc(100vh - 180px);
     overflow: hidden;
 }
 
@@ -277,9 +276,9 @@
     grid-template-columns: minmax(0, 1fr) 110px minmax(0, 1.3fr) 130px 60px;
 }
 
-/* Fixed six-column grid template for the runs-modal results table. */
+/* Fixed six-column grid template for the runs-slideout results table. */
 .b2b-cols-history {
-    grid-template-columns: 118px minmax(0, 1fr) 105px minmax(0, 1.1fr) 130px 64px;
+    grid-template-columns: 118px minmax(0, 1fr) 120px minmax(0, 2.4fr) 92px 64px;
 }
 
 /* Primary cell text (client name). */
@@ -475,11 +474,11 @@
 /* Column header row above an expanded year's month table. */
 .b2b-tree-head {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 90px 90px 80px 90px 100px;
-    gap: var(--size-spacing-md);
+    grid-template-columns: minmax(200px, 1.4fr) 1fr 1fr 1fr 1fr 1fr;
+    gap: var(--size-spacing-lg);
     padding: var(--size-spacing-xs) var(--size-spacing-lg);
     color: var(--color-text-muted);
-    font-size: var(--font-size-body);
+    font-size: var(--font-size-content);
     text-transform: uppercase;
     letter-spacing: 0.5px;
 }
@@ -487,8 +486,8 @@
 /* Expandable month table row button. */
 .b2b-tree-month-row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 90px 90px 80px 90px 100px;
-    gap: var(--size-spacing-md);
+    grid-template-columns: minmax(200px, 1.4fr) 1fr 1fr 1fr 1fr 1fr;
+    gap: var(--size-spacing-lg);
     align-items: center;
     width: 100%;
     text-align: left;
@@ -497,7 +496,7 @@
     border: none;
     border-bottom: var(--size-border-thin) solid var(--color-border-default);
     color: var(--color-text-primary);
-    font-size: var(--font-size-body);
+    font-size: var(--font-size-content);
     cursor: pointer;
     transition: all var(--duration-fast);
 }
@@ -509,8 +508,8 @@
 /* Day table row button opening the day-runs slideout, nested under its month. */
 .b2b-tree-day-row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 90px 90px 80px 90px 100px;
-    gap: var(--size-spacing-md);
+    grid-template-columns: minmax(200px, 1.4fr) 1fr 1fr 1fr 1fr 1fr;
+    gap: var(--size-spacing-lg);
     align-items: center;
     width: 100%;
     text-align: left;
@@ -519,7 +518,7 @@
     border: none;
     border-bottom: var(--size-border-thin) solid var(--color-border-default);
     color: var(--color-text-primary);
-    font-size: var(--font-size-body);
+    font-size: var(--font-size-content);
     cursor: pointer;
     transition: all var(--duration-fast);
 }
@@ -538,22 +537,40 @@
     white-space: nowrap;
 }
 
-/* Indented label cell holding a day date. */
+/* Indented label cell holding a day date and weekday. */
 .b2b-tree-day-cell {
     display: flex;
     align-items: center;
-    gap: var(--size-spacing-md);
+    gap: var(--size-spacing-lg);
     padding-left: 28px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: var(--color-text-muted);
+    color: var(--color-text-primary);
+}
+
+/* Weekday name shown beside the compact day date. */
+.b2b-tree-day-dow {
+    color: var(--color-text-primary);
 }
 
 /* Expansion chevron on year and month rows. */
 .b2b-tree-chevron {
     color: var(--color-text-muted);
-    width: 12px;
+    font-size: var(--font-size-default);
+    width: 14px;
+    transition: transform var(--duration-fast);
+}
+
+.b2b-tree-chevron.b2b-expanded { /* rotated chevron when its row is expanded */
+    transform: rotate(90deg);
+}
+
+/* Right-aligned primary numeric cell (runs count) in a tree table row. */
+.b2b-tree-cell-primary {
+    text-align: right;
+    color: var(--color-text-primary);
+    white-space: nowrap;
 }
 
 /* Right-aligned muted numeric cell in a tree table row. */
