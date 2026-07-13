@@ -170,12 +170,12 @@ $navHtml
 
     </div>
 
-    <!-- Purpose: runs modal listing filtered or per-day pipeline runs with paging -->
-    <div id="b2b-modal-runs" class="cc-modal-overlay cc-hidden" data-action-click="b2b-close-runs-modal">
-        <div class="cc-dialog cc-dialog-modal cc-xwide">
+    <!-- Purpose: runs slideout listing filtered or per-day pipeline runs with paging -->
+    <div id="b2b-slideout-runs" class="cc-slide-overlay" data-action-click="b2b-close-runs-slideout">
+        <div class="cc-dialog cc-dialog-slide cc-xwide">
             <div class="cc-dialog-header">
-                <h3 class="cc-dialog-title">Pipeline Runs</h3>
-                <button class="cc-dialog-close" data-action-click="b2b-close-runs-modal">&times;</button>
+                <h3 class="cc-dialog-title" id="b2b-slideout-runs-title">Pipeline Runs</h3>
+                <button class="cc-dialog-close" data-action-click="b2b-close-runs-slideout">&times;</button>
             </div>
             <div class="cc-dialog-body">
                 <div class="b2b-runs-layout">
