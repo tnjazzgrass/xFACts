@@ -1,9 +1,9 @@
 # B2B Module Roadmap
 
-**Status:** Active — **investigation phase CLOSED** (Steps 1-6 complete incl. 6A-6G); decision phase (§7) is next
-**Version:** 2.5
-**Last updated:** 2026-07-10
-**Supersedes:** v2.4; v2.3; v2.2 (in-session); v2.1; v2.0; v1 (archived at `WorkingFiles/B2B_Investigation/Legacy/B2B_Roadmap_V1.md`)
+**Status:** Active — **build phase COMPLETE**; the collection layer went live 2026-07-12 (tables, collector, backfill, transition). Next: CC page build and alerting enablement
+**Version:** 2.7
+**Last updated:** 2026-07-12
+**Supersedes:** v2.6; v2.5; v2.4; v2.3; v2.2 (in-session); v2.1; v2.0; v1 (archived at `WorkingFiles/B2B_Investigation/Legacy/B2B_Roadmap_V1.md`)
 
 ---
 
@@ -13,29 +13,26 @@
 
 ### What's next
 
-**The decision phase (§7).** The Step 6 investigation is closed — every sub-step (6A-6G) is complete, every claim dispositioned, every runtime question answered. The next session begins architecture decisions 7.1-7.7 with a fully verified model.
+**The collection layer is live.** `B2B.INT_PipelineTracking` (1.72M rows, history to 2021-06), `B2B.SI_WorkflowRegistry` (1,460 definitions), and `Collect-B2BPipeline.ps1` are in production under the orchestrator; the legacy collector and `SI_ExecutionTracking` are retired. Two build directions are open, in either order:
+
+1. **The CC B2B page** — the live-activity + history vision: history and pipeline-level live view from the mirror; the live engine panel and step-position display require the WF_INST_S write-timing verification (a retracted inherited claim, §4.6) at page-design time.
+2. **Alerting enablement** — the mechanism is fully built and gated by `b2b_alerting_enabled`; enablement needs the legacy-data posture confirmed (working-window bounding already protects against backfill storms), status-2 aging thresholds designed around the reconciler off-window (§4.2a), and optionally per-condition routing configs per the PMT pattern.
 
 ### Required context
 
-1. **`WorkingFiles/B2B_Investigation/Step_06G_Consolidation/Step_06G_Summary.md`** — the consolidated model, collector inputs, defect list, and document map. Read this first; it replaces reading the individual findings docs for orientation.
-2. **This Roadmap** — §7 pending decisions, §4 Known True.
-3. Individual findings docs on demand (map in the Summary §9).
-
-### Decision-phase starting notes
-
-- 7.1 (rebuild vs evolve): the "MAIN as universal grain" premise behind the current collector is refuted; the verified grain is the BATCH_STATUS row (one per pipeline run, DM-reconciled). Clean rebuild remains the standing inclination.
-- 7.4 (dispatchers): resolved structurally — 369 identical wrappers; the wrapper run IS the pipeline run (its WORKFLOW_ID = the GET_LIST-portion RUN_ID).
-- 7.5 (Integration strategy): the reconciliation job means Integration already holds pipeline-final outcomes including DM confirmation — mirror, don't rebuild.
-- Operational fixes queued independently of the module (Summary §4): the GET_LIST fault-ticket bug is the headline item.
+1. **§3 and §7 of this Roadmap** — the live architecture and the decisions behind it.
+2. **`WorkingFiles/B2B_Investigation/Step_06G_Consolidation/Step_06G_Summary.md`** — the verified Sterling model.
+3. For the CC page: `CC_PS_Spec.md`, `CC_CSS_Spec.md`, `CC_JS_Spec.md`, `CC_HTML_Spec.md` and the Guidelines CC-page checklist.
 
 ### Session start prompt template
 
-> Starting the B2B decision phase (§7). Cache-busted manifest URL: https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/manifest.json?v=<value>
+> Continuing the B2B module (CC page / alerting). Cache-busted manifest URL: https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/manifest.json?v=<value>
 
-### What the decision phase is NOT
+### Minor open items
 
-- Not DDL yet: designs are validated against `xFACts_Development_Guidelines.md` before any object is built, one object at a time, per standing rules.
-- Not a rewrite of the investigation docs — they are frozen as the evidence base and will be archived when the module ships.
+- Dispatcher-resolution shortfall: ~750 in-window instance ids resolve in neither WF_INST_S nor WF_INST_S_RESTORE; diagnostic query drafted, benign either way (rows retry while in-window, then rest at NULL).
+- Collector cycle time (~108s in execute) is dominated by running each mirror CTE twice (logging breakdown + DML); an execute-mode single-pass optimization is available if the engine interval warrants it.
+- The 27 in-window failure detections re-log each cycle until they age out or alerting is enabled (alert_count increments only on fire) — by design, self-decaying.
 
 ---
 
@@ -45,7 +42,7 @@ Authoritative entry point for all B2B module work. Tracks investigation state, r
 
 **What this document is:**
 - An investigation tracker and status board
-- A decision queue for architectural choices
+- A decision record for architectural choices
 - The orientation document for new sessions
 - The single slim reference — detail lives in per-step findings docs
 
@@ -54,18 +51,18 @@ Authoritative entry point for all B2B module work. Tracks investigation state, r
 - An implementation plan
 - A detailed technical reference (that's in the step findings docs)
 
-Implementation decisions remain out of scope until the investigation phase completes. This document resists the urge to build before we understand.
+Implementation decisions were held until the investigation phase completed. That gate was passed: the investigation closed 2026-07-10, the §7 decisions were recorded 2026-07-12, and the build executed the same day. The document now records the decisions, the live architecture, and what follows.
 
 ---
 
 ## 2. Operating Principles
 
-- **No new tables, columns, or collectors under the B2B schema** until investigation is complete. Exceptions must be explicit decisions recorded here, not drift into premature building.
+- **No new tables, columns, or collectors under the B2B schema** until investigation is complete. Exceptions must be explicit decisions recorded here, not drift into premature building. (Gate passed: investigation closed 2026-07-10; build decisions recorded in §7 on 2026-07-12.)
 - **Every "Known True" claim must be directly verified** against production data or BPML source, with date of verification recorded. Inherited claims don't count until re-verified.
 - **BPML is an authoritative structural source** for what each workflow can do. Runtime observation (WORKFLOW_CONTEXT, ProcessData) verifies what workflows *actually did* in specific runs. Both are needed; neither alone is sufficient.
 - **Uncertainty gets written down as an open question** rather than assumed away.
 - **Operational staff are first-class information sources** but are not the primary path — we're building documentation that never existed. Dirk is the customer of Sterling at FAC, not its architect. The original architect (`rbmakram`) and other historical editors are no longer available for consultation.
-- **Existing production artifacts** (`SI_ScheduleRegistry`, `SI_ExecutionTracking`, `Collect-B2BExecution.ps1`) stay as-is during investigation. They function for their narrow scope and are collecting data. All of them will be re-evaluated when investigation completes — they may fold into the eventual comprehensive collector, or be replaced. Nothing downstream consumes them yet (no alerting, no CC pages), so replacement is a clean-slate option.
+- **Existing production artifacts** (`SI_ScheduleRegistry`, `SI_ExecutionTracking`, `Collect-B2BExecution.ps1`) stay as-is during investigation. They function for their narrow scope and are collecting data. All of them will be re-evaluated when investigation completes — they may fold into the eventual comprehensive collector, or be replaced. Nothing downstream consumes them yet (no alerting, no CC pages), so replacement is a clean-slate option. (Executed 2026-07-12: `SI_ExecutionTracking` dropped, `Collect-B2BExecution.ps1` retired and deregistered, ProcessRegistry repointed to `Collect-B2BPipeline.ps1`; `SI_ScheduleRegistry` continues as-is per 7.2 with its sync carried into the new collector.)
 - **The investigation documents (this Roadmap + step findings) are working documents, not permanent documentation.** Their purpose is to inform the module build. Once the module is built, these documents will eventually be archived and real HTML documentation will be authored from them.
 - **Step 6 is checkpointed across multiple sessions.** The original "do it all in one session" framing was abandoned after scope expanded to cover the full workflow universe (not just MAIN). Each sub-step produces its own findings and Roadmap update.
 
@@ -73,22 +70,21 @@ Implementation decisions remain out of scope until the investigation phase compl
 
 ## 3. Current State
 
-### 3.1 Production artifacts (in use, narrow scope)
+### 3.1 Production artifacts (live as of 2026-07-12)
 
 | Artifact | Scope | Status |
 |---|---|---|
-| `B2B.SI_ScheduleRegistry` | Schedule catalog sync from `b2bi.dbo.SCHEDULE` | Functional, complete for its scope |
-| `B2B.SI_ExecutionTracking` | Per-workflow tracking for FA_CLIENTS_MAIN only | Functional, but captures ~16% of total Sterling activity |
-| `Collect-B2BExecution.ps1` | Single collector, FIRE_AND_FORGET mode, dependency_group 10 | Functional, narrow scope |
-| GlobalConfig settings | `b2b_alerting_enabled` (BIT, 0), `b2b_collect_lookback_days` (INT, 3) | Alerting stubbed |
+| `B2B.INT_PipelineTracking` | One row per pipeline run mirrored from Integration BATCH_STATUS, disambiguated classification (§7.8), full history to 2021-06-23 (1,717,835 backfilled rows + live collection) | Live |
+| `B2B.SI_WorkflowRegistry` | Workflow definition catalog + version census memory from `b2bi.dbo.WFD` (1,460 definitions at initial load) | Live |
+| `B2B.SI_ScheduleRegistry` | Schedule catalog sync from `b2bi.dbo.SCHEDULE` | Live (sync carried into the new collector unchanged) |
+| `Collect-B2BPipeline.ps1` | Seven-step collector: schedule sync, version census, classified mirror insert + re-poll, dispatcher resolution, Sterling cross-check, Teams alert evaluation | Live, FIRE_AND_FORGET, dependency_group 10 |
+| GlobalConfig settings | `b2b_alerting_enabled` (BIT, 0), `b2b_collect_lookback_days` (INT, 3), `b2b_inflight_aging_minutes` (INT, 720) | Alerting built, gated off |
 
-No downstream consumers. No alerting. No Control Center pages. The collector is pure collection — replacing it carries no blast radius beyond losing the ~3-4 days of collected data, which has no historical weight.
+Retired 2026-07-12: `B2B.SI_ExecutionTracking` (dropped; MAIN-as-grain premise refuted), `Collect-B2BExecution.ps1` (deleted; schedule sync absorbed into the replacement). Registrations deactivated, metadata preserved inactive.
 
-### 3.2 Scope of coverage
+### 3.2 Coverage model
 
-Current collector captures FA_CLIENTS_MAIN only. Investigation has shown MAIN is roughly 16% of total Sterling workflow activity — the other 84% is invisible. Sub-workflows (ARCHIVE, VITAL, EMAIL), dispatchers (GET_LIST, FA_FROM_*, FA_TO_*), Sterling infrastructure (FileGateway, Schedule_*), and most client-specific workflows are not captured.
-
-The investigation underway is determining what a comprehensive collector should look like, not how to extend the current MAIN-only design.
+The mirror covers 100% of client pipeline runs (the BATCH_STATUS grain) with DM-verified outcomes. Sterling engine activity outside the pipeline (VITAL/ARCHIVE swarms, infrastructure BPs — the "84%") is deliberately not mirrored per decisions 7.3/7.7; it remains a live-query concern for the future CC engine panel. The classification vocabulary and its full-history census live in §7.8 and §4.2a.
 
 ---
 
@@ -180,6 +176,21 @@ The 2026-06-22 Sterling edit session (MAIN v49, PREP_SOURCE v35, TRANS v7 — CL
 
 **2026-07-10 — Work-queue proc internals verified** — source: Step 6E (R10)
 Branch 1 (scheduler, AUTOMATED=1) / Branch 2 (wrappers, AUTOMATED=2); PREV_SEQ via LAG per (CLIENT_ID, GET_DOCS_LOC) with SEQUENTIAL override; the discovered-files table is truncated and reloaded every ~10 minutes by client 328 SEQ 12 (config SQL_QUERY + translation map); 68-parameter pivot. Schedules verified via SI_ScheduleRegistry (GET_LIST hourly :05, 05:05-15:05 M-F).
+
+**2026-07-12 — Reconciliation job schedule: every 1 minute, 00:15:00-18:59:59 daily** — source: msdb sysjobs/sysjobschedules/sysschedules
+Job 'INT Clients Update Batch Status' (enabled) runs on schedule 'Daily': freq_type 4 (daily), every 1 minute (freq_subday_type 4, freq_subday_interval 1), active 00:15:00-18:59:59. Two consequences: (a) reconciliation lag is ~1 minute inside the window — status-2 transitions are far too fast for any collector polling interval to observe reliably, eliminating transition-watching as a discriminator; (b) the job is OFF from 19:00 to 00:15 (~5.25 hours), so evening-scheduled wrapper runs (the ~21:00 daily crowd: CNSMR_ACCNT_AR, CNSMR_TAG, INCEPTION_HOLD_TAG, FILE_REMOVE_VANDERBILT) legitimately sit at status 2 until the 00:15 pass. Status-2 aging alert thresholds must account for the off-window.
+
+**2026-07-12 — The reconciler updates BATCH_STATUS only; promotion requires status 2; PROCESS_TYPE is derived** — source: proc source (FAINT.USP_B2B_CLIENTS_UPDATE_BATCH_STATUS, read end-to-end)
+Every arm inner-joins `etl.tbl_B2B_CLIENTS_FILES` on CLIENT_ID + SEQ_ID (PROCESS_TYPE is not a BATCH_STATUS column — it comes from this join) and requires BATCH_STATUS = 2; the final UPDATE sets BATCH_STATUS and nothing else (FINISH_DATE untouched, so FINISH_DATE cannot discriminate writers). Mechanism confirmation: scheduler-fired GET_LIST rows carry SEQ_ID NULL and can never satisfy the join — they park at 2 forever, exactly as observed in 6E. -1 is written only through an inner join to a DM batch in failed/deleted state (NB stts_cd 5/3; BDL file_stts_cd 6/11); 4 is written only for NB/PAY/BDL rows at 2 with NULL BATCH_ID. New minor quirks for the defect ledger: the NB-success arm omits a PROCESS_TYPE filter (any status-2 row whose BATCH_ID matches an NB batch short name would promote — harmless with today's BATCH_ID vocabularies, but asymmetric by inspection); #TMP can theoretically collect the same ID twice with different statuses, leaving the final status to join order.
+
+**2026-07-12 — tbl_B2B_CLIENTS_BATCH_STATUS full column list** — source: sys.columns
+ID (int, identity), CLIENT_ID (bigint), SEQ_ID (int), PARENT_ID (int), RUN_ID (int), BATCH_ID (varchar(20)), BATCH_STATUS (int, default 0), INSERT_DATE (datetime, default getdate()), FINISH_DATE (datetime). All nullable except ID. INSERT_DATE is the age anchor for in-flight and stuck-at-status alerting. There is no PROCESS_TYPE column (derived via the FILES join — see reconciler entry above).
+
+**2026-07-12 — tbl_B2B_CLIENTS_BATCH_FILES full column list; RUN_ID is NOT NULL** — source: sys.columns
+ID (int, identity), CLIENT_ID (bigint), SEQ_ID (int), RUN_ID (int, NOT NULL), FILE_NAME (varchar(255), NOT NULL), FILE_SIZE (bigint), INSERT_DATE (datetime, default getdate()), COMM_METHOD (varchar(200)). Every pickup/delivery row is attributable to its pipeline run — the discriminator input for the status-4 split (§7.8).
+
+**2026-07-12 — Full-history classification census (backfill profile)** — source: staged backfill against production, all 1,717,835 rows
+BATCH_STATUS history reaches 2021-06-23 (not 2023-11 as previously assumed). Zero NULL RUN_IDs, zero duplicate RUN_IDs — the RUN_ID-unique grain holds across all history. Classification census: COMPLETE 1,065,789; NO_FILES 601,076; STERLING_FAULT 21,815 (~12/day, incl. 241 faults on non-handoff process types recovered from UNCLASSIFIED by the classification refinement); CASCADE_SKIP 14,131; DUPLICATE 6,441; NO_HANDOFF 4,133; DM_REJECTED 2,165; DIED_UNHANDLED 2,113 (exactly matching the 6E stuck-at-0 count — independent cross-validation); AWAITING_DM 170 (permanent limbo: handoffs whose DM batch never reached a recognized terminal code, all config-resolved); FAULT_POST_HANDOFF 2; UNCLASSIFIED 0. Classification refinement recorded in §7.8: -1 on a process type outside NB/PAY/BDL is a Sterling fault regardless of BATCH_ID (the reconciler never writes -1 for those types). Workflow definition count at census load: 1,460 (up 27 from the April investigation snapshot — the census exists precisely to catch this).
 
 ### 4.3 Retention and archive
 
@@ -315,7 +326,7 @@ Sub-step sequence:
 ### 5.10 Integration Database Tables
 
 **Status:** 🔄 Sterling-side references now verified (Step 6C); Integration-side verification deferred
-**What we know (source-verified):** Sterling BPMLs reference tables `etl.tbl_B2B_CLIENTS_BATCH_STATUS` (incl. BATCH_ID), `_BATCH_FILES`, `_FILES` (RUN_FLAG), `_TICKETS`, `_ACCTS`, `_OUTPUT_FILES` (orphaned writer), `_MERGED_FILES` (orphaned reader), `dbo.FAI_FILE_ID`, and `etl.tbl_ENOTICE_TO_REVSPRING_VALDN(_ARC)`; procs live in schema `faint` (see §4.2a); `WORKFLOW_ID` = `RUN_ID` correlation is confirmed from the BPML side. **Still to verify on the Integration side (post-Step-6 / 6E):** table shapes (TICKETS column count!), the four translation maps' target tables, and the CLIENTS config table that backs USP_B2B_CLIENTS_GET_LIST (~60 consumed fields inventoried in Step_06C_Findings §8.5, including four arbitrary-SQL fields and four executable-path fields).
+**What we know (source-verified):** Sterling BPMLs reference tables `etl.tbl_B2B_CLIENTS_BATCH_STATUS` (incl. BATCH_ID), `_BATCH_FILES`, `_FILES` (RUN_FLAG), `_TICKETS`, `_ACCTS`, `_OUTPUT_FILES` (orphaned writer), `_MERGED_FILES` (orphaned reader), `dbo.FAI_FILE_ID`, and `etl.tbl_ENOTICE_TO_REVSPRING_VALDN(_ARC)`; procs live in schema `faint` (see §4.2a); `WORKFLOW_ID` = `RUN_ID` correlation is confirmed from the BPML side. **Update 2026-07-12:** BATCH_STATUS and BATCH_FILES table shapes are now verified from sys.columns (§4.2a); TICKETS column count was verified in 6E. Still unverified on the Integration side: the four translation maps' target tables and the CLIENTS config table backing USP_B2B_CLIENTS_GET_LIST (~60 consumed fields inventoried in Step_06C_Findings §8.5, including four arbitrary-SQL fields and four executable-path fields).
 
 ### 5.11 VITAL Database
 
@@ -332,11 +343,11 @@ Sub-step sequence:
 
 ### 5.14 Real-Time In-Flight Visibility
 
-**Status:** 🔄 Deferred until after Step 6
+**Status:** ✅ Decided (7.6) — derived from mirror aging; no live Sterling querying in v1
 
 ### 5.15 Open questions
 
-**Closed as of Step 6G.** All investigation questions resolved (see Step_06E_Findings §4-5 and Step_06D_Claim_Checklist §14). Residual non-blocking notes: R9 (TRANS FILELIST/SIZE quirk) and R12 (child-onFault propagation) remain opportunistic inspection items; the reconciliation job's schedule is one sysjobs query when the design needs the lag number.
+**Closed as of Step 6G.** All investigation questions resolved (see Step_06E_Findings §4-5 and Step_06D_Claim_Checklist §14). Residual non-blocking notes: R9 (TRANS FILELIST/SIZE quirk) and R12 (child-onFault propagation) remain opportunistic inspection items. The reconciliation job's schedule, previously parked here, was resolved 2026-07-12 (§4.2a).
 
 ---
 
@@ -346,27 +357,57 @@ Sub-step sequence:
 - Sterling version upgrades or migration planning
 - b2bi admin console internals — not a SQL data source
 - Direct integration with Sterling REST APIs
-- Alerting evaluation and delivery — deferred until investigation complete
-- Control Center UI for B2B — deferred until investigation complete
 - Anything pre-Sterling (Pervasive-era) beyond what VITAL captures, if we even pursue VITAL
 
 ---
 
-## 7. Pending Decisions
+## 7. Decisions (recorded 2026-07-12)
 
-Decisions that cannot be made until investigation progresses further. All §7 items remain deferred until Step 6 completes.
+All seven architecture decisions were made in one session against the fully verified model, supplemented by same-day discovery reads: the reconciliation job schedule, the reconciler proc source end-to-end, and the BATCH_STATUS / BATCH_FILES column lists (all recorded in §4.2a). §7.8 records the status disambiguation model settled alongside them.
 
-### 7.1 SI_ExecutionTracking scope — rebuild or evolve?
+### 7.1 SI_ExecutionTracking scope — DECIDED: clean rebuild
 
-**Depends on:** §5.6 (Step 6 overall)
-Current inclination (not yet decided): full rebuild. The existing collector has ~3-4 days of data, nothing downstream consumes it, and the conceptual foundation (MAIN as universal grain) proved wrong. Clean-slate design is viable without cost.
+The existing collector was premised on MAIN as the universal grain, which the investigation refuted. The verified grain is the BATCH_STATUS row: one per pipeline run, parent-linked, DM-bridged, and DM-reconciled. The old table holds ~3-4 days of data with no downstream consumers; replacement carries no blast radius. `B2B.SI_ExecutionTracking` and `Collect-B2BExecution.ps1` are retired as part of the build.
 
-### 7.2 Collector architecture — one collector or many?
-### 7.3 Sub-workflow execution detail — track or not?
-### 7.4 Dispatcher tracking — own table, discriminator, or derived?
-### 7.5 VITAL / Integration integration — ingest, mirror, query-live, or ignore?
-### 7.6 Real-time in-flight visibility — build, defer, or skip?
-### 7.7 Block 3 (execution detail extraction) — build or skip?
+### 7.2 Collector architecture — DECIDED: one primary collector + census drift signal
+
+One collector mirrors BATCH_STATUS (enriched at collection time — see 7.8). The WFD version census (the one-query check that caught Sterling changing twice during the investigation) is included as a standing drift signal; whether it lives inside the same collector script or as a small sibling is settled during the build against existing collector patterns. `B2B.SI_ScheduleRegistry` and its sync continue as-is.
+
+### 7.3 Sub-workflow execution detail — DECIDED: not tracked in v1
+
+Inline invocations are runtime-invisible by mechanism; async children (VITAL, ARCHIVE, EMAIL, ENCOUNTER_LOAD) do not change the pipeline outcome the BATCH_STATUS row already records. Tracking them adds volume without adding decisions anyone would make differently. Revisit only if fault triage demonstrates need.
+
+### 7.4 Dispatcher tracking — DECIDED: attribute, not entity
+
+All 369 wrappers are structurally identical shells; the wrapper run IS the pipeline run (its WORKFLOW_ID = the GET_LIST-portion RUN_ID). Dispatcher identity is a descriptive attribute on the run record, not its own table or discriminator scheme.
+
+### 7.5 VITAL / Integration strategy — DECIDED: mirror Integration; VITAL not pursued
+
+The reconciliation job means Integration's BATCH_STATUS already holds pipeline-final outcomes including DM confirmation. The collector mirrors it rather than recomputing the lifecycle. VITAL is not pursued.
+
+### 7.6 Real-time in-flight visibility — DECIDED: derived from the mirror; no live Sterling querying in v1
+
+Rows aging at status 0 (in-flight / died unhandled) and status 2 (awaiting DM) ARE the in-flight view, anchored on INSERT_DATE. Thresholds must respect the reconciler off-window (§4.2a). Live WF_INST_S querying is deferred unless the aging view proves insufficient in practice.
+
+### 7.7 Block 3 (execution detail extraction) — DECIDED: skipped in v1
+
+WORKFLOW_CONTEXT parsing is the most expensive component with documented blind spots. The operational questions when something fails (which client, which run, what status, how long stuck) are answered by the mirror. Add later only if real fault-triage usage demands step-level detail.
+
+### 7.8 Status disambiguation model (decision-phase output)
+
+Per Dirk's direction, the dual-meaning statuses are disambiguated so the mirror matches what actually exists in the Integration process today. All discriminators are source-verified against the reconciler proc and work retroactively:
+
+| Status | Classification rule |
+|--:|---|
+| -2 | Always cascade-skip (unambiguous). |
+| -1, NULL BATCH_ID | Sterling fault pre-handoff (the reconciler never writes -1 without a DM join on BATCH_ID). |
+| -1, BATCH_ID present, DM batch failed/deleted | DM rejection (the reconciler's write, re-derived from the same DM tables). |
+| -1, BATCH_ID present, DM batch healthy | Sterling fault post-handoff — the data landed in DM but the pipeline died afterward. A distinct alert category, surfaced for free by this model. |
+| 2 | Transitional. Aging is the signal; thresholds respect the reconciler off-window (§4.2a). |
+| 4, PROCESS_TYPE not NB/PAY/BDL | No files, definitively (the reconciler's 4 applies only to NB/PAY/BDL). |
+| 4, NB/PAY/BDL | Split via BATCH_FILES: pickup rows exist for the RUN_ID with FILE_SIZE > 0 → files were acquired → handoff never happened; none → genuinely no files. (FILE_SIZE > 0 required because the zero-size pathway also writes rows.) |
+
+Refinement (2026-07-12, from the full-history profile): -1 on a process type outside NEW_BUSINESS/PAYMENT/BDL classifies STERLING_FAULT regardless of BATCH_ID — the reconciler never writes -1 for those types, so no DM rejection is possible there. This recovered all 241 historically UNCLASSIFIED rows. Transition-watching and FINISH_DATE were both evaluated and eliminated as discriminators (reconciler lag ~1 minute; reconciler never touches FINISH_DATE — §4.2a). DM outcome vocabularies for the -1/3 classification, from the reconciler source: new_bsnss_btch_stts_cd 8 complete / 5,3 deleted-failed; cnsmr_pymnt_btch_stts_cd 4 complete; file_stts_cd 8,5 complete / 6,11 failed; BATCH_ID literal '-1<' = empty-BDL success (parser artifact promoted to semantic marker — flagged for cleanup). These reconcile against Batch Monitoring's existing DM knowledge during schema design.
 
 ---
 
@@ -412,9 +453,10 @@ Under `WorkingFiles/B2B_Investigation/Legacy/`:
 
 ## 9. Next Actions
 
-1. **🎯 Decision phase (§7.1-7.7).** Begin with 7.1 (rebuild vs evolve) using Step_06G_Summary §3 as the input set.
-2. **Operational fixes** (independent of the module; owner: Dirk/ops): GET_LIST v20 fault-insert fix (headline), ITS/INCEPTION fault-write no-ops, plaintext-credential review, minor quirks per Summary §4.
-3. **Design → build** under standing xFACts rules once §7 decisions land.
+1. **🎯 CC B2B page.** History + pipeline-level live view from the mirror (fresh status-0/2 rows ARE the live pipeline view); dispatcher/client/classification filtering; the live engine panel and step-position display gated on the WF_INST_S write-timing verification (§4.6 retracted claims) at page-design time. Four-file spec build per the Guidelines checklist.
+2. **Alerting enablement.** Mechanism fully built and gated (`b2b_alerting_enabled`). Enablement work: confirm legacy-data posture (working-window bounding already prevents backfill storms), design status-2 aging thresholds around the reconciler off-window (§4.2a), decide per-condition routing configs (PMT pattern) vs. the single gate, then flip the switch.
+3. **Operational fixes** (independent of the module; owner: Dirk/ops): GET_LIST v20 fault-insert fix (headline — 21,815 historical Sterling faults and ~12/day ongoing are ticket-invisible), ITS/INCEPTION fault-write no-ops, plaintext-credential review, reconciler minor quirks (§4.2a), remaining minor quirks per Summary §4.
+4. **Minor collector items:** dispatcher-resolution shortfall diagnostic (~750 unresolvable in-window instance ids); optional execute-mode single-pass optimization if the engine interval makes the ~108s cycle feel heavy.
 
 ---
 
@@ -422,6 +464,8 @@ Under `WorkingFiles/B2B_Investigation/Legacy/`:
 
 | Version | Date | Change |
 |---|---|---|
+| 2.7 | 2026-07-12 | **Build phase complete — collection layer live.** §3 rewritten for the live architecture: `INT_PipelineTracking` (full backfill to 2021-06, 1,717,835 rows), `SI_WorkflowRegistry` (1,460 definitions), `Collect-B2BPipeline.ps1` (seven steps incl. built-and-gated Teams alerting); legacy collector and `SI_ExecutionTracking` retired, ProcessRegistry repointed. §4.2a adds the full-history classification census (incl. the 2,113 DIED_UNHANDLED = 6E cross-validation and the 2021-06 history discovery). §7.8 records the -1 non-handoff-type refinement (UNCLASSIFIED → 0). §6 alerting/CC lines removed (now §9 items 1-2). SI_/INT_ source-provenance prefix convention in production. Next Session rewritten: CC page and alerting enablement are the open directions; minor items logged (dispatcher-resolution shortfall, cycle-time optimization option). |
+| 2.6 | 2026-07-12 | **Decision phase closed.** §7 rewritten from pending-decisions queue to recorded decisions 7.1-7.7 plus new §7.8 status disambiguation model (source-verified discriminators for -1 and 4; transition-watching and FINISH_DATE eliminated). §4.2a extended with four new Known True entries: reconciliation job schedule (every 1 min, 00:15-18:59:59) + off-window consequence; reconciler proc behavior (BATCH_STATUS-only UPDATE, derived PROCESS_TYPE, park-at-2 mechanism confirmed, two new minor quirks); BATCH_STATUS full column list (INSERT_DATE age anchor); BATCH_FILES full column list (RUN_ID NOT NULL). §5.10 updated for verified table shapes; §5.14 marked decided per 7.6; §5.15 reconciler-schedule residual resolved. §1/§2 gate language updated to reflect the passed investigation gate; §6 stale "deferred until investigation complete" wording updated. Next Session rewritten for the design phase (mirror schema); Next Actions renumbered. |
 | 2.5 | 2026-07-10 | Steps 6D, 6E, 6F, 6G complete — **investigation phase closed.** §5.6 all sub-steps ✅; §4.2a extended with six new Known True entries (BATCH_STATUS lifecycle tracker + reconciliation job, GET_LIST ticket bug, ETL_CALL death, dispatch visibility model, wrapper population 369 + corpus refresh, work-queue proc internals); §5.15 closed; §8 tree updated, ArchitectureOverview marked RETIRED; §9 rewritten for the decision phase; Next Session rewritten to open with Step_06G_Summary. |
 | 2.4 | 2026-07-10 | Step 6C complete. §5.6 updated to show 6C ✅ with census summary; new §4.2a Known True block (execution model single spine, 361/371 wrapper census, GET_LIST shortfall resolution, BATCH_STATUS vocabulary + BATCH_ID bridge, faint proc schema, invocation mechanisms, merged-output filename formula, defects catalog). §4.2 dormant-workflow entry corrected with verified roles (ETL_CALL not deprecated; TABLE_INSERT/TABLE_PULL orphaned; ENCOUNTER_ID under ENCOUNTER_LOAD; REMIT_DATA_VERIFICATION a top-level wrapper); MAIN rule entry refined to 23 defined / 22 live. §4.6 notes MAIN invocation patterns re-verified. §5.7 structural coverage complete; §5.8 resolved structurally; §5.9 partially grounded; §5.10 Sterling-side references verified. §5.15 restructured: 6C resolutions recorded, nine new 6E targets referenced. §8 reference tree corrected to the repo's flat sub-step folder layout (the nested Step_06_MAIN_Anatomy paths never existed) and notes the BPML corpus removal from the repo. Next Session rewritten for 6D start; Next Actions renumbered. |
 | 2.3 | 2026-04-24 | Step 6B complete. §5.6 updated to show 6B ✅; §4.2 adds FA_CLIENTS_MAIN rule-count (23 rules) fact from BPML inspection; §4.4 adds BPML storage model as verified Known True; §4.5 adds `<process>` root confirmation + XML comment prologue observation. §5.7 and §5.8 note that BPML corpus is now available for 6C deep reads. §5.15 adds GBMDATA handle as new open question. §8 reference tree updated to show BPMLs folder. Next Session section rewritten for 6C start. |
