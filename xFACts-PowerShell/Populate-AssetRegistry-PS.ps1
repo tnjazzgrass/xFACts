@@ -2983,7 +2983,7 @@ foreach ($file in $PSFiles) {
     $script:CurrentAst                = $parsed.Ast
     $script:CurrentTokens             = $parsed.Tokens
     $script:CurrentParseErrors        = $parsed.ParseErrors
-    $script:CurrentValidSectionTypes  = $ValidSectionTypesByRole[$role]
+    $script:CurrentValidSectionTypes  = if ($ValidSectionTypesByRole.ContainsKey($role)) { $ValidSectionTypesByRole[$role] } else { $AllValidSectionTypes }
     $script:CurrentRequiresComponent  = ($ComponentRequiredRoles -contains $role)
     $script:CurrentRegistryHasMapping = $componentPrefixMap.ContainsKey($name)
     $script:CurrentRegistryPrefix     = if ($script:CurrentRegistryHasMapping) { $componentPrefixMap[$name] } else { $null }
