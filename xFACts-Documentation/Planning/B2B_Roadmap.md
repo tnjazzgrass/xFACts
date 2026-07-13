@@ -1,9 +1,9 @@
 # B2B Module Roadmap
 
-**Status:** Active — **build phase COMPLETE**; the collection layer went live 2026-07-12 (tables, collector, backfill, transition). Next: CC page build and alerting enablement
-**Version:** 2.7
-**Last updated:** 2026-07-12
-**Supersedes:** v2.6; v2.5; v2.4; v2.3; v2.2 (in-session); v2.1; v2.0; v1 (archived at `WorkingFiles/B2B_Investigation/Legacy/B2B_Roadmap_V1.md`)
+**Status:** Active — **collection layer AND Control Center page LIVE**. Collection went live 2026-07-12 (tables, collector, backfill, transition); the B2B Pipeline page went live to all users 2026-07-13 after three visual passes. Next: page iteration from developer feedback and alerting enablement
+**Version:** 2.8
+**Last updated:** 2026-07-13
+**Supersedes:** v2.7; v2.6; v2.5; v2.4; v2.3; v2.2 (in-session); v2.1; v2.0; v1 (archived at `WorkingFiles/B2B_Investigation/Legacy/B2B_Roadmap_V1.md`)
 
 ---
 
@@ -13,28 +13,26 @@
 
 ### What's next
 
-**The collection layer is live.** `B2B.INT_PipelineTracking` (1.72M rows, history to 2021-06), `B2B.SI_WorkflowRegistry` (1,460 definitions), and `Collect-B2BPipeline.ps1` are in production under the orchestrator; the legacy collector and `SI_ExecutionTracking` are retired. Two build directions are open, in either order:
+**Everything built is live.** The collection layer (`B2B.INT_PipelineTracking` with 1.72M rows of history to 2021-06, `B2B.SI_WorkflowRegistry`, `Collect-B2BPipeline.ps1` at ~56s cycles) runs under the orchestrator, and the **B2B Pipeline page is live to all users** at /b2b-pipeline: pulse cards, true real-time live activity read directly from the Integration source, the year/month/day history summary tree, the filtered runs modal, day-runs and run-detail slideouts, engine card, nav, and permissions. Open directions:
 
-1. **The CC B2B page** — the live-activity + history vision: history and pipeline-level live view from the mirror; the live engine panel and step-position display require the WF_INST_S write-timing verification (a retracted inherited claim, §4.6) at page-design time.
+1. **Page iteration** — developer feedback drives the next visual/functional pass. Known open questions: where the Recent Workflow Changes signal should live (mostly-empty section vs. pulse card vs. header indicator — undecided); parent/child run grouping via parent_id linkage (dispatcher GET_LIST rows exist in the mirror as anchors); a docs-zone page for B2B and the NavRegistry doc_page_id that goes with it.
 2. **Alerting enablement** — the mechanism is fully built and gated by `b2b_alerting_enabled`; enablement needs the legacy-data posture confirmed (working-window bounding already protects against backfill storms), status-2 aging thresholds designed around the reconciler off-window (§4.2a), and optionally per-condition routing configs per the PMT pattern.
+3. **WORKFLOW_CONTEXT live-step verification** — WF_INST_S is confirmed write-at-termination (§4.2a), killing that route to a live engine panel; whether WORKFLOW_CONTEXT step rows are written during execution (enabling "step X of Y" live display) is the remaining checkable path. Needs column/timestamp verification, then a business-hours sampling query.
 
 ### Required context
 
 1. **§3 and §7 of this Roadmap** — the live architecture and the decisions behind it.
 2. **`WorkingFiles/B2B_Investigation/Step_06G_Consolidation/Step_06G_Summary.md`** — the verified Sterling model.
-3. For the CC page: `CC_PS_Spec.md`, `CC_CSS_Spec.md`, `CC_JS_Spec.md`, `CC_HTML_Spec.md` and the Guidelines CC-page checklist.
+3. For page work: `CC_PS_Spec.md`, `CC_CSS_Spec.md`, `CC_JS_Spec.md`, `CC_HTML_Spec.md` and the Guidelines CC-page checklist.
 
 ### Session start prompt template
 
-> Continuing the B2B module (CC page / alerting). Cache-busted manifest URL: https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/manifest.json?v=<value>
+> Continuing the B2B module (page iteration / alerting / live-step verification). Cache-busted manifest URL: https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/manifest.json?v=<value>
 
 ### Minor open items
 
 - Dispatcher-resolution shortfall: ~750 in-window instance ids resolve in neither WF_INST_S nor WF_INST_S_RESTORE; diagnostic query drafted, benign either way (rows retry while in-window, then rest at NULL).
-- Collector cycle time (~108s in execute) is dominated by running each mirror CTE twice (logging breakdown + DML); an execute-mode single-pass optimization is available if the engine interval warrants it.
-- The 27 in-window failure detections re-log each cycle until they age out or alerting is enabled (alert_count increments only on fire) — by design, self-decaying.
-
----
+- The in-window failure detections re-log each collector cycle until they age out or alerting is enabled (alert_count increments only on fire) — by design, self-decaying.
 
 ## 1. Purpose
 
@@ -78,7 +76,8 @@ Implementation decisions were held until the investigation phase completed. That
 | `B2B.SI_WorkflowRegistry` | Workflow definition catalog + version census memory from `b2bi.dbo.WFD` (1,460 definitions at initial load) | Live |
 | `B2B.SI_ScheduleRegistry` | Schedule catalog sync from `b2bi.dbo.SCHEDULE` | Live (sync carried into the new collector unchanged) |
 | `Collect-B2BPipeline.ps1` | Seven-step collector: schedule sync, version census, classified mirror insert + re-poll, dispatcher resolution, Sterling cross-check, Teams alert evaluation | Live, FIRE_AND_FORGET, dependency_group 10 |
-| GlobalConfig settings | `b2b_alerting_enabled` (BIT, 0), `b2b_collect_lookback_days` (INT, 3), `b2b_inflight_aging_minutes` (INT, 720) | Alerting built, gated off |
+| GlobalConfig settings | `b2b_alerting_enabled` (BIT, 0), `b2b_collect_lookback_days` (INT, 3), `b2b_inflight_aging_minutes` (INT, 720), `refresh_b2b_seconds` (ControlCenter/Refresh, 10) | Alerting built, gated off |
+| B2B Pipeline CC page | `/b2b-pipeline`: B2BPipeline.ps1, B2BPipeline-API.ps1, b2b-pipeline.css, b2b-pipeline.js. Pulse cards, real-time live activity (direct Integration source read, NOLOCK per reconciler pattern, dispatcher names enriched from the mirror), year/month/day history tree with per-day rollups and weighted average durations, filtered runs modal (cc-xwide), day-runs and run-detail slideouts, engine card (slug b2b), platform nav at sort 120, wide-open permissions (roles 2/3 operate, 4 view) | Live to all users 2026-07-13 |
 
 Retired 2026-07-12: `B2B.SI_ExecutionTracking` (dropped; MAIN-as-grain premise refuted), `Collect-B2BExecution.ps1` (deleted; schedule sync absorbed into the replacement). Registrations deactivated, metadata preserved inactive.
 
@@ -191,6 +190,9 @@ ID (int, identity), CLIENT_ID (bigint), SEQ_ID (int), RUN_ID (int, NOT NULL), FI
 
 **2026-07-12 — Full-history classification census (backfill profile)** — source: staged backfill against production, all 1,717,835 rows
 BATCH_STATUS history reaches 2021-06-23 (not 2023-11 as previously assumed). Zero NULL RUN_IDs, zero duplicate RUN_IDs — the RUN_ID-unique grain holds across all history. Classification census: COMPLETE 1,065,789; NO_FILES 601,076; STERLING_FAULT 21,815 (~12/day, incl. 241 faults on non-handoff process types recovered from UNCLASSIFIED by the classification refinement); CASCADE_SKIP 14,131; DUPLICATE 6,441; NO_HANDOFF 4,133; DM_REJECTED 2,165; DIED_UNHANDLED 2,113 (exactly matching the 6E stuck-at-0 count — independent cross-validation); AWAITING_DM 170 (permanent limbo: handoffs whose DM batch never reached a recognized terminal code, all config-resolved); FAULT_POST_HANDOFF 2; UNCLASSIFIED 0. Classification refinement recorded in §7.8: -1 on a process type outside NB/PAY/BDL is a Sterling fault regardless of BATCH_ID (the reconciler never writes -1 for those types). Workflow definition count at census load: 1,460 (up 27 from the April investigation snapshot — the census exists precisely to catch this).
+
+**2026-07-13 — WF_INST_S rows are written at termination, not during execution** — source: repeated production checks including during active processing windows
+Queries for WF_INST_S rows with END_TIME IS NULL returned zero across multiple checks, including while pipeline processes were actively launching. Sterling does not expose running instances through this table; the old collector's "in-flight refresh" model (a retracted inherited claim, §4.6) is definitively dead. Consequence: a live "what is Sterling executing right now" engine panel cannot be built from WF_INST_S. The page's Live Pipeline Activity instead reads Integration BATCH_STATUS directly (rows appear the instant GET_LIST writes them), which covers pipeline-level liveness completely. WORKFLOW_CONTEXT remains the unverified candidate for step-level live data — its per-step rows exist, but whether they are written during execution or flushed at completion is unknown.
 
 ### 4.3 Retention and archive
 
@@ -453,17 +455,17 @@ Under `WorkingFiles/B2B_Investigation/Legacy/`:
 
 ## 9. Next Actions
 
-1. **🎯 CC B2B page.** History + pipeline-level live view from the mirror (fresh status-0/2 rows ARE the live pipeline view); dispatcher/client/classification filtering; the live engine panel and step-position display gated on the WF_INST_S write-timing verification (§4.6 retracted claims) at page-design time. Four-file spec build per the Guidelines checklist.
+1. **🎯 Page iteration.** The page is live; developer feedback drives the next pass. Open items: Recent Workflow Changes placement (section vs. pulse card vs. header indicator — undecided), parent/child run grouping via parent_id, a B2B docs-zone page plus the NavRegistry doc_page_id.
 2. **Alerting enablement.** Mechanism fully built and gated (`b2b_alerting_enabled`). Enablement work: confirm legacy-data posture (working-window bounding already prevents backfill storms), design status-2 aging thresholds around the reconciler off-window (§4.2a), decide per-condition routing configs (PMT pattern) vs. the single gate, then flip the switch.
-3. **Operational fixes** (independent of the module; owner: Dirk/ops): GET_LIST v20 fault-insert fix (headline — 21,815 historical Sterling faults and ~12/day ongoing are ticket-invisible), ITS/INCEPTION fault-write no-ops, plaintext-credential review, reconciler minor quirks (§4.2a), remaining minor quirks per Summary §4.
-4. **Minor collector items:** dispatcher-resolution shortfall diagnostic (~750 unresolvable in-window instance ids); optional execute-mode single-pass optimization if the engine interval makes the ~108s cycle feel heavy.
-
----
+3. **WORKFLOW_CONTEXT live-step verification.** The remaining path to "step X of Y" live display now that WF_INST_S is confirmed write-at-termination (§4.2a). Verify the table's step/timestamp columns, then sample during business hours to determine whether step rows stream during execution.
+4. **Operational fixes** (independent of the module; owner: Dirk/ops): GET_LIST v20 fault-insert fix (headline — 21,815 historical Sterling faults and ~12/day ongoing are ticket-invisible), ITS/INCEPTION fault-write no-ops, plaintext-credential review, reconciler minor quirks (§4.2a), remaining minor quirks per Summary §4.
+5. **Minor collector items:** dispatcher-resolution shortfall diagnostic (~750 unresolvable in-window instance ids).
 
 ## Document History
 
 | Version | Date | Change |
 |---|---|---|
+| 2.8 | 2026-07-13 | **Control Center page live.** §3 adds the B2B Pipeline page artifacts (four WebAssets, engine card, nav at platform sort 120, wide-open permissions, refresh_b2b_seconds) - live to all users after three visual passes; Live Pipeline Activity reads the Integration source directly for true real-time visibility. §4.2a adds the WF_INST_S write-at-termination Known True (live engine panel via that table is dead; WORKFLOW_CONTEXT is the remaining step-level candidate). Collector execute-mode single-pass optimization recorded (127s to 56s cycles). §9 rebuilt: page iteration (Workflow Changes placement, parent/child grouping, docs page), alerting enablement, WORKFLOW_CONTEXT verification, ops fixes, dispatcher diagnostic. CSS spacing-token drift resolved to zero. |
 | 2.7 | 2026-07-12 | **Build phase complete — collection layer live.** §3 rewritten for the live architecture: `INT_PipelineTracking` (full backfill to 2021-06, 1,717,835 rows), `SI_WorkflowRegistry` (1,460 definitions), `Collect-B2BPipeline.ps1` (seven steps incl. built-and-gated Teams alerting); legacy collector and `SI_ExecutionTracking` retired, ProcessRegistry repointed. §4.2a adds the full-history classification census (incl. the 2,113 DIED_UNHANDLED = 6E cross-validation and the 2021-06 history discovery). §7.8 records the -1 non-handoff-type refinement (UNCLASSIFIED → 0). §6 alerting/CC lines removed (now §9 items 1-2). SI_/INT_ source-provenance prefix convention in production. Next Session rewritten: CC page and alerting enablement are the open directions; minor items logged (dispatcher-resolution shortfall, cycle-time optimization option). |
 | 2.6 | 2026-07-12 | **Decision phase closed.** §7 rewritten from pending-decisions queue to recorded decisions 7.1-7.7 plus new §7.8 status disambiguation model (source-verified discriminators for -1 and 4; transition-watching and FINISH_DATE eliminated). §4.2a extended with four new Known True entries: reconciliation job schedule (every 1 min, 00:15-18:59:59) + off-window consequence; reconciler proc behavior (BATCH_STATUS-only UPDATE, derived PROCESS_TYPE, park-at-2 mechanism confirmed, two new minor quirks); BATCH_STATUS full column list (INSERT_DATE age anchor); BATCH_FILES full column list (RUN_ID NOT NULL). §5.10 updated for verified table shapes; §5.14 marked decided per 7.6; §5.15 reconciler-schedule residual resolved. §1/§2 gate language updated to reflect the passed investigation gate; §6 stale "deferred until investigation complete" wording updated. Next Session rewritten for the design phase (mirror schema); Next Actions renumbered. |
 | 2.5 | 2026-07-10 | Steps 6D, 6E, 6F, 6G complete — **investigation phase closed.** §5.6 all sub-steps ✅; §4.2a extended with six new Known True entries (BATCH_STATUS lifecycle tracker + reconciliation job, GET_LIST ticket bug, ETL_CALL death, dispatch visibility model, wrapper population 369 + corpus refresh, work-queue proc internals); §5.15 closed; §8 tree updated, ArchitectureOverview marked RETIRED; §9 rewritten for the decision phase; Next Session rewritten to open with Step_06G_Summary. |
