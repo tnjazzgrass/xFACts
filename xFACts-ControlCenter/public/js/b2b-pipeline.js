@@ -126,7 +126,7 @@ const b2b_processTypeOptions = [
    ============================================================================ */
 
 /* Number of runs fetched per modal page. */
-const b2b_HISTORY_PAGE_SIZE = 50;
+const b2b_HISTORY_PAGE_SIZE = 30;
 
 /* ============================================================================
    CONSTANTS: DISPATCH TABLES
@@ -148,6 +148,7 @@ const b2b_clickActions = {
     'b2b-day-page':         b2b_dayPage,
     'b2b-close-day-slideout': b2b_closeDaySlideout,
     'b2b-open-run-detail':  b2b_openRunDetail,
+    'b2b-open-tile':        b2b_openTile,
     'b2b-close-slideout':   b2b_closeSlideout
 };
 
@@ -447,6 +448,9 @@ function b2b_loadModalRuns() {
     if (b2b_modalFilters.to) {
         params.push('to=' + encodeURIComponent(b2b_modalFilters.to));
     }
+    if (b2b_modalFilters.incomplete) {
+        params.push('incomplete=1');
+    }
 
     cc_engineFetch('/api/b2b-pipeline/history?' + params.join('&'))
         .then(function(data) {
@@ -495,10 +499,10 @@ function b2b_renderSummary(summary) {
     var cards = [
         { label: 'Runs Today',   value: cc_safeInt(summary.runs_today),    state: '' },
         { label: 'Completed',    value: cc_safeInt(summary.completed),     state: 'b2b-ok' },
-        { label: 'Failures',     value: cc_safeInt(summary.failures),      state: 'b2b-crit' },
-        { label: 'No Files',     value: cc_safeInt(summary.no_files),      state: 'b2b-neutral' },
-        { label: 'In Flight',    value: cc_safeInt(summary.in_flight),     state: 'b2b-flight' },
-        { label: 'Awaiting DM',  value: cc_safeInt(summary.awaiting_dm),   state: 'b2b-flight' }
+        { label: 'Failures',     value: cc_safeInt(summary.failures),      state: 'b2b-crit',    tile: 'failures' },
+        { label: 'No Files',     value: cc_safeInt(summary.no_files),      state: 'b2b-neutral', tile: 'no-files' },
+        { label: 'In Flight',    value: cc_safeInt(summary.in_flight),     state: 'b2b-flight',  tile: 'in-flight' },
+        { label: 'Awaiting DM',  value: cc_safeInt(summary.awaiting_dm),   state: 'b2b-flight',  tile: 'awaiting-dm' }
     ];
 
     var html = '';
@@ -507,13 +511,56 @@ function b2b_renderSummary(summary) {
         if (card.state) {
             classList += ' ' + card.state;
         }
-        html += '<div class="' + classList + '">' +
+        var actionAttrs = '';
+        if (card.tile) {
+            classList += ' b2b-card-clickable';
+            actionAttrs = ' data-action-click="b2b-open-tile" data-b2b-tile="' + card.tile + '"';
+        }
+        html += '<div class="' + classList + '"' + actionAttrs + '>' +
                 '<div class="b2b-card-label">' + cc_escapeHtml(card.label) + '</div>' +
                 '<div class="b2b-card-value">' + card.value + '</div>' +
                 '</div>';
     });
 
     container.innerHTML = html;
+}
+
+/* Opens the runs slideout pre-filtered to a clicked pulse tile's population,
+   matching that tile's count window exactly. */
+function b2b_openTile(target) {
+    var tile = target.getAttribute('data-b2b-tile');
+    var today = b2b_todayDateString();
+
+    if (tile === 'failures') {
+        b2b_modalFilters = {
+            classification: 'STERLING_FAULT,DM_REJECTED,FAULT_POST_HANDOFF,DIED_UNHANDLED',
+            from: today, to: today,
+            caption: 'Failures - today'
+        };
+    } else if (tile === 'no-files') {
+        b2b_modalFilters = {
+            classification: 'NO_FILES',
+            from: today, to: today,
+            caption: 'No Files - today'
+        };
+    } else if (tile === 'in-flight') {
+        b2b_modalFilters = {
+            classification: 'IN_FLIGHT',
+            incomplete: true,
+            caption: 'In Flight - in motion'
+        };
+    } else if (tile === 'awaiting-dm') {
+        b2b_modalFilters = {
+            classification: 'AWAITING_DM',
+            incomplete: true,
+            from: b2b_dateStringDaysAgo(3),
+            caption: 'Awaiting DM - last 3 days'
+        };
+    } else {
+        return;
+    }
+
+    b2b_openRunsModal();
 }
 
 /* ============================================================================
@@ -642,103 +689,131 @@ function b2b_renderHistoryTree() {
     yearKeys.forEach(function(y) {
         var yr = years[y];
         var yearOpen = b2b_expandedYears[y] === true;
-        html += '<button class="b2b-tree-year-row" data-action-click="b2b-toggle-year" data-b2b-year="' + y + '">' +
+
+        html += '<div class="b2b-history-year">';
+        html += '<div class="b2b-year-header" data-action-click="b2b-toggle-year" data-b2b-year="' + y + '">' +
                 '<span class="b2b-tree-chevron' + (yearOpen ? ' b2b-expanded' : '') + '">&#9654;</span>' +
-                '<span class="b2b-tree-year-label">' + y + '</span>' +
-                '<span class="b2b-tree-counts">' +
-                '<span class="b2b-count-muted">' + yr.total.toLocaleString() + ' runs</span>' +
-                '<span class="b2b-count-ok">' + yr.completed.toLocaleString() + ' ok</span>' +
-                '<span class="b2b-count-crit">' + yr.failures.toLocaleString() + ' failed</span>' +
-                '</span>' +
-                '</button>';
-
-        if (!yearOpen) {
-            return;
-        }
-
-        html += '<div class="b2b-tree-head">' +
-                '<div>Month</div>' +
-                '<div class="b2b-head-num">Runs</div>' +
-                '<div class="b2b-head-num">Completed</div>' +
-                '<div class="b2b-head-num">Failed</div>' +
-                '<div class="b2b-head-num">No Files</div>' +
-                '<div class="b2b-head-num">Avg Duration</div>' +
+                '<span class="b2b-year-label">' + y + '</span>' +
+                '<div class="b2b-year-stats">' +
+                '<span class="b2b-year-stat">' + yr.total.toLocaleString() + ' runs</span>' +
+                '<span class="b2b-year-stat b2b-year-stat-ok">' + yr.completed.toLocaleString() + ' ok</span>' +
+                '<span class="b2b-year-stat b2b-year-stat-crit">' + yr.failures.toLocaleString() + ' failed</span>' +
+                '</div>' +
                 '</div>';
 
-        var monthKeys = Object.keys(yr.months).sort().reverse();
-        monthKeys.forEach(function(m) {
-            var mo = yr.months[m];
-            var mKey = y + '-' + m;
-            var monthOpen = b2b_expandedMonths[mKey] === true;
-            html += '<button class="b2b-tree-month-row" data-action-click="b2b-toggle-month" data-b2b-month="' + mKey + '">' +
-                    '<div class="b2b-tree-label-cell">' +
-                    '<span class="b2b-tree-chevron' + (monthOpen ? ' b2b-expanded' : '') + '">&#9654;</span>' +
-                    '<span>' + cc_escapeHtml(cc_MONTH_NAMES[parseInt(m, 10)]) + '</span>' +
-                    '</div>' +
-                    b2b_buildTreeCellsHtml(mo) +
-                    '</button>';
+        if (yearOpen) {
+            html += '<div class="b2b-year-content">';
+            html += '<table class="b2b-month-summary-table">';
+            html += '<thead><tr>' +
+                    '<th class="b2b-month-th"></th>' +
+                    '<th class="b2b-month-th">Month</th>' +
+                    '<th class="b2b-month-th b2b-th-num">Runs</th>' +
+                    '<th class="b2b-month-th b2b-th-num">Completed</th>' +
+                    '<th class="b2b-month-th b2b-th-num">Failed</th>' +
+                    '<th class="b2b-month-th b2b-th-num">No Files</th>' +
+                    '<th class="b2b-month-th b2b-th-num">Avg Duration</th>' +
+                    '</tr></thead>';
 
-            if (!monthOpen) {
-                return;
-            }
+            var monthKeys = Object.keys(yr.months).sort().reverse();
+            monthKeys.forEach(function(m) {
+                var mo = yr.months[m];
+                var mKey = y + '-' + m;
+                var monthOpen = b2b_expandedMonths[mKey] === true;
 
-            mo.days.forEach(function(day) {
-                html += '<button class="b2b-tree-day-row" data-action-click="b2b-open-day-runs" data-b2b-date="' + day.date_str + '">' +
-                        '<div class="b2b-tree-day-cell">' + b2b_formatTreeDayLabel(day.date_str) + '</div>' +
-                        b2b_buildTreeCellsHtml({
-                            total: cc_safeInt(day.total),
-                            completed: cc_safeInt(day.completed),
-                            failures: cc_safeInt(day.failures),
-                            noFiles: cc_safeInt(day.no_files),
-                            durationWeight: cc_safeInt(day.avg_duration_min) * cc_safeInt(day.total)
-                        }) +
-                        '</button>';
+                html += '<tbody>';
+                html += '<tr class="b2b-month-row" data-action-click="b2b-toggle-month" data-b2b-month="' + mKey + '">' +
+                        '<td class="b2b-month-td b2b-expand-cell"><span class="b2b-tree-chevron' + (monthOpen ? ' b2b-expanded' : '') + '">&#9654;</span></td>' +
+                        '<td class="b2b-month-td b2b-month-cell">' + cc_escapeHtml(cc_MONTH_NAMES[parseInt(m, 10)]) + '</td>' +
+                        b2b_buildTreeCellsHtml(mo, 'b2b-month-td') +
+                        '</tr>';
+
+                if (monthOpen) {
+                    html += '<tr class="b2b-month-details"><td class="b2b-month-td b2b-month-details-cell" colspan="7">';
+                    html += '<table class="b2b-history-table">';
+                    html += '<thead><tr>' +
+                            '<th class="b2b-history-th">Date</th>' +
+                            '<th class="b2b-history-th">Day</th>' +
+                            '<th class="b2b-history-th b2b-th-num">Runs</th>' +
+                            '<th class="b2b-history-th b2b-th-num">Completed</th>' +
+                            '<th class="b2b-history-th b2b-th-num">Failed</th>' +
+                            '<th class="b2b-history-th b2b-th-num">No Files</th>' +
+                            '<th class="b2b-history-th b2b-th-num">Avg Duration</th>' +
+                            '</tr></thead><tbody>';
+
+                    mo.days.forEach(function(day) {
+                        var labels = b2b_treeDayLabelParts(day.date_str);
+                        html += '<tr class="b2b-day-row" data-action-click="b2b-open-day-runs" data-b2b-date="' + day.date_str + '">' +
+                                '<td class="b2b-history-td b2b-day-date-cell">' + cc_escapeHtml(labels.date) + '</td>' +
+                                '<td class="b2b-history-td b2b-day-dow-cell">' + cc_escapeHtml(labels.dow) + '</td>' +
+                                b2b_buildTreeCellsHtml({
+                                    total: cc_safeInt(day.total),
+                                    completed: cc_safeInt(day.completed),
+                                    failures: cc_safeInt(day.failures),
+                                    noFiles: cc_safeInt(day.no_files),
+                                    durationWeight: cc_safeInt(day.avg_duration_min) * cc_safeInt(day.total)
+                                }, 'b2b-history-td') +
+                                '</tr>';
+                    });
+
+                    html += '</tbody></table>';
+                    html += '</td></tr>';
+                }
+
+                html += '</tbody>';
             });
-        });
+
+            html += '</table>';
+            html += '</div>';
+        }
+
+        html += '</div>';
     });
 
     container.innerHTML = html;
 }
 
-/* Builds the numeric table cells (runs, completed, failed, no files, avg duration) for a tree row. */
-function b2b_buildTreeCellsHtml(node) {
+/* Builds the numeric cells (runs, completed, failed, no files, avg duration) for a month or day table row. */
+function b2b_buildTreeCellsHtml(node, tdClass) {
     var avg = node.total > 0 ? Math.round(node.durationWeight / node.total) : 0;
-    return '<div class="b2b-tree-cell-primary">' + node.total.toLocaleString() + '</div>' +
-           '<div class="b2b-tree-cell-ok">' + node.completed.toLocaleString() + '</div>' +
-           '<div class="b2b-tree-cell-crit">' + node.failures.toLocaleString() + '</div>' +
-           '<div class="b2b-tree-cell-num">' + node.noFiles.toLocaleString() + '</div>' +
-           '<div class="b2b-tree-cell-num">' + (avg > 0 ? b2b_formatDurationMinutes(avg) : '-') + '</div>';
+    return '<td class="' + tdClass + ' b2b-th-num b2b-cell-runs">' + node.total.toLocaleString() + '</td>' +
+           '<td class="' + tdClass + ' b2b-th-num b2b-cell-ok">' + node.completed.toLocaleString() + '</td>' +
+           '<td class="' + tdClass + ' b2b-th-num b2b-cell-crit">' + node.failures.toLocaleString() + '</td>' +
+           '<td class="' + tdClass + ' b2b-th-num b2b-cell-num">' + node.noFiles.toLocaleString() + '</td>' +
+           '<td class="' + tdClass + ' b2b-th-num b2b-cell-num">' + (avg > 0 ? b2b_formatDurationMinutes(avg) : '-') + '</td>';
 }
 
 /* ============================================================================
    FUNCTIONS: TREE TOGGLES
    ----------------------------------------------------------------------------
-   Expansion handlers for the year and month rows, plus the default-expansion
-   seeding for the current year and month.
+   Single-open expansion handlers: opening a year collapses the others and
+   clears their month expansions; opening a month collapses the other months
+   within its year.
    Prefix: b2b
    ============================================================================ */
 
-/* Toggles a year row's expansion and re-renders the tree. */
+/* Toggles a year row's expansion and re-renders the tree. Opening a year
+   closes all other years and clears every month expansion. */
 function b2b_toggleYear(target) {
     var y = target.getAttribute('data-b2b-year');
-    b2b_expandedYears[y] = b2b_expandedYears[y] !== true;
+    var opening = b2b_expandedYears[y] !== true;
+    b2b_expandedYears = {};
+    b2b_expandedMonths = {};
+    if (opening) {
+        b2b_expandedYears[y] = true;
+    }
     b2b_renderHistoryTree();
 }
 
-/* Toggles a month row's expansion and re-renders the tree. */
+/* Toggles a month row's expansion and re-renders the tree. Opening a month
+   closes the other months within its year. */
 function b2b_toggleMonth(target) {
     var mKey = target.getAttribute('data-b2b-month');
-    b2b_expandedMonths[mKey] = b2b_expandedMonths[mKey] !== true;
+    var opening = b2b_expandedMonths[mKey] !== true;
+    b2b_expandedMonths = {};
+    if (opening) {
+        b2b_expandedMonths[mKey] = true;
+    }
     b2b_renderHistoryTree();
-}
-
-/* Seeds the default expansion: the current year and current month open. */
-function b2b_seedTreeExpansion() {
-    var now = new Date();
-    var y = String(now.getFullYear());
-    var m = String(now.getMonth() + 1).padStart(2, '0');
-    b2b_expandedYears[y] = true;
-    b2b_expandedMonths[y + '-' + m] = true;
 }
 
 /* ============================================================================
@@ -952,6 +1027,9 @@ function b2b_closeRunsModal(target, event) {
 
 /* Builds the caption text describing the modal's active filters. */
 function b2b_describeModalFilters() {
+    if (b2b_modalFilters.caption) {
+        return b2b_modalFilters.caption;
+    }
     var parts = [];
     if (b2b_modalFilters.client) {
         parts.push('client contains "' + b2b_modalFilters.client + '"');
@@ -1271,8 +1349,6 @@ function b2b_populateFilterOptions() {
         });
         typeSelect.innerHTML = typeHtml;
     }
-
-    b2b_seedTreeExpansion();
 }
 
 /* Formats a timestamp value as a compact local date-time string. */
@@ -1289,6 +1365,19 @@ function b2b_formatDttm(value) {
     return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' +
            String(d.getDate()).padStart(2, '0') + ' ' +
            String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+}
+
+/* Returns today's local date as a YYYY-MM-DD string. */
+function b2b_todayDateString() {
+    var d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+/* Returns the local date N days before today as a YYYY-MM-DD string. */
+function b2b_dateStringDaysAgo(days) {
+    var d = new Date();
+    d.setDate(d.getDate() - days);
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
 
 /* Normalizes a timestamp or date value to a YYYY-MM-DD date-only string. */
@@ -1321,17 +1410,18 @@ function b2b_formatDisplayDate(date) {
     return cc_MONTH_NAMES[dateObj.getMonth() + 1] + ' ' + dateObj.getDate() + ', ' + dateObj.getFullYear();
 }
 
-/* Formats a tree day row's label as a compact M/D date with its weekday name. */
-function b2b_formatTreeDayLabel(date) {
+/* Returns a tree day row's label split into a compact M/D date and its
+   weekday name, for rendering into separate Date and Day table cells. */
+function b2b_treeDayLabelParts(date) {
     var parts = b2b_parseDateOnly(date).split('-');
     if (parts.length !== 3) {
-        return cc_escapeHtml(String(date));
+        return { date: String(date), dow: '' };
     }
     var dateObj = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
-    var compact = (dateObj.getMonth() + 1) + '/' + dateObj.getDate();
-    var dow = cc_DAY_NAMES[dateObj.getDay() + 1];
-    return cc_escapeHtml(compact) +
-           '<span class="b2b-tree-day-dow">' + cc_escapeHtml(dow) + '</span>';
+    return {
+        date: (dateObj.getMonth() + 1) + '/' + dateObj.getDate(),
+        dow: cc_DAY_NAMES[dateObj.getDay() + 1]
+    };
 }
 
 /* Formats a minute count as a compact duration string (m, h m, or d h). */
