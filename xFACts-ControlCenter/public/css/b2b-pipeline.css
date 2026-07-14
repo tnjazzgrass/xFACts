@@ -111,6 +111,17 @@
     position: relative;
 }
 
+/* Clickable pulse tile opening its population in the runs slideout. */
+.b2b-card-clickable {
+    cursor: pointer;
+    transition: border-color var(--duration-fast), background-color var(--duration-fast);
+}
+
+.b2b-card-clickable:hover { /* hover state for a clickable pulse tile */
+    background: var(--color-border-divider);
+    border-color: var(--color-border-strong);
+}
+
 /* State token marking a card or badge as healthy/successful. */
 .b2b-ok {
 }
@@ -416,180 +427,214 @@
    Prefix: b2b
    ============================================================================ */
 
-/* Expandable year header row button. */
-.b2b-tree-year-row {
+/* A single year group within the history tree. */
+.b2b-history-year {
+    margin-bottom: var(--size-spacing-md);
+}
+
+/* Clickable year header (expand chevron, year label, right-aligned stats). */
+.b2b-year-header {
     display: flex;
     align-items: center;
     gap: var(--size-spacing-md);
-    width: 100%;
-    text-align: left;
     padding: var(--size-spacing-md) var(--size-spacing-lg);
-    margin-bottom: var(--size-spacing-xs);
     background: var(--color-bg-card-hover);
     border: var(--size-border-thin) solid var(--color-border-strong);
     border-radius: var(--size-radius-sm);
-    color: var(--color-text-primary);
-    font-size: var(--font-size-body);
     cursor: pointer;
-    transition: all var(--duration-fast);
+    transition: background-color var(--duration-fast);
 }
 
-.b2b-tree-year-row:hover { /* hover state for a year header row */
+.b2b-year-header:hover { /* hover state for a year header row */
     background: var(--color-border-divider);
 }
 
-/* The year label text in a year header. */
-.b2b-tree-year-label {
+/* The year label text in a year header (large, blue, letter-spaced). */
+.b2b-year-label {
     font-weight: 700;
     color: var(--color-accent-platform);
     font-size: 18px;
     letter-spacing: 1px;
 }
 
-/* Right-aligned counts cluster on a year header row. */
-.b2b-tree-counts {
-    display: flex;
-    gap: var(--size-spacing-lg);
+/* Right-aligned stats cluster inside a year header. */
+.b2b-year-stats {
     margin-left: auto;
-    white-space: nowrap;
+    display: flex;
+    gap: var(--size-spacing-sm);
+    font-size: var(--font-size-body);
     font-weight: 600;
 }
 
-/* Success count token in a year counts cluster. */
-.b2b-count-ok {
-    color: rgba(120, 220, 170, 1);
-}
-
-/* Failure count token in a year counts cluster. */
-.b2b-count-crit {
-    color: rgba(235, 130, 140, 1);
-}
-
-/* Muted total count token in a year counts cluster. */
-.b2b-count-muted {
+/* A single evenly-sized stat block in the year stats cluster. */
+.b2b-year-stat {
+    min-width: 120px;
+    text-align: right;
     color: var(--color-text-muted);
     font-weight: 400;
 }
 
-/* Column header row above an expanded year's month table. */
-.b2b-tree-head {
-    display: grid;
-    grid-template-columns: minmax(200px, 1.4fr) 1fr 1fr 1fr 1fr 1fr;
-    gap: var(--size-spacing-lg);
-    padding: var(--size-spacing-xs) var(--size-spacing-lg);
+/* Success-count year stat. */
+.b2b-year-stat-ok {
+    color: rgba(120, 220, 170, 1);
+    font-weight: 600;
+}
+
+/* Failed-count year stat. */
+.b2b-year-stat-crit {
+    color: rgba(235, 130, 140, 1);
+    font-weight: 600;
+}
+
+/* Indented container for a year's expanded month table. */
+.b2b-year-content {
+    margin-left: 10px;
+    margin-top: var(--size-spacing-md);
+}
+
+/* Month-summary table (one row per month within an expanded year). */
+.b2b-month-summary-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--font-size-content);
+    margin-bottom: var(--size-spacing-md);
+}
+
+/* Header cell in the month-summary table. */
+.b2b-month-th {
+    text-align: left;
+    padding: var(--size-spacing-sm) 10px;
+    border-bottom: var(--size-border-thin) solid var(--color-border-default);
     color: var(--color-text-muted);
-    font-size: var(--font-size-content);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
+    font-weight: 500;
 }
 
-/* Expandable month table row button. */
-.b2b-tree-month-row {
-    display: grid;
-    grid-template-columns: minmax(200px, 1.4fr) 1fr 1fr 1fr 1fr 1fr;
-    gap: var(--size-spacing-lg);
-    align-items: center;
-    width: 100%;
-    text-align: left;
-    padding: 5px var(--size-spacing-lg);
-    background: transparent;
-    border: none;
-    border-bottom: var(--size-border-thin) solid var(--color-border-default);
+/* Right-aligned numeric header cell in a history table. */
+.b2b-th-num {
+    text-align: right;
+}
+
+/* Data cell in the month-summary table. */
+.b2b-month-td {
+    padding: var(--size-spacing-md) 10px;
+    border-bottom: var(--size-border-thin) solid var(--color-border-divider);
     color: var(--color-text-primary);
-    font-size: var(--font-size-content);
-    cursor: pointer;
-    transition: all var(--duration-fast);
 }
 
-.b2b-tree-month-row:hover { /* hover state for a month row */
+/* Clickable month row that expands its day-level table. */
+.b2b-month-row {
+    cursor: pointer;
+    transition: background-color var(--duration-fast);
+}
+
+.b2b-month-row:hover { /* hover state for a clickable month row */
     background: var(--color-bg-card-hover);
 }
 
-/* Day table row button opening the day-runs slideout, nested under its month. */
-.b2b-tree-day-row {
-    display: grid;
-    grid-template-columns: minmax(200px, 1.4fr) 1fr 1fr 1fr 1fr 1fr;
-    gap: var(--size-spacing-lg);
-    align-items: center;
-    width: 100%;
-    text-align: left;
-    padding: var(--size-spacing-xs) var(--size-spacing-lg);
-    background: transparent;
-    border: none;
-    border-bottom: var(--size-border-thin) solid var(--color-border-default);
-    color: var(--color-text-primary);
-    font-size: var(--font-size-content);
-    cursor: pointer;
-    transition: all var(--duration-fast);
+/* Narrow expand-chevron cell at the left of a month row. */
+.b2b-expand-cell {
+    width: 24px;
+    text-align: center;
 }
 
-.b2b-tree-day-row:hover { /* hover state for a day row */
+/* Month-name cell emphasis. */
+.b2b-month-cell {
+    font-weight: 500;
+}
+
+/* Expanded-month detail row hosting the per-day history table. */
+.b2b-month-details {
+    background: transparent;
+}
+
+/* Container cell hosting an expanded month's day-level table. */
+.b2b-month-details-cell {
+    padding: 0 0 var(--size-spacing-lg) var(--size-spacing-2xl);
+    background: transparent;
+}
+
+/* Per-day history table inside an expanded month. */
+.b2b-history-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--font-size-content);
+}
+
+/* Header cell in the per-day history table. */
+.b2b-history-th {
+    text-align: left;
+    padding: var(--size-radius-sm) var(--size-spacing-md);
+    border-bottom: var(--size-border-thin) solid var(--color-border-default);
+    color: var(--color-text-muted);
+    font-weight: 500;
+    font-size: var(--font-size-body);
+}
+
+/* Data cell in the per-day history table. */
+.b2b-history-td {
+    padding: var(--size-spacing-sm) var(--size-spacing-md);
+    border-bottom: var(--size-border-thin) solid var(--color-border-divider);
+    color: var(--color-text-primary);
+}
+
+/* Clickable day row opening the day-runs slideout. */
+.b2b-day-row {
+    cursor: pointer;
+    transition: background var(--duration-fast);
+}
+
+.b2b-day-row:hover { /* hover state for a clickable day row */
     background: var(--color-bg-card-hover);
 }
 
-/* Label cell holding the chevron and month name. */
-.b2b-tree-label-cell {
-    display: flex;
-    align-items: center;
-    gap: var(--size-spacing-md);
-    overflow: hidden;
-    text-overflow: ellipsis;
+/* Date cell (compact M/D) in a day row. */
+.b2b-day-date-cell {
+    color: var(--color-text-primary);
     white-space: nowrap;
 }
 
-/* Indented label cell holding a day date and weekday. */
-.b2b-tree-day-cell {
-    display: flex;
-    align-items: center;
-    gap: var(--size-spacing-lg);
-    padding-left: 28px;
-    overflow: hidden;
-    text-overflow: ellipsis;
+/* Weekday cell in a day row. */
+.b2b-day-dow-cell {
+    color: var(--color-text-primary);
     white-space: nowrap;
-    color: var(--color-text-primary);
-}
-
-/* Weekday name shown beside the compact day date. */
-.b2b-tree-day-dow {
-    color: var(--color-text-primary);
 }
 
 /* Expansion chevron on year and month rows. */
 .b2b-tree-chevron {
+    display: inline-block;
     color: var(--color-text-muted);
     font-size: var(--font-size-default);
     width: 14px;
     transition: transform var(--duration-fast);
 }
 
+/* State tag indicating an expandable element is expanded. */
+.b2b-expanded { }
+
 .b2b-tree-chevron.b2b-expanded { /* rotated chevron when its row is expanded */
     transform: rotate(90deg);
 }
 
-/* Right-aligned primary numeric cell (runs count) in a tree table row. */
-.b2b-tree-cell-primary {
-    text-align: right;
+/* Runs-count cell in a history table row (primary white). */
+.b2b-cell-runs {
     color: var(--color-text-primary);
     white-space: nowrap;
 }
 
-/* Right-aligned muted numeric cell in a tree table row. */
-.b2b-tree-cell-num {
-    text-align: right;
+/* Muted numeric cell in a history table row. */
+.b2b-cell-num {
     color: var(--color-text-muted);
     white-space: nowrap;
 }
 
-/* Right-aligned success count cell in a tree table row. */
-.b2b-tree-cell-ok {
-    text-align: right;
+/* Success-count cell in a history table row. */
+.b2b-cell-ok {
     color: rgba(120, 220, 170, 1);
     white-space: nowrap;
 }
 
-/* Right-aligned failure count cell in a tree table row. */
-.b2b-tree-cell-crit {
-    text-align: right;
+/* Failure-count cell in a history table row. */
+.b2b-cell-crit {
     color: rgba(235, 130, 140, 1);
     white-space: nowrap;
 }
@@ -607,7 +652,7 @@
 .b2b-runs-layout {
     display: flex;
     flex-direction: column;
-    height: 70vh;
+    height: 100%;
     min-height: 0;
 }
 
