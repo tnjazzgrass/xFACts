@@ -144,6 +144,41 @@
                                        },
                                        {
                                            "ordinal":  17,
+                                           "name":  "fault_report_type",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "The shape of the captured Sterling fault report, or NONE when the failure carried no extractable report. Snapshotted from SI_FaultReport for join-free display; NONE is the sentinel marking that the collector looked and found nothing, so the run is not re-attempted. NULL until the collector has attempted capture. See Status Values."
+                                       },
+                                       {
+                                           "ordinal":  18,
+                                           "name":  "fault_report_code",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "The primary error code from the fault report (e.g. 112 for Data Too Long, 721 for an UPDATE/INSERT/DELETE execution error). NULL for SERVICE/MESSAGE/NONE reports or when no single code applies."
+                                       },
+                                       {
+                                           "ordinal":  19,
+                                           "name":  "fault_report_summary",
+                                           "dataType":  "varchar",
+                                           "length":  "500",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "The one-line failure headline shown on the run row and slideout. For a single error it is the specific message (the downstream exception text when present, else the code label); for multiple errors it is a generic count pointing to the full report."
+                                       },
+                                       {
+                                           "ordinal":  20,
+                                           "name":  "fault_report_captured_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "When the collector attempted fault-report capture for this run. Doubles as the look-back-and-fill guard: NULL means never attempted, so the enrichment pass is idempotent and only processes unattempted failures."
+                                       },
+                                       {
+                                           "ordinal":  21,
                                            "name":  "is_complete",
                                            "dataType":  "bit",
                                            "nullable":  false,
@@ -152,7 +187,7 @@
                                            "description":  "1 when the run has reached a terminal classification and needs no further polling. Drives the collector incremental scan."
                                        },
                                        {
-                                           "ordinal":  18,
+                                           "ordinal":  22,
                                            "name":  "completed_dttm",
                                            "dataType":  "datetime",
                                            "nullable":  true,
@@ -160,7 +195,7 @@
                                            "description":  "When the row reached its terminal classification."
                                        },
                                        {
-                                           "ordinal":  19,
+                                           "ordinal":  23,
                                            "name":  "alert_count",
                                            "dataType":  "int",
                                            "nullable":  false,
@@ -169,7 +204,7 @@
                                            "description":  "Number of alerts fired for this run. Used to prevent duplicate alerting."
                                        },
                                        {
-                                           "ordinal":  20,
+                                           "ordinal":  24,
                                            "name":  "collected_dttm",
                                            "dataType":  "datetime",
                                            "nullable":  false,
@@ -178,7 +213,7 @@
                                            "description":  "When this row was first inserted by the collector."
                                        },
                                        {
-                                           "ordinal":  21,
+                                           "ordinal":  25,
                                            "name":  "last_polled_dttm",
                                            "dataType":  "datetime",
                                            "nullable":  false,
@@ -224,6 +259,10 @@
                                    ],
                        "checkConstraints":  [
                                                 {
+                                                    "name":  "CK_INT_PipelineTracking_fault_report_type",
+                                                    "definition":  "([fault_report_type] IS NULL OR ([fault_report_type]=\u0027NONE\u0027 OR [fault_report_type]=\u0027MESSAGE\u0027 OR [fault_report_type]=\u0027SERVICE\u0027 OR [fault_report_type]=\u0027TRANSLATION\u0027))"
+                                                },
+                                                {
                                                     "name":  "CK_INT_PipelineTracking_status_classification",
                                                     "definition":  "([status_classification]=\u0027UNCLASSIFIED\u0027 OR [status_classification]=\u0027DIED_UNHANDLED\u0027 OR [status_classification]=\u0027FAULT_POST_HANDOFF\u0027 OR [status_classification]=\u0027DM_REJECTED\u0027 OR [status_classification]=\u0027STERLING_FAULT\u0027 OR [status_classification]=\u0027CASCADE_SKIP\u0027 OR [status_classification]=\u0027DUPLICATE\u0027 OR [status_classification]=\u0027NO_HANDOFF\u0027 OR [status_classification]=\u0027NO_FILES\u0027 OR [status_classification]=\u0027COMPLETE\u0027 OR [status_classification]=\u0027AWAITING_DM\u0027 OR [status_classification]=\u0027IN_FLIGHT\u0027)"
                                                 },
@@ -268,6 +307,12 @@
                                                 "sortOrder":  1
                                             },
                                             {
+                                                "column":  "fault_report_type",
+                                                "value":  "TRANSLATION",
+                                                "meaning":  "The run\u0027s fault report is a translation-map report with structured entries. Full report in SI_FaultReport.",
+                                                "sortOrder":  1
+                                            },
+                                            {
                                                 "column":  "sterling_check_result",
                                                 "value":  "RUNNING",
                                                 "meaning":  "The b2bi WF_INST_S instance for this RUN_ID was found and is still executing. The run is genuinely in flight.",
@@ -277,6 +322,12 @@
                                                 "column":  "sterling_check_result",
                                                 "value":  "TERMINATED",
                                                 "meaning":  "The b2bi instance was found but has ended. Combined with source status 0, the run died without writing a terminal status.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "column":  "fault_report_type",
+                                                "value":  "SERVICE",
+                                                "meaning":  "The run\u0027s fault report is a service report (e.g. XSLT Service) carrying a service-level exception. Full report in SI_FaultReport.",
                                                 "sortOrder":  2
                                             },
                                             {
@@ -304,10 +355,22 @@
                                                 "sortOrder":  3
                                             },
                                             {
+                                                "column":  "fault_report_type",
+                                                "value":  "MESSAGE",
+                                                "meaning":  "The run\u0027s fault report is a bare single-string message. Full report in SI_FaultReport.",
+                                                "sortOrder":  3
+                                            },
+                                            {
                                                 "column":  "sterling_check_result",
                                                 "value":  "NOT_FOUND",
                                                 "meaning":  "No b2bi instance exists for this RUN_ID - the instance aged out of the Sterling runtime retention window (~30 days) or never registered.",
                                                 "sortOrder":  3
+                                            },
+                                            {
+                                                "column":  "fault_report_type",
+                                                "value":  "NONE",
+                                                "meaning":  "The collector attempted capture but the failure carried no extractable report. Sentinel that prevents re-attempting; no SI_FaultReport row exists.",
+                                                "sortOrder":  4
                                             },
                                             {
                                                 "column":  "status_classification",
@@ -409,6 +472,140 @@
                                                      "relatedObject":  "crs5_oltp DM batch tables",
                                                      "note":  "Classification evidence (external). The -1 disambiguation re-reads the same DM tables the reconciliation job reads: new_bsnss_btch (by batch short name), cnsmr_pymnt_btch and file_registry (by cast registry id). batch_id is the bridge to Debt Manager batch processing and joins to the BatchOps tracking tables (NB_BatchTracking, PMT_BatchTracking) for cross-module analysis of the same batches.",
                                                      "sortOrder":  3
+                                                 },
+                                                 {
+                                                     "relatedObject":  "SI_FaultReport",
+                                                     "note":  "On failure, the collector captures the Sterling status report into SI_FaultReport (one row per run, linked by run_id) and snapshots the summary fields (fault_report_type, fault_report_code, fault_report_summary, fault_report_captured_dttm) onto this row for join-free display. The full report is fetched from SI_FaultReport only on demand.",
+                                                     "sortOrder":  4
+                                                 }
+                                             ]
+                   },
+                   {
+                       "name":  "SI_FaultReport",
+                       "description":  "Per-run capture of the Sterling translation status report for failed B2B pipeline runs. One row per failed run that carried an extractable report, sourced from b2bi.dbo.TRANS_DATA via the failing step\u0027s STATUS_RPT handle in WORKFLOW_CONTEXT. Stores the full parsed report as JSON plus the raw decompressed text, captured once at collection time and retained permanently.",
+                       "module":  "B2B",
+                       "category":  "B2B",
+                       "dataFlow":  "Collect-B2BPipeline.ps1 enriches failed runs in a look-back-and-fill pass: for each INT_PipelineTracking failure within the retention window lacking a captured report, it resolves the failing step\u0027s STATUS_RPT handle in b2bi.dbo.WORKFLOW_CONTEXT, reads the gzip blob from b2bi.dbo.TRANS_DATA, decompresses and parses it, then inserts one row here (report_json + raw_report_text) and snapshots the summary fields onto INT_PipelineTracking. The Control Center B2B Pipeline run-detail slideout reads this table on demand when the user opens the full report.",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "fault_report_id",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  true,
+                                           "description":  "Surrogate key."
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "run_id",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "The failed pipeline run this report belongs to. One-to-one with INT_PipelineTracking.run_id (enforced by a unique constraint and a foreign key). Cross-prefix by design: SI_ marks Sterling provenance, the parent INT_ row is Integration-spined."
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "fault_report_type",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "The report shape captured, which determines how the JSON is structured and rendered. See Status Values."
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "source_name",
+                                           "dataType":  "varchar",
+                                           "length":  "255",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "The translation map name (TRANSLATION) or service name (SERVICE) the report came from. NULL for a bare MESSAGE report."
+                                       },
+                                       {
+                                           "ordinal":  5,
+                                           "name":  "report_json",
+                                           "dataType":  "nvarchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "The full parsed report as JSON: every report entry with its section, severity, code, and detail. The complete record for on-demand display, independent of the summary fields snapshotted onto INT_PipelineTracking."
+                                       },
+                                       {
+                                           "ordinal":  6,
+                                           "name":  "raw_report_text",
+                                           "dataType":  "nvarchar",
+                                           "length":  "MAX",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "The decompressed report text as extracted from the blob, before parsing. Preserved as a fallback so no source content is lost even if the parse model changes."
+                                       },
+                                       {
+                                           "ordinal":  7,
+                                           "name":  "captured_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(getdate())",
+                                           "description":  "When the collector decompressed and captured this report."
+                                       }
+                                   ],
+                       "indexes":  [
+                                       {
+                                           "name":  "PK_SI_FaultReport",
+                                           "type":  "CLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  true,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "fault_report_id"
+                                       },
+                                       {
+                                           "name":  "UQ_SI_FaultReport_run_id",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  true,
+                                           "keyColumns":  "run_id"
+                                       }
+                                   ],
+                       "checkConstraints":  [
+                                                {
+                                                    "name":  "CK_SI_FaultReport_fault_report_type",
+                                                    "definition":  "([fault_report_type]=\u0027MESSAGE\u0027 OR [fault_report_type]=\u0027SERVICE\u0027 OR [fault_report_type]=\u0027TRANSLATION\u0027)"
+                                                }
+                                            ],
+                       "foreignKeys":  [
+                                           {
+                                               "name":  "FK_SI_FaultReport_INT_PipelineTracking",
+                                               "column":  "run_id",
+                                               "referencedTable":  "B2B.INT_PipelineTracking",
+                                               "referencedColumn":  "run_id"
+                                           }
+                                       ],
+                       "statusValues":  [
+                                            {
+                                                "column":  "fault_report_type",
+                                                "value":  "TRANSLATION",
+                                                "meaning":  "A translation-map report with structured entries (section, severity, code, field/exception detail). The richest shape.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "fault_report_type",
+                                                "value":  "SERVICE",
+                                                "meaning":  "A service report (e.g. XSLT Service): timestamped message lines and an error total, carrying a service-level exception rather than translation codes.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "column":  "fault_report_type",
+                                                "value":  "MESSAGE",
+                                                "meaning":  "A bare single-string message with no further structure (e.g. the terse wrapper text an inline invoke records).",
+                                                "sortOrder":  3
+                                            }
+                                        ],
+                       "relationshipNotes":  [
+                                                 {
+                                                     "relatedObject":  "INT_PipelineTracking",
+                                                     "note":  "run_id links each report to its failed pipeline run (unique, foreign-keyed). The prefixes differ intentionally: SI_ marks Sterling-sourced content while the parent INT_ row is spined on Integration data. The summary fields (fault_report_type, fault_report_code, fault_report_summary, fault_report_captured_dttm) are snapshotted onto INT_PipelineTracking so the run row and slideout headline need no join; this table holds the full report for on-demand display.",
+                                                     "sortOrder":  1
                                                  }
                                              ]
                    },
@@ -935,14 +1132,14 @@
     "scripts":  [
                     {
                         "name":  "Collect-B2BPipeline.ps1",
-                        "description":  "Single collector for the B2B module. Seven steps per cycle: schedule sync from b2bi.dbo.SCHEDULE into SI_ScheduleRegistry; workflow version census from b2bi.dbo.WFD into SI_WorkflowRegistry, logging definition changes as the drift signal that Sterling workflows were edited; a set-based classified INSERT of new pipeline runs from Integration.ETL.tbl_B2B_CLIENTS_BATCH_STATUS into INT_PipelineTracking; a set-based re-poll of incomplete runs in the lookback working window; dispatcher name resolution from b2bi instance linkage; a Sterling WF_INST_S cross-check that classifies aged in-flight runs whose instance terminated or vanished as DIED_UNHANDLED; and Teams alert evaluation via the shared Send-TeamsAlert function - failure classifications alert once per run via alert_count and workflow version changes alert once per edit via trigger dedup, gated by b2b_alerting_enabled and bounded to the working window so backfilled history never alerts. Classification is computed in T-SQL on the listener (Integration + crs5_oltp cross-database joins) so the collector and the historical backfill apply identical logic. Reads GlobalConfig settings b2b_alerting_enabled, b2b_collect_lookback_days, and b2b_inflight_aging_minutes.",
+                        "description":  "Single collector for the B2B module. Eight steps per cycle: schedule sync from b2bi.dbo.SCHEDULE into SI_ScheduleRegistry; workflow version census from b2bi.dbo.WFD into SI_WorkflowRegistry, logging definition changes as the drift signal that Sterling workflows were edited; a set-based classified INSERT of new pipeline runs from Integration.ETL.tbl_B2B_CLIENTS_BATCH_STATUS into INT_PipelineTracking; a set-based re-poll of incomplete runs in the lookback working window; dispatcher name resolution from b2bi instance linkage; a Sterling WF_INST_S cross-check that classifies aged in-flight runs whose instance terminated or vanished as DIED_UNHANDLED; fault-report enrichment that captures the Sterling translation status report for Sterling-internal failures into SI_FaultReport and snapshots summary columns onto INT_PipelineTracking; and Teams alert evaluation via the shared Send-TeamsAlert function - failure classifications alert once per run via alert_count and workflow version changes alert once per edit via trigger dedup, gated by b2b_alerting_enabled and bounded to the working window. Reads GlobalConfig settings b2b_alerting_enabled, b2b_collect_lookback_days, and b2b_inflight_aging_minutes.",
                         "module":  "B2B",
                         "category":  "B2B",
-                        "dataFlow":  "Step 1 (schedule sync): single JOIN query against b2bi.dbo.SCHEDULE and b2bi.dbo.DATA_TABLE on FA-INT-DBP fetches all schedule rows with their gzip-compressed TIMINGXML blobs (-MaxBinaryLength 20971520). Each blob is decompressed in-memory and parsed into structured columns and a human-readable schedule_description; the step diffs against B2B.SI_ScheduleRegistry and INSERTs new schedules, UPDATEs changed ones, and DELETEs rows whose schedule_id no longer appears in b2bi.    Step 2 (workflow census): queries b2bi.dbo.WFD deduplicated to MAX(WFD_VERSION) per WFD_ID and compares against B2B.SI_WorkflowRegistry: new definitions INSERT, version bumps UPDATE (preserving previous_version, stamping last_version_change_dttm, logging at WARN as the Sterling-edit drift signal), unchanged rows get last_synced_dttm touched in chunked IN-list UPDATEs. Registry rows absent from the source are logged and retained.    Steps 3-4 (pipeline mirror): one shared classified-source CTE runs on the listener against Integration.ETL.tbl_B2B_CLIENTS_BATCH_STATUS joined to the FILES config (PROCESS_TYPE/COMM_METHOD via CLIENT_ID + SEQ_ID, the same derivation the Integration reconciliation job uses), the MN clients master (client_name snapshot), the crs5_oltp DM batch tables per process type (DM outcome verification for the -1 split), and a BATCH_FILES nonzero-size pickup EXISTS (the status-4 split). Step 3 INSERTs classified rows for source runs not yet mirrored, bounded by b2b_collect_lookback_days; step 4 re-polls tracked rows with is_complete = 0 inside the same window via a set-based UPDATE, re-stamping status, enrichment, classification, and completion.    Step 5 (dispatcher resolution): tracked rows missing dispatcher_name resolve COALESCE(parent_id, run_id) against b2bi WF_INST_S/WF_INST_S_RESTORE joined to WFD on WFD_ID + WFD_VERSION, in 500-id chunks, and UPDATE per distinct resolved name.    Step 6 (Sterling cross-check): in-flight rows (batch_status 0) older than b2b_inflight_aging_minutes are checked against WF_INST_S/WF_INST_S_RESTORE: instance present with NULL END_TIME marks sterling_check_result RUNNING; terminated or absent instances classify DIED_UNHANDLED (is_complete = 1, completed_dttm from Sterling END_TIME when available).    Step 7 (alerts): queries INT_PipelineTracking for failure classifications (STERLING_FAULT, DM_REJECTED, FAULT_POST_HANDOFF, DIED_UNHANDLED, NO_HANDOFF) with alert_count = 0 inside the working window, logs every detection, and - when b2b_alerting_enabled is on and the script runs with -Execute - queues a Teams alert via Send-TeamsAlert (trigger B2B_\u003cclassification\u003e / run_id) and increments alert_count. A second check queries SI_WorkflowRegistry for version changes inside the window and queues a WARNING alert per edit (trigger B2B_WorkflowVersionChange / wfd_id-version); Send-TeamsAlert dedup against Teams.RequestLog guarantees once-per-edit delivery. Orchestration context (TaskId, ProcessId) is passed in by the engine; on completion Complete-OrchestratorTask updates Orchestrator.TaskLog and Orchestrator.ProcessRegistry.",
+                        "dataFlow":  "Step 1 (schedule sync): single JOIN query against b2bi.dbo.SCHEDULE and b2bi.dbo.DATA_TABLE on FA-INT-DBP fetches all schedule rows with their gzip-compressed TIMINGXML blobs (-MaxBinaryLength 20971520). Each blob is decompressed in-memory and parsed into structured columns and a human-readable schedule_description; the step diffs against B2B.SI_ScheduleRegistry and INSERTs new schedules, UPDATEs changed ones, and DELETEs rows whose schedule_id no longer appears in b2bi.    Step 2 (workflow census): queries b2bi.dbo.WFD deduplicated to MAX(WFD_VERSION) per WFD_ID and compares against B2B.SI_WorkflowRegistry: new definitions INSERT, version bumps UPDATE (preserving previous_version, stamping last_version_change_dttm, logging at WARN as the Sterling-edit drift signal), unchanged rows get last_synced_dttm touched in chunked IN-list UPDATEs. Registry rows absent from the source are logged and retained.    Steps 3-4 (pipeline mirror): one shared classified-source CTE runs on the listener against Integration.ETL.tbl_B2B_CLIENTS_BATCH_STATUS joined to the FILES config (PROCESS_TYPE/COMM_METHOD via CLIENT_ID + SEQ_ID, the same derivation the Integration reconciliation job uses), the MN clients master (client_name snapshot), the crs5_oltp DM batch tables per process type (DM outcome verification for the -1 split), and a BATCH_FILES nonzero-size pickup EXISTS (the status-4 split). Step 3 INSERTs classified rows for source runs not yet mirrored, bounded by b2b_collect_lookback_days; step 4 re-polls tracked rows with is_complete = 0 inside the same window via a set-based UPDATE, re-stamping status, enrichment, classification, and completion.    Step 5 (dispatcher resolution): tracked rows missing dispatcher_name resolve COALESCE(parent_id, run_id) against b2bi WF_INST_S/WF_INST_S_RESTORE joined to WFD on WFD_ID + WFD_VERSION, in 500-id chunks, and UPDATE per distinct resolved name.    Step 6 (Sterling cross-check): in-flight rows (batch_status 0) older than b2b_inflight_aging_minutes are checked against WF_INST_S/WF_INST_S_RESTORE: instance present with NULL END_TIME marks sterling_check_result RUNNING; terminated or absent instances classify DIED_UNHANDLED (is_complete = 1, completed_dttm from Sterling END_TIME when available).    Step 7 (fault-report enrichment): Sterling-internal failures (STERLING_FAULT, DIED_UNHANDLED) with fault_report_captured_dttm NULL inside b2b_collect_lookback_days are enriched from b2bi. For each, the failing step\u0027s STATUS_RPT handle (BASIC_STATUS \u003c\u003e 0 on a report-producing service - Translation, XSLTService, InlineInvokeBusinessProcessService, MailMimeService) is resolved in WORKFLOW_CONTEXT, the gzip status-report blob is read from TRANS_DATA (parameterized, native byte array) and decompressed, and the report is parsed into one of three shapes (TRANSLATION, SERVICE, MESSAGE). The full parsed report writes to B2B.SI_FaultReport (one row per run) and the summary columns (fault_report_type, fault_report_code, fault_report_summary, fault_report_captured_dttm) snapshot onto INT_PipelineTracking. Failures with no extractable report are marked NONE so they are not re-attempted.    Step 8 (alerts): queries INT_PipelineTracking for failure classifications (STERLING_FAULT, DM_REJECTED, FAULT_POST_HANDOFF, DIED_UNHANDLED, NO_HANDOFF) with alert_count = 0 inside the working window, logs every detection, and queues a Teams alert via Send-TeamsAlert (trigger B2B_\u003cclassification\u003e / run_id) and increments alert_count. A second check queries SI_WorkflowRegistry for version changes inside the window and queues a WARNING alert per edit (trigger B2B_WorkflowVersionChange / wfd_id-version); Send-TeamsAlert dedup against Teams.RequestLog guarantees once-per-edit delivery. Orchestration context (TaskId, ProcessId) is passed in by the engine; on completion Complete-OrchestratorTask updates Orchestrator.TaskLog and Orchestrator.ProcessRegistry.",
                         "designNotes":  [
                                             {
                                                 "topic":  "One collector, seven steps",
-                                                "note":  "The script performs schedule sync, workflow census, pipeline mirror (insert + re-poll), dispatcher resolution, Sterling cross-check, and alert evaluation in every cycle. The single-collector design keeps the orchestrator footprint minimal and shares the b2bi connection, config, and logging machinery. Steps are independent: a failure in one does not block the others, and the summary aggregates per-step results into the orchestrator callback.",
+                                                "note":  "The script performs schedule sync, workflow census, pipeline mirror (insert + re-poll), dispatcher resolution, Sterling cross-check, fault-report enrichment, and alert evaluation in every cycle. The single-collector design keeps the orchestrator footprint minimal and shares the b2bi connection, config, and logging machinery. Steps are independent: a failure in one does not block the others, and the summary aggregates per-step results into the orchestrator callback.",
                                                 "sortOrder":  1
                                             },
                                             {
@@ -969,6 +1166,11 @@
                                                 "topic":  "VARBINARY fetch uses -MaxBinaryLength",
                                                 "note":  "b2bi stores TIMINGXML as gzip-compressed VARBINARY(MAX). The schedule-sync fetch passes -MaxBinaryLength 20971520 (20MB) on Get-SqlData.",
                                                 "sortOrder":  6
+                                            },
+                                            {
+                                                "topic":  "Fault-report enrichment",
+                                                "note":  "Step 7 processes only Sterling-internal failure classifications (STERLING_FAULT, DIED_UNHANDLED) whose fault_report_captured_dttm is NULL, so it is idempotent and each failure is handled once. It matches the failing step on BASIC_STATUS \u003c\u003e 0 for a configured set of report-producing services (Translation, XSLTService, InlineInvokeBusinessProcessService, MailMimeService), reads and gzip-decompresses the referenced TRANS_DATA blob, and parses one of three report shapes. A blob without the gzip magic bytes is skipped. Failures with no extractable report are stamped NONE rather than left unmarked, so the idempotent scan does not re-attempt them. The report text and the summary columns are written in the collector, not derived in the API, so the capture is permanent and read-time is join-free.",
+                                                "sortOrder":  7
                                             }
                                         ],
                         "relationshipNotes":  [
@@ -984,7 +1186,7 @@
                                                   },
                                                   {
                                                       "relatedObject":  "B2B.INT_PipelineTracking",
-                                                      "note":  "Primary writer. Steps 3-6 INSERT classified new runs, re-poll and reclassify incomplete rows, resolve dispatcher_name, and apply Sterling cross-check results.",
+                                                      "note":  "Primary writer. Steps 3-7 INSERT classified new runs, re-poll and reclassify incomplete rows, resolve dispatcher_name, apply Sterling cross-check results, and snapshot the fault-report summary columns (fault_report_type, fault_report_code, fault_report_summary, fault_report_captured_dttm) on Sterling-internal failures.",
                                                       "sortOrder":  3
                                                   },
                                                   {
@@ -1006,6 +1208,11 @@
                                                       "relatedObject":  "Orchestrator.ProcessRegistry",
                                                       "note":  "Registered in Orchestrator.ProcessRegistry as module B2B, process Collect-B2BPipeline (the entry repointed from the retired Collect-B2BExecution at transition). Scheduling and run mode are controlled there; runtime status fields (running_count, last_execution_status, last_duration_ms) are updated by the Complete-OrchestratorTask callback at the end of each run. dependency_group bucket = 10 (collectors).",
                                                       "sortOrder":  7
+                                                  },
+                                                  {
+                                                      "relatedObject":  "SI_FaultReport",
+                                                      "note":  "Sole writer. Step 7 (fault-report enrichment) INSERTs one row per Sterling-internal failure that carried an extractable status report, decompressed from b2bi TRANS_DATA via the failing step\u0027s STATUS_RPT handle. The summary of each report is also snapshotted onto INT_PipelineTracking for join-free display.",
+                                                      "sortOrder":  8
                                                   }
                                               ]
                     }
