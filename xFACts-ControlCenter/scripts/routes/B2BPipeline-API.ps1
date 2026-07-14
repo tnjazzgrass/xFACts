@@ -163,7 +163,9 @@ Add-PodeRoute -Method Get -Path '/api/b2b-pipeline/census' -Authentication 'ADLo
     }
 }
 
-# Run History - filtered paged run query. Query parameters: ?client=&classification=&type=&from=&to=&page=&pageSize=.
+# Run History - filtered paged run query. Query parameters: ?client=&classification=&type=&from=&to=&incomplete=&page=&pageSize=.
+# classification accepts a single value or a comma-separated list (matched as IN).
+# incomplete=1 restricts to in-motion runs (is_complete = 0).
 Add-PodeRoute -Method Get -Path '/api/b2b-pipeline/history' -Authentication 'ADLogin' -ScriptBlock {
     if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
 
@@ -173,6 +175,7 @@ Add-PodeRoute -Method Get -Path '/api/b2b-pipeline/history' -Authentication 'ADL
         $typeFilter     = $WebEvent.Query['type']
         $fromDate       = $WebEvent.Query['from']
         $toDate         = $WebEvent.Query['to']
+        $incomplete     = $WebEvent.Query['incomplete']
 
         $page = 0
         if ($WebEvent.Query['page'] -match '^\d+$') { $page = [int]$WebEvent.Query['page'] }
@@ -189,8 +192,16 @@ Add-PodeRoute -Method Get -Path '/api/b2b-pipeline/history' -Authentication 'ADL
             $parameters['client'] = $client
         }
         if ($classification -and $classification -ne 'ALL') {
-            [void]$whereClauses.Add("status_classification = @classification")
-            $parameters['classification'] = $classification
+            $classValues = @($classification.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+            if ($classValues.Count -gt 0) {
+                $classParams = New-Object System.Collections.Generic.List[string]
+                for ($i = 0; $i -lt $classValues.Count; $i++) {
+                    $pName = "class$i"
+                    [void]$classParams.Add("@$pName")
+                    $parameters[$pName] = $classValues[$i]
+                }
+                [void]$whereClauses.Add("status_classification IN ($($classParams -join ', '))")
+            }
         }
         if ($typeFilter -and $typeFilter -ne 'ALL') {
             [void]$whereClauses.Add("process_type = @ptype")
@@ -203,6 +214,9 @@ Add-PodeRoute -Method Get -Path '/api/b2b-pipeline/history' -Authentication 'ADL
         if ($toDate -match '^\d{4}-\d{2}-\d{2}$') {
             [void]$whereClauses.Add("source_insert_dttm < DATEADD(DAY, 1, CAST(@toDate AS DATE))")
             $parameters['toDate'] = $toDate
+        }
+        if ($incomplete -eq '1') {
+            [void]$whereClauses.Add("is_complete = 0")
         }
 
         $whereSql = ''
