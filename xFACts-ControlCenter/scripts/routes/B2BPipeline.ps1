@@ -39,7 +39,7 @@
 #             day-runs slideout instead of the modal; the runs modal and both
 #             slideouts widen to cc-xwide; the content grid is bound to the
 #             viewport height so sections scroll internally.
-# 2026-07-13  Visual restructure from first-pass review: run history becomes
+#             Visual restructure from first-pass review: run history becomes
 #             a year/month/day summary accordion; search results and day
 #             drill-down move to a paged runs modal; sections gain the flex
 #             helper so content scrolls inside its container instead of
