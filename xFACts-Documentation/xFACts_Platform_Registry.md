@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-07-13 17:39:53
+Generated: 2026-07-14 11:25:23
 
 ## Module Registry
 
@@ -64,6 +64,7 @@ Generated: 2026-07-13 17:39:53
 | component_name | object_name | object_category | object_type | object_path | description |
 | --- | --- | --- | --- | --- | --- |
 | B2B | INT_PipelineTracking | Database | Table | B2B | Comprehensive pipeline-run tracking for the B2B module. One row per Sterling pipeline run, mirrored from Integration.ETL.tbl_B2B_CLIENTS_BATCH_STATUS and enriched with snapshotted client identity and process configuration. Carries a disambiguated status classification verified against Debt Manager batch outcomes and b2bi runtime state, plus completion and alerting lifecycle columns. |
+| B2B | SI_FaultReport | Database | Table | B2B | Per-run capture of the Sterling translation status report for failed B2B pipeline runs. One row per failed run that carried an extractable report, sourced from b2bi.dbo.TRANS_DATA (the gzip-compressed status-report blob) reached via the failing step's STATUS_RPT handle in WORKFLOW_CONTEXT. Holds the full parsed report as JSON plus the raw decompressed text fallback. Captured once at collection time and retained permanently. |
 | B2B | SI_ScheduleRegistry | Database | Table | B2B | Master catalog of IBM Sterling B2B Integrator schedules sourced from b2bi.dbo.SCHEDULE. Stores one row per SCHEDULEID with parsed TIMINGXML structure for auditing, monitoring, and Control Center display. |
 | B2B | SI_WorkflowRegistry | Database | Table | B2B | Catalog of Sterling workflow definitions sourced from b2bi.dbo.WFD on FA-INT-DBP. One row per workflow definition carrying its current version, the immediately prior version, and version-change timing - the persistence layer for the workflow version census that detects Sterling definition changes between collector cycles. |
 | B2B | Collect-B2BPipeline.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Collect-B2BPipeline.ps1 | The B2B module collector. Synchronizes the schedule registry from b2bi, maintains the workflow definition catalog and version census in SI_WorkflowRegistry, and mirrors the Integration pipeline lifecycle tracker into INT_PipelineTracking with set-based T-SQL classification: DM outcome verification, the BATCH_FILES pickup check, dispatcher name resolution, and a Sterling runtime cross-check for aged in-flight runs. |
