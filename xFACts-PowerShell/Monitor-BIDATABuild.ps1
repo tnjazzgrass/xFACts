@@ -473,7 +473,7 @@ $ConfigDefaults = @{
     StartGraceMinutes = 15
 
     # Steps to exclude from notification (infrastructure steps)
-    ExcludedStepIds = @(1, 2, 18, 19, 20, 21)
+    ExcludedStepIds = @(1, 2, 19, 20, 21, 22)
 }
 
 Write-ConsoleBanner -Label "xFACts BIDATA Build Monitor"
