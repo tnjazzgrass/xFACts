@@ -118,15 +118,25 @@
                                        },
                                        {
                                            "ordinal":  14,
+                                           "name":  "sterling_status",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(\u0027UNDEFINED\u0027)",
+                                           "description":  "The overall status of the run at the Sterling Integrator level, independent of any downstream outcome. The primary status the Control Center surfaces for each run."
+                                       },
+                                       {
+                                           "ordinal":  15,
                                            "name":  "status_classification",
                                            "dataType":  "varchar",
                                            "length":  "30",
                                            "nullable":  false,
                                            "identity":  false,
-                                           "description":  "The disambiguated pipeline state - the collector resolution of the raw batch_status, splitting the dual-meaning source values via DM batch verification and BATCH_FILES pickup evidence. See Status Values for the full vocabulary."
+                                           "description":  "The detailed final classification of the run, carrying the specific pipeline outcome including downstream disposition. The detail layer behind the sterling_status column."
                                        },
                                        {
-                                           "ordinal":  15,
+                                           "ordinal":  16,
                                            "name":  "dm_batch_status_code",
                                            "dataType":  "int",
                                            "nullable":  true,
@@ -134,7 +144,7 @@
                                            "description":  "The DM-side batch status code observed when the collector performed the DM verification for this run. NULL when no BATCH_ID exists or no DM lookup applied."
                                        },
                                        {
-                                           "ordinal":  16,
+                                           "ordinal":  17,
                                            "name":  "sterling_check_result",
                                            "dataType":  "varchar",
                                            "length":  "20",
@@ -143,7 +153,7 @@
                                            "description":  "Outcome of the b2bi WF_INST_S cross-check performed for in-flight rows aging past threshold. Distinguishes genuinely running instances from runs that died without reaching a fault handler. See Status Values."
                                        },
                                        {
-                                           "ordinal":  17,
+                                           "ordinal":  18,
                                            "name":  "fault_report_type",
                                            "dataType":  "varchar",
                                            "length":  "20",
@@ -152,7 +162,7 @@
                                            "description":  "The shape of the captured Sterling fault report, or NONE when the failure carried no extractable report. Snapshotted from SI_FaultReport for join-free display; NONE is the sentinel marking that the collector looked and found nothing, so the run is not re-attempted. NULL until the collector has attempted capture. See Status Values."
                                        },
                                        {
-                                           "ordinal":  18,
+                                           "ordinal":  19,
                                            "name":  "fault_report_code",
                                            "dataType":  "varchar",
                                            "length":  "20",
@@ -161,7 +171,7 @@
                                            "description":  "The primary error code from the fault report (e.g. 112 for Data Too Long, 721 for an UPDATE/INSERT/DELETE execution error). NULL for SERVICE/MESSAGE/NONE reports or when no single code applies."
                                        },
                                        {
-                                           "ordinal":  19,
+                                           "ordinal":  20,
                                            "name":  "fault_report_summary",
                                            "dataType":  "varchar",
                                            "length":  "500",
@@ -170,7 +180,7 @@
                                            "description":  "The one-line failure headline shown on the run row and slideout. For a single error it is the specific message (the downstream exception text when present, else the code label); for multiple errors it is a generic count pointing to the full report."
                                        },
                                        {
-                                           "ordinal":  20,
+                                           "ordinal":  21,
                                            "name":  "fault_report_captured_dttm",
                                            "dataType":  "datetime",
                                            "nullable":  true,
@@ -178,7 +188,7 @@
                                            "description":  "When the collector attempted fault-report capture for this run. Doubles as the look-back-and-fill guard: NULL means never attempted, so the enrichment pass is idempotent and only processes unattempted failures."
                                        },
                                        {
-                                           "ordinal":  21,
+                                           "ordinal":  22,
                                            "name":  "is_complete",
                                            "dataType":  "bit",
                                            "nullable":  false,
@@ -187,7 +197,7 @@
                                            "description":  "1 when the run has reached a terminal classification and needs no further polling. Drives the collector incremental scan."
                                        },
                                        {
-                                           "ordinal":  22,
+                                           "ordinal":  23,
                                            "name":  "completed_dttm",
                                            "dataType":  "datetime",
                                            "nullable":  true,
@@ -195,7 +205,7 @@
                                            "description":  "When the row reached its terminal classification."
                                        },
                                        {
-                                           "ordinal":  23,
+                                           "ordinal":  24,
                                            "name":  "alert_count",
                                            "dataType":  "int",
                                            "nullable":  false,
@@ -204,7 +214,7 @@
                                            "description":  "Number of alerts fired for this run. Used to prevent duplicate alerting."
                                        },
                                        {
-                                           "ordinal":  24,
+                                           "ordinal":  25,
                                            "name":  "collected_dttm",
                                            "dataType":  "datetime",
                                            "nullable":  false,
@@ -213,7 +223,7 @@
                                            "description":  "When this row was first inserted by the collector."
                                        },
                                        {
-                                           "ordinal":  25,
+                                           "ordinal":  26,
                                            "name":  "last_polled_dttm",
                                            "dataType":  "datetime",
                                            "nullable":  false,
@@ -269,6 +279,10 @@
                                                 {
                                                     "name":  "CK_INT_PipelineTracking_sterling_check_result",
                                                     "definition":  "([sterling_check_result] IS NULL OR ([sterling_check_result]=\u0027NOT_FOUND\u0027 OR [sterling_check_result]=\u0027TERMINATED\u0027 OR [sterling_check_result]=\u0027RUNNING\u0027))"
+                                                },
+                                                {
+                                                    "name":  "CK_INT_PipelineTracking_sterling_status",
+                                                    "definition":  "([sterling_status]=\u0027UNDEFINED\u0027 OR [sterling_status]=\u0027IN_PROGRESS\u0027 OR [sterling_status]=\u0027NO_ACTION\u0027 OR [sterling_status]=\u0027FAILED\u0027 OR [sterling_status]=\u0027SUCCESS\u0027)"
                                                 }
                                             ],
                        "designNotes":  [
@@ -313,6 +327,12 @@
                                                 "sortOrder":  1
                                             },
                                             {
+                                                "column":  "sterling_status",
+                                                "value":  "SUCCESS",
+                                                "meaning":  "The process reached a successful terminal state within Sterling Integrator.",
+                                                "sortOrder":  1
+                                            },
+                                            {
                                                 "column":  "sterling_check_result",
                                                 "value":  "RUNNING",
                                                 "meaning":  "The b2bi WF_INST_S instance for this RUN_ID was found and is still executing. The run is genuinely in flight.",
@@ -322,6 +342,12 @@
                                                 "column":  "sterling_check_result",
                                                 "value":  "TERMINATED",
                                                 "meaning":  "The b2bi instance was found but has ended. Combined with source status 0, the run died without writing a terminal status.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "column":  "sterling_status",
+                                                "value":  "FAILED",
+                                                "meaning":  "The process failed within Sterling Integrator.",
                                                 "sortOrder":  2
                                             },
                                             {
@@ -361,10 +387,22 @@
                                                 "sortOrder":  3
                                             },
                                             {
+                                                "column":  "sterling_status",
+                                                "value":  "NO_ACTION",
+                                                "meaning":  "The run performed no processing - there was nothing to act on.",
+                                                "sortOrder":  3
+                                            },
+                                            {
                                                 "column":  "sterling_check_result",
                                                 "value":  "NOT_FOUND",
                                                 "meaning":  "No b2bi instance exists for this RUN_ID - the instance aged out of the Sterling runtime retention window (~30 days) or never registered.",
                                                 "sortOrder":  3
+                                            },
+                                            {
+                                                "column":  "sterling_status",
+                                                "value":  "IN_PROGRESS",
+                                                "meaning":  "The run has not yet reached a terminal state within Sterling Integrator.",
+                                                "sortOrder":  4
                                             },
                                             {
                                                 "column":  "fault_report_type",
@@ -394,6 +432,12 @@
                                                 "column":  "status_classification",
                                                 "value":  "NO_HANDOFF",
                                                 "meaning":  "Source status 4 on an NB/PAY/BDL run that acquired files (nonzero-size pickups exist in BATCH_FILES) but never handed off to DM - it reached status 2 with NULL BATCH_ID and the reconciliation job demoted it.",
+                                                "sortOrder":  5
+                                            },
+                                            {
+                                                "column":  "sterling_status",
+                                                "value":  "UNDEFINED",
+                                                "meaning":  "The Sterling-level status has not been determined.",
                                                 "sortOrder":  5
                                             },
                                             {
