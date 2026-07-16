@@ -5,8 +5,8 @@
 
    Page styles for the B2B Pipeline dashboard: the two-column layout, the
    daily pulse summary cards, classification badges, the live-activity and
-   modal run tables, the history summary tree, the runs modal, the run-detail
-   slideout layout, and the recent workflow-changes list.
+   modal run tables, the history summary tree, the runs modal, and the
+   run-detail slideout layout.
 
    FILE ORGANIZATION
    -----------------
@@ -14,12 +14,12 @@
    CONTENT: LOADING AND EMPTY STATES
    CONTENT: SUMMARY CARDS
    CONTENT: CLASSIFICATION BADGES
+   CONTENT: PROCESS TYPE BADGES
    CONTENT: RUN TABLES
    CONTENT: HISTORY FILTER BAR AND PAGER
    CONTENT: HISTORY SUMMARY TREE
    CONTENT: RUNS MODAL
    CONTENT: RUN DETAIL
-   CONTENT: WORKFLOW CHANGES LIST
    ============================================================================ */
 
 /* ============================================================================
@@ -56,11 +56,6 @@
     flex-direction: column;
     min-height: 0;
     overflow: hidden;
-}
-
-/* Tightened section padding for the compact workflow-changes section. */
-.b2b-section-compact {
-    padding: var(--size-spacing-lg) 15px;
 }
 
 /* ============================================================================
@@ -227,6 +222,59 @@
 }
 
 /* ============================================================================
+   CONTENT: PROCESS TYPE BADGES
+   ----------------------------------------------------------------------------
+   The process-type badge shown as the leading column on live-activity and
+   run-table rows. The base is neutral; each process type is individually
+   colorable by adding a .b2b-type-<value> rule. NB, PMT, and BDL are shared
+   cross-page concepts and reference the same chrome tokens the Batch
+   Monitoring type pills use, so a chrome color change moves both pages
+   together. All other types are page-local.
+   Prefix: b2b
+   ============================================================================ */
+
+/* Process-type badge base: compact square label, neutral until colored. */
+.b2b-type-badge {
+    display: inline-block;
+    padding: 2px var(--size-spacing-md);
+    border-radius: var(--size-radius-sm);
+    font-size: var(--font-size-body);
+    font-weight: 600;
+    white-space: nowrap;
+    background: rgba(140, 140, 140, 0.12);
+    color: var(--color-text-muted);
+    border: var(--size-border-thin) solid rgba(140, 140, 140, 0.35);
+}
+
+/* NB process-type badge - shared chrome type color. */
+.b2b-type-new_business {
+    background: rgba(86, 156, 214, 0.2);
+    color: var(--color-accent-platform);
+    border-color: rgba(86, 156, 214, 0.3);
+}
+
+/* PMT process-type badge - shared chrome type color. */
+.b2b-type-payment {
+    background: rgba(197, 134, 192, 0.2);
+    color: #c586c0;
+    border-color: rgba(197, 134, 192, 0.3);
+}
+
+/* BDL process-type badge - shared chrome type color. */
+.b2b-type-bdl {
+    background: rgba(206, 145, 120, 0.2);
+    color: var(--color-text-pre);
+    border-color: rgba(206, 145, 120, 0.3);
+}
+
+/* Dispatcher badge for parent/dispatcher runs (NULL process_type). */
+.b2b-type-dispatcher {
+    background: rgba(140, 140, 140, 0.12);
+    color: var(--color-text-muted);
+    border-color: rgba(140, 140, 140, 0.35);
+}
+
+/* ============================================================================
    CONTENT: RUN TABLES
    ----------------------------------------------------------------------------
    The shared row layout for the live-activity table and the runs-modal
@@ -282,14 +330,24 @@
     border-color: var(--color-border-strong);
 }
 
-/* Fixed five-column grid template for the live-activity table. */
-.b2b-cols-live {
-    grid-template-columns: minmax(0, 1fr) 110px minmax(0, 1.3fr) 130px 60px;
+/* Non-clickable run row (live activity): no pointer, no hover shift. */
+.b2b-run-row-static {
+    cursor: default;
 }
 
-/* Fixed six-column grid template for the runs-slideout results table. */
+.b2b-run-row-static:hover { /* suppress the clickable hover shift */
+    background: var(--color-bg-card-hover);
+    border-color: var(--color-border-default);
+}
+
+/* Fixed five-column grid template for the live-activity table. */
+.b2b-cols-live {
+    grid-template-columns: 130px 90px minmax(0, 1fr) 130px 60px;
+}
+
+/* Fixed seven-column grid template for the runs-slideout results table. */
 .b2b-cols-history {
-    grid-template-columns: 118px minmax(0, 1fr) 120px minmax(0, 2.4fr) 92px 64px;
+    grid-template-columns: 130px 90px 118px minmax(0, 1fr) minmax(0, 2.4fr) 92px 64px;
 }
 
 /* Primary cell text (client name). */
@@ -486,6 +544,12 @@
     font-weight: 600;
 }
 
+/* In-progress-count year stat (blue leading indicator). */
+.b2b-year-stat-progress {
+    color: rgba(120, 180, 230, 1);
+    font-weight: 600;
+}
+
 /* Indented container for a year's expanded month table. */
 .b2b-year-content {
     margin-left: 10px;
@@ -570,6 +634,10 @@
     font-size: var(--font-size-body);
 }
 
+.b2b-history-th.b2b-th-num { /* right-aligned numeric day-table header */
+    text-align: right;
+}
+
 /* Data cell in the per-day history table. */
 .b2b-history-td {
     padding: var(--size-spacing-sm) var(--size-spacing-md);
@@ -636,6 +704,12 @@
 /* Failure-count cell in a history table row. */
 .b2b-cell-crit {
     color: rgba(235, 130, 140, 1);
+    white-space: nowrap;
+}
+
+/* In-progress-count cell in a history table row (blue). */
+.b2b-cell-progress {
+    color: rgba(120, 180, 230, 1);
     white-space: nowrap;
 }
 
@@ -732,55 +806,87 @@
     margin-bottom: var(--size-spacing-xs);
 }
 
-/* ============================================================================
-   CONTENT: WORKFLOW CHANGES LIST
-   ----------------------------------------------------------------------------
-   The recent workflow-definition changes list fed by the version census:
-   one row per change with the workflow name, version movement, editor, and
-   observation time, plus the catalog totals caption.
-   Prefix: b2b
-   ============================================================================ */
+/* Callout wrapping the summary of an extractable Sterling status report. */
+.b2b-fault-callout {
+    padding: var(--size-spacing-md);
+    border-radius: var(--size-radius-sm);
+    background: rgba(224, 108, 117, 0.12);
+    border: var(--size-border-thin) solid rgba(224, 108, 117, 0.45);
+}
 
-/* A single workflow-change row. */
-.b2b-census-row {
+/* Header line of the fault callout carrying the report type and code. */
+.b2b-fault-header {
     display: flex;
-    justify-content: space-between;
     align-items: baseline;
     gap: var(--size-spacing-md);
-    padding: 5px var(--size-spacing-md);
-    margin-bottom: 3px;
+    margin-bottom: var(--size-spacing-sm);
+}
+
+/* Report-type token in the fault callout header. */
+.b2b-fault-type {
+    font-weight: 600;
+    color: rgba(235, 130, 140, 1);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-size: var(--font-size-body);
+}
+
+/* Report-code token in the fault callout header. */
+.b2b-fault-code {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body);
+}
+
+/* Summary text of the fault callout. */
+.b2b-fault-summary {
+    color: var(--color-text-primary);
+    font-size: var(--font-size-body);
+    line-height: 1.5;
+    overflow-wrap: break-word;
+    margin-bottom: var(--size-spacing-sm);
+}
+
+/* Capture-time footnote of the fault callout. */
+.b2b-fault-captured {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body);
+    margin-bottom: var(--size-spacing-sm);
+}
+
+/* Action button opening the full status-report modal. */
+.b2b-fault-view-btn {
+    padding: var(--size-spacing-xs) var(--size-spacing-md);
+    border-radius: var(--size-radius-sm);
+    background: rgba(224, 108, 117, 0.15);
+    color: rgba(235, 130, 140, 1);
+    border: var(--size-border-thin) solid rgba(224, 108, 117, 0.45);
+    font-size: var(--font-size-body);
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.b2b-fault-view-btn:hover { /* hovered full-report button */
+    background: rgba(224, 108, 117, 0.25);
+}
+
+/* Layout wrapper for the full status-report modal body. */
+.b2b-fault-report-layout {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-spacing-md);
+}
+
+/* Preformatted block rendering the parsed report JSON or raw report text. */
+.b2b-fault-report-pre {
+    margin: 0;
+    padding: var(--size-spacing-md);
     background: var(--color-bg-card-hover);
     border: var(--size-border-thin) solid var(--color-border-default);
     border-radius: var(--size-radius-sm);
-}
-
-/* Workflow definition name on a change row. */
-.b2b-census-name {
-    font-weight: 600;
     color: var(--color-text-primary);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-/* Version movement text on a change row. */
-.b2b-census-versions {
-    color: rgba(229, 192, 123, 1);
-    white-space: nowrap;
     font-size: var(--font-size-body);
-}
-
-/* Editor and observation-time caption on a change row. */
-.b2b-census-meta {
-    color: var(--color-text-muted);
-    font-size: var(--font-size-body);
-    white-space: nowrap;
-}
-
-/* Catalog totals caption beneath the change list. */
-.b2b-census-totals {
-    color: var(--color-text-muted);
-    font-size: var(--font-size-body);
-    margin-top: var(--size-spacing-sm);
-    text-align: right;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+    overflow-y: auto;
 }
