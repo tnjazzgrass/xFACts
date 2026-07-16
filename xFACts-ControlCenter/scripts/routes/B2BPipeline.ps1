@@ -4,12 +4,10 @@
 
 .DESCRIPTION
     Registers the /b2b-pipeline page route. Renders the B2B pipeline
-    dashboard backed by B2B.INT_PipelineTracking and B2B.SI_WorkflowRegistry:
-    a daily pulse card row, a real-time live view of in-motion pipeline
-    runs read directly from the Integration source, the recent
-    workflow-definition changes captured by the version census, and a
-    year/month/day run-history summary tree with a filtered runs modal and
-    a run-detail slideout. Page
+    dashboard backed by B2B.INT_PipelineTracking: a daily pulse card row, a
+    real-time live view of in-motion pipeline runs read directly from the
+    Integration source, and a year/month/day run-history summary tree with a
+    filtered runs modal and a run-detail slideout. Page
     chrome (nav, header, banners) is rendered by the shared CCShared helpers
     and the page consumes the shared cc- chrome and overlay classes.
 
@@ -33,6 +31,10 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-07-14  Removed the Recent Workflow Changes section from the left
+#             column; workflow version-change notification moves to collector
+#             Teams alerting. Live Pipeline Activity now fills the freed space.
+#             The /api/b2b-pipeline/census endpoint is retired with it.
 # 2026-07-13  Second visual pass: history tree restyled to the platform
 #             history-tree convention (year header rows, column-headed month
 #             table, nested day rows, average durations); day rows open a
@@ -134,16 +136,6 @@ $navHtml
                     <div class="b2b-loading">Loading...</div>
                 </div>
             </div>
-
-            <div class="cc-section b2b-section-compact">
-                <div class="cc-section-header">
-                    <h2 class="cc-section-title">Recent Workflow Changes</h2>
-                    <span class="cc-refresh-badge-event" title="Refreshes when engine process completes">&#9889;</span>
-                </div>
-                <div id="b2b-workflow-changes">
-                    <div class="b2b-loading">Loading...</div>
-                </div>
-            </div>
         </div>
 
         <div class="b2b-grid-column">
@@ -155,7 +147,7 @@ $navHtml
                 </div>
                 <div class="b2b-filter-bar">
                     <input id="b2b-search-input" class="b2b-search-input" type="text" placeholder="Search client..." data-action-keydown="b2b-search-on-enter">
-                    <select id="b2b-filter-classification" class="b2b-filter-select"></select>
+                    <select id="b2b-filter-status" class="b2b-filter-select"></select>
                     <select id="b2b-filter-type" class="b2b-filter-select"></select>
                     <input id="b2b-filter-from" class="b2b-filter-date" type="date" title="From date">
                     <input id="b2b-filter-to" class="b2b-filter-date" type="date" title="To date">
@@ -223,6 +215,19 @@ $navHtml
                 <button class="cc-dialog-close" data-action-click="b2b-close-slideout">&times;</button>
             </div>
             <div class="cc-dialog-body" id="b2b-slideout-body">
+                <div class="b2b-loading">Loading...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Purpose: full status-report slideout showing one failed run's captured Sterling report -->
+    <div id="b2b-slideout-fault" class="cc-slide-overlay" data-action-click="b2b-close-fault-report">
+        <div class="cc-dialog cc-dialog-slide cc-xwide">
+            <div class="cc-dialog-header">
+                <h3 class="cc-dialog-title" id="b2b-fault-report-title">Status Report</h3>
+                <button class="cc-dialog-close" data-action-click="b2b-close-fault-report">&times;</button>
+            </div>
+            <div class="cc-dialog-body" id="b2b-fault-report-body">
                 <div class="b2b-loading">Loading...</div>
             </div>
         </div>
