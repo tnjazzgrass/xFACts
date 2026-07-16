@@ -18,7 +18,9 @@
     cross-database statements on the listener so history and ongoing rows are
     classified by identical logic. Alert evaluation queues Teams alerts via
     the shared Send-TeamsAlert function for failure classifications and
-    workflow version changes, gated by the b2b_alerting_enabled switch.
+    workflow version changes, gated by the b2b_alerting_enabled master switch
+    plus a per-condition routing value (0=None, 1=Teams, 2=Jira, 3=Both) for
+    each of the two alert conditions.
 
 .PARAMETER ServerInstance
     SQL Server instance hosting the xFACts database. Default: AVG-PROD-LSNR.
@@ -60,6 +62,7 @@
     PARAMETERS: SCRIPT PARAMETERS
     IMPORTS: SCRIPT DEPENDENCIES
     INITIALIZATION: SCRIPT INITIALIZATION
+    CONSTANTS: FAULT REPORT CONFIGURATION
     FUNCTIONS: CONFIGURATION
     FUNCTIONS: SHARED HELPERS
     FUNCTIONS: SCHEDULE SYNC
@@ -79,7 +82,17 @@
    Prefix: (none)
    ============================================================================ #>
 
-# 2026-07-14  Fault report enrichment step added (Step 7, before alert
+# 2026-07-14  sterling_status derived column added to the classification CTE and
+#             threaded through the new-run INSERT and re-poll UPDATE. Coarse
+#             five-value Sterling-level status (SUCCESS, FAILED, NO_ACTION,
+#             IN_PROGRESS, UNDEFINED) mapped from status_classification; the
+#             ELSE routes unmapped/new classifications to UNDEFINED. Existing
+#             complete rows keep the table default UNDEFINED until the separate
+#             historical backfill.
+#             Per-condition alert routing added: b2b_alert_sterling_fault_routing
+#             and b2b_alert_workflow_change_routing. Failure alert scoped to the
+#             two Sterling-internal faults.
+#             Fault report enrichment step added (Step 7, before alert
 #             evaluation). For Sterling-internal failures (STERLING_FAULT,
 #             DIED_UNHANDLED) lacking a captured report, resolves the failing
 #             step's STATUS_RPT handle in b2bi WORKFLOW_CONTEXT, decompresses
@@ -87,7 +100,6 @@
 #             B2B.SI_FaultReport and snapshots the summary columns on
 #             B2B.INT_PipelineTracking; no-report failures marked NONE. Gzip
 #             and parsing helpers are local to the enrichment region.
-
 # 2026-07-12  Initial implementation, replacing Collect-B2BExecution.ps1 per the
 #             B2B Roadmap section 7 decisions. Schedule sync (Block 1) carried
 #             over from the retired collector. New: workflow registry census
@@ -102,14 +114,13 @@
 #             and workflow version changes, gated by b2b_alerting_enabled and
 #             bounded to the working window so backfilled history never
 #             alerts.
-
-# 2026-07-12  Execute-mode single-pass mirror steps: the insert and re-poll
+#             Execute-mode single-pass mirror steps: the insert and re-poll
 #             DML now capture their own classification/completion facts via
 #             OUTPUT into a table variable, replacing the separate pre-DML
 #             breakdown queries and halving the per-cycle CTE evaluations.
 #             Preview mode keeps its read-only breakdown queries. Logging
 #             detail is unchanged.
-# 2026-07-12  Classification refinement and CTE performance restructure from
+#             Classification refinement and CTE performance restructure from
 #             the backfill profile review: -1 rows on process types with no DM
 #             arm (non-NB/PAY/BDL) now classify STERLING_FAULT instead of
 #             UNCLASSIFIED (the reconciler never writes -1 for those types, so
@@ -163,6 +174,32 @@ Initialize-XFActsScript -ScriptName 'Collect-B2BPipeline' `
     -ServerInstance $ServerInstance -Database $Database -Execute:$Execute
 
 <# ============================================================================
+   CONSTANTS: FAULT REPORT CONFIGURATION
+   ----------------------------------------------------------------------------
+   Fixed lookup sets governing fault-report capture: which classifications are
+   Sterling-internal failures, and which Sterling services emit a
+   decompressible report on failure.
+   Prefix: b2b
+   ============================================================================ #>
+
+# Sterling-internal failure classifications eligible for fault-report capture.
+# DM_REJECTED and FAULT_POST_HANDOFF are downstream (post-handoff) failures
+# owned by other modules and are deliberately excluded.
+$script:b2b_FailureClassifications = @(
+    'STERLING_FAULT', 'DIED_UNHANDLED'
+)
+
+# Sterling services that emit a decompressible fault report on failure. The
+# fault step is matched on BASIC_STATUS <> 0 for one of these services. Add a
+# service here when a new report-producing service is discovered.
+$script:b2b_FaultReportServices = @(
+    'Translation'
+    'XSLTService'
+    'InlineInvokeBusinessProcessService'
+    'MailMimeService'
+)
+
+<# ============================================================================
    FUNCTIONS: CONFIGURATION
    ----------------------------------------------------------------------------
    Loads B2B GlobalConfig settings consumed by the mirror and cross-check
@@ -181,6 +218,8 @@ function Initialize-b2b_Config {
         B2B_AlertingEnabled     = $false
         B2B_CollectLookbackDays = 3
         B2B_InFlightAgingMinutes = 720
+        B2B_AlertSterlingFaultRouting  = 0
+        B2B_AlertWorkflowChangeRouting = 0
     }
 
     $configQuery = @"
@@ -196,6 +235,8 @@ WHERE module_name = 'B2B' AND is_active = 1
                 'b2b_alerting_enabled'      { $script:Config.B2B_AlertingEnabled     = [bool][int]$row.setting_value }
                 'b2b_collect_lookback_days' { $script:Config.B2B_CollectLookbackDays = [int]$row.setting_value }
                 'b2b_inflight_aging_minutes' { $script:Config.B2B_InFlightAgingMinutes = [int]$row.setting_value }
+                'b2b_alert_sterling_fault_routing'  { $script:Config.B2B_AlertSterlingFaultRouting  = [int]$row.setting_value }
+                'b2b_alert_workflow_change_routing' { $script:Config.B2B_AlertWorkflowChangeRouting = [int]$row.setting_value }
             }
         }
     }
@@ -203,28 +244,13 @@ WHERE module_name = 'B2B' AND is_active = 1
     Write-Log "  B2B_AlertingEnabled:     $($script:Config.B2B_AlertingEnabled)" "INFO"
     Write-Log "  B2B_CollectLookbackDays: $($script:Config.B2B_CollectLookbackDays)" "INFO"
     Write-Log "  B2B_InFlightAgingMinutes: $($script:Config.B2B_InFlightAgingMinutes)" "INFO"
+    Write-Log "  B2B_AlertSterlingFaultRouting:  $($script:Config.B2B_AlertSterlingFaultRouting)" "INFO"
+    Write-Log "  B2B_AlertWorkflowChangeRouting: $($script:Config.B2B_AlertWorkflowChangeRouting)" "INFO"
     Write-Log "  Source (b2bi):           $SourceInstance / $SourceDatabase" "INFO"
     Write-Log "  Mirror (listener):       $ServerInstance / $IntegrationDatabase + $DMDatabase -> $Database" "INFO"
 
     return $true
 }
-
-# Sterling-internal failure classifications eligible for fault-report capture.
-# DM_REJECTED and FAULT_POST_HANDOFF are downstream (post-handoff) failures
-# owned by other modules and are deliberately excluded.
-$script:FailureClassifications = @(
-    'STERLING_FAULT', 'DIED_UNHANDLED'
-)
-
-# Sterling services that emit a decompressible fault report on failure. The
-# fault step is matched on BASIC_STATUS <> 0 for one of these services. Add a
-# service here when a new report-producing service is discovered.
-$script:FaultReportServices = @(
-    'Translation'
-    'XSLTService'
-    'InlineInvokeBusinessProcessService'
-    'MailMimeService'
-)
 
 <# ============================================================================
    FUNCTIONS: SHARED HELPERS
@@ -1114,7 +1140,19 @@ fin AS (
            CASE WHEN c.status_classification IN ('IN_FLIGHT', 'AWAITING_DM', 'UNCLASSIFIED')
                 THEN 0 ELSE 1 END AS is_complete_calc,
            CASE WHEN c.status_classification IN ('IN_FLIGHT', 'AWAITING_DM', 'UNCLASSIFIED')
-                THEN NULL ELSE COALESCE(c.FINISH_DATE, GETDATE()) END AS completed_dttm_calc
+                THEN NULL ELSE COALESCE(c.FINISH_DATE, GETDATE()) END AS completed_dttm_calc,
+           CASE
+               WHEN c.status_classification IN
+                    ('COMPLETE', 'AWAITING_DM', 'DM_REJECTED', 'FAULT_POST_HANDOFF')
+                    THEN 'SUCCESS'
+               WHEN c.status_classification IN ('STERLING_FAULT', 'DIED_UNHANDLED')
+                    THEN 'FAILED'
+               WHEN c.status_classification = 'IN_FLIGHT'
+                    THEN 'IN_PROGRESS'
+               WHEN c.status_classification = 'NO_FILES'
+                    THEN 'NO_ACTION'
+               ELSE 'UNDEFINED'
+           END AS sterling_status_calc
     FROM cls c
 )
 "@
@@ -1175,6 +1213,7 @@ INSERT INTO B2B.INT_PipelineTracking (
     process_type, comm_method, client_name,
     status_classification, dm_batch_status_code,
     is_complete, completed_dttm,
+    sterling_status,
     last_polled_dttm
 )
 OUTPUT inserted.status_classification INTO @captured
@@ -1183,6 +1222,7 @@ SELECT f.RUN_ID, f.PARENT_ID, f.CLIENT_ID, f.SEQ_ID, f.BATCH_ID,
        f.PROCESS_TYPE, f.COMM_METHOD, f.CLIENT_NAME,
        f.status_classification, f.dm_code,
        f.is_complete_calc, f.completed_dttm_calc,
+       f.sterling_status_calc,
        GETDATE()
 FROM fin f
 WHERE NOT EXISTS (
@@ -1282,6 +1322,7 @@ SET batch_status          = f.BATCH_STATUS,
     dm_batch_status_code  = f.dm_code,
     is_complete           = f.is_complete_calc,
     completed_dttm        = f.completed_dttm_calc,
+    sterling_status       = f.sterling_status_calc,
     last_polled_dttm      = GETDATE()
 OUTPUT inserted.is_complete, inserted.status_classification INTO @captured
 FROM B2B.INT_PipelineTracking t
@@ -1682,7 +1723,8 @@ function Get-b2b_ReportText {
 function ConvertFrom-b2b_ReportText {
     param([string]$Text)
 
-    # --- Shape 1: TRANSLATION ---------------------------------------------
+    # -- Shape 1: TRANSLATION --
+
     if ($Text -match 'Translation Report') {
         $mapName = $null
         if ($Text -match 'Map Name:\s*(.+?)(?:\s+Version:|\r|\n)') {
@@ -1756,7 +1798,8 @@ function ConvertFrom-b2b_ReportText {
         }
     }
 
-    # --- Shape 2: SERVICE -------------------------------------------------
+    # -- Shape 2: SERVICE --
+
     if ($Text -match 'for service:\s*(.+?)[\r\n]') {
         $serviceName = $Matches[1].Trim()
 
@@ -1794,7 +1837,8 @@ function ConvertFrom-b2b_ReportText {
         }
     }
 
-    # --- Shape 3: MESSAGE -------------------------------------------------
+    # -- Shape 3: MESSAGE --
+
     # A bare single-string message: the whole text is the summary.
     $msg = $Text.Trim()
     return [PSCustomObject]@{
@@ -1847,8 +1891,8 @@ function Step-b2b_EnrichFaultReports {
     $failed   = 0
 
     try {
-        $classList = "'" + ($script:FailureClassifications -join "','") + "'"
-        $svcList   = "'" + ($script:FaultReportServices -join "','") + "'"
+        $classList = "'" + ($script:b2b_FailureClassifications -join "','") + "'"
+        $svcList   = "'" + ($script:b2b_FaultReportServices -join "','") + "'"
 
         # Uncaptured failures within the window (fault_report_captured_dttm NULL).
         $candidatesQuery = @"
@@ -2029,18 +2073,18 @@ function Step-b2b_EvaluateAlerts {
 
         $lookbackDays = $script:Config.B2B_CollectLookbackDays
 
-        # CHECK 1: Failure classifications - one alert per run, alert_count dedup.
-        # Bounded to the working window so historical/backfilled failures with
-        # alert_count = 0 never generate alerts.
+        # CHECK 1: Sterling-internal faults - one alert per run, alert_count
+        # dedup. Scoped to STERLING_FAULT and DIED_UNHANDLED only; downstream DM
+        # outcomes alert from Batch Monitoring, and the remaining classifications
+        # await classification-model verification. Bounded to the working window
+        # so historical/backfilled faults with alert_count = 0 never alert.
         $failureQuery = @"
 SELECT run_id, client_id, client_name, seq_id, batch_id,
        process_type, comm_method, dispatcher_name,
        batch_status, status_classification, dm_batch_status_code,
        source_insert_dttm, completed_dttm
 FROM B2B.INT_PipelineTracking
-WHERE status_classification IN (
-        'STERLING_FAULT', 'DM_REJECTED', 'FAULT_POST_HANDOFF',
-        'DIED_UNHANDLED', 'NO_HANDOFF')
+WHERE status_classification IN ('STERLING_FAULT', 'DIED_UNHANDLED')
   AND alert_count = 0
   AND source_insert_dttm >= DATEADD(DAY, -$lookbackDays, GETDATE())
 ORDER BY source_insert_dttm
@@ -2057,7 +2101,8 @@ ORDER BY source_insert_dttm
 
                 Write-Log "  ALERT: $classification - run $runId ($clientName)" "WARN"
 
-                if ($script:Config.B2B_AlertingEnabled -and -not $PreviewOnly) {
+                $faultToTeams = ($script:Config.B2B_AlertSterlingFaultRouting -eq 1 -or $script:Config.B2B_AlertSterlingFaultRouting -eq 3)
+                if ($script:Config.B2B_AlertingEnabled -and $faultToTeams -and -not $PreviewOnly) {
                     # Per-classification severity, color, and action text.
                     switch ($classification) {
                         'STERLING_FAULT' {
@@ -2065,25 +2110,10 @@ ORDER BY source_insert_dttm
                             $title    = "{{FIRE}} B2B Sterling Fault: $clientName"
                             $action   = 'The workflow faulted on the Sterling side before any DM handoff. Review the run in Sterling and the Integration TICKETS table.'
                         }
-                        'DM_REJECTED' {
-                            $category = 'CRITICAL'; $color = 'attention'
-                            $title    = "{{FIRE}} DM Rejected B2B Batch: $clientName"
-                            $action   = 'DM rejected the batch after handoff. Review the batch in Debt Manager and determine corrective action.'
-                        }
-                        'FAULT_POST_HANDOFF' {
-                            $category = 'CRITICAL'; $color = 'attention'
-                            $title    = "{{FIRE}} B2B Fault After DM Handoff: $clientName"
-                            $action   = 'The data landed in DM but the pipeline faulted afterward - cleanup and notification steps may not have run. Verify the DM batch and review the Sterling fault.'
-                        }
                         'DIED_UNHANDLED' {
                             $category = 'CRITICAL'; $color = 'attention'
                             $title    = "{{FIRE}} B2B Run Died Unhandled: $clientName"
                             $action   = 'The run terminated in Sterling without reaching a fault handler; its status row will never self-update. Review the Sterling instance for the failure point.'
-                        }
-                        'NO_HANDOFF' {
-                            $category = 'WARNING'; $color = 'warning'
-                            $title    = "{{WARN}} B2B Files Picked Up But Never Handed Off: $clientName"
-                            $action   = 'Files were acquired but the run never handed a batch to DM. Review the run to determine where the pipeline stopped.'
                         }
                     }
 
@@ -2143,7 +2173,8 @@ ORDER BY last_version_change_dttm
                 $wfdName = [string]$chg.workflow_name
                 Write-Log "  ALERT: Workflow version change - $wfdName v$($chg.previous_version) -> v$($chg.current_version)" "WARN"
 
-                if ($script:Config.B2B_AlertingEnabled -and -not $PreviewOnly) {
+                $wfChangeToTeams = ($script:Config.B2B_AlertWorkflowChangeRouting -eq 1 -or $script:Config.B2B_AlertWorkflowChangeRouting -eq 3)
+                if ($script:Config.B2B_AlertingEnabled -and $wfChangeToTeams -and -not $PreviewOnly) {
                     $editedBy = if ($chg.edited_by -isnot [DBNull] -and $chg.edited_by) { $chg.edited_by } else { '(unknown)' }
                     $modText  = if ($chg.source_mod_date -isnot [DBNull]) { $chg.source_mod_date.ToString('yyyy-MM-dd HH:mm:ss') } else { 'N/A' }
                     $detectionTime = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
@@ -2154,7 +2185,7 @@ ORDER BY last_version_change_dttm
 **Edited By:** $editedBy
 **Sterling Mod Date:** $modText
 
-A Sterling workflow definition changed. Definition changes alter pipeline behavior with no other notification path - review the edit and refresh the BPML corpus if the change is significant.
+A Sterling workflow definition changed. Definition changes alter pipeline behavior with no other notification path - review the edit and refresh the stored BPML reference if the change is significant.
 
 **Detection:** $detectionTime
 "@
