@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-07-14 11:39:01
+Generated: 2026-07-16 07:07:48
 
 ## Module Registry
 
@@ -493,12 +493,14 @@ Generated: 2026-07-14 11:39:01
 
 | module_name | category | setting_name | setting_value | data_type | description |
 | --- | --- | --- | --- | --- | --- |
-| B2B | B2B | b2b_alerting_enabled | 0 | BIT | Master on/off switch for B2B module alerting |
+| B2B | B2B | b2b_alert_sterling_fault_routing | 1 | ALERT_MODE | Alert destination(s) for Sterling-internal failure classifications (0=None,1=Teams,2=Jira,3=Both). |
+| B2B | B2B | b2b_alert_workflow_change_routing | 1 | ALERT_MODE | Alert destination(s) when a Sterling workflow definition version changes (0=None,1=Teams,2=Jira,3=Both). |
+| B2B | B2B | b2b_alerting_enabled | 1 | BIT | Master on/off switch for B2B module alerting |
 | B2B | B2B | b2b_collect_lookback_days | 3 | INT | Number of days back that Collect-B2BPipeline.ps1 scans Integration batch-status rows. |
 | B2B | B2B | b2b_inflight_aging_minutes | 720 | INT | Minutes an in-flight (status 0) pipeline run may age before Collect-B2BPipeline.ps1 cross-checks it against Sterling runtime state. |
 | BatchOps | BDL | bdl_alert_failed_routing | 3 | ALERT_MODE | Alert destination(s) when a BDL file reaches FAILED status in File_Registry |
 | BatchOps | BDL | bdl_alert_stall_routing | 1 | ALERT_MODE | Alert destination(s) when BDL partition processing stalls |
-| BatchOps | BDL | bdl_alerting_enabled | 0 | BIT | Master on/off switch for all BDL batch alerting |
+| BatchOps | BDL | bdl_alerting_enabled | 1 | BIT | Master on/off switch for all BDL batch alerting |
 | BatchOps | BDL | bdl_lookback_days | 7 | INT | How many days back xFACts checks DM for BDL file collection |
 | BatchOps | BDL | bdl_stall_poll_threshold | 12 | INT | Consecutive idle polls with no new partition activity before stall alert |
 | BatchOps | NB | nb_alert_queue_wait_no_merge_routing | 1 | ALERT_MODE | Alert destination(s) when non-auto-merge batches exceed threshold |
