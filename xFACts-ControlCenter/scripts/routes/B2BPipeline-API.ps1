@@ -5,10 +5,10 @@
 .DESCRIPTION
     Read-only API surface backing the B2B Pipeline dashboard. Exposes today's
     pulse counts, the true real-time live view read directly from the
-    Integration source, the workflow version census change list, the per-day
-    history summary rollup, the filtered paged run query behind the runs
-    modal, and the single-run detail read. All endpoints require ADLogin
-    authentication and return JSON.
+    Integration source, the per-day history summary rollup, the filtered paged
+    run query behind the runs modal, the single-run detail read, and the full
+    captured Sterling status report for a failed run. All endpoints require
+    ADLogin authentication and return JSON.
 
 .COMPONENT
     B2B
@@ -28,10 +28,10 @@
    The B2B Pipeline API endpoints. Summary reads today's classification
    counts plus the current in-motion populations; live reads the in-motion
    runs directly from the Integration source for true real-time visibility;
-   census reads the workflow registry change list and totals; history-summary
-   reads the per-day outcome rollups behind the summary tree; history runs
-   the filtered paged run query behind the runs modal; run reads one tracking
-   row in full.
+   history-summary reads the per-day outcome rollups behind the summary tree;
+   history runs the filtered paged run query behind the runs modal; run reads
+   one tracking row in full; fault-report reads the full captured Sterling
+   status report for one failed run.
    Prefix: b2b
    ============================================================================ #>
 
@@ -44,15 +44,11 @@ Add-PodeRoute -Method Get -Path '/api/b2b-pipeline/summary' -Authentication 'ADL
             SELECT
                 SUM(CASE WHEN source_insert_dttm >= CAST(GETDATE() AS DATE) THEN 1 ELSE 0 END) AS runs_today,
                 SUM(CASE WHEN source_insert_dttm >= CAST(GETDATE() AS DATE)
-                          AND status_classification = 'COMPLETE' THEN 1 ELSE 0 END) AS completed,
+                          AND sterling_status = 'SUCCESS' THEN 1 ELSE 0 END) AS completed,
                 SUM(CASE WHEN source_insert_dttm >= CAST(GETDATE() AS DATE)
-                          AND status_classification IN ('STERLING_FAULT', 'DM_REJECTED', 'FAULT_POST_HANDOFF', 'DIED_UNHANDLED')
-                          THEN 1 ELSE 0 END) AS failures,
+                          AND sterling_status = 'FAILED' THEN 1 ELSE 0 END) AS failures,
                 SUM(CASE WHEN source_insert_dttm >= CAST(GETDATE() AS DATE)
-                          AND status_classification = 'NO_FILES' THEN 1 ELSE 0 END) AS no_files,
-                SUM(CASE WHEN is_complete = 0 AND status_classification = 'IN_FLIGHT' THEN 1 ELSE 0 END) AS in_flight,
-                SUM(CASE WHEN is_complete = 0 AND status_classification = 'AWAITING_DM'
-                          AND source_insert_dttm >= DATEADD(DAY, -3, GETDATE()) THEN 1 ELSE 0 END) AS awaiting_dm
+                          AND sterling_status = 'NO_ACTION' THEN 1 ELSE 0 END) AS no_files
             FROM B2B.INT_PipelineTracking
             WHERE source_insert_dttm >= DATEADD(DAY, -3, GETDATE())
                OR is_complete = 0
@@ -115,9 +111,11 @@ Add-PodeRoute -Method Get -Path '/api/b2b-pipeline/history-summary' -Authenticat
             SELECT
                 CAST(source_insert_dttm AS DATE) AS run_date,
                 COUNT(*) AS total,
-                SUM(CASE WHEN status_classification = 'COMPLETE' THEN 1 ELSE 0 END) AS completed,
-                SUM(CASE WHEN status_classification IN ('STERLING_FAULT', 'DM_REJECTED', 'FAULT_POST_HANDOFF', 'DIED_UNHANDLED') THEN 1 ELSE 0 END) AS failures,
-                SUM(CASE WHEN status_classification = 'NO_FILES' THEN 1 ELSE 0 END) AS no_files,
+                SUM(CASE WHEN sterling_status = 'SUCCESS' THEN 1 ELSE 0 END) AS success,
+                SUM(CASE WHEN sterling_status = 'FAILED' THEN 1 ELSE 0 END) AS failed,
+                SUM(CASE WHEN sterling_status = 'NO_ACTION' THEN 1 ELSE 0 END) AS no_action,
+                SUM(CASE WHEN sterling_status = 'IN_PROGRESS' THEN 1 ELSE 0 END) AS in_progress,
+                SUM(CASE WHEN sterling_status = 'UNDEFINED' THEN 1 ELSE 0 END) AS undefined_count,
                 ISNULL(AVG(CASE WHEN completed_dttm IS NOT NULL THEN DATEDIFF(MINUTE, source_insert_dttm, completed_dttm) END), 0) AS avg_duration_min
             FROM B2B.INT_PipelineTracking
             GROUP BY CAST(source_insert_dttm AS DATE)
@@ -131,47 +129,35 @@ Add-PodeRoute -Method Get -Path '/api/b2b-pipeline/history-summary' -Authenticat
     }
 }
 
-# Workflow Census - the most recent version changes plus catalog totals.
-Add-PodeRoute -Method Get -Path '/api/b2b-pipeline/census' -Authentication 'ADLogin' -ScriptBlock {
+# Process Types - the distinct process_type values present in the tracked data,
+# for the history type filter. A NULL process_type is a parent/dispatcher run
+# and is returned as the token DISPATCHER.
+Add-PodeRoute -Method Get -Path '/api/b2b-pipeline/process-types' -Authentication 'ADLogin' -ScriptBlock {
     if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
 
     try {
-        $changes = Invoke-XFActsQuery -Query @"
-            SELECT TOP 10
-                wfd_id,
-                workflow_name,
-                previous_version,
-                current_version,
-                edited_by,
-                last_version_change_dttm
-            FROM B2B.SI_WorkflowRegistry
-            WHERE last_version_change_dttm IS NOT NULL
-            ORDER BY last_version_change_dttm DESC
+        $results = Invoke-XFActsQuery -Query @"
+            SELECT DISTINCT ISNULL(process_type, 'DISPATCHER') AS process_type
+            FROM B2B.INT_PipelineTracking
+            ORDER BY process_type
 "@
 
-        $totals = Invoke-XFActsQuery -Query @"
-            SELECT
-                COUNT(*) AS definition_count,
-                SUM(CASE WHEN last_version_change_dttm >= DATEADD(DAY, -30, GETDATE()) THEN 1 ELSE 0 END) AS changed_30d
-            FROM B2B.SI_WorkflowRegistry
-"@
-
-        Write-PodeJsonResponse -Value @{ changes = @($changes); totals = ($totals | Select-Object -First 1) }
+        Write-PodeJsonResponse -Value @{ types = @($results | ForEach-Object { $_.process_type }) }
     }
     catch {
         Write-PodeJsonResponse -Value @{ error = $_.Exception.Message } -StatusCode 500
     }
 }
 
-# Run History - filtered paged run query. Query parameters: ?client=&classification=&type=&from=&to=&incomplete=&page=&pageSize=.
-# classification accepts a single value or a comma-separated list (matched as IN).
+# Run History - filtered paged run query. Query parameters: ?client=&sterlingStatus=&type=&from=&to=&incomplete=&page=&pageSize=.
+# sterlingStatus accepts a single value or a comma-separated list (matched as IN).
 # incomplete=1 restricts to in-motion runs (is_complete = 0).
 Add-PodeRoute -Method Get -Path '/api/b2b-pipeline/history' -Authentication 'ADLogin' -ScriptBlock {
     if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
 
     try {
         $client         = $WebEvent.Query['client']
-        $classification = $WebEvent.Query['classification']
+        $sterlingStatus = $WebEvent.Query['sterlingStatus']
         $typeFilter     = $WebEvent.Query['type']
         $fromDate       = $WebEvent.Query['from']
         $toDate         = $WebEvent.Query['to']
@@ -191,21 +177,26 @@ Add-PodeRoute -Method Get -Path '/api/b2b-pipeline/history' -Authentication 'ADL
             [void]$whereClauses.Add("client_name LIKE '%' + @client + '%'")
             $parameters['client'] = $client
         }
-        if ($classification -and $classification -ne 'ALL') {
-            $classValues = @($classification.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ })
-            if ($classValues.Count -gt 0) {
-                $classParams = New-Object System.Collections.Generic.List[string]
-                for ($i = 0; $i -lt $classValues.Count; $i++) {
-                    $pName = "class$i"
-                    [void]$classParams.Add("@$pName")
-                    $parameters[$pName] = $classValues[$i]
+        if ($sterlingStatus -and $sterlingStatus -ne 'ALL') {
+            $statusValues = @($sterlingStatus.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+            if ($statusValues.Count -gt 0) {
+                $statusParams = New-Object System.Collections.Generic.List[string]
+                for ($i = 0; $i -lt $statusValues.Count; $i++) {
+                    $pName = "status$i"
+                    [void]$statusParams.Add("@$pName")
+                    $parameters[$pName] = $statusValues[$i]
                 }
-                [void]$whereClauses.Add("status_classification IN ($($classParams -join ', '))")
+                [void]$whereClauses.Add("sterling_status IN ($($statusParams -join ', '))")
             }
         }
         if ($typeFilter -and $typeFilter -ne 'ALL') {
-            [void]$whereClauses.Add("process_type = @ptype")
-            $parameters['ptype'] = $typeFilter
+            if ($typeFilter -eq 'DISPATCHER') {
+                [void]$whereClauses.Add("process_type IS NULL")
+            }
+            else {
+                [void]$whereClauses.Add("process_type = @ptype")
+                $parameters['ptype'] = $typeFilter
+            }
         }
         if ($fromDate -match '^\d{4}-\d{2}-\d{2}$') {
             [void]$whereClauses.Add("source_insert_dttm >= @fromDate")
@@ -240,7 +231,7 @@ Add-PodeRoute -Method Get -Path '/api/b2b-pipeline/history' -Authentication 'ADL
                 client_name,
                 process_type,
                 dispatcher_name,
-                status_classification,
+                sterling_status,
                 source_insert_dttm,
                 DATEDIFF(MINUTE, source_insert_dttm, completed_dttm) AS duration_minutes
             FROM B2B.INT_PipelineTracking
@@ -282,6 +273,7 @@ Add-PodeRoute -Method Get -Path '/api/b2b-pipeline/run' -Authentication 'ADLogin
                 comm_method,
                 client_name,
                 dispatcher_name,
+                sterling_status,
                 status_classification,
                 dm_batch_status_code,
                 sterling_check_result,
@@ -290,12 +282,53 @@ Add-PodeRoute -Method Get -Path '/api/b2b-pipeline/run' -Authentication 'ADLogin
                 DATEDIFF(MINUTE, source_insert_dttm, completed_dttm) AS duration_minutes,
                 alert_count,
                 collected_dttm,
-                last_polled_dttm
-            FROM B2B.INT_PipelineTracking
-            WHERE run_id = @runId
+                last_polled_dttm,
+                fault_report_type,
+                fault_report_code,
+                fault_report_summary,
+                fault_report_captured_dttm,
+                CAST(CASE WHEN EXISTS (
+                    SELECT 1 FROM B2B.SI_FaultReport fr WHERE fr.run_id = t.run_id
+                ) THEN 1 ELSE 0 END AS BIT) AS has_fault_report
+            FROM B2B.INT_PipelineTracking t
+            WHERE t.run_id = @runId
 "@ -Parameters @{ runId = [long]$runId }
 
         Write-PodeJsonResponse -Value @{ run = ($result | Select-Object -First 1) }
+    }
+    catch {
+        Write-PodeJsonResponse -Value @{ error = $_.Exception.Message } -StatusCode 500
+    }
+}
+
+# Fault Report - the full captured Sterling status report for one failed run.
+# Query parameter: ?runId=. Returns the single SI_FaultReport row (1:1 with the
+# run) carrying the parsed report JSON and the decompressed raw-text fallback,
+# or a null report when the run carried no extractable report.
+Add-PodeRoute -Method Get -Path '/api/b2b-pipeline/fault-report' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
+    try {
+        $runId = $WebEvent.Query['runId']
+        if ($runId -notmatch '^\d+$') {
+            Write-PodeJsonResponse -Value @{ error = 'Invalid runId' } -StatusCode 400
+            return
+        }
+
+        $result = Invoke-XFActsQuery -Query @"
+            SELECT
+                fault_report_id,
+                run_id,
+                fault_report_type,
+                source_name,
+                report_json,
+                raw_report_text,
+                captured_dttm
+            FROM B2B.SI_FaultReport
+            WHERE run_id = @runId
+"@ -Parameters @{ runId = [long]$runId }
+
+        Write-PodeJsonResponse -Value @{ report = ($result | Select-Object -First 1) }
     }
     catch {
         Write-PodeJsonResponse -Value @{ error = $_.Exception.Message } -StatusCode 500
