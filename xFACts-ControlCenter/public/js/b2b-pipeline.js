@@ -5,10 +5,9 @@
 
    Page module for the B2B Pipeline dashboard. Loads and renders the daily
    pulse cards, the real-time live pipeline activity table read directly
-   from the Integration source, the recent workflow-change list fed by the
-   version census, and the year/month/day history summary tree backed by
-   B2B.INT_PipelineTracking - with a filtered runs modal for search and
-   day drill-down, and a run-detail slideout that tells each run's full
+   from the Integration source, and the year/month/day history summary tree
+   backed by B2B.INT_PipelineTracking - with a filtered runs modal for search
+   and day drill-down, and a run-detail slideout that tells each run's full
    classification story.
 
    FILE ORGANIZATION
@@ -26,12 +25,12 @@
    FUNCTIONS: API CALLS
    FUNCTIONS: RENDER SUMMARY
    FUNCTIONS: RENDER LIVE ACTIVITY
-   FUNCTIONS: RENDER WORKFLOW CHANGES
    FUNCTIONS: RENDER HISTORY TREE
    FUNCTIONS: TREE TOGGLES
    FUNCTIONS: RUNS MODAL AND DAY SLIDEOUT
    FUNCTIONS: RENDER RUN DETAIL
    FUNCTIONS: SLIDEOUT OPEN AND CLOSE
+   FUNCTIONS: FAULT REPORT MODAL
    FUNCTIONS: UTILITIES
    FUNCTIONS: PAGE LIFECYCLE HOOKS
    ============================================================================ */
@@ -53,10 +52,11 @@ var b2b_ENGINE_PROCESSES = {
 /* ============================================================================
    CONSTANTS: CLASSIFICATION DISPLAY
    ----------------------------------------------------------------------------
-   Display metadata for the twelve status classifications: readable label,
-   badge state class, and the plain-English meaning shown in the run-detail
-   slideout. The vocabulary mirrors the CHECK constraint on
-   B2B.INT_PipelineTracking.status_classification.
+   Display metadata for the status vocabularies: the twelve detailed status
+   classifications (label, badge state, and plain-English meaning shown in the
+   run-detail slideout) and the five coarse Sterling-level statuses (label and
+   badge state). The vocabularies mirror the CHECK constraints on
+   B2B.INT_PipelineTracking.status_classification and sterling_status.
    Prefix: b2b
    ============================================================================ */
 
@@ -112,11 +112,46 @@ const b2b_classificationMeta = {
     }
 };
 
-/* Process-type filter options shown in the history filter dropdown. */
-const b2b_processTypeOptions = [
-    'NEW_BUSINESS', 'PAYMENT', 'BDL', 'SPECIAL_PROCESS', 'RETURN',
-    'SIMPLE_EMAIL', 'ENCOUNTER', 'FILE_DELETION', 'RECON'
-];
+/* Maps each Sterling-level status to its label and badge state. */
+const b2b_sterlingStatusMeta = {
+    'SUCCESS':     { label: 'Success',     state: 'b2b-ok' },
+    'FAILED':      { label: 'Failed',      state: 'b2b-crit' },
+    'NO_ACTION':   { label: 'No Action',   state: 'b2b-neutral' },
+    'IN_PROGRESS': { label: 'In Progress', state: 'b2b-flight' },
+    'UNDEFINED':   { label: 'Undefined',   state: 'b2b-neutral' }
+};
+
+/* Maps each process_type to its badge label. Labels start as the raw value;
+   shorten any of them here without touching layout or color. The full raw
+   value is always shown as the badge tooltip. A run with a NULL process_type
+   is a parent/dispatcher run and badges as DISPATCHER. Any value not listed
+   here falls back to its raw string on a neutral badge. */
+const b2b_processTypeMeta = {
+    'NEW_BUSINESS':      { label: 'NB' },
+    'PAYMENT':           { label: 'PMT' },
+    'BDL':               { label: 'BDL' },
+    'STANDARD_BDL':      { label: 'STANDARD_BDL' },
+    'SFTP_PULL':         { label: 'SFTP_PULL' },
+    'SFTP_PUSH':         { label: 'SFTP_PUSH' },
+    'SFTP_PUSH_ED25519': { label: 'SFTP_PUSH_ED25519' },
+    'SPECIAL_PROCESS':   { label: 'SPECIAL_PROCESS' },
+    'CORE_PROCESS':      { label: 'CORE_PROCESS' },
+    'RETURN':            { label: 'RETURN' },
+    'REMIT':             { label: 'REMIT' },
+    'RECON':             { label: 'RECON' },
+    'NCOA':              { label: 'NCOA' },
+    'ITS':               { label: 'ITS' },
+    'ENCOUNTER':         { label: 'ENCOUNTER' },
+    'ACKNOWLEDGMENT':    { label: 'ACKNOWLEDGMENT' },
+    'FULL_INVENTORY':    { label: 'FULL_INVENTORY' },
+    'FILE_DELETION':     { label: 'FILE_DELETION' },
+    'FILE_EMAIL':        { label: 'FILE_EMAIL' },
+    'SIMPLE_EMAIL':      { label: 'SIMPLE_EMAIL' },
+    'EMAIL_SCRUB':       { label: 'EMAIL_SCRUB' },
+    'NOTES_EMAIL':       { label: 'NOTES_EMAIL' },
+    'NOTES':             { label: 'NOTES' },
+    'NOTE':              { label: 'NOTE' }
+};
 
 /* ============================================================================
    CONSTANTS: HISTORY PAGING
@@ -149,7 +184,9 @@ const b2b_clickActions = {
     'b2b-close-day-slideout': b2b_closeDaySlideout,
     'b2b-open-run-detail':  b2b_openRunDetail,
     'b2b-open-tile':        b2b_openTile,
-    'b2b-close-slideout':   b2b_closeSlideout
+    'b2b-close-slideout':   b2b_closeSlideout,
+    'b2b-open-fault-report':  b2b_openFaultReport,
+    'b2b-close-fault-report': b2b_closeFaultReport
 };
 
 /* Keydown action dispatch table. */
@@ -287,9 +324,9 @@ async function b2b_init() {
    FUNCTIONS: REFRESH ARCHITECTURE
    ----------------------------------------------------------------------------
    The live sections (pulse cards, live activity) refresh on a
-   GlobalConfig-driven timer; the event-driven sections (workflow changes,
-   history summary tree) refresh when the collector process completes. A
-   separate timer forces a full reload across a midnight rollover.
+   GlobalConfig-driven timer; the event-driven history summary tree refreshes
+   when the collector process completes. A separate timer forces a full
+   reload across a midnight rollover.
    Prefix: b2b
    ============================================================================ */
 
@@ -340,7 +377,6 @@ function b2b_refreshLiveSections() {
 
 /* Refreshes the event-driven sections after the collector completes. */
 function b2b_refreshEventSections() {
-    b2b_loadWorkflowChanges();
     b2b_loadHistorySummary();
     b2b_updateTimestamp();
 }
@@ -349,7 +385,6 @@ function b2b_refreshEventSections() {
 function b2b_refreshAll() {
     b2b_loadSummary();
     b2b_loadLiveActivity();
-    b2b_loadWorkflowChanges();
     b2b_loadHistorySummary();
     b2b_updateTimestamp();
 }
@@ -399,20 +434,6 @@ function b2b_loadLiveActivity() {
         });
 }
 
-/* Loads the census change list and catalog totals and renders the section. */
-function b2b_loadWorkflowChanges() {
-    cc_engineFetch('/api/b2b-pipeline/census')
-        .then(function(data) {
-            if (!data) {
-                return;
-            }
-            b2b_renderWorkflowChanges(data.changes, data.totals);
-        })
-        .catch(function(e) {
-            b2b_renderSectionError('b2b-workflow-changes', e);
-        });
-}
-
 /* Loads the per-day history summary and renders the tree. */
 function b2b_loadHistorySummary() {
     cc_engineFetch('/api/b2b-pipeline/history-summary')
@@ -436,8 +457,8 @@ function b2b_loadModalRuns() {
     if (b2b_modalFilters.client) {
         params.push('client=' + encodeURIComponent(b2b_modalFilters.client));
     }
-    if (b2b_modalFilters.classification && b2b_modalFilters.classification !== 'ALL') {
-        params.push('classification=' + encodeURIComponent(b2b_modalFilters.classification));
+    if (b2b_modalFilters.sterlingStatus && b2b_modalFilters.sterlingStatus !== 'ALL') {
+        params.push('sterlingStatus=' + encodeURIComponent(b2b_modalFilters.sterlingStatus));
     }
     if (b2b_modalFilters.type && b2b_modalFilters.type !== 'ALL') {
         params.push('type=' + encodeURIComponent(b2b_modalFilters.type));
@@ -496,13 +517,15 @@ function b2b_renderSummary(summary) {
         return;
     }
 
+    var liveCounts = b2b_countLiveTiles(b2b_lastLiveData);
+
     var cards = [
         { label: 'Runs Today',   value: cc_safeInt(summary.runs_today),    state: '' },
-        { label: 'Completed',    value: cc_safeInt(summary.completed),     state: 'b2b-ok' },
-        { label: 'Failures',     value: cc_safeInt(summary.failures),      state: 'b2b-crit',    tile: 'failures' },
-        { label: 'No Files',     value: cc_safeInt(summary.no_files),      state: 'b2b-neutral', tile: 'no-files' },
-        { label: 'In Flight',    value: cc_safeInt(summary.in_flight),     state: 'b2b-flight',  tile: 'in-flight' },
-        { label: 'Awaiting DM',  value: cc_safeInt(summary.awaiting_dm),   state: 'b2b-flight',  tile: 'awaiting-dm' }
+        { label: 'In Flight',    value: liveCounts.inFlight,               state: 'b2b-flight',  liveKey: 'in-flight' },
+        { label: 'Awaiting DM',  value: liveCounts.awaitingDm,             state: 'b2b-flight',  liveKey: 'awaiting-dm' },
+        { label: 'Success',      value: cc_safeInt(summary.completed),     state: 'b2b-ok',      tile: 'completed' },
+        { label: 'No Action',    value: cc_safeInt(summary.no_files),      state: 'b2b-neutral', tile: 'no-files' },
+        { label: 'Failed',       value: cc_safeInt(summary.failures),      state: 'b2b-crit',    tile: 'failures' }
     ];
 
     var html = '';
@@ -516,9 +539,10 @@ function b2b_renderSummary(summary) {
             classList += ' b2b-card-clickable';
             actionAttrs = ' data-action-click="b2b-open-tile" data-b2b-tile="' + card.tile + '"';
         }
+        var valueAttrs = card.liveKey ? ' data-b2b-live-key="' + card.liveKey + '"' : '';
         html += '<div class="' + classList + '"' + actionAttrs + '>' +
                 '<div class="b2b-card-label">' + cc_escapeHtml(card.label) + '</div>' +
-                '<div class="b2b-card-value">' + card.value + '</div>' +
+                '<div class="b2b-card-value"' + valueAttrs + '>' + card.value + '</div>' +
                 '</div>';
     });
 
@@ -531,30 +555,23 @@ function b2b_openTile(target) {
     var tile = target.getAttribute('data-b2b-tile');
     var today = b2b_todayDateString();
 
-    if (tile === 'failures') {
+    if (tile === 'completed') {
         b2b_modalFilters = {
-            classification: 'STERLING_FAULT,DM_REJECTED,FAULT_POST_HANDOFF,DIED_UNHANDLED',
+            sterlingStatus: 'SUCCESS',
             from: today, to: today,
-            caption: 'Failures - today'
+            caption: 'Success - today'
+        };
+    } else if (tile === 'failures') {
+        b2b_modalFilters = {
+            sterlingStatus: 'FAILED',
+            from: today, to: today,
+            caption: 'Failed - today'
         };
     } else if (tile === 'no-files') {
         b2b_modalFilters = {
-            classification: 'NO_FILES',
+            sterlingStatus: 'NO_ACTION',
             from: today, to: today,
-            caption: 'No Files - today'
-        };
-    } else if (tile === 'in-flight') {
-        b2b_modalFilters = {
-            classification: 'IN_FLIGHT',
-            incomplete: true,
-            caption: 'In Flight - in motion'
-        };
-    } else if (tile === 'awaiting-dm') {
-        b2b_modalFilters = {
-            classification: 'AWAITING_DM',
-            incomplete: true,
-            from: b2b_dateStringDaysAgo(3),
-            caption: 'Awaiting DM - last 3 days'
+            caption: 'No Action - today'
         };
     } else {
         return;
@@ -573,6 +590,8 @@ function b2b_openTile(target) {
 
 /* Renders the live activity table from the in-motion row set. */
 function b2b_renderLiveActivity(runs) {
+    b2b_updateLiveTileCounts(runs);
+
     var container = document.getElementById('b2b-live-activity');
     if (!container) {
         return;
@@ -584,54 +603,49 @@ function b2b_renderLiveActivity(runs) {
     }
 
     var html = '<div class="b2b-table-head b2b-cols-live">' +
-               '<div>Client</div><div>Type</div><div>Dispatcher</div><div>Status</div><div class="b2b-head-num">Age</div>' +
+               '<div>Type</div><div>Run ID</div><div>Client</div><div>Status</div><div class="b2b-head-num">Age</div>' +
                '</div>';
 
     runs.forEach(function(run) {
-        html += b2b_buildRunRowHtml(run, 'b2b-cols-live', false);
+        html += b2b_buildRunRowHtml(run, 'b2b-cols-live', false, false);
     });
 
     container.innerHTML = html;
 }
 
-/* ============================================================================
-   FUNCTIONS: RENDER WORKFLOW CHANGES
-   ----------------------------------------------------------------------------
-   Renders the recent census change rows and the catalog totals caption.
-   Prefix: b2b
-   ============================================================================ */
+/* Counts the in-flight and awaiting-DM runs in a live payload. */
+function b2b_countLiveTiles(runs) {
+    var counts = { inFlight: 0, awaitingDm: 0 };
+    if (runs) {
+        runs.forEach(function(run) {
+            if (run.status_classification === 'IN_FLIGHT') {
+                counts.inFlight++;
+            }
+            else if (run.status_classification === 'AWAITING_DM') {
+                counts.awaitingDm++;
+            }
+        });
+    }
+    return counts;
+}
 
-/* Renders the workflow-change list and totals. */
-function b2b_renderWorkflowChanges(changes, totals) {
-    var container = document.getElementById('b2b-workflow-changes');
+/* Sets the In Flight and Awaiting DM tile counts from the live payload, so the
+   cards always match the runs shown in the live activity window below them. */
+function b2b_updateLiveTileCounts(runs) {
+    var counts = b2b_countLiveTiles(runs);
+
+    var container = document.getElementById('b2b-summary-cards');
     if (!container) {
         return;
     }
-
-    var html = '';
-    if (!changes || changes.length === 0) {
-        html += '<div class="b2b-empty">No workflow definition changes captured</div>';
+    var inFlightCell = container.querySelector('[data-b2b-live-key="in-flight"]');
+    if (inFlightCell) {
+        inFlightCell.textContent = counts.inFlight.toLocaleString();
     }
-    else {
-        changes.forEach(function(chg) {
-            var editor = chg.edited_by ? chg.edited_by : '(unknown)';
-            html += '<div class="b2b-census-row">' +
-                    '<span class="b2b-census-name">' + cc_escapeHtml(chg.workflow_name) + '</span>' +
-                    '<span class="b2b-census-versions">v' + cc_safeInt(chg.previous_version) +
-                    ' &rarr; v' + cc_safeInt(chg.current_version) + '</span>' +
-                    '<span class="b2b-census-meta">' + cc_escapeHtml(editor) + ' &middot; ' +
-                    cc_escapeHtml(b2b_formatDttm(chg.last_version_change_dttm)) + '</span>' +
-                    '</div>';
-        });
+    var awaitingCell = container.querySelector('[data-b2b-live-key="awaiting-dm"]');
+    if (awaitingCell) {
+        awaitingCell.textContent = counts.awaitingDm.toLocaleString();
     }
-
-    if (totals) {
-        html += '<div class="b2b-census-totals">' + cc_safeInt(totals.definition_count) +
-                ' definitions catalogued &middot; ' + cc_safeInt(totals.changed_30d) +
-                ' changed in 30 days</div>';
-    }
-
-    container.innerHTML = html;
 }
 
 /* ============================================================================
@@ -666,22 +680,27 @@ function b2b_renderHistoryTree() {
         var m = parts[1];
 
         if (!years[y]) {
-            years[y] = { months: {}, total: 0, completed: 0, failures: 0 };
+            years[y] = { months: {}, total: 0, success: 0, failed: 0, noAction: 0, inProgress: 0, undefinedCount: 0 };
         }
         if (!years[y].months[m]) {
-            years[y].months[m] = { days: [], total: 0, completed: 0, failures: 0, noFiles: 0, durationWeight: 0 };
+            years[y].months[m] = { days: [], total: 0, success: 0, failed: 0, noAction: 0, inProgress: 0, undefinedCount: 0, durationWeight: 0 };
         }
 
         day.date_str = dateStr;
         years[y].months[m].days.push(day);
         years[y].months[m].total += cc_safeInt(day.total);
-        years[y].months[m].completed += cc_safeInt(day.completed);
-        years[y].months[m].failures += cc_safeInt(day.failures);
-        years[y].months[m].noFiles += cc_safeInt(day.no_files);
+        years[y].months[m].success += cc_safeInt(day.success);
+        years[y].months[m].failed += cc_safeInt(day.failed);
+        years[y].months[m].noAction += cc_safeInt(day.no_action);
+        years[y].months[m].inProgress += cc_safeInt(day.in_progress);
+        years[y].months[m].undefinedCount += cc_safeInt(day.undefined_count);
         years[y].months[m].durationWeight += cc_safeInt(day.avg_duration_min) * cc_safeInt(day.total);
         years[y].total += cc_safeInt(day.total);
-        years[y].completed += cc_safeInt(day.completed);
-        years[y].failures += cc_safeInt(day.failures);
+        years[y].success += cc_safeInt(day.success);
+        years[y].failed += cc_safeInt(day.failed);
+        years[y].noAction += cc_safeInt(day.no_action);
+        years[y].inProgress += cc_safeInt(day.in_progress);
+        years[y].undefinedCount += cc_safeInt(day.undefined_count);
     });
 
     var html = '';
@@ -695,9 +714,12 @@ function b2b_renderHistoryTree() {
                 '<span class="b2b-tree-chevron' + (yearOpen ? ' b2b-expanded' : '') + '">&#9654;</span>' +
                 '<span class="b2b-year-label">' + y + '</span>' +
                 '<div class="b2b-year-stats">' +
+                (yr.inProgress > 0 ? '<span class="b2b-year-stat b2b-year-stat-progress">' + yr.inProgress.toLocaleString() + ' in progress</span>' : '') +
                 '<span class="b2b-year-stat">' + yr.total.toLocaleString() + ' runs</span>' +
-                '<span class="b2b-year-stat b2b-year-stat-ok">' + yr.completed.toLocaleString() + ' ok</span>' +
-                '<span class="b2b-year-stat b2b-year-stat-crit">' + yr.failures.toLocaleString() + ' failed</span>' +
+                '<span class="b2b-year-stat b2b-year-stat-ok">' + yr.success.toLocaleString() + ' success</span>' +
+                '<span class="b2b-year-stat b2b-year-stat-crit">' + yr.failed.toLocaleString() + ' failed</span>' +
+                '<span class="b2b-year-stat">' + yr.noAction.toLocaleString() + ' no action</span>' +
+                '<span class="b2b-year-stat">' + yr.undefinedCount.toLocaleString() + ' undefined</span>' +
                 '</div>' +
                 '</div>';
 
@@ -708,9 +730,11 @@ function b2b_renderHistoryTree() {
                     '<th class="b2b-month-th"></th>' +
                     '<th class="b2b-month-th">Month</th>' +
                     '<th class="b2b-month-th b2b-th-num">Runs</th>' +
-                    '<th class="b2b-month-th b2b-th-num">Completed</th>' +
+                    '<th class="b2b-month-th b2b-th-num">Success</th>' +
                     '<th class="b2b-month-th b2b-th-num">Failed</th>' +
-                    '<th class="b2b-month-th b2b-th-num">No Files</th>' +
+                    '<th class="b2b-month-th b2b-th-num">No Action</th>' +
+                    '<th class="b2b-month-th b2b-th-num">In Progress</th>' +
+                    '<th class="b2b-month-th b2b-th-num">Undefined</th>' +
                     '<th class="b2b-month-th b2b-th-num">Avg Duration</th>' +
                     '</tr></thead>';
 
@@ -728,15 +752,17 @@ function b2b_renderHistoryTree() {
                         '</tr>';
 
                 if (monthOpen) {
-                    html += '<tr class="b2b-month-details"><td class="b2b-month-td b2b-month-details-cell" colspan="7">';
+                    html += '<tr class="b2b-month-details"><td class="b2b-month-td b2b-month-details-cell" colspan="9">';
                     html += '<table class="b2b-history-table">';
                     html += '<thead><tr>' +
                             '<th class="b2b-history-th">Date</th>' +
                             '<th class="b2b-history-th">Day</th>' +
                             '<th class="b2b-history-th b2b-th-num">Runs</th>' +
-                            '<th class="b2b-history-th b2b-th-num">Completed</th>' +
+                            '<th class="b2b-history-th b2b-th-num">Success</th>' +
                             '<th class="b2b-history-th b2b-th-num">Failed</th>' +
-                            '<th class="b2b-history-th b2b-th-num">No Files</th>' +
+                            '<th class="b2b-history-th b2b-th-num">No Action</th>' +
+                            '<th class="b2b-history-th b2b-th-num">In Progress</th>' +
+                            '<th class="b2b-history-th b2b-th-num">Undefined</th>' +
                             '<th class="b2b-history-th b2b-th-num">Avg Duration</th>' +
                             '</tr></thead><tbody>';
 
@@ -747,9 +773,11 @@ function b2b_renderHistoryTree() {
                                 '<td class="b2b-history-td b2b-day-dow-cell">' + cc_escapeHtml(labels.dow) + '</td>' +
                                 b2b_buildTreeCellsHtml({
                                     total: cc_safeInt(day.total),
-                                    completed: cc_safeInt(day.completed),
-                                    failures: cc_safeInt(day.failures),
-                                    noFiles: cc_safeInt(day.no_files),
+                                    success: cc_safeInt(day.success),
+                                    failed: cc_safeInt(day.failed),
+                                    noAction: cc_safeInt(day.no_action),
+                                    inProgress: cc_safeInt(day.in_progress),
+                                    undefinedCount: cc_safeInt(day.undefined_count),
                                     durationWeight: cc_safeInt(day.avg_duration_min) * cc_safeInt(day.total)
                                 }, 'b2b-history-td') +
                                 '</tr>';
@@ -772,14 +800,23 @@ function b2b_renderHistoryTree() {
     container.innerHTML = html;
 }
 
-/* Builds the numeric cells (runs, completed, failed, no files, avg duration) for a month or day table row. */
+/* Builds the numeric cells (runs, success, failed, no action, in progress,
+   undefined, avg duration) for a month or day table row. Zero counts render as
+   a dash. */
 function b2b_buildTreeCellsHtml(node, tdClass) {
     var avg = node.total > 0 ? Math.round(node.durationWeight / node.total) : 0;
     return '<td class="' + tdClass + ' b2b-th-num b2b-cell-runs">' + node.total.toLocaleString() + '</td>' +
-           '<td class="' + tdClass + ' b2b-th-num b2b-cell-ok">' + node.completed.toLocaleString() + '</td>' +
-           '<td class="' + tdClass + ' b2b-th-num b2b-cell-crit">' + node.failures.toLocaleString() + '</td>' +
-           '<td class="' + tdClass + ' b2b-th-num b2b-cell-num">' + node.noFiles.toLocaleString() + '</td>' +
+           '<td class="' + tdClass + ' b2b-th-num b2b-cell-ok">' + b2b_treeCount(node.success) + '</td>' +
+           '<td class="' + tdClass + ' b2b-th-num b2b-cell-crit">' + b2b_treeCount(node.failed) + '</td>' +
+           '<td class="' + tdClass + ' b2b-th-num b2b-cell-num">' + b2b_treeCount(node.noAction) + '</td>' +
+           '<td class="' + tdClass + ' b2b-th-num b2b-cell-progress">' + b2b_treeCount(node.inProgress) + '</td>' +
+           '<td class="' + tdClass + ' b2b-th-num b2b-cell-num">' + b2b_treeCount(node.undefinedCount) + '</td>' +
            '<td class="' + tdClass + ' b2b-th-num b2b-cell-num">' + (avg > 0 ? b2b_formatDurationMinutes(avg) : '-') + '</td>';
+}
+
+/* Formats a tree count, rendering zero as a dash to reduce visual clutter. */
+function b2b_treeCount(value) {
+    return value > 0 ? value.toLocaleString() : '-';
 }
 
 /* ============================================================================
@@ -829,14 +866,14 @@ function b2b_toggleMonth(target) {
 /* Search button handler: opens the runs modal with the filter-bar values. */
 function b2b_runSearch() {
     var search = document.getElementById('b2b-search-input');
-    var cls = document.getElementById('b2b-filter-classification');
+    var status = document.getElementById('b2b-filter-status');
     var type = document.getElementById('b2b-filter-type');
     var from = document.getElementById('b2b-filter-from');
     var to = document.getElementById('b2b-filter-to');
 
     b2b_modalFilters = {
         client: search ? search.value.trim() : '',
-        classification: cls ? cls.value : 'ALL',
+        sterlingStatus: status ? status.value : 'ALL',
         type: type ? type.value : 'ALL',
         from: from ? from.value : '',
         to: to ? to.value : ''
@@ -855,13 +892,13 @@ function b2b_searchOnEnter(target, event) {
 /* Clears every filter control in the filter bar. */
 function b2b_resetFilters() {
     var search = document.getElementById('b2b-search-input');
-    var cls = document.getElementById('b2b-filter-classification');
+    var status = document.getElementById('b2b-filter-status');
     var type = document.getElementById('b2b-filter-type');
     var from = document.getElementById('b2b-filter-from');
     var to = document.getElementById('b2b-filter-to');
 
     if (search) { search.value = ''; }
-    if (cls) { cls.value = 'ALL'; }
+    if (status) { status.value = 'ALL'; }
     if (type) { type.value = 'ALL'; }
     if (from) { from.value = ''; }
     if (to) { to.value = ''; }
@@ -944,11 +981,11 @@ function b2b_renderDayRuns(runs) {
     }
     else {
         var html = '<div class="b2b-table-head b2b-cols-history">' +
-                   '<div>Run Start</div><div>Client</div><div>Type</div><div>Dispatcher</div><div>Status</div><div class="b2b-head-num">Duration</div>' +
+                   '<div>Type</div><div>Run ID</div><div>Run Start</div><div>Client</div><div>Dispatcher</div><div>Status</div><div class="b2b-head-num">Duration</div>' +
                    '</div>';
 
         runs.forEach(function(run) {
-            html += b2b_buildRunRowHtml(run, 'b2b-cols-history', true);
+            html += b2b_buildRunRowHtml(run, 'b2b-cols-history', true, true);
         });
 
         content.innerHTML = html;
@@ -1034,9 +1071,9 @@ function b2b_describeModalFilters() {
     if (b2b_modalFilters.client) {
         parts.push('client contains "' + b2b_modalFilters.client + '"');
     }
-    if (b2b_modalFilters.classification && b2b_modalFilters.classification !== 'ALL') {
-        var meta = b2b_classificationMeta[b2b_modalFilters.classification];
-        parts.push('status ' + (meta ? meta.label : b2b_modalFilters.classification));
+    if (b2b_modalFilters.sterlingStatus && b2b_modalFilters.sterlingStatus !== 'ALL') {
+        var meta = b2b_sterlingStatusMeta[b2b_modalFilters.sterlingStatus];
+        parts.push('status ' + (meta ? meta.label : b2b_modalFilters.sterlingStatus));
     }
     if (b2b_modalFilters.type && b2b_modalFilters.type !== 'ALL') {
         parts.push('type ' + b2b_modalFilters.type);
@@ -1067,11 +1104,11 @@ function b2b_renderModalRuns(runs) {
     }
     else {
         var html = '<div class="b2b-table-head b2b-cols-history">' +
-                   '<div>Run Start</div><div>Client</div><div>Type</div><div>Dispatcher</div><div>Status</div><div class="b2b-head-num">Duration</div>' +
+                   '<div>Type</div><div>Run ID</div><div>Run Start</div><div>Client</div><div>Dispatcher</div><div>Status</div><div class="b2b-head-num">Duration</div>' +
                    '</div>';
 
         runs.forEach(function(run) {
-            html += b2b_buildRunRowHtml(run, 'b2b-cols-history', true);
+            html += b2b_buildRunRowHtml(run, 'b2b-cols-history', true, true);
         });
 
         content.innerHTML = html;
@@ -1116,23 +1153,46 @@ function b2b_runsPage(target) {
     }
 }
 
-/* Builds one clickable run row's HTML for the live table or modal results. */
-function b2b_buildRunRowHtml(run, colsClass, withTiming) {
-    var meta = b2b_classificationMeta[run.status_classification];
-    var label = meta ? meta.label : run.status_classification;
+/* Builds the process-type badge for a run. NULL process_type is a
+   parent/dispatcher run. The full raw value is the tooltip. */
+function b2b_buildTypeBadgeHtml(processType) {
+    if (!processType) {
+        return '<span class="b2b-type-badge b2b-type-dispatcher" title="Parent / dispatcher run">DISPATCHER</span>';
+    }
+    var meta = b2b_processTypeMeta[processType];
+    var label = meta ? meta.label : processType;
+    var cls = 'b2b-type-' + processType.toLowerCase();
+    return '<span class="b2b-type-badge ' + cls + '" title="' + cc_escapeHtml(processType) + '">' +
+           cc_escapeHtml(label) + '</span>';
+}
+
+/* Builds one run row for the live table or modal results. History rows are
+   clickable and carry a Run Start and Dispatcher column; live rows are static
+   and omit both. Both lead with the process-type badge and the run id. */
+function b2b_buildRunRowHtml(run, colsClass, withTiming, useSterlingStatus) {
+    var meta;
+    if (useSterlingStatus) {
+        meta = b2b_sterlingStatusMeta[run.sterling_status];
+    }
+    else {
+        meta = b2b_classificationMeta[run.status_classification];
+    }
+    var rawStatus = useSterlingStatus ? run.sterling_status : run.status_classification;
+    var label = meta ? meta.label : rawStatus;
     var state = meta ? meta.state : 'b2b-neutral';
     var clientName = run.client_name ? run.client_name : ('client ' + run.client_id);
-    var processType = run.process_type ? run.process_type : '-';
     var dispatcher = run.dispatcher_name ? run.dispatcher_name : '-';
 
-    var cells = '';
+    var cells = '<div>' + b2b_buildTypeBadgeHtml(run.process_type) + '</div>' +
+                '<div class="b2b-cell-muted">' + cc_safeInt(run.run_id) + '</div>';
     if (withTiming) {
         cells += '<div class="b2b-cell-muted">' + cc_escapeHtml(b2b_formatDttm(run.source_insert_dttm)) + '</div>';
     }
-    cells += '<div class="b2b-cell-primary">' + cc_escapeHtml(clientName) + '</div>' +
-             '<div class="b2b-cell-muted">' + cc_escapeHtml(processType) + '</div>' +
-             '<div class="b2b-cell-muted">' + cc_escapeHtml(dispatcher) + '</div>' +
-             '<div><span class="b2b-badge ' + state + '">' + cc_escapeHtml(label) + '</span></div>';
+    cells += '<div class="b2b-cell-primary">' + cc_escapeHtml(clientName) + '</div>';
+    if (withTiming) {
+        cells += '<div class="b2b-cell-muted">' + cc_escapeHtml(dispatcher) + '</div>';
+    }
+    cells += '<div><span class="b2b-badge ' + state + '">' + cc_escapeHtml(label) + '</span></div>';
     if (withTiming) {
         cells += '<div class="b2b-cell-num">' + cc_escapeHtml(b2b_formatDurationMinutes(run.duration_minutes)) + '</div>';
     }
@@ -1140,16 +1200,23 @@ function b2b_buildRunRowHtml(run, colsClass, withTiming) {
         cells += '<div class="b2b-cell-num">' + cc_escapeHtml(b2b_formatDurationMinutes(run.age_minutes)) + '</div>';
     }
 
-    return '<button class="b2b-run-row ' + colsClass + '" data-action-click="b2b-open-run-detail" ' +
-           'data-b2b-run-id="' + cc_safeInt(run.run_id) + '">' + cells + '</button>';
+    // History rows (withTiming) open the run-detail slideout from the tracked
+    // table. Live rows are not clickable: an in-flight run may not be collected
+    // into the table yet, so its detail would render empty.
+    if (withTiming) {
+        return '<button class="b2b-run-row ' + colsClass + '" data-action-click="b2b-open-run-detail" ' +
+               'data-b2b-run-id="' + cc_safeInt(run.run_id) + '">' + cells + '</button>';
+    }
+    return '<div class="b2b-run-row b2b-run-row-static ' + colsClass + '">' + cells + '</div>';
 }
 
 /* ============================================================================
    FUNCTIONS: RENDER RUN DETAIL
    ----------------------------------------------------------------------------
-   Renders one run's full story into the slideout body: the classification
-   badge and meaning, then fixed two-column label/value sections for
-   identity, timing, and outcome evidence.
+   Renders one run's full story into the slideout body: the Sterling status
+   headline badge and the detailed classification badge and meaning, then
+   fixed two-column label/value sections for identity, timing, and outcome
+   evidence.
    Prefix: b2b
    ============================================================================ */
 
@@ -1167,11 +1234,21 @@ function b2b_renderRunDetail(run) {
     var meaning = meta ? meta.meaning : '';
     var clientName = run.client_name ? run.client_name : ('client ' + run.client_id);
 
+    var statusMeta = b2b_sterlingStatusMeta[run.sterling_status];
+    var statusLabel = statusMeta ? statusMeta.label : run.sterling_status;
+    var statusState = statusMeta ? statusMeta.state : 'b2b-neutral';
+
     if (title) {
         title.textContent = clientName + ' - Run ' + run.run_id;
     }
 
     var html = '<div class="b2b-detail-section">' +
+               '<div class="b2b-detail-title">Sterling Status</div>' +
+               '<div class="b2b-detail-badge-line"><span class="b2b-badge ' + statusState + '">' +
+               cc_escapeHtml(statusLabel) + '</span></div>' +
+               '</div>';
+
+    html += '<div class="b2b-detail-section">' +
                '<div class="b2b-detail-title">Classification</div>' +
                '<div class="b2b-detail-badge-line"><span class="b2b-badge ' + state + '">' +
                cc_escapeHtml(label) + '</span></div>' +
@@ -1207,6 +1284,10 @@ function b2b_renderRunDetail(run) {
             b2b_buildDetailRowHtml('First Collected', b2b_formatDttm(run.collected_dttm)) +
             b2b_buildDetailRowHtml('Last Polled', b2b_formatDttm(run.last_polled_dttm)) +
             '</div>';
+
+    if (run.has_fault_report) {
+        html += b2b_buildFaultBlockHtml(run);
+    }
 
     body.innerHTML = html;
 }
@@ -1259,6 +1340,29 @@ function b2b_buildDetailRowHtml(label, value) {
     return '<div class="b2b-detail-row">' +
            '<span class="b2b-detail-label">' + cc_escapeHtml(label) + '</span>' +
            '<span class="b2b-detail-value">' + cc_escapeHtml(display) + '</span>' +
+           '</div>';
+}
+
+/* Builds the fault-report section for a run that carries a captured Sterling
+   status report: the summary callout (type, code, summary, capture time) and
+   the button opening the full report. Only called when a report exists. */
+function b2b_buildFaultBlockHtml(run) {
+    return '<div class="b2b-detail-section">' +
+           '<div class="b2b-detail-title">Fault Report</div>' +
+           '<div class="b2b-fault-callout">' +
+           '<div class="b2b-fault-header">' +
+           '<span class="b2b-fault-type">' +
+           cc_escapeHtml(run.fault_report_type ? run.fault_report_type : '-') + '</span>' +
+           '<span class="b2b-fault-code">' +
+           cc_escapeHtml(run.fault_report_code ? run.fault_report_code : '-') + '</span>' +
+           '</div>' +
+           '<div class="b2b-fault-summary">' +
+           cc_escapeHtml(run.fault_report_summary ? run.fault_report_summary : '-') + '</div>' +
+           '<div class="b2b-fault-captured">Captured ' +
+           cc_escapeHtml(b2b_formatDttm(run.fault_report_captured_dttm)) + '</div>' +
+           '<button class="b2b-fault-view-btn" data-action-click="b2b-open-fault-report" ' +
+           'data-b2b-run-id="' + cc_safeInt(run.run_id) + '">View Full Report</button>' +
+           '</div>' +
            '</div>';
 }
 
@@ -1322,6 +1426,100 @@ function b2b_closeSlideout(target, event) {
 }
 
 /* ============================================================================
+   FUNCTIONS: FAULT REPORT MODAL
+   ----------------------------------------------------------------------------
+   The full Sterling status-report slideout opened from a failed run's fault
+   block. Opens the overlay, loads the captured report for the run, and
+   renders the parsed report JSON pretty-printed, falling back to the raw
+   decompressed text.
+   Prefix: b2b
+   ============================================================================ */
+
+/* Opens the full status-report slideout and loads the run's captured report. */
+function b2b_openFaultReport(target) {
+    var runId = target.getAttribute('data-b2b-run-id');
+
+    var title = document.getElementById('b2b-fault-report-title');
+    if (title) {
+        title.textContent = 'Status Report - Run ' + runId;
+    }
+
+    var body = document.getElementById('b2b-fault-report-body');
+    if (body) {
+        body.innerHTML = '<div class="b2b-loading">Loading...</div>';
+    }
+
+    var overlay = document.getElementById('b2b-slideout-fault');
+    var dialog = overlay.querySelector('.cc-dialog');
+    overlay.classList.add('cc-open');
+    requestAnimationFrame(function() {
+        dialog.classList.add('cc-open');
+    });
+
+    b2b_loadFaultReport(runId);
+}
+
+/* Loads one run's captured fault report and renders the slideout body. */
+function b2b_loadFaultReport(runId) {
+    cc_engineFetch('/api/b2b-pipeline/fault-report?runId=' + encodeURIComponent(runId))
+        .then(function(data) {
+            b2b_renderFaultReport(data ? data.report : null);
+        })
+        .catch(function(e) {
+            b2b_renderSectionError('b2b-fault-report-body', e);
+        });
+}
+
+/* Renders the captured report into the slideout: parsed JSON pretty-printed
+   when present and parseable, otherwise the raw decompressed text. */
+function b2b_renderFaultReport(report) {
+    var body = document.getElementById('b2b-fault-report-body');
+    if (!body) {
+        return;
+    }
+
+    if (!report) {
+        body.innerHTML = '<div class="b2b-empty">No status report captured for this run</div>';
+        return;
+    }
+
+    var content = '';
+    if (report.report_json) {
+        try {
+            content = JSON.stringify(JSON.parse(report.report_json), null, 2);
+        }
+        catch (e) {
+            content = report.report_json;
+        }
+    }
+    else if (report.raw_report_text) {
+        content = report.raw_report_text;
+    }
+    else {
+        body.innerHTML = '<div class="b2b-empty">The captured report has no content</div>';
+        return;
+    }
+
+    body.innerHTML = '<div class="b2b-fault-report-layout">' +
+                     '<pre class="b2b-fault-report-pre">' + cc_escapeHtml(content) + '</pre>' +
+                     '</div>';
+}
+
+/* Closes the full status-report slideout on backdrop click or the close button. */
+function b2b_closeFaultReport(target, event) {
+    if (event && target.id === 'b2b-slideout-fault' && event.target !== target) {
+        return;
+    }
+    var overlay = document.getElementById('b2b-slideout-fault');
+    var dialog = overlay.querySelector('.cc-dialog');
+    dialog.addEventListener('transitionend', function handler() {
+        dialog.removeEventListener('transitionend', handler);
+        overlay.classList.remove('cc-open');
+    });
+    dialog.classList.remove('cc-open');
+}
+
+/* ============================================================================
    FUNCTIONS: UTILITIES
    ----------------------------------------------------------------------------
    Page-local formatting helpers: datetime display, date-only parsing,
@@ -1330,25 +1528,51 @@ function b2b_closeSlideout(target, event) {
    Prefix: b2b
    ============================================================================ */
 
-/* Populates the classification and process-type filter dropdowns at boot. */
+/* Populates the status filter dropdown at boot and kicks off the async
+   process-type fetch for the type filter. */
 function b2b_populateFilterOptions() {
-    var clsSelect = document.getElementById('b2b-filter-classification');
-    if (clsSelect) {
-        var clsHtml = '<option value="ALL">All Statuses</option>';
-        Object.keys(b2b_classificationMeta).forEach(function(key) {
-            clsHtml += '<option value="' + key + '">' + cc_escapeHtml(b2b_classificationMeta[key].label) + '</option>';
+    var statusSelect = document.getElementById('b2b-filter-status');
+    if (statusSelect) {
+        var statusHtml = '<option value="ALL">All Statuses</option>';
+        Object.keys(b2b_sterlingStatusMeta).forEach(function(key) {
+            statusHtml += '<option value="' + key + '">' + cc_escapeHtml(b2b_sterlingStatusMeta[key].label) + '</option>';
         });
-        clsSelect.innerHTML = clsHtml;
+        statusSelect.innerHTML = statusHtml;
     }
 
+    b2b_loadProcessTypeOptions();
+}
+
+/* Fetches the distinct process types present in the data and populates the
+   type filter, labeled via the process-type map and sorted by label. */
+function b2b_loadProcessTypeOptions() {
     var typeSelect = document.getElementById('b2b-filter-type');
-    if (typeSelect) {
-        var typeHtml = '<option value="ALL">All Types</option>';
-        b2b_processTypeOptions.forEach(function(pt) {
-            typeHtml += '<option value="' + pt + '">' + cc_escapeHtml(pt) + '</option>';
-        });
-        typeSelect.innerHTML = typeHtml;
+    if (!typeSelect) {
+        return;
     }
+
+    cc_engineFetch('/api/b2b-pipeline/process-types')
+        .then(function(data) {
+            if (!data || !data.types) {
+                return;
+            }
+            var options = data.types.map(function(pt) {
+                var meta = b2b_processTypeMeta[pt];
+                return { value: pt, label: meta ? meta.label : pt };
+            });
+            options.sort(function(a, b) {
+                return a.label.localeCompare(b.label);
+            });
+
+            var typeHtml = '<option value="ALL">All Types</option>';
+            options.forEach(function(opt) {
+                typeHtml += '<option value="' + cc_escapeHtml(opt.value) + '">' + cc_escapeHtml(opt.label) + '</option>';
+            });
+            typeSelect.innerHTML = typeHtml;
+        })
+        .catch(function() {
+            typeSelect.innerHTML = '<option value="ALL">All Types</option>';
+        });
 }
 
 /* Formats a timestamp value as a compact local date-time string. */
@@ -1370,13 +1594,6 @@ function b2b_formatDttm(value) {
 /* Returns today's local date as a YYYY-MM-DD string. */
 function b2b_todayDateString() {
     var d = new Date();
-    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-}
-
-/* Returns the local date N days before today as a YYYY-MM-DD string. */
-function b2b_dateStringDaysAgo(days) {
-    var d = new Date();
-    d.setDate(d.getDate() - days);
     return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
 
