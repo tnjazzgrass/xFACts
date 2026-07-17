@@ -239,6 +239,23 @@
                      ]
     },
     {
+        "pageId":  "b2b",
+        "title":  "IBM/B2B Pipeline",
+        "sortOrder":  108,
+        "isHub":  false,
+        "sections":  [
+                         {
+                             "component":  "B2B",
+                             "description":  "IBM Sterling B2B Integrator workflow monitoring, file transfer tracking, process configuration, and alerting",
+                             "jsonSchema":  "B2B",
+                             "jsonCategories":  null,
+                             "sectionOrder":  1,
+                             "ccSlug":  null,
+                             "ccTitle":  null
+                         }
+                     ]
+    },
+    {
         "pageId":  "teams",
         "title":  "Teams Integration",
         "sortOrder":  110,
