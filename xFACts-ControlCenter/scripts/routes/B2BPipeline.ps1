@@ -31,6 +31,9 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-07-17  Visual tweaks batch: the runs and day summary-list slideouts
+#             widen to the new cc-xxwide tier; a Run ID exact-match search
+#             input leads the history filter bar ahead of the client search.
 # 2026-07-14  Removed the Recent Workflow Changes section from the left
 #             column; workflow version-change notification moves to collector
 #             Teams alerting. Live Pipeline Activity now fills the freed space.
@@ -146,7 +149,8 @@ $navHtml
                     <span class="cc-refresh-badge-event" title="Refreshes when engine process completes">&#9889;</span>
                 </div>
                 <div class="b2b-filter-bar">
-                    <input id="b2b-search-input" class="b2b-search-input" type="text" placeholder="Search client..." data-action-keydown="b2b-search-on-enter">
+                    <input id="b2b-search-runid" class="b2b-runid-input" type="text" placeholder="Search by Run ID..." data-action-keydown="b2b-search-on-enter">
+                    <input id="b2b-search-input" class="b2b-search-input" type="text" placeholder="Search by Client..." data-action-keydown="b2b-search-on-enter">
                     <select id="b2b-filter-status" class="b2b-filter-select"></select>
                     <select id="b2b-filter-type" class="b2b-filter-select"></select>
                     <input id="b2b-filter-from" class="b2b-filter-date" type="date" title="From date">
@@ -164,7 +168,7 @@ $navHtml
 
     <!-- Purpose: runs slideout listing filtered or per-day pipeline runs with paging -->
     <div id="b2b-slideout-runs" class="cc-slide-overlay" data-action-click="b2b-close-runs-slideout">
-        <div class="cc-dialog cc-dialog-slide cc-xwide">
+        <div class="cc-dialog cc-dialog-slide cc-xxwide">
             <div class="cc-dialog-header">
                 <h3 class="cc-dialog-title" id="b2b-slideout-runs-title">Pipeline Runs</h3>
                 <button class="cc-dialog-close" data-action-click="b2b-close-runs-slideout">&times;</button>
@@ -187,7 +191,7 @@ $navHtml
 
     <!-- Purpose: day-runs slideout listing one day's pipeline runs with paging -->
     <div id="b2b-slideout-day" class="cc-slide-overlay" data-action-click="b2b-close-day-slideout">
-        <div class="cc-dialog cc-dialog-slide cc-xwide">
+        <div class="cc-dialog cc-dialog-slide cc-xxwide">
             <div class="cc-dialog-header">
                 <h3 class="cc-dialog-title" id="b2b-slideout-day-title">Day Runs</h3>
                 <button class="cc-dialog-close" data-action-click="b2b-close-day-slideout">&times;</button>
