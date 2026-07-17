@@ -8,7 +8,8 @@
    from the Integration source, and the year/month/day history summary tree
    backed by B2B.INT_PipelineTracking - with a filtered runs modal for search
    and day drill-down, and a run-detail slideout that tells each run's full
-   classification story.
+   classification story, plus a formatted Sterling status-report view for
+   failed runs.
 
    FILE ORGANIZATION
    -----------------
@@ -186,7 +187,10 @@ const b2b_clickActions = {
     'b2b-open-tile':        b2b_openTile,
     'b2b-close-slideout':   b2b_closeSlideout,
     'b2b-open-fault-report':  b2b_openFaultReport,
-    'b2b-close-fault-report': b2b_closeFaultReport
+    'b2b-close-fault-report': b2b_closeFaultReport,
+    'b2b-fault-entries-mode': b2b_setFaultEntriesMode,
+    'b2b-fault-view-mode':    b2b_setFaultViewMode,
+    'b2b-fault-rawblock-toggle': b2b_toggleFaultRawBlock
 };
 
 /* Keydown action dispatch table. */
@@ -260,7 +264,8 @@ var b2b_dayTotal = 0;
    STATE: RUN DATA CACHES
    ----------------------------------------------------------------------------
    The most recent row sets returned by the live and modal endpoints, kept
-   for slideout fallbacks without refetching.
+   for slideout fallbacks without refetching, plus the fault-report
+   slideout's loaded report and its view-toggle state.
    Prefix: b2b
    ============================================================================ */
 
@@ -269,6 +274,15 @@ var b2b_lastLiveData = null;
 
 /* Most recent runs-modal row set. */
 var b2b_lastModalData = null;
+
+/* Most recently loaded fault report row; re-renders read it without refetching. */
+var b2b_faultReport = null;
+
+/* Fault-report entries filter: true shows all entries, false errors only. */
+var b2b_faultShowAll = false;
+
+/* Fault-report view mode: true shows the raw report text, false the formatted view. */
+var b2b_faultShowRaw = false;
 
 /* ============================================================================
    FUNCTIONS: INITIALIZATION
@@ -1430,8 +1444,14 @@ function b2b_closeSlideout(target, event) {
    ----------------------------------------------------------------------------
    The full Sterling status-report slideout opened from a failed run's fault
    block. Opens the overlay, loads the captured report for the run, and
-   renders the parsed report JSON pretty-printed, falling back to the raw
-   decompressed text.
+   renders a formatted view built from the parsed report JSON: report
+   metadata rows, count chips, and severity-badged entry cards carrying the
+   full per-entry Info detail, with an errors-only filter, collapsible raw
+   block data, a raw-report view switch, and a pretty-printed JSON fallback
+   for unrecognized shapes. TRANSLATION_ESCALATED reports (recovered from
+   the run's last successful Translation step) render identically with an
+   Escalated By metadata row carrying the failing step's one-line message;
+   warning-only reports default to the all-entries view.
    Prefix: b2b
    ============================================================================ */
 
@@ -1443,6 +1463,10 @@ function b2b_openFaultReport(target) {
     if (title) {
         title.textContent = 'Status Report - Run ' + runId;
     }
+
+    b2b_faultReport = null;
+    b2b_faultShowAll = false;
+    b2b_faultShowRaw = false;
 
     var body = document.getElementById('b2b-fault-report-body');
     if (body) {
@@ -1470,39 +1494,308 @@ function b2b_loadFaultReport(runId) {
         });
 }
 
-/* Renders the captured report into the slideout: parsed JSON pretty-printed
-   when present and parseable, otherwise the raw decompressed text. */
+/* Stores the loaded report and renders the slideout body. Warning-only
+   translation reports (typical for escalated recoveries) would greet the
+   user with an empty errors-only list, so those default to the all-entries
+   view; the toolbar filter remains available either way. */
 function b2b_renderFaultReport(report) {
+    b2b_faultReport = report;
+
+    if (report && report.report_json && b2b_isTranslationReportType(report.fault_report_type)) {
+        try {
+            var payload = JSON.parse(report.report_json);
+            var entries = payload && payload.entries ? payload.entries : [];
+            var errorCount = (typeof payload.errorCount === 'number')
+                ? payload.errorCount
+                : entries.filter(function(e) { return e.severity === 'ERROR'; }).length;
+            if (errorCount === 0 && entries.length) {
+                b2b_faultShowAll = true;
+            }
+        }
+        catch (e) {
+            // Unparseable JSON falls through to the raw/fallback rendering.
+        }
+    }
+
+    b2b_renderFaultReportBody();
+}
+
+/* Renders the slideout body from the stored report and toggle state: the
+   toolbar, then the formatted view for the recognized report shapes, the
+   raw report text when the raw view is selected, or the pretty-printed JSON
+   fallback for unrecognized shapes. */
+function b2b_renderFaultReportBody() {
     var body = document.getElementById('b2b-fault-report-body');
     if (!body) {
         return;
     }
 
+    var report = b2b_faultReport;
     if (!report) {
         body.innerHTML = '<div class="b2b-empty">No status report captured for this run</div>';
         return;
     }
 
-    var content = '';
+    var payload = null;
     if (report.report_json) {
+        try {
+            payload = JSON.parse(report.report_json);
+        }
+        catch (e) {
+            payload = null;
+        }
+    }
+
+    if (!payload && !report.raw_report_text) {
+        body.innerHTML = '<div class="b2b-empty">The captured report has no content</div>';
+        return;
+    }
+
+    var html = '<div class="b2b-fault-report-layout">';
+    html += b2b_buildFaultToolbarHtml(payload, report);
+
+    if (b2b_faultShowRaw && report.raw_report_text) {
+        html += '<pre class="b2b-fault-report-pre">' + cc_escapeHtml(report.raw_report_text) + '</pre>';
+    }
+    else if (payload && b2b_isTranslationReportType(report.fault_report_type) && payload.entries) {
+        html += b2b_buildFaultTranslationHtml(payload, report);
+    }
+    else if (payload && report.fault_report_type === 'SERVICE') {
+        html += b2b_buildFaultServiceHtml(payload);
+    }
+    else if (payload && report.fault_report_type === 'MESSAGE') {
+        html += '<pre class="b2b-fault-report-pre">' + cc_escapeHtml(payload.message ? payload.message : '') + '</pre>';
+    }
+    else if (report.report_json) {
+        var content;
         try {
             content = JSON.stringify(JSON.parse(report.report_json), null, 2);
         }
         catch (e) {
             content = report.report_json;
         }
-    }
-    else if (report.raw_report_text) {
-        content = report.raw_report_text;
+        html += '<pre class="b2b-fault-report-pre">' + cc_escapeHtml(content) + '</pre>';
     }
     else {
-        body.innerHTML = '<div class="b2b-empty">The captured report has no content</div>';
-        return;
+        html += '<pre class="b2b-fault-report-pre">' + cc_escapeHtml(report.raw_report_text) + '</pre>';
     }
 
-    body.innerHTML = '<div class="b2b-fault-report-layout">' +
-                     '<pre class="b2b-fault-report-pre">' + cc_escapeHtml(content) + '</pre>' +
-                     '</div>';
+    html += '</div>';
+    body.innerHTML = html;
+}
+
+/* Builds the toolbar: the errors-only/all-entries filter (formatted
+   TRANSLATION view only) and the formatted/raw view switch (when raw text
+   exists). */
+function b2b_buildFaultToolbarHtml(payload, report) {
+    var groups = '';
+
+    if (!b2b_faultShowRaw && payload && b2b_isTranslationReportType(report.fault_report_type) && payload.entries) {
+        var entries = payload.entries;
+        var entryCount = payload.entryCount ? payload.entryCount : entries.length;
+        var errorCount = (typeof payload.errorCount === 'number')
+            ? payload.errorCount
+            : entries.filter(function(e) { return e.severity === 'ERROR'; }).length;
+        groups += '<div class="b2b-fault-ctl-group">' +
+                  '<button class="b2b-fault-ctl-btn' + (b2b_faultShowAll ? '' : ' b2b-active') + '" ' +
+                  'data-action-click="b2b-fault-entries-mode" data-b2b-show-all="0">Errors (' + cc_safeInt(errorCount) + ')</button>' +
+                  '<button class="b2b-fault-ctl-btn' + (b2b_faultShowAll ? ' b2b-active' : '') + '" ' +
+                  'data-action-click="b2b-fault-entries-mode" data-b2b-show-all="1">All Entries (' + cc_safeInt(entryCount) + ')</button>' +
+                  '</div>';
+    }
+    else {
+        groups += '<div class="b2b-fault-ctl-group"></div>';
+    }
+
+    if (report.raw_report_text) {
+        groups += '<div class="b2b-fault-ctl-group">' +
+                  '<button class="b2b-fault-ctl-btn' + (b2b_faultShowRaw ? '' : ' b2b-active') + '" ' +
+                  'data-action-click="b2b-fault-view-mode" data-b2b-raw="0">Formatted</button>' +
+                  '<button class="b2b-fault-ctl-btn' + (b2b_faultShowRaw ? ' b2b-active' : '') + '" ' +
+                  'data-action-click="b2b-fault-view-mode" data-b2b-raw="1">Raw Report</button>' +
+                  '</div>';
+    }
+
+    return '<div class="b2b-fault-toolbar">' + groups + '</div>';
+}
+
+/* Builds the formatted TRANSLATION view: report metadata rows (led by the
+   Escalated By row for recovered reports), the count chips, and the entry
+   cards under the current errors-only filter. */
+function b2b_buildFaultTranslationHtml(payload, report) {
+    var entries = payload.entries ? payload.entries : [];
+    var entryCount = payload.entryCount ? payload.entryCount : entries.length;
+    var errorCount = (typeof payload.errorCount === 'number')
+        ? payload.errorCount
+        : entries.filter(function(e) { return e.severity === 'ERROR'; }).length;
+    var warningCount = (typeof payload.warningCount === 'number')
+        ? payload.warningCount
+        : entries.filter(function(e) { return e.severity === 'WARNING'; }).length;
+
+    var html = '<div class="b2b-fault-meta">';
+    html += b2b_buildFaultDetailRowHtml('Escalated By', report ? report.escalation_message : null);
+    html += b2b_buildFaultDetailRowHtml('Map', payload.mapName);
+    html += b2b_buildFaultDetailRowHtml('Map Version', payload.mapVersion);
+    html += b2b_buildFaultDetailRowHtml('Translation Object', payload.translationObjectName);
+    html += b2b_buildFaultDetailRowHtml('Started', payload.startTime);
+    html += b2b_buildFaultDetailRowHtml('Ended', payload.endTime);
+    html += b2b_buildFaultDetailRowHtml('Execution (ms)', payload.executionMs);
+    html += '</div>';
+
+    html += '<div class="b2b-fault-chips">' +
+            '<span class="b2b-badge b2b-crit">' + cc_safeInt(errorCount) + ' Errors</span>' +
+            '<span class="b2b-badge b2b-warn">' + cc_safeInt(warningCount) + ' Warnings</span>' +
+            '<span class="b2b-badge">' + cc_safeInt(entryCount) + ' Entries</span>' +
+            '</div>';
+
+    var shown = b2b_faultShowAll
+        ? entries
+        : entries.filter(function(e) { return e.severity === 'ERROR'; });
+
+    if (!shown.length) {
+        html += '<div class="b2b-empty">No error entries in the report</div>';
+        return html;
+    }
+
+    shown.forEach(function(entry) {
+        html += b2b_buildFaultEntryHtml(entry);
+    });
+    return html;
+}
+
+/* Builds one severity-badged entry card with its populated detail rows and
+   the collapsible raw block data. */
+function b2b_buildFaultEntryHtml(entry) {
+    var title;
+    if (entry.code && entry.codeLabel) {
+        title = entry.code + ' - ' + entry.codeLabel;
+    }
+    else if (entry.codeLabel) {
+        title = entry.codeLabel;
+    }
+    else if (entry.code) {
+        title = 'Code ' + entry.code;
+    }
+    else {
+        title = 'Entry';
+    }
+
+    var html = '<div class="b2b-fault-entry">' +
+               '<div class="b2b-fault-entry-head">' +
+               '<span class="b2b-badge ' + b2b_faultSeverityState(entry.severity) + '">' +
+               cc_escapeHtml(entry.severity ? entry.severity : 'INFO') + '</span>' +
+               '<span class="b2b-fault-entry-title">' + cc_escapeHtml(title) + '</span>' +
+               (entry.section ? '<span class="b2b-fault-entry-section">' + cc_escapeHtml(entry.section) + '</span>' : '') +
+               (entry.entryIndex ? '<span class="b2b-fault-entry-idx">#' + cc_safeInt(entry.entryIndex) + '</span>' : '') +
+               '</div>';
+
+    var fieldValue = null;
+    if (entry.fieldName) {
+        fieldValue = entry.fieldName + (entry.fieldNumber ? ' (#' + entry.fieldNumber + ')' : '');
+    }
+    html += b2b_buildFaultDetailRowHtml('Field', fieldValue);
+    html += b2b_buildFaultDetailRowHtml('Field Data', entry.fieldData);
+    html += b2b_buildFaultDetailRowHtml('Block', entry.blockName);
+    html += b2b_buildFaultDetailRowHtml('Signature Tag', entry.blockSignatureIdTag);
+    html += b2b_buildFaultDetailRowHtml('Location', entry.locationIndex);
+    html += b2b_buildFaultDetailRowHtml('Iteration', entry.mapIterationCount);
+    html += b2b_buildFaultDetailRowHtml('Block Count', entry.blockCount);
+    html += b2b_buildFaultDetailRowHtml('Exception', entry.exception);
+
+    if (entry.additionalInfo && entry.additionalInfo.length) {
+        entry.additionalInfo.forEach(function(info) {
+            if (info && info.label) {
+                html += b2b_buildFaultDetailRowHtml(info.label, info.value);
+            }
+        });
+    }
+
+    if (entry.rawBlockData) {
+        html += '<div class="b2b-fault-rawblock">' +
+                '<button class="b2b-fault-rawblock-btn" data-action-click="b2b-fault-rawblock-toggle">Show raw block data</button>' +
+                '<pre class="b2b-fault-rawblock-pre b2b-collapsed">' + cc_escapeHtml(entry.rawBlockData) + '</pre>' +
+                '</div>';
+    }
+
+    html += '</div>';
+    return html;
+}
+
+/* Builds the formatted SERVICE view: service identity rows and one card per
+   captured ERROR line. Falls back to the legacy firstError field for
+   reports parsed before the errors array existed. */
+function b2b_buildFaultServiceHtml(payload) {
+    var html = '<div class="b2b-fault-meta">';
+    html += b2b_buildFaultDetailRowHtml('Service', payload.serviceName);
+    html += b2b_buildFaultDetailRowHtml('Errors Reported', payload.errorTotal);
+    html += '</div>';
+
+    var errors = payload.errors ? payload.errors : (payload.firstError ? [payload.firstError] : []);
+    if (!errors.length) {
+        html += '<div class="b2b-empty">No error lines in the report</div>';
+        return html;
+    }
+
+    errors.forEach(function(msg) {
+        html += '<div class="b2b-fault-entry">' +
+                '<div class="b2b-fault-entry-head">' +
+                '<span class="b2b-badge b2b-crit">ERROR</span>' +
+                '<span class="b2b-detail-value">' + cc_escapeHtml(msg) + '</span>' +
+                '</div>' +
+                '</div>';
+    });
+    return html;
+}
+
+/* Builds one label/value detail row, reusing the run-detail row construct;
+   returns an empty string when the value is missing. */
+function b2b_buildFaultDetailRowHtml(label, value) {
+    if (value === null || value === undefined || value === '') {
+        return '';
+    }
+    return '<div class="b2b-detail-row">' +
+           '<span class="b2b-detail-label">' + cc_escapeHtml(label) + '</span>' +
+           '<span class="b2b-detail-value">' + cc_escapeHtml(String(value)) + '</span>' +
+           '</div>';
+}
+
+/* True when a fault report type renders as a formatted translation report:
+   a direct TRANSLATION capture or a TRANSLATION_ESCALATED recovery. */
+function b2b_isTranslationReportType(type) {
+    return type === 'TRANSLATION' || type === 'TRANSLATION_ESCALATED';
+}
+
+/* Maps a report-entry severity to its badge state token. */
+function b2b_faultSeverityState(severity) {
+    if (severity === 'ERROR') {
+        return 'b2b-crit';
+    }
+    if (severity === 'WARNING') {
+        return 'b2b-warn';
+    }
+    return 'b2b-neutral';
+}
+
+/* Sets the entries filter from the clicked segment and re-renders. */
+function b2b_setFaultEntriesMode(target) {
+    b2b_faultShowAll = target.getAttribute('data-b2b-show-all') === '1';
+    b2b_renderFaultReportBody();
+}
+
+/* Sets the view mode from the clicked segment and re-renders. */
+function b2b_setFaultViewMode(target) {
+    b2b_faultShowRaw = target.getAttribute('data-b2b-raw') === '1';
+    b2b_renderFaultReportBody();
+}
+
+/* Expands or collapses one entry's raw block data. */
+function b2b_toggleFaultRawBlock(target) {
+    var pre = target.nextElementSibling;
+    if (!pre) {
+        return;
+    }
+    var collapsed = pre.classList.toggle('b2b-collapsed');
+    target.textContent = collapsed ? 'Show raw block data' : 'Hide raw block data';
 }
 
 /* Closes the full status-report slideout on backdrop click or the close button. */
