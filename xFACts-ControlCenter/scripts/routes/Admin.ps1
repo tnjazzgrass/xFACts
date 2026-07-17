@@ -135,11 +135,11 @@ $navHtml
         </button>
         <button class="adm-card" data-action-click="adm-open-docpipeline">
             <div class="adm-card-icon">&#128218;</div>
-            <div class="adm-card-title">Documentation</div>
+            <div class="adm-card-title">Documentation Pipeline</div>
         </button>
         <button class="adm-card" data-action-click="adm-open-assetregistry">
             <div class="adm-card-icon">&#128451;</div>
-            <div class="adm-card-title">Asset Registry</div>
+            <div class="adm-card-title">Asset Registry Pipeline</div>
         </button>
         <button class="adm-card" data-action-click="adm-open-alertfailures">
             <div class="adm-card-icon">&#9888;</div>
@@ -226,7 +226,7 @@ $navHtml
     <div id="adm-slideup-globalconfig" class="cc-slideup-overlay" data-action-click="adm-close-globalconfig">
         <div class="cc-dialog cc-dialog-slideup cc-xwide">
             <div class="cc-dialog-header">
-                <h3 class="cc-dialog-title">GlobalConfig</h3>
+                <h3 class="cc-dialog-title">Global Configuration</h3>
                 <div class="cc-dialog-header-actions">
                     <span class="adm-results-count" id="adm-gc-results-count"></span>
                 </div>
@@ -243,7 +243,7 @@ $navHtml
     <div id="adm-slideup-schedule" class="cc-slideup-overlay" data-action-click="adm-close-schedule">
         <div class="cc-dialog cc-dialog-slideup cc-wide">
             <div class="cc-dialog-header">
-                <h3 class="cc-dialog-title">Process Schedules</h3>
+                <h3 class="cc-dialog-title">Process Scheduler</h3>
                 <div class="cc-dialog-header-actions">
                     <span class="adm-results-count" id="adm-sched-results-count"></span>
                 </div>
@@ -260,7 +260,7 @@ $navHtml
     <div id="adm-slideup-docpipeline" class="cc-slideup-overlay" data-action-click="adm-close-docpipeline">
         <div class="cc-dialog cc-dialog-slideup cc-h-max">
             <div class="cc-dialog-header">
-                <h3 class="cc-dialog-title">Documentation</h3>
+                <h3 class="cc-dialog-title">Documentation Pipeline</h3>
                 <button class="cc-dialog-close" data-action-click="adm-close-docpipeline">&times;</button>
             </div>
             <div class="cc-dialog-body">
@@ -331,7 +331,7 @@ $navHtml
     <div id="adm-slideup-assetregistry" class="cc-slideup-overlay" data-action-click="adm-close-assetregistry">
         <div class="cc-dialog cc-dialog-slideup cc-h-max">
             <div class="cc-dialog-header">
-                <h3 class="cc-dialog-title">Asset Registry</h3>
+                <h3 class="cc-dialog-title">Asset Registry Pipeline</h3>
                 <button class="cc-dialog-close" data-action-click="adm-close-assetregistry">&times;</button>
             </div>
             <div class="cc-dialog-body">
