@@ -122,6 +122,14 @@ const b2b_sterlingStatusMeta = {
     'UNDEFINED':   { label: 'Undefined',   state: 'b2b-neutral' }
 };
 
+/* Maps each ticket assignment state to its badge label and state token. Any
+   value not listed falls back to its raw string on a neutral badge. */
+const b2b_ticketStatusMeta = {
+    'GENERATED': { label: 'Generated', state: 'b2b-ok' },
+    'PENDING':   { label: 'Pending',   state: 'b2b-warn' },
+    'AGED_OUT':  { label: 'Aged Out',  state: 'b2b-crit' }
+};
+
 /* Maps each process_type to its badge label. Labels start as the raw value;
    shorten any of them here without touching layout or color. The full raw
    value is always shown as the badge tooltip. A run with a NULL process_type
@@ -468,6 +476,9 @@ function b2b_loadModalRuns() {
     var params = [];
     params.push('page=' + b2b_modalPageIndex);
     params.push('pageSize=' + b2b_HISTORY_PAGE_SIZE);
+    if (b2b_modalFilters.runId && /^\d+$/.test(b2b_modalFilters.runId)) {
+        params.push('runId=' + encodeURIComponent(b2b_modalFilters.runId));
+    }
     if (b2b_modalFilters.client) {
         params.push('client=' + encodeURIComponent(b2b_modalFilters.client));
     }
@@ -507,6 +518,8 @@ function b2b_loadRunDetail(runId) {
         .then(function(data) {
             if (data && data.run) {
                 b2b_renderRunDetail(data.run);
+                b2b_loadRunFiles(runId);
+                b2b_loadRunTickets(runId);
             }
             else {
                 b2b_renderRunNotCollected(runId);
@@ -514,6 +527,35 @@ function b2b_loadRunDetail(runId) {
         })
         .catch(function(e) {
             b2b_renderSectionError('b2b-slideout-body', e);
+        });
+}
+
+/* Loads the run's file list from the run-files endpoint into the Files card. */
+function b2b_loadRunFiles(runId) {
+    cc_engineFetch('/api/b2b-pipeline/run-files?runId=' + encodeURIComponent(runId))
+        .then(function(data) {
+            b2b_renderRunFiles(data && data.files ? data.files : []);
+        })
+        .catch(function(e) {
+            var filesBody = document.getElementById('b2b-run-files');
+            if (filesBody) {
+                filesBody.innerHTML = '<div class="b2b-files-empty">File list unavailable</div>';
+            }
+        });
+}
+
+/* Loads the run's tickets from the run-tickets endpoint into the Tickets
+   card and the hero indicator. */
+function b2b_loadRunTickets(runId) {
+    cc_engineFetch('/api/b2b-pipeline/run-tickets?runId=' + encodeURIComponent(runId))
+        .then(function(data) {
+            b2b_renderRunTickets(data && data.tickets ? data.tickets : []);
+        })
+        .catch(function(e) {
+            var ticketsBody = document.getElementById('b2b-run-tickets');
+            if (ticketsBody) {
+                ticketsBody.innerHTML = '<div class="b2b-files-empty">Ticket list unavailable</div>';
+            }
         });
 }
 
@@ -597,8 +639,8 @@ function b2b_openTile(target) {
 /* ============================================================================
    FUNCTIONS: RENDER LIVE ACTIVITY
    ----------------------------------------------------------------------------
-   Renders the current in-motion runs as clickable rows with client, type,
-   dispatcher, classification badge, and age.
+   Renders the current in-motion runs as rows with type, run id, sequence
+   id, client, status badge, and age.
    Prefix: b2b
    ============================================================================ */
 
@@ -617,7 +659,7 @@ function b2b_renderLiveActivity(runs) {
     }
 
     var html = '<div class="b2b-table-head b2b-cols-live">' +
-               '<div>Type</div><div>Run ID</div><div>Client</div><div>Status</div><div class="b2b-head-num">Age</div>' +
+               '<div>Type</div><div>Run ID</div><div>Seq</div><div>Client</div><div>Status</div><div class="b2b-head-num">Age</div>' +
                '</div>';
 
     runs.forEach(function(run) {
@@ -879,6 +921,7 @@ function b2b_toggleMonth(target) {
 
 /* Search button handler: opens the runs modal with the filter-bar values. */
 function b2b_runSearch() {
+    var runId = document.getElementById('b2b-search-runid');
     var search = document.getElementById('b2b-search-input');
     var status = document.getElementById('b2b-filter-status');
     var type = document.getElementById('b2b-filter-type');
@@ -886,6 +929,7 @@ function b2b_runSearch() {
     var to = document.getElementById('b2b-filter-to');
 
     b2b_modalFilters = {
+        runId: runId ? runId.value.trim() : '',
         client: search ? search.value.trim() : '',
         sterlingStatus: status ? status.value : 'ALL',
         type: type ? type.value : 'ALL',
@@ -905,12 +949,14 @@ function b2b_searchOnEnter(target, event) {
 
 /* Clears every filter control in the filter bar. */
 function b2b_resetFilters() {
+    var runId = document.getElementById('b2b-search-runid');
     var search = document.getElementById('b2b-search-input');
     var status = document.getElementById('b2b-filter-status');
     var type = document.getElementById('b2b-filter-type');
     var from = document.getElementById('b2b-filter-from');
     var to = document.getElementById('b2b-filter-to');
 
+    if (runId) { runId.value = ''; }
     if (search) { search.value = ''; }
     if (status) { status.value = 'ALL'; }
     if (type) { type.value = 'ALL'; }
@@ -995,7 +1041,7 @@ function b2b_renderDayRuns(runs) {
     }
     else {
         var html = '<div class="b2b-table-head b2b-cols-history">' +
-                   '<div>Type</div><div>Run ID</div><div>Run Start</div><div>Client</div><div>Dispatcher</div><div>Status</div><div class="b2b-head-num">Duration</div>' +
+                   '<div>Type</div><div>Run ID</div><div>Run Start</div><div>Client</div><div>Dispatcher</div><div>Status</div><div class="b2b-head-num">Duration</div><div>Jira</div>' +
                    '</div>';
 
         runs.forEach(function(run) {
@@ -1118,7 +1164,7 @@ function b2b_renderModalRuns(runs) {
     }
     else {
         var html = '<div class="b2b-table-head b2b-cols-history">' +
-                   '<div>Type</div><div>Run ID</div><div>Run Start</div><div>Client</div><div>Dispatcher</div><div>Status</div><div class="b2b-head-num">Duration</div>' +
+                   '<div>Type</div><div>Run ID</div><div>Run Start</div><div>Client</div><div>Dispatcher</div><div>Status</div><div class="b2b-head-num">Duration</div><div>Jira</div>' +
                    '</div>';
 
         runs.forEach(function(run) {
@@ -1202,6 +1248,9 @@ function b2b_buildRunRowHtml(run, colsClass, withTiming, useSterlingStatus) {
     if (withTiming) {
         cells += '<div class="b2b-cell-muted">' + cc_escapeHtml(b2b_formatDttm(run.source_insert_dttm)) + '</div>';
     }
+    else {
+        cells += '<div class="b2b-cell-muted">' + cc_escapeHtml(run.seq_id === null || run.seq_id === undefined ? '-' : String(run.seq_id)) + '</div>';
+    }
     cells += '<div class="b2b-cell-primary">' + cc_escapeHtml(clientName) + '</div>';
     if (withTiming) {
         cells += '<div class="b2b-cell-muted">' + cc_escapeHtml(dispatcher) + '</div>';
@@ -1209,6 +1258,10 @@ function b2b_buildRunRowHtml(run, colsClass, withTiming, useSterlingStatus) {
     cells += '<div><span class="b2b-badge ' + state + '">' + cc_escapeHtml(label) + '</span></div>';
     if (withTiming) {
         cells += '<div class="b2b-cell-num">' + cc_escapeHtml(b2b_formatDurationMinutes(run.duration_minutes)) + '</div>';
+        var tkMeta = run.ticket_status_worst ? b2b_ticketStatusMeta[run.ticket_status_worst] : null;
+        cells += tkMeta
+            ? '<div><span class="b2b-badge ' + tkMeta.state + '">Jira</span></div>'
+            : '<div></div>';
     }
     else {
         cells += '<div class="b2b-cell-num">' + cc_escapeHtml(b2b_formatDurationMinutes(run.age_minutes)) + '</div>';
@@ -1227,10 +1280,15 @@ function b2b_buildRunRowHtml(run, colsClass, withTiming, useSterlingStatus) {
 /* ============================================================================
    FUNCTIONS: RENDER RUN DETAIL
    ----------------------------------------------------------------------------
-   Renders one run's full story into the slideout body: the Sterling status
-   headline badge and the detailed classification badge and meaning, then
-   fixed two-column label/value sections for identity, timing, and outcome
-   evidence.
+   Renders one run's full story into the slideout body: the hero strip
+   (labeled Run Status groups for Sterling, Classification, Alerting, and
+   Jira, the classification meaning, and at-a-glance fact tiles), a
+   two-column card grid for identity, timing,
+   files, tickets, and outcome evidence with stacked label-over-value pairs,
+   and the fault-report callout. The file and ticket lists load from their
+   own endpoints after the run renders; tickets render independent of run
+   status and feed a hero-strip indicator badge. The two-column row builder remains for the not-yet-collected
+   view and the fault callout.
    Prefix: b2b
    ============================================================================ */
 
@@ -1256,54 +1314,257 @@ function b2b_renderRunDetail(run) {
         title.textContent = clientName + ' - Run ' + run.run_id;
     }
 
-    var html = '<div class="b2b-detail-section">' +
-               '<div class="b2b-detail-title">Sterling Status</div>' +
-               '<div class="b2b-detail-badge-line"><span class="b2b-badge ' + statusState + '">' +
-               cc_escapeHtml(statusLabel) + '</span></div>' +
+    var alertGroup = '';
+    var alertCount = Number(run.alert_count);
+    if (!isNaN(alertCount) && alertCount > 0) {
+        var alertLabel = alertCount > 1 ? 'Alerts Sent (' + alertCount + ')' : 'Alert Sent';
+        alertGroup = b2b_buildStatusGroupHtml('Alerting',
+            '<span class="b2b-badge b2b-warn">' + cc_escapeHtml(alertLabel) + '</span>');
+    }
+
+    var html = '<div class="b2b-hero">' +
+               '<div class="b2b-status-groups">' +
+               b2b_buildStatusGroupHtml('Sterling',
+                   '<span class="b2b-badge ' + statusState + '">' + cc_escapeHtml(statusLabel) + '</span>') +
+               b2b_buildStatusGroupHtml('Classification',
+                   '<span class="b2b-badge ' + state + '">' + cc_escapeHtml(label) + '</span>') +
+               alertGroup +
+               '<div class="b2b-status-group b2b-collapsed" id="b2b-hero-ticket-group">' +
+               '<div class="b2b-status-group-label">Jira</div>' +
+               '<span id="b2b-hero-ticket-badge"></span>' +
+               '</div>' +
+               '</div>' +
+               (meaning ? '<div class="b2b-hero-meaning">' + cc_escapeHtml(meaning) + '</div>' : '') +
+               '<div class="b2b-hero-tiles">' +
+               b2b_buildHeroTileHtml('Client', clientName) +
+               b2b_buildHeroTileHtml('Process', run.process_type) +
+               b2b_buildHeroTileHtml('Duration', b2b_formatDurationMinutes(run.duration_minutes)) +
+               '</div>' +
                '</div>';
 
-    html += '<div class="b2b-detail-section">' +
-               '<div class="b2b-detail-title">Classification</div>' +
-               '<div class="b2b-detail-badge-line"><span class="b2b-badge ' + state + '">' +
-               cc_escapeHtml(label) + '</span></div>' +
-               '<div class="b2b-detail-meaning">' + cc_escapeHtml(meaning) + '</div>' +
-               '</div>';
+    html += '<div class="b2b-detail-cards">';
 
-    html += '<div class="b2b-detail-section">' +
-            '<div class="b2b-detail-title">Identity</div>' +
-            b2b_buildDetailRowHtml('Run ID', run.run_id) +
-            b2b_buildDetailRowHtml('Parent ID', run.parent_id) +
-            b2b_buildDetailRowHtml('Client', clientName + ' (' + run.client_id + ')') +
-            b2b_buildDetailRowHtml('Seq ID', run.seq_id) +
-            b2b_buildDetailRowHtml('Process Type', run.process_type) +
-            b2b_buildDetailRowHtml('Comm Method', run.comm_method) +
-            b2b_buildDetailRowHtml('Dispatcher', run.dispatcher_name) +
+    html += '<div class="b2b-card">' +
+            '<div class="b2b-card-title">Identity</div>' +
+            b2b_buildKvHtml('Run ID', run.run_id) +
+            b2b_buildKvHtml('Parent ID', run.parent_id) +
+            b2b_buildKvHtml('Client ID', run.client_id) +
+            b2b_buildKvHtml('Seq ID', run.seq_id) +
+            b2b_buildKvHtml('Comm Method', run.comm_method) +
+            b2b_buildKvHtml('Dispatcher', run.dispatcher_name) +
             '</div>';
 
-    html += '<div class="b2b-detail-section">' +
-            '<div class="b2b-detail-title">Timing</div>' +
-            b2b_buildDetailRowHtml('Run Start', b2b_formatDttm(run.source_insert_dttm)) +
-            b2b_buildDetailRowHtml('Source Finish', b2b_formatDttm(run.source_finish_dttm)) +
-            b2b_buildDetailRowHtml('Completed', b2b_formatDttm(run.completed_dttm)) +
-            b2b_buildDetailRowHtml('Duration', b2b_formatDurationMinutes(run.duration_minutes)) +
+    html += '<div class="b2b-card">' +
+            '<div class="b2b-card-title">Timing</div>' +
+            b2b_buildKvHtml('Run Start', b2b_formatDttm(run.source_insert_dttm)) +
+            b2b_buildKvHtml('Source Finish', b2b_formatDttm(run.source_finish_dttm)) +
+            b2b_buildKvHtml('Completed', b2b_formatDttm(run.completed_dttm)) +
             '</div>';
 
-    html += '<div class="b2b-detail-section">' +
-            '<div class="b2b-detail-title">Outcome Detail</div>' +
-            b2b_buildDetailRowHtml('Raw Source Status', run.batch_status) +
-            b2b_buildDetailRowHtml('DM Batch ID', run.batch_id) +
-            b2b_buildDetailRowHtml('DM Status Code', run.dm_batch_status_code) +
-            b2b_buildDetailRowHtml('Sterling Check', run.sterling_check_result) +
-            b2b_buildDetailRowHtml('Alerts Fired', run.alert_count) +
-            b2b_buildDetailRowHtml('First Collected', b2b_formatDttm(run.collected_dttm)) +
-            b2b_buildDetailRowHtml('Last Polled', b2b_formatDttm(run.last_polled_dttm)) +
+    html += '<div class="b2b-card">' +
+            '<div class="b2b-card-title" id="b2b-run-files-title">Files</div>' +
+            '<div id="b2b-run-files"><div class="b2b-files-empty">Loading files...</div></div>' +
             '</div>';
+
+    html += '<div class="b2b-card">' +
+            '<div class="b2b-card-title" id="b2b-run-tickets-title">Tickets</div>' +
+            '<div id="b2b-run-tickets"><div class="b2b-files-empty">Loading tickets...</div></div>' +
+            '</div>';
+
+    html += '<div class="b2b-card">' +
+            '<div class="b2b-card-title">Outcome Detail</div>' +
+            b2b_buildKvHtml('Raw Source Status', run.batch_status) +
+            b2b_buildKvHtml('DM Batch ID', run.batch_id) +
+            b2b_buildKvHtml('DM Status Code', run.dm_batch_status_code) +
+            (run.sterling_check_result
+                ? b2b_buildKvHtml('Sterling Check', run.sterling_check_result)
+                : '') +
+            b2b_buildKvHtml('First Collected', b2b_formatDttm(run.collected_dttm)) +
+            b2b_buildKvHtml('Last Polled', b2b_formatDttm(run.last_polled_dttm)) +
+            '</div>';
+
+    html += '</div>';
 
     if (run.has_fault_report) {
         html += b2b_buildFaultBlockHtml(run);
     }
 
     body.innerHTML = html;
+}
+
+/* Builds one labeled Run Status group for the hero strip: a small muted
+   label naming the status dimension over its badge. */
+function b2b_buildStatusGroupHtml(label, badgeHtml) {
+    return '<div class="b2b-status-group">' +
+           '<div class="b2b-status-group-label">' + cc_escapeHtml(label) + '</div>' +
+           badgeHtml +
+           '</div>';
+}
+
+/* Builds one at-a-glance fact tile for the hero strip. */
+function b2b_buildHeroTileHtml(label, value) {
+    var display = (value === null || value === undefined || value === '') ? '-' : String(value);
+    return '<div class="b2b-hero-tile">' +
+           '<div class="b2b-hero-tile-label">' + cc_escapeHtml(label) + '</div>' +
+           '<div class="b2b-hero-tile-value">' + cc_escapeHtml(display) + '</div>' +
+           '</div>';
+}
+
+/* Builds one stacked label-over-value pair for a detail card. */
+function b2b_buildKvHtml(label, value) {
+    var display = (value === null || value === undefined || value === '') ? '-' : String(value);
+    return '<div class="b2b-kv">' +
+           '<div class="b2b-kv-label">' + cc_escapeHtml(label) + '</div>' +
+           '<div class="b2b-kv-value">' + cc_escapeHtml(display) + '</div>' +
+           '</div>';
+}
+
+/* Renders the run's file list into the Files card and sets the card title
+   count. Called with the run-files endpoint payload. */
+function b2b_renderRunFiles(files) {
+    var body = document.getElementById('b2b-run-files');
+    var title = document.getElementById('b2b-run-files-title');
+    if (!body) {
+        return;
+    }
+
+    files = files ? files : [];
+    if (title) {
+        title.textContent = 'Files (' + files.length + ')';
+    }
+
+    if (!files.length) {
+        body.innerHTML = '<div class="b2b-files-empty">No files recorded for this run</div>';
+        return;
+    }
+
+    var html = '<div class="b2b-files-list">';
+    files.forEach(function(f) {
+        html += '<div class="b2b-file-row">' +
+                '<div class="b2b-file-name">' + cc_escapeHtml(f.file_name) + '</div>' +
+                '<div class="b2b-file-meta">' + cc_escapeHtml(b2b_formatBytes(f.file_size)) +
+                ' - ' + cc_escapeHtml(f.comm_method ? f.comm_method : '-') + '</div>' +
+                '</div>';
+    });
+    html += '</div>';
+    body.innerHTML = html;
+}
+
+/* Formats a byte count for display (B / KB / MB). */
+function b2b_formatBytes(bytes) {
+    if (bytes === null || bytes === undefined || bytes === '') {
+        return '-';
+    }
+    var n = Number(bytes);
+    if (isNaN(n)) {
+        return String(bytes);
+    }
+    if (n < 1024) {
+        return n + ' B';
+    }
+    if (n < 1048576) {
+        return (n / 1024).toFixed(1) + ' KB';
+    }
+    return (n / 1048576).toFixed(1) + ' MB';
+}
+
+/* Renders the run's ticket tiles into the Tickets card, sets the card title
+   count, and fills the hero-strip ticket indicator (worst assignment state
+   wins). Called with the run-tickets endpoint payload. */
+function b2b_renderRunTickets(tickets) {
+    var body = document.getElementById('b2b-run-tickets');
+    var title = document.getElementById('b2b-run-tickets-title');
+    if (!body) {
+        return;
+    }
+
+    tickets = tickets ? tickets : [];
+    if (title) {
+        title.textContent = 'Tickets (' + tickets.length + ')';
+    }
+
+    b2b_renderHeroTicketBadge(tickets);
+
+    if (!tickets.length) {
+        body.innerHTML = '<div class="b2b-files-empty">No tickets for this run</div>';
+        return;
+    }
+
+    var html = '';
+    tickets.forEach(function(tk) {
+        var meta = b2b_ticketStatusMeta[tk.ticket_status];
+        var stateLabel = meta ? meta.label : (tk.ticket_status ? tk.ticket_status : 'Unknown');
+        var stateToken = meta ? meta.state : 'b2b-neutral';
+        var countLabel = cc_safeInt(tk.ticket_row_count) + ' account row' + (Number(tk.ticket_row_count) === 1 ? '' : 's');
+        var whenLabel = tk.ticket_date
+            ? 'Assigned ' + b2b_formatDttm(tk.ticket_date)
+            : 'First seen ' + b2b_formatDttm(tk.first_inserted_dttm);
+
+        html += '<div class="b2b-ticket-tile">' +
+                '<div class="b2b-ticket-head">' +
+                '<span class="b2b-badge ' + stateToken + '">' + cc_escapeHtml(stateLabel) + '</span>' +
+                (tk.ticket_num ? '<span class="b2b-ticket-num">' + cc_escapeHtml(tk.ticket_num) + '</span>' : '') +
+                '</div>' +
+                (tk.ticket_reason ? '<div class="b2b-ticket-reason">' + cc_escapeHtml(tk.ticket_reason) + '</div>' : '') +
+                '<div class="b2b-ticket-meta">' + cc_escapeHtml(countLabel) + ' - ' + cc_escapeHtml(whenLabel) + '</div>' +
+                '</div>';
+    });
+    body.innerHTML = html;
+}
+
+/* Fills the hero-strip ticket indicator from the loaded tickets: the worst
+   assignment state wins (AGED_OUT over PENDING over GENERATED); no badge
+   when the run carries no tickets. */
+function b2b_renderHeroTicketBadge(tickets) {
+    var slot = document.getElementById('b2b-hero-ticket-badge');
+    var group = document.getElementById('b2b-hero-ticket-group');
+    if (!slot) {
+        return;
+    }
+
+    if (!tickets || !tickets.length) {
+        slot.innerHTML = '';
+        if (group) {
+            group.classList.add('b2b-collapsed');
+        }
+        return;
+    }
+
+    if (group) {
+        group.classList.remove('b2b-collapsed');
+    }
+
+    var hasAged = false;
+    var hasPending = false;
+    tickets.forEach(function(tk) {
+        if (tk.ticket_status === 'AGED_OUT') {
+            hasAged = true;
+        }
+        if (tk.ticket_status === 'PENDING') {
+            hasPending = true;
+        }
+    });
+
+    var label;
+    var state;
+    if (hasAged) {
+        label = 'Aged Out';
+        state = 'b2b-crit';
+    }
+    else if (hasPending) {
+        label = 'Pending';
+        state = 'b2b-warn';
+    }
+    else if (tickets.length === 1 && tickets[0].ticket_num) {
+        label = tickets[0].ticket_num;
+        state = 'b2b-ok';
+    }
+    else {
+        label = 'Tickets (' + tickets.length + ')';
+        state = 'b2b-ok';
+    }
+
+    slot.innerHTML = '<span class="b2b-badge ' + state + '">' + cc_escapeHtml(label) + '</span>';
 }
 
 /* Renders the slideout body for a live run the collector has not mirrored yet. */
