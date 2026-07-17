@@ -642,6 +642,123 @@
                                    ]
                    },
                    {
+                       "name":  "INT_RunTickets",
+                       "description":  "One row per (run, ticket reason): the Jira ticket outcomes recorded against a Sterling run, aggregated from the per-failed-account rows in Integration etl.tbl_B2B_CLIENTS_TICKETS.",
+                       "dataFlow":  "Collect-B2BPipeline.ps1 aggregates etl.tbl_B2B_CLIENTS_TICKETS rows with a populated RUN_ID for tracked runs to (run_id, ticket_reason) grain each cycle within the collection lookback: new pairs are inserted, existing pairs are updated when the ticket number, ticket date, or row count changes, and ticket_status is set from the assignment state (GENERATED when a ticket number is present, PENDING while unassigned within 24 hours of the first source row, AGED_OUT after). The Control Center B2B Pipeline run-detail slideout reads this table on demand.",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "run_ticket_id",
+                                           "dataType":  "bigint",
+                                           "nullable":  false,
+                                           "identity":  true,
+                                           "description":  "Surrogate identity key."
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "run_id",
+                                           "dataType":  "bigint",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Sterling workflow/run id the ticket rows are recorded against; joins INT_PipelineTracking.run_id."
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "ticket_reason",
+                                           "dataType":  "varchar",
+                                           "length":  "1000",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Ticket reason text as recorded at the source; free text."
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "ticket_num",
+                                           "dataType":  "varchar",
+                                           "length":  "100",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Jira ticket number assigned by the ticket generator."
+                                       },
+                                       {
+                                           "ordinal":  5,
+                                           "name":  "ticket_date",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Assignment timestamp recorded with the ticket number."
+                                       },
+                                       {
+                                           "ordinal":  6,
+                                           "name":  "ticket_row_count",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Count of source ticket rows aggregated into this row."
+                                       },
+                                       {
+                                           "ordinal":  7,
+                                           "name":  "ticket_status",
+                                           "dataType":  "varchar",
+                                           "length":  "20",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(\u0027PENDING\u0027)",
+                                           "description":  "Assignment state of the ticket row: GENERATED, PENDING, or AGED_OUT."
+                                       },
+                                       {
+                                           "ordinal":  8,
+                                           "name":  "first_inserted_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Earliest source row INSERTED_DATE for the run and reason."
+                                       },
+                                       {
+                                           "ordinal":  9,
+                                           "name":  "captured_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(getdate())",
+                                           "description":  "When the capture first recorded the row."
+                                       },
+                                       {
+                                           "ordinal":  10,
+                                           "name":  "updated_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "When the capture last refreshed the row (ticket assignment or count growth)."
+                                       }
+                                   ],
+                       "indexes":  [
+                                       {
+                                           "name":  "PK_INT_RunTickets",
+                                           "type":  "CLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  true,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "run_ticket_id"
+                                       },
+                                       {
+                                           "name":  "IX_INT_RunTickets_run_id",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "run_id",
+                                           "includedColumns":  "ticket_num, ticket_reason, ticket_date, ticket_row_count"
+                                       }
+                                   ],
+                       "checkConstraints":  [
+                                                {
+                                                    "name":  "CK_INT_RunTickets_ticket_status",
+                                                    "definition":  "([ticket_status]=\u0027GENERATED\u0027 OR [ticket_status]=\u0027PENDING\u0027 OR [ticket_status]=\u0027AGED_OUT\u0027)"
+                                                }
+                                            ]
+                   },
+                   {
                        "name":  "SI_FaultReport",
                        "description":  "Per-run capture of the Sterling translation status report for failed B2B pipeline runs. One row per failed run that carried an extractable report, sourced from b2bi.dbo.TRANS_DATA via the failing step\u0027s STATUS_RPT handle in WORKFLOW_CONTEXT. Stores the full parsed report as JSON plus the raw decompressed text, captured once at collection time and retained permanently.",
                        "module":  "B2B",
