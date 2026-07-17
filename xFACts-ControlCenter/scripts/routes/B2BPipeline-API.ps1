@@ -30,7 +30,9 @@
    runs directly from the Integration source for true real-time visibility;
    history-summary reads the per-day outcome rollups behind the summary tree;
    history runs the filtered paged run query behind the runs modal; run reads
-   one tracking row in full; fault-report reads the full captured Sterling
+   one tracking row in full; run-files lists the files a run carried;
+   run-tickets lists the ticket outcomes recorded against a run;
+   fault-report reads the full captured Sterling
    status report for one failed run.
    Prefix: b2b
    ============================================================================ #>
@@ -74,6 +76,7 @@ Add-PodeRoute -Method Get -Path '/api/b2b-pipeline/live' -Authentication 'ADLogi
             SELECT
                 bs.RUN_ID AS run_id,
                 bs.CLIENT_ID AS client_id,
+                bs.SEQ_ID AS seq_id,
                 mn.CLIENT_NAME AS client_name,
                 f.PROCESS_TYPE AS process_type,
                 f.COMM_METHOD AS comm_method,
@@ -149,7 +152,10 @@ Add-PodeRoute -Method Get -Path '/api/b2b-pipeline/process-types' -Authenticatio
     }
 }
 
-# Run History - filtered paged run query. Query parameters: ?client=&sterlingStatus=&type=&from=&to=&incomplete=&page=&pageSize=.
+# Run History - filtered paged run query. Query parameters:
+# ?runId=&client=&sterlingStatus=&type=&from=&to=&incomplete=&page=&pageSize=.
+# runId is an exact run match; rows carry the run's worst ticket state
+# (AGED_OUT over PENDING over GENERATED) as ticket_status_worst.
 # sterlingStatus accepts a single value or a comma-separated list (matched as IN).
 # incomplete=1 restricts to in-motion runs (is_complete = 0).
 Add-PodeRoute -Method Get -Path '/api/b2b-pipeline/history' -Authentication 'ADLogin' -ScriptBlock {
@@ -157,6 +163,7 @@ Add-PodeRoute -Method Get -Path '/api/b2b-pipeline/history' -Authentication 'ADL
 
     try {
         $client         = $WebEvent.Query['client']
+        $runIdFilter    = $WebEvent.Query['runId']
         $sterlingStatus = $WebEvent.Query['sterlingStatus']
         $typeFilter     = $WebEvent.Query['type']
         $fromDate       = $WebEvent.Query['from']
@@ -173,6 +180,14 @@ Add-PodeRoute -Method Get -Path '/api/b2b-pipeline/history' -Authentication 'ADL
         $whereClauses = New-Object System.Collections.Generic.List[string]
         $parameters = @{}
 
+        if ($runIdFilter) {
+            if ($runIdFilter -notmatch '^\d+$') {
+                Write-PodeJsonResponse -Value @{ error = 'runId must be numeric' } -StatusCode 400
+                return
+            }
+            [void]$whereClauses.Add("run_id = @runId")
+            $parameters['runId'] = [long]$runIdFilter
+        }
         if ($client) {
             [void]$whereClauses.Add("client_name LIKE '%' + @client + '%'")
             $parameters['client'] = $client
@@ -226,17 +241,29 @@ Add-PodeRoute -Method Get -Path '/api/b2b-pipeline/history' -Authentication 'ADL
 
         $rows = Invoke-XFActsQuery -Query @"
             SELECT
-                run_id,
-                client_id,
-                client_name,
-                process_type,
-                dispatcher_name,
-                sterling_status,
-                source_insert_dttm,
-                DATEDIFF(MINUTE, source_insert_dttm, completed_dttm) AS duration_minutes
-            FROM B2B.INT_PipelineTracking
+                t.run_id,
+                t.client_id,
+                t.client_name,
+                t.process_type,
+                t.dispatcher_name,
+                t.sterling_status,
+                t.source_insert_dttm,
+                DATEDIFF(MINUTE, t.source_insert_dttm, t.completed_dttm) AS duration_minutes,
+                tk.ticket_status AS ticket_status_worst
+            FROM B2B.INT_PipelineTracking t
+            OUTER APPLY (
+                SELECT TOP 1 rt.ticket_status
+                FROM B2B.INT_RunTickets rt
+                WHERE rt.run_id = t.run_id
+                ORDER BY CASE rt.ticket_status
+                             WHEN 'AGED_OUT' THEN 1
+                             WHEN 'PENDING' THEN 2
+                             WHEN 'GENERATED' THEN 3
+                             ELSE 4
+                         END
+            ) tk
             $whereSql
-            ORDER BY source_insert_dttm DESC
+            ORDER BY t.source_insert_dttm DESC
             OFFSET @offsetRows ROWS FETCH NEXT @pageSize ROWS ONLY
 "@ -Parameters $parameters
 
@@ -295,6 +322,70 @@ Add-PodeRoute -Method Get -Path '/api/b2b-pipeline/run' -Authentication 'ADLogin
 "@ -Parameters @{ runId = [long]$runId }
 
         Write-PodeJsonResponse -Value @{ run = ($result | Select-Object -First 1) }
+    }
+    catch {
+        Write-PodeJsonResponse -Value @{ error = $_.Exception.Message } -StatusCode 500
+    }
+}
+
+# Run Files - the files associated with one run, mirrored from Integration
+# into B2B.INT_RunFiles by the collector. Query parameter: ?runId=. Returns
+# the file rows in source order; an empty list when the run carried no files.
+Add-PodeRoute -Method Get -Path '/api/b2b-pipeline/run-files' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
+    try {
+        $runId = $WebEvent.Query['runId']
+        if (-not $runId) {
+            Write-PodeJsonResponse -Value @{ error = 'runId is required' } -StatusCode 400
+            return
+        }
+
+        $result = Invoke-XFActsQuery -Query @"
+            SELECT file_name,
+                   file_size,
+                   comm_method,
+                   source_insert_dttm
+            FROM B2B.INT_RunFiles
+            WHERE run_id = @runId
+            ORDER BY source_file_id
+"@ -Parameters @{ runId = [long]$runId }
+
+        Write-PodeJsonResponse -Value @{ files = @($result) }
+    }
+    catch {
+        Write-PodeJsonResponse -Value @{ error = $_.Exception.Message } -StatusCode 500
+    }
+}
+
+# Run Tickets - the ticket outcomes recorded against one run, aggregated to
+# (run, reason) grain by the collector. Query parameter: ?runId=. Returns the
+# ticket rows oldest-first; an empty list when the run carries none. Ticket
+# rows can attach to successful runs, so callers render independent of run
+# status.
+Add-PodeRoute -Method Get -Path '/api/b2b-pipeline/run-tickets' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
+    try {
+        $runId = $WebEvent.Query['runId']
+        if (-not $runId) {
+            Write-PodeJsonResponse -Value @{ error = 'runId is required' } -StatusCode 400
+            return
+        }
+
+        $result = Invoke-XFActsQuery -Query @"
+            SELECT ticket_reason,
+                   ticket_num,
+                   ticket_date,
+                   ticket_row_count,
+                   ticket_status,
+                   first_inserted_dttm
+            FROM B2B.INT_RunTickets
+            WHERE run_id = @runId
+            ORDER BY first_inserted_dttm, run_ticket_id
+"@ -Parameters @{ runId = [long]$runId }
+
+        Write-PodeJsonResponse -Value @{ tickets = @($result) }
     }
     catch {
         Write-PodeJsonResponse -Value @{ error = $_.Exception.Message } -StatusCode 500
