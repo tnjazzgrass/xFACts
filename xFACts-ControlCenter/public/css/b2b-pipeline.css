@@ -341,14 +341,14 @@
     border-color: var(--color-border-default);
 }
 
-/* Fixed five-column grid template for the live-activity table. */
+/* Fixed six-column grid template for the live-activity table. */
 .b2b-cols-live {
-    grid-template-columns: 130px 90px minmax(0, 1fr) 130px 60px;
+    grid-template-columns: 130px 90px 60px minmax(0, 1fr) 130px 60px;
 }
 
-/* Fixed seven-column grid template for the runs-slideout results table. */
+/* Fixed eight-column grid template for the runs-slideout results table. */
 .b2b-cols-history {
-    grid-template-columns: 130px 90px 118px minmax(0, 1fr) minmax(0, 2.4fr) 92px 64px;
+    grid-template-columns: 130px 90px 118px minmax(0, 1fr) minmax(0, 2.4fr) 92px 64px 56px;
 }
 
 /* Primary cell text (client name). */
@@ -392,6 +392,17 @@
 }
 
 /* Client search text input. */
+.b2b-runid-input {
+    width: 130px;
+    padding: var(--size-spacing-xs) var(--size-spacing-md);
+    background: var(--color-bg-page);
+    border: var(--size-border-thin) solid var(--color-border-strong);
+    border-radius: var(--size-radius-sm);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-body);
+}
+
+/* Client search input; flexes to the remaining filter-bar width. */
 .b2b-search-input {
     flex: 1;
     min-width: 140px;
@@ -749,9 +760,12 @@
 /* ============================================================================
    CONTENT: RUN DETAIL
    ----------------------------------------------------------------------------
-   The run-detail slideout layout: titled sections of fixed two-column
-   label/value rows, the inline classification badge line, and the meaning
-   paragraph.
+   The run-detail slideout layout: the hero strip (status badges, meaning,
+   and at-a-glance fact tiles), the two-column detail card grid with stacked
+   label-over-value pairs, the scrollable file list, the ticket tiles with
+   assignment-state badges, plus the earlier titled
+   sections of fixed two-column label/value rows still used by the
+   not-yet-collected view and the fault callout.
    Prefix: b2b
    ============================================================================ */
 
@@ -890,6 +904,200 @@
     white-space: pre-wrap;
     overflow-wrap: break-word;
     overflow-y: auto;
+}
+
+/* Hero strip at the top of the run-detail slideout. */
+.b2b-hero {
+    padding: var(--size-spacing-md);
+    background: var(--color-bg-card-hover);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-lg);
+    margin-bottom: var(--size-spacing-md);
+}
+
+/* Labeled Run Status group row of the hero strip. */
+.b2b-status-groups {
+    display: flex;
+    gap: var(--size-spacing-lg);
+    flex-wrap: wrap;
+    margin-bottom: var(--size-spacing-md);
+}
+
+/* One labeled status group: a dimension label over its badge. */
+.b2b-status-group {
+}
+
+.b2b-status-group.b2b-collapsed { /* group hidden until its content applies */
+    display: none;
+}
+
+/* Status-dimension label above a group's badge. */
+.b2b-status-group-label {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: var(--size-spacing-xs);
+}
+
+/* Classification meaning sentence within the hero strip. */
+.b2b-hero-meaning {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body);
+    margin-bottom: var(--size-spacing-md);
+}
+
+/* Row of at-a-glance fact tiles within the hero strip. */
+.b2b-hero-tiles {
+    display: flex;
+    gap: var(--size-spacing-md);
+    flex-wrap: wrap;
+}
+
+/* One at-a-glance fact tile. */
+.b2b-hero-tile {
+    flex: 1;
+    min-width: 130px;
+    padding: var(--size-spacing-sm) var(--size-spacing-md);
+    background: var(--color-bg-page);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-sm);
+}
+
+/* Fact tile label. */
+.b2b-hero-tile-label {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Fact tile value. */
+.b2b-hero-tile-value {
+    color: var(--color-text-primary);
+    font-size: var(--font-size-content);
+    font-weight: 600;
+    overflow-wrap: break-word;
+}
+
+/* Two-column card grid below the hero strip. */
+.b2b-detail-cards {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--size-spacing-md);
+    margin-bottom: var(--size-spacing-md);
+}
+
+/* One detail card. */
+.b2b-card {
+    padding: var(--size-spacing-md);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-sm);
+}
+
+/* Card title, mirroring the section title treatment. */
+.b2b-card-title {
+    font-size: var(--font-size-body);
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: var(--size-border-thin) solid var(--color-border-default);
+    padding-bottom: var(--size-spacing-xs);
+    margin-bottom: var(--size-spacing-sm);
+}
+
+/* Stacked label-over-value pair within a card. */
+.b2b-kv {
+    margin-bottom: var(--size-spacing-sm);
+}
+
+/* Stacked pair label. */
+.b2b-kv-label {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body);
+}
+
+/* Stacked pair value. */
+.b2b-kv-value {
+    color: var(--color-text-primary);
+    font-size: var(--font-size-content);
+    overflow-wrap: break-word;
+}
+
+/* Scrollable file list within the Files card. */
+.b2b-files-list {
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+/* One file row. */
+.b2b-file-row {
+    padding: var(--size-spacing-xs) 0;
+    border-bottom: var(--size-border-thin) solid var(--color-border-default);
+}
+
+.b2b-file-row:last-child { /* final file row carries no divider */
+    border-bottom: none;
+}
+
+/* File name line. */
+.b2b-file-name {
+    color: var(--color-text-primary);
+    font-size: var(--font-size-body);
+    overflow-wrap: break-word;
+}
+
+/* File size and transfer-method line. */
+.b2b-file-meta {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body);
+}
+
+/* Empty and unavailable states for the file list. */
+.b2b-files-empty {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body);
+}
+
+/* One ticket tile within the Tickets card. */
+.b2b-ticket-tile {
+    padding: var(--size-spacing-sm) var(--size-spacing-md);
+    background: var(--color-bg-page);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-sm);
+    margin-bottom: var(--size-spacing-sm);
+}
+
+.b2b-ticket-tile:last-child { /* final tile carries no trailing gap */
+    margin-bottom: 0;
+}
+
+/* Ticket tile header line: assignment-state badge and ticket number. */
+.b2b-ticket-head {
+    display: flex;
+    align-items: baseline;
+    gap: var(--size-spacing-sm);
+    margin-bottom: var(--size-spacing-xs);
+}
+
+/* Ticket number on the tile header. */
+.b2b-ticket-num {
+    color: var(--color-text-primary);
+    font-size: var(--font-size-content);
+    font-weight: 600;
+}
+
+/* Ticket reason line. */
+.b2b-ticket-reason {
+    color: var(--color-text-primary);
+    font-size: var(--font-size-body);
+    overflow-wrap: break-word;
+}
+
+/* Ticket account-count and date line. */
+.b2b-ticket-meta {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body);
 }
 
 /* ============================================================================
