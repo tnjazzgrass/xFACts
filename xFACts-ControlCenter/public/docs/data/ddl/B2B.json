@@ -156,7 +156,7 @@
                                            "ordinal":  18,
                                            "name":  "fault_report_type",
                                            "dataType":  "varchar",
-                                           "length":  "20",
+                                           "length":  "30",
                                            "nullable":  true,
                                            "identity":  false,
                                            "description":  "The shape of the captured Sterling fault report, or NONE when the failure carried no extractable report. Snapshotted from SI_FaultReport for join-free display; NONE is the sentinel marking that the collector looked and found nothing, so the run is not re-attempted. NULL until the collector has attempted capture. See Status Values."
@@ -270,7 +270,7 @@
                        "checkConstraints":  [
                                                 {
                                                     "name":  "CK_INT_PipelineTracking_fault_report_type",
-                                                    "definition":  "([fault_report_type] IS NULL OR ([fault_report_type]=\u0027NONE\u0027 OR [fault_report_type]=\u0027MESSAGE\u0027 OR [fault_report_type]=\u0027SERVICE\u0027 OR [fault_report_type]=\u0027TRANSLATION\u0027))"
+                                                    "definition":  "([fault_report_type] IS NULL OR [fault_report_type]=\u0027NONE\u0027 OR [fault_report_type]=\u0027MESSAGE\u0027 OR [fault_report_type]=\u0027SERVICE\u0027 OR [fault_report_type]=\u0027TRANSLATION\u0027 OR [fault_report_type]=\u0027TRANSLATION_ESCALATED\u0027)"
                                                 },
                                                 {
                                                     "name":  "CK_INT_PipelineTracking_status_classification",
@@ -525,11 +525,128 @@
                                              ]
                    },
                    {
+                       "name":  "INT_RunFiles",
+                       "description":  "One row per file associated with a Sterling run: the Integration file listing (etl.tbl_B2B_CLIENTS_BATCH_FILES) mirrored for tracked runs, covering both pickups and deliveries.",
+                       "dataFlow":  "Collect-B2BPipeline.ps1 mirrors file rows from Integration etl.tbl_B2B_CLIENTS_BATCH_FILES for runs present in INT_PipelineTracking, inserting any source rows not yet captured and keyed on source_file_id, on each cycle, within the collection lookback period.",
+                       "columns":  [
+                                       {
+                                           "ordinal":  1,
+                                           "name":  "run_file_id",
+                                           "dataType":  "bigint",
+                                           "nullable":  false,
+                                           "identity":  true,
+                                           "description":  "Surrogate identity key."
+                                       },
+                                       {
+                                           "ordinal":  2,
+                                           "name":  "run_id",
+                                           "dataType":  "bigint",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Sterling workflow/run id the file is associated with; joins INT_PipelineTracking.run_id."
+                                       },
+                                       {
+                                           "ordinal":  3,
+                                           "name":  "source_file_id",
+                                           "dataType":  "int",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "Source row ID from etl.tbl_B2B_CLIENTS_BATCH_FILES; the mirror\u0027s idempotency key."
+                                       },
+                                       {
+                                           "ordinal":  4,
+                                           "name":  "client_id",
+                                           "dataType":  "bigint",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Client identifier as recorded on the source file row."
+                                       },
+                                       {
+                                           "ordinal":  5,
+                                           "name":  "seq_id",
+                                           "dataType":  "int",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Client sequence identifier as recorded on the source file row."
+                                       },
+                                       {
+                                           "ordinal":  6,
+                                           "name":  "file_name",
+                                           "dataType":  "varchar",
+                                           "length":  "255",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "description":  "File name or path as recorded at pickup or delivery."
+                                       },
+                                       {
+                                           "ordinal":  7,
+                                           "name":  "file_size",
+                                           "dataType":  "bigint",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "File size in bytes as recorded on the source row."
+                                       },
+                                       {
+                                           "ordinal":  8,
+                                           "name":  "comm_method",
+                                           "dataType":  "varchar",
+                                           "length":  "200",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Transfer method recorded on the source row (observed values: SFTP_GET, SFTP_PUT)."
+                                       },
+                                       {
+                                           "ordinal":  9,
+                                           "name":  "source_insert_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "Source row INSERT_DATE from Integration."
+                                       },
+                                       {
+                                           "ordinal":  10,
+                                           "name":  "captured_dttm",
+                                           "dataType":  "datetime",
+                                           "nullable":  false,
+                                           "identity":  false,
+                                           "default":  "(getdate())",
+                                           "description":  "When the mirror captured the row."
+                                       }
+                                   ],
+                       "indexes":  [
+                                       {
+                                           "name":  "PK_INT_RunFiles",
+                                           "type":  "CLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  true,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "run_file_id"
+                                       },
+                                       {
+                                           "name":  "IX_INT_RunFiles_run_id",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "run_id",
+                                           "includedColumns":  "file_name, file_size, comm_method, source_insert_dttm"
+                                       },
+                                       {
+                                           "name":  "UQ_INT_RunFiles_source_file_id",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  true,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  true,
+                                           "keyColumns":  "source_file_id"
+                                       }
+                                   ]
+                   },
+                   {
                        "name":  "SI_FaultReport",
                        "description":  "Per-run capture of the Sterling translation status report for failed B2B pipeline runs. One row per failed run that carried an extractable report, sourced from b2bi.dbo.TRANS_DATA via the failing step\u0027s STATUS_RPT handle in WORKFLOW_CONTEXT. Stores the full parsed report as JSON plus the raw decompressed text, captured once at collection time and retained permanently.",
                        "module":  "B2B",
                        "category":  "B2B",
-                       "dataFlow":  "Collect-B2BPipeline.ps1 enriches failed runs in a look-back-and-fill pass: for each INT_PipelineTracking failure within the retention window lacking a captured report, it resolves the failing step\u0027s STATUS_RPT handle in b2bi.dbo.WORKFLOW_CONTEXT, reads the gzip blob from b2bi.dbo.TRANS_DATA, decompresses and parses it, then inserts one row here (report_json + raw_report_text) and snapshots the summary fields onto INT_PipelineTracking. The Control Center B2B Pipeline run-detail slideout reads this table on demand when the user opens the full report.",
+                       "dataFlow":  "Collect-B2BPipeline.ps1 enriches failed runs in a look-back-and-fill pass: for each INT_PipelineTracking failure within the retention window lacking a captured report, it resolves the failing step\u0027s STATUS_RPT handle in b2bi.dbo.WORKFLOW_CONTEXT, reads the gzip blob from b2bi.dbo.TRANS_DATA, decompresses and parses it, then inserts one row here (report_json + raw_report_text) and snapshots the summary fields onto INT_PipelineTracking. When the failing step\u0027s report parses as a bare one-line MESSAGE, the collector falls back to the run\u0027s last successful Translation step, captures that step\u0027s full report instead (fault_report_type = TRANSLATION_ESCALATED), and preserves the one-line message in escalation_message. The Control Center B2B Pipeline run-detail slideout reads this table on demand when the user opens the full report.",
                        "columns":  [
                                        {
                                            "ordinal":  1,
@@ -551,7 +668,7 @@
                                            "ordinal":  3,
                                            "name":  "fault_report_type",
                                            "dataType":  "varchar",
-                                           "length":  "20",
+                                           "length":  "30",
                                            "nullable":  false,
                                            "identity":  false,
                                            "description":  "The report shape captured, which determines how the JSON is structured and rendered. See Status Values."
@@ -567,6 +684,15 @@
                                        },
                                        {
                                            "ordinal":  5,
+                                           "name":  "escalation_message",
+                                           "dataType":  "nvarchar",
+                                           "length":  "1000",
+                                           "nullable":  true,
+                                           "identity":  false,
+                                           "description":  "The failing step\u0027s one-line status message, preserved when the run\u0027s report was recovered from the last successful Translation step in the same run (fault_report_type = TRANSLATION_ESCALATED). NULL for reports captured directly from the failing step."
+                                       },
+                                       {
+                                           "ordinal":  6,
                                            "name":  "report_json",
                                            "dataType":  "nvarchar",
                                            "length":  "MAX",
@@ -575,7 +701,7 @@
                                            "description":  "The full parsed report as JSON: every report entry with its section, severity, code, and detail. The complete record for on-demand display, independent of the summary fields snapshotted onto INT_PipelineTracking."
                                        },
                                        {
-                                           "ordinal":  6,
+                                           "ordinal":  7,
                                            "name":  "raw_report_text",
                                            "dataType":  "nvarchar",
                                            "length":  "MAX",
@@ -584,7 +710,7 @@
                                            "description":  "The decompressed report text as extracted from the blob, before parsing. Preserved as a fallback so no source content is lost even if the parse model changes."
                                        },
                                        {
-                                           "ordinal":  7,
+                                           "ordinal":  8,
                                            "name":  "captured_dttm",
                                            "dataType":  "datetime",
                                            "nullable":  false,
@@ -614,7 +740,7 @@
                        "checkConstraints":  [
                                                 {
                                                     "name":  "CK_SI_FaultReport_fault_report_type",
-                                                    "definition":  "([fault_report_type]=\u0027MESSAGE\u0027 OR [fault_report_type]=\u0027SERVICE\u0027 OR [fault_report_type]=\u0027TRANSLATION\u0027)"
+                                                    "definition":  "([fault_report_type]=\u0027MESSAGE\u0027 OR [fault_report_type]=\u0027SERVICE\u0027 OR [fault_report_type]=\u0027TRANSLATION\u0027 OR [fault_report_type]=\u0027TRANSLATION_ESCALATED\u0027)"
                                                 }
                                             ],
                        "foreignKeys":  [
