@@ -1,38 +1,38 @@
 {
-    "generated":  "2026-07-16T15:41:34Z",
+    "generated":  "2026-07-17T09:43:05Z",
     "repository":  "https://github.com/tnjazzgrass/xFACts",
     "base_raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main",
-    "file_count":  446,
+    "file_count":  450,
     "manifests":  [
                       {
                           "category":  "Control Center Application",
                           "filename":  "manifest-cc-app.json",
-                          "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/manifest-cc-app.json?v=20260716154134",
+                          "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/manifest-cc-app.json?v=20260717094305",
                           "file_count":  90
                       },
                       {
                           "category":  "Control Center Documentation Site",
                           "filename":  "manifest-cc-docs.json",
-                          "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/manifest-cc-docs.json?v=20260716154134",
+                          "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/manifest-cc-docs.json?v=20260717094305",
                           "file_count":  91
                       },
                       {
                           "category":  "PowerShell Scripts",
                           "filename":  "manifest-powershell.json",
-                          "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/manifest-powershell.json?v=20260716154134",
+                          "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/manifest-powershell.json?v=20260717094305",
                           "file_count":  51
                       },
                       {
                           "category":  "SQL Object Definitions",
                           "filename":  "manifest-sql.json",
-                          "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/manifest-sql.json?v=20260716154134",
+                          "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/manifest-sql.json?v=20260717094305",
                           "file_count":  15
                       },
                       {
                           "category":  "Documentation and Working Files",
                           "filename":  "manifest-documentation.json",
-                          "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/manifest-documentation.json?v=20260716154134",
-                          "file_count":  199
+                          "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/manifest-documentation.json?v=20260717094305",
+                          "file_count":  203
                       }
                   ]
 }
