@@ -1,7 +1,7 @@
 # B2B Module Roadmap
 
-**Status:** Active — **collection layer AND Control Center page LIVE**. Collection went live 2026-07-12; the B2B Pipeline page went live 2026-07-13. Two 2026-07-16 sessions closed major threads: Step 07 **closed the dispatcher problem** (~76% → ~84% coverage; residual tabled), and Step 08 **closed fault-report content completeness** — the parser now captures full report fidelity, a formatted modal replaces the raw JSON dump, and escalated faults (map succeeded, BPML raised the exception) recover their real report from the successful Translation step. Next: the enrichment survey (per-run file/client/record/Jira summary).
-**Version:** 3.2
+**Status:** Active — **collection layer AND Control Center page LIVE**. Collection went live 2026-07-12; the B2B Pipeline page went live 2026-07-13. Sessions on 2026-07-16/17 closed major threads: Step 07 **closed the dispatcher problem** (~84% coverage; residual tabled), Step 08 **closed fault-report content completeness** (full-fidelity parser, formatted modal, escalated-fault recovery, and a third report-less shape captured from ADV_STATUS — §4.2b), and **enrichment Phases 1-2 shipped**: per-run files and Jira tickets now surface on the run-detail slideout, which was refactored to a hero + card layout (§4.2c). Next: Control Center documentation pages.
+**Version:** 3.3
 **Last updated:** 2026-07-16
 
 ---
@@ -14,9 +14,9 @@
 
 **Everything built is live, and the page now runs on the sterling_status model** (§4.2a, §7.9). The collection layer (`B2B.INT_PipelineTracking`, `B2B.SI_WorkflowRegistry`, `B2B.SI_ScheduleRegistry`, `B2B.SI_FaultReport`, `Collect-B2BPipeline.ps1`) runs under the orchestrator, and the **B2B Pipeline page** at /b2b-pipeline drives off the coarse five-value sterling_status: pulse tiles (non-clickable live-sourced top row / clickable table-sourced bottom row), process-type-badge live activity, the year/month/day history tree bucketed by sterling_status, the runs modal filtered by sterling_status and by a data-driven type filter, and a dual-status run-detail slideout. Alerting is enabled with per-condition routing. The dispatcher problem is **closed** (Step 07, §4.2a): ~84% coverage, accurate go-forward as the accepted bar, residual characterized and tabled. Open directions, in priority order:
 
-1. **🎯 Enrichment survey — the per-run summary.** The lead item. Concrete target (Dirk, 2026-07-16): a per-run summary for the run-detail view — file names, client keys with record counts (success/failure split), total records, and Jira tickets tied to Sterling faults. The sources are row-level and real-time in Integration (for certain file types), so the concept is a collector-gathered per-run summary table feeding the UI. Framework for what to capture vs join-on-demand: capture facts not interpretations; capture what you filter/group/alert on, not lookup-only detail (fetch-on-demand otherwise, like the fault report); capture at the grain you use; and capture when the source ages out (else join on demand). **Investigation-first:** do not guess at Integration/b2bi table or column names — verify or ask before any new table/column. CLIENTS_PARAM (per-client key/value config) is a candidate reference source but should almost certainly be join-on-demand, not copied in — and its TRANSLATION_MAP was already rejected as a dispatcher source (§5.8), so treat it with care.
-2. **Fault-report follow-on (done in Step 08; residual UI polish only).** Content completeness and the formatted modal are **complete** (§4.2b). Remaining optional polish if it earns its keep: nothing outstanding for content. Note for any future re-parse: it must preserve `fault_report_type = TRANSLATION_ESCALATED` wherever `escalation_message` is populated (a raw-text re-parse would otherwise re-derive plain TRANSLATION — §4.2b).
-3. **Page/docs iteration** — parent/child hierarchical run view in the history tree (now on firm ground — parent linkage proven; note ~13K childless-dispatcher leaves would need filtering); a B2B docs-zone page + NavRegistry doc_page_id; the classification-model verification for NO_HANDOFF/DUPLICATE/CASCADE_SKIP (held in sterling_status UNDEFINED pending source-verified meaning — one-line CASE edit each once confirmed).
+1. **🎯 Control Center documentation pages.** The lead item. Build the docs-zone page(s) for the B2B Pipeline module (docs-zone chrome prefix `doc`, NavRegistry doc_page_id). Follow the CC specs and the doc-zone conventions. This documents the now-substantial B2B feature set (page, slideout, enrichment, fault reports) for the devs and Melissa.
+2. **Fault-report shape monitoring (Melissa + devs, week of 2026-07-21).** The fault-capture model now handles three shapes plus escalation: error-step report, escalated recovery (map succeeds / BPML raises → recovered from the successful Translation step, TRANSLATION_ESCALATED), and ADV_STATUS text captured as MESSAGE for report-less failures (§4.2b). Melissa is watching for any failed run still missing extended info; new shapes become either a new resolution rung or a new report shape, remediated by re-opening recent NONE rows.
+3. **Page/docs iteration** — parent/child hierarchical run view in the history tree (now on firm ground — parent linkage proven; note ~13K childless-dispatcher leaves would need filtering); the classification-model verification for NO_HANDOFF/DUPLICATE/CASCADE_SKIP (held in sterling_status UNDEFINED pending source-verified meaning — one-line CASE edit each once confirmed).
 4. **WORKFLOW_CONTEXT live-step verification** — the remaining path to "step X of Y" live display (WF_INST_S confirmed write-at-termination, §4.2a). Needs column/timestamp verification then business-hours sampling.
 
 ### Required context
@@ -242,6 +242,54 @@ A large class of faults captured as one-line MESSAGE rows are not translation fa
 All report/content blobs are single-page (max PAGE_INDEX 0; largest 70KB), so the collector's PAGE_INDEX = 0 read is empirically complete; and the parameterized Get-SqlData read returned full byte counts matching SQL DATALENGTH on every handle, so -MaxBinaryLength is not needed at these sizes. The escalated report is available identically on the successful step's STATUS_RPT and inside the error step's CONTENT. Fault-report handle retention wall confirmed between 2026-07-14 and 2026-07-15: of 13 historical MESSAGE rows, the 5 from 07-15/16 recovered to TRANSLATION_ESCALATED, the 8 from 07-14 and earlier had aged out — the permanent cost of the escalated-recovery gap being closed after the pattern first appeared.
 
 **Schema (Step 08):** fault_report_type widened VARCHAR(20) → VARCHAR(30) on both B2B.SI_FaultReport and B2B.INT_PipelineTracking to fit TRANSLATION_ESCALATED (21 chars); both CHECK constraints amended to admit the new value; SI_FaultReport gained escalation_message NVARCHAR(500) NULL. Lesson recorded: a CHECK amendment does not validate against column width — check the column length when adding an enum value longer than the existing set.
+
+### 4.2c Enrichment Phases 1-2 and fault-report shapes (2026-07-17)
+
+**2026-07-17 — Run files mirrored per run** — source: Enrichment Phase 1
+`etl.tbl_B2B_CLIENTS_BATCH_FILES` is one row per (file, run); a run can carry
+many files (tail to 159), and a filename may recur across runs (generic pickup
+names) and within a run (multi-branch outputs). Mirrored into new
+`B2B.INT_RunFiles` (one row per source row, idempotent on the source ID) by a
+collector step for every tracked run regardless of status. The source ID is
+the idempotency key; there is no unique constraint on filename. The slideout
+lists files with size and transfer method.
+
+**2026-07-17 — Run tickets captured at (run, reason) grain** — source: Enrichment Phase 2
+`etl.tbl_B2B_CLIENTS_TICKETS` is one row per failed account; an external
+generator assigns TICKET_NUM about hourly (99.7% within an hour) and ~12% of
+source rows never receive one. A run can carry multiple tickets (7 observed),
+but each reason within a run maps to exactly one ticket, so the capture grain
+is (run_id, ticket_reason) with an account-row count. TICKET_REASON is free
+text (some reasons embed amounts), so no CHECK and no unique index (900-byte
+limit). Captured into new `B2B.INT_RunTickets` with a `ticket_status`
+(GENERATED / PENDING / AGED_OUT, 24-hour boundary; a late assignment promotes
+AGED_OUT → GENERATED). RUN_ID-null source rows are out of scope. Tickets can
+attach to successful runs (partial-success extraction), so display is
+status-independent. The external generator is a candidate for future
+replacement by an xFACts-native mechanism writing the same table.
+
+**2026-07-17 — A third fault-report shape: report-less ADV_STATUS failures** — source: run 8612268
+Some failures carry no status report on any step (the process data literally
+says the translation service has no status report); the error text lives only
+in the failing step's ADV_STATUS (observed: a SQL conversion error surfaced
+through the JDBC adapter). The collector now resolves the report in three
+rungs: the error-step STATUS_RPT; else the escalated recovery; else the first
+error step's ADV_STATUS text, captured as MESSAGE with the failing service as
+source. The MESSAGE parser lifts a leading `<digits>:` prefix into the report
+code. Aged-out and non-gzip blob paths also fall through to the ADV_STATUS
+capture before marking NONE. Remediation for already-NONE runs in retention:
+null their fault_report_type/captured_dttm so the next collector cycle
+re-attempts them.
+
+**2026-07-17 — Slideout refactored; enrichment surfaced** — source: UI work
+The run-detail slideout moved from a flat label/value list to a hero strip
+(labeled Run Status groups: Sterling, Classification, Alerting, Jira) plus a
+two-column card grid (Identity with a dedicated Client ID, Timing, Files,
+Tickets, Outcome) and the fault callout. Files and tickets load from their own
+endpoints. Alerts render as a badge, not a count. Live Activity gained Seq ID;
+Run History gained a Run ID exact-match search; the summary-list modals widened
+to a new `cc-xxwide` tier (1300px) and show a Jira status badge per row.
+`cc-shared` gained a fifth width tier for both slide and modal dialogs.
 
 ### 4.3 Retention and archive
 
@@ -526,8 +574,10 @@ Under `WorkingFiles/B2B_Investigation/Legacy/`:
 
 ## 9. Next Actions
 
-1. **🎯 Enrichment survey.** The lead item (see Next Session §1). The per-run file/client/record/Jira summary for the run-detail view, sourced from Integration, using the capture/join-on-demand framework. Investigation-first: verify Integration/b2bi names before any new table/column. CLIENTS_PARAM is a candidate reference source — likely join-on-demand, not copied in.
-2. **Fault-report content completeness — DONE (Step 08, §4.2b).** Parser fidelity, formatted modal, escalated recovery, and historical re-parse/recovery all complete. Standing rule for any future re-parse: preserve TRANSLATION_ESCALATED wherever escalation_message is populated.
+1. **🎯 Control Center documentation pages.** The lead item (see Next Session §1). Docs-zone page(s) for the B2B Pipeline module per the CC specs. Enrichment Phases 1-2 (files, tickets) and all three fault-report shapes are **done** (§4.2c, §4.2b).
+2. **Fault-report content completeness — DONE (Step 08, §4.2b, §4.2c).** Parser fidelity, formatted modal, escalated recovery, the ADV_STATUS report-less shape, and historical re-parse/recovery all complete. Standing rule for any future re-parse: preserve TRANSLATION_ESCALATED wherever escalation_message is populated.
+3. **Enrichment Phases 1-2 — DONE (§4.2c).** Per-run files (INT_RunFiles) and Jira tickets (INT_RunTickets) captured and surfaced on the slideout.
+4. **Backlog (low priority, optional): extended per-file/per-client enrichment.** Record counts (success/failure split) per client from `etl.tbl_B2B_CLIENTS_ACCTS` (NB) and the shape-varying BDL tables, plus any per-file detail beyond the file list. Melissa to confirm whether the devs actually need this; held as an option so it is not lost. Requires investigation of the per-process-type source routing (ACCTS for NB; BDL tables differ) before any table/column work.
 3. **Page/docs iteration.** Parent/child hierarchical run view in the history tree (parent linkage now proven; childless-dispatcher leaves need filtering); B2B docs-zone page + NavRegistry doc_page_id; classification-model verification for NO_HANDOFF/DUPLICATE/CASCADE_SKIP (held in sterling_status UNDEFINED — §7.9).
 4. **WORKFLOW_CONTEXT live-step verification.** The remaining path to "step X of Y" live display now that WF_INST_S is confirmed write-at-termination (§4.2a).
 5. **Operational fixes** (independent of the module; owner: Dirk/ops): GET_LIST v20 fault-insert fix (headline — 21,815 historical Sterling faults and ~12/day ongoing are ticket-invisible), ITS/INCEPTION fault-write no-ops, plaintext-credential review, reconciler minor quirks (§4.2a), remaining minor quirks per Summary §4.
@@ -537,12 +587,15 @@ Under `WorkingFiles/B2B_Investigation/Legacy/`:
 
 **Done this session (2026-07-16, Step 07):** dispatcher problem closed — run→definition reframe verified, child = parent rule proven (6,201 pairs / 0 mismatches), 806 sibling false positives corrected, schedule-timing adjudication validated and adopted (lag ≤ 2 min, no ties), 142,276 rows written (~76% → ~84% coverage), residual fully characterized incl. the 2023-12-01 parent-row boundary discovery; Step 07 formalized under WorkingFiles/B2B_Investigation/Step_07_Dispatcher_Resolution.
 
-**Done this session (2026-07-16, Step 08):** fault-report content completeness closed — parser upgraded to full report fidelity (all existing rows re-parsed), formatted status-report modal replacing the raw JSON dump, escalated-fault recovery (map-succeeds/BPML-raises → report recovered from the successful Translation step, captured as TRANSLATION_ESCALATED with the one-liner in escalation_message), schema widen + escalation_message column, historical recovery (5 upgraded, 8 aged out); Step 08 formalized under WorkingFiles/B2B_Investigation/Step_08_FaultReport_Content. **B2B System_Metadata bump deferred to next session** (all this session's structural changes fold into one bump when taken).
+**Done this session (2026-07-16, Step 08):** fault-report content completeness closed — parser upgraded to full report fidelity (all existing rows re-parsed), formatted status-report modal replacing the raw JSON dump, escalated-fault recovery (map-succeeds/BPML-raises → report recovered from the successful Translation step, captured as TRANSLATION_ESCALATED with the one-liner in escalation_message), schema widen + escalation_message column, historical recovery (5 upgraded, 8 aged out); Step 08 formalized under WorkingFiles/B2B_Investigation/Step_08_FaultReport_Content.
+
+**Done this session (2026-07-17):** enrichment Phases 1-2 and fault-report follow-ups (§4.2c) — new B2B.INT_RunFiles (per-run file mirror) and B2B.INT_RunTickets (per-run Jira tickets, GENERATED/PENDING/AGED_OUT status) with collector steps, backfills, Object_Registry + Object_Metadata; a third report-less fault shape captured from ADV_STATUS as MESSAGE; run-detail slideout refactored to hero + cards with files and ticket surfacing; Live Activity Seq ID; Run History Run ID search; cc-shared fifth width tier; summary-list modals widened with a per-row Jira badge. Extra per-file/per-client record-count enrichment demoted to a low-priority backlog option (§9 item 4). **B2B System_Metadata bump taken this session** covering all 2026-07-16/17 structural work.
 
 ## Document History
 
 | Version | Date | Change |
 |---|---|---|
+| 3.3 | 2026-07-17 | **Enrichment Phases 1-2 shipped; third fault-report shape; slideout refactor.** New §4.2c (four entries): run files mirrored into B2B.INT_RunFiles (one row per file-per-run, idempotent on source ID, all statuses); run tickets captured into B2B.INT_RunTickets at (run_id, ticket_reason) grain with ticket_status GENERATED/PENDING/AGED_OUT (multi-ticket runs real, ~12% never assigned, status-independent display); a third report-less fault shape captured from the failing step's ADV_STATUS as MESSAGE with numeric-code lifting and a three-rung resolve order; and the slideout refactor (hero with labeled Run Status groups, two-column cards, dedicated Client ID, files + ticket surfacing, Live Activity Seq ID, Run History Run ID search, cc-shared fifth width tier, summary-list modals widened with per-row Jira badge). Status line, Next Session, and §9 re-pointed so Control Center documentation pages now lead and enrichment/fault-report are marked done; extra per-file/per-client record-count enrichment demoted to a low-priority backlog option (§9 item 4). B2B System_Metadata bump taken this session for all 2026-07-16/17 structural work. |
 | 3.2 | 2026-07-16 | **Step 08 — fault-report content completeness closed.** New §4.2b (four Known True entries): the parser was lossy not the capture (fixable by re-parse; parser now full-fidelity), escalated faults (map succeeds / BPML raises — report recovered from the successful Translation step as TRANSLATION_ESCALATED, one-liner preserved in escalation_message, CONTENT scraping evaluated and rejected), probe findings (no pagination, no binary truncation at these sizes, retention wall 07-14/07-15), and the schema changes (fault_report_type widened VARCHAR(20)→(30), CHECK amended, escalation_message added; width-vs-CHECK lesson). §3.1 collector line, §8 findings list, and §9 updated; Next Session and §9 re-pointed so the enrichment survey (per-run summary) now leads and fault-report is marked done with the re-parse-preservation rule. System_Metadata bump for all 2026-07-16 structural work deferred to next session. |
 | 3.1 | 2026-07-16 | **Step 07 — dispatcher problem closed.** §4.2a adds six Known True entries: the reframe (live resolution is run→definition via WF_INST_S+WFD; SCHEDULE never consulted; scheduled parents self-name; registry service_name coverage complete), the verified child = parent rule (6,201 live pairs, zero mismatches), the sibling-backfill false-positive mechanism (sibling-schedule conflict families; 806 rows corrected; 13 of 13,988 exposed unanimities overruled), the schedule-timing adjudication method (92% of live runs within 1 min of declared fire times; blind validation 147/4/0; adopted at lag ≤ 2 min with no ties; inference accepted into dispatcher_name without a marker — informational field, go-forward exact), the Step 07 backfill results (104,022 parents / 38,005 children / 249 sibling rows; A-STRUCTURAL 89,310, B-TIMING 14,507, B-FALLBACK-UNANIMOUS 205, UNRESOLVED-CONFLICT 824; ~76% → ~84%), and the 2023-12-01 parent-row boundary (88,752 pre-boundary children structurally unrecoverable). Prior backfill entry annotated (canaries fired). §3.1 and §5.8 updated; §8 adds Step 07 findings; §9 item 1 replaced by fault-report content completeness and item 8 added (dispatcher residual tabled, CLIENTS_PARAM fuzzy experiment noted against its prior rejection); Next Session rewritten to lead with fault-report content completeness (time-sensitive) and the enrichment survey's per-run summary target. |
 | 3.0 | 2026-07-16 | **sterling_status model, page pivot, alerting enablement, dispatcher backfill.** New §7.9 records the two-layer status model: sterling_status (closed five-value coarse status) added to INT_PipelineTracking as the page's primary axis, derived from status_classification, UNDEFINED doubling as a drift sentinel. §3.1 updated: the CC page pivoted to sterling_status (pulse tiles restructured live-vs-table, process-type badges + Run ID on live/history, dual-status slideout, data-driven type filter, Recent Workflow Changes removed); collector derives sterling_status inline; alerting enabled with per-condition routing. §4.2a adds four Known True entries: the two-mechanism arrival-time dispatch model (GET_LIST vs. per-client schedules), the ~1.3M-row dispatcher_name backfill (GET_LIST parent/child chain + single-match sibling lookup) with the fully-characterized ~412K remainder, SI_ScheduleRegistry verified as a comprehensive current mirror (not a legacy slice), and the ~48h runtime-retention refinement. §5.8 and §9 updated; Next Session rewritten to lead with the run→schedule linkage as the open dispatcher problem. |
