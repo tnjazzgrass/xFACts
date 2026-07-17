@@ -11,7 +11,10 @@
     from the Integration config tables, DM outcome verification against
     crs5_oltp, the BATCH_FILES pickup check for the status-4 split, and a
     b2bi runtime cross-check that detects runs that died without reaching a
-    fault handler.
+    fault handler. Also mirrors the per-run file listing
+    (etl.tbl_B2B_CLIENTS_BATCH_FILES) into B2B.INT_RunFiles for every
+    tracked run, and captures per-run Jira ticket outcomes
+    (etl.tbl_B2B_CLIENTS_TICKETS) into B2B.INT_RunTickets.
 
     Reads b2bi on FA-INT-DBP via Windows auth. Reads Integration, crs5_oltp,
     and xFACts through the AG listener; the mirror steps run as single
@@ -82,6 +85,33 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-07-17  Third fault-report shape: report-less failures. Some failures
+#             (observed: SQL errors raised through the JDBC adapter) carry no
+#             status report on any step; the error text lives only in the
+#             failing step's ADV_STATUS. When no report blob is resolvable
+#             for a run, the first error step's ADV_STATUS text is now
+#             captured as a MESSAGE report with source_name set to the
+#             failing service. The MESSAGE parser lifts a leading
+#             '<digits>:' prefix into the report code. Aged-out and non-gzip
+#             blob paths also fall through to the ADV_STATUS capture before
+#             marking NONE.
+# 2026-07-17  Run-ticket capture step added (Enrichment Phase 2): aggregates
+#             Integration etl.tbl_B2B_CLIENTS_TICKETS rows (RUN_ID populated,
+#             run tracked) to (run_id, ticket_reason) grain in the new
+#             B2B.INT_RunTickets table -- new pairs insert, changed pairs
+#             update (ticket assignment, count growth), and unassigned
+#             PENDING rows age to AGED_OUT after 24 hours. Runs as Step 6
+#             (subsequent steps renumbered in the execution wiring).
+# 2026-07-16  Run-file mirror step added (Enrichment Phase 1): mirrors
+#             Integration etl.tbl_B2B_CLIENTS_BATCH_FILES rows into the new
+#             B2B.INT_RunFiles table for tracked runs -- one set-based INSERT
+#             per cycle within the collection lookback, idempotent on the
+#             source row ID, no status or process-type filtering. Runs as
+#             Step 5 (subsequent steps renumbered in the execution wiring).
+#             Same-day fix: the execute-path SQL assembly joined the SELECT
+#             list and FROM clause without a newline (here-string terminators
+#             drop the final newline), producing a syntax error on every
+#             execute cycle while preview (spaced concatenation) worked.
 # 2026-07-16  Escalated-fault recovery added to the fault-report step (Step 08
 #             finding): when the failing step's report parses as a bare
 #             one-line MESSAGE, the map completed with a warning-bearing
@@ -92,7 +122,7 @@
 #             is preserved in the new SI_FaultReport.escalation_message
 #             column. Runs with no recoverable translation report keep their
 #             MESSAGE capture unchanged.
-#             Fault-report parser enriched to full report fidelity. The
+# 2026-07-16  Fault-report parser enriched to full report fidelity. The
 #             TRANSLATION shape now captures each entry's Info sub-block into
 #             named fields (block name, field name/number/data, raw block
 #             data, signature tag, iteration count, location index, block
@@ -1093,8 +1123,12 @@ WHERE wfd_id = $wfdId
    Mirrors Integration.ETL.tbl_B2B_CLIENTS_BATCH_STATUS into
    B2B.INT_PipelineTracking as classified rows: one set-based INSERT for new
    runs, one set-based UPDATE for incomplete runs, and dispatcher name
-   resolution from b2bi linkage. Classification is computed in T-SQL on the
-   listener so every path applies identical logic.
+   resolution from b2bi linkage. Also mirrors the per-run file listing
+   (etl.tbl_B2B_CLIENTS_BATCH_FILES) into B2B.INT_RunFiles, idempotent on
+   the source row ID, and captures per-run ticket outcomes into
+   B2B.INT_RunTickets at (run_id, ticket_reason) grain with assignment-state
+   tracking. Classification is computed in T-SQL on the listener so every
+   path applies identical logic.
    Prefix: b2b
    ============================================================================ #>
 
@@ -1408,6 +1442,194 @@ ORDER BY status_classification;
     }
 }
 
+# Mirrors run file rows from Integration for tracked runs: any source file
+# row whose RUN_ID is tracked and whose source ID is not yet captured, within
+# the collection lookback. One set-based INSERT; no status or process-type
+# filtering.
+function Step-b2b_CollectRunFiles {
+    param([bool]$PreviewOnly = $true)
+
+    Write-Log "Step: Mirror Run Files" "STEP"
+
+    $inserted = 0
+
+    try {
+        $selectSql = @"
+FROM $IntegrationDatabase.etl.tbl_B2B_CLIENTS_BATCH_FILES s
+WHERE s.INSERT_DATE >= DATEADD(DAY, -$($script:Config.B2B_CollectLookbackDays), GETDATE())
+  AND EXISTS (
+      SELECT 1 FROM B2B.INT_PipelineTracking t WHERE t.run_id = s.RUN_ID
+  )
+  AND NOT EXISTS (
+      SELECT 1 FROM B2B.INT_RunFiles rf WHERE rf.source_file_id = s.ID
+  )
+"@
+
+        if ($PreviewOnly) {
+            $countRow = Get-SqlData -Query ("SELECT COUNT(*) AS new_files " + $selectSql)
+            $would = 0
+            if ($countRow) {
+                $would = [int]@($countRow)[0].new_files
+            }
+            if ($would -eq 0) {
+                Write-Log "  No new file rows to mirror" "INFO"
+            }
+            else {
+                Write-Log "  [Preview] Would mirror $would file row(s)" "INFO"
+            }
+            return @{ Inserted = $would }
+        }
+
+        $insertSql = @"
+INSERT INTO B2B.INT_RunFiles (
+    run_id, source_file_id, client_id, seq_id,
+    file_name, file_size, comm_method, source_insert_dttm
+)
+SELECT s.RUN_ID, s.ID, s.CLIENT_ID, s.SEQ_ID,
+       s.FILE_NAME, s.FILE_SIZE, s.COMM_METHOD, s.INSERT_DATE
+"@ + "`n" + $selectSql + "`n" + @"
+;
+SELECT @@ROWCOUNT AS inserted_files;
+"@
+
+        $result = Get-SqlData -Query $insertSql
+        if ($result) {
+            $inserted = [int]@($result)[0].inserted_files
+        }
+
+        if ($inserted -eq 0) {
+            Write-Log "  No new file rows to mirror" "INFO"
+        }
+        else {
+            Write-Log "  Mirrored $inserted file row(s)" "SUCCESS"
+        }
+
+        return @{ Inserted = $inserted }
+    }
+    catch {
+        Write-Log "  Error in Step-b2b_CollectRunFiles: $($_.Exception.Message)" "ERROR"
+        return @{ Inserted = $inserted; Error = $_.Exception.Message }
+    }
+}
+
+# Captures per-run ticket outcomes from Integration at (run_id,
+# ticket_reason) grain: new pairs insert, existing pairs update when the
+# ticket number, date, or account-row count changes, and unassigned PENDING
+# rows age to AGED_OUT after 24 hours (a late assignment still promotes an
+# aged row to GENERATED). Source rows with a NULL RUN_ID are not captured.
+function Step-b2b_CollectRunTickets {
+    param([bool]$PreviewOnly = $true)
+
+    Write-Log "Step: Capture Run Tickets" "STEP"
+
+    $inserted = 0
+    $updated  = 0
+    $aged     = 0
+
+    try {
+        $insertQuery = @"
+INSERT INTO B2B.INT_RunTickets (
+    run_id, ticket_reason, ticket_num, ticket_date,
+    ticket_row_count, first_inserted_dttm, ticket_status
+)
+SELECT agg.RUN_ID, agg.TICKET_REASON, agg.ticket_num, agg.ticket_date,
+       agg.row_count, agg.first_inserted,
+       CASE
+           WHEN agg.ticket_num IS NOT NULL THEN 'GENERATED'
+           WHEN agg.first_inserted >= DATEADD(HOUR, -24, GETDATE()) THEN 'PENDING'
+           ELSE 'AGED_OUT'
+       END
+FROM (
+    SELECT s.RUN_ID, s.TICKET_REASON,
+           MAX(s.TICKET_NUM) AS ticket_num,
+           MAX(s.TICKET_DATE) AS ticket_date,
+           COUNT(*) AS row_count,
+           MIN(s.INSERTED_DATE) AS first_inserted
+    FROM $IntegrationDatabase.etl.tbl_B2B_CLIENTS_TICKETS s
+    WHERE s.RUN_ID IS NOT NULL
+      AND s.INSERTED_DATE >= DATEADD(DAY, -$($script:Config.B2B_CollectLookbackDays), GETDATE())
+    GROUP BY s.RUN_ID, s.TICKET_REASON
+) agg
+WHERE EXISTS (SELECT 1 FROM B2B.INT_PipelineTracking t WHERE t.run_id = agg.RUN_ID)
+  AND NOT EXISTS (SELECT 1 FROM B2B.INT_RunTickets rt
+                  WHERE rt.run_id = agg.RUN_ID
+                    AND (rt.ticket_reason = agg.TICKET_REASON
+                         OR (rt.ticket_reason IS NULL AND agg.TICKET_REASON IS NULL)));
+SELECT @@ROWCOUNT AS affected;
+"@
+
+        $updateQuery = @"
+UPDATE rt
+SET rt.ticket_num = agg.ticket_num,
+    rt.ticket_date = agg.ticket_date,
+    rt.ticket_row_count = agg.row_count,
+    rt.first_inserted_dttm = agg.first_inserted,
+    rt.ticket_status = CASE
+        WHEN agg.ticket_num IS NOT NULL THEN 'GENERATED'
+        WHEN agg.first_inserted >= DATEADD(HOUR, -24, GETDATE()) THEN 'PENDING'
+        ELSE 'AGED_OUT'
+    END,
+    rt.updated_dttm = GETDATE()
+FROM B2B.INT_RunTickets rt
+INNER JOIN (
+    SELECT s.RUN_ID, s.TICKET_REASON,
+           MAX(s.TICKET_NUM) AS ticket_num,
+           MAX(s.TICKET_DATE) AS ticket_date,
+           COUNT(*) AS row_count,
+           MIN(s.INSERTED_DATE) AS first_inserted
+    FROM $IntegrationDatabase.etl.tbl_B2B_CLIENTS_TICKETS s
+    WHERE s.RUN_ID IS NOT NULL
+      AND s.INSERTED_DATE >= DATEADD(DAY, -$($script:Config.B2B_CollectLookbackDays), GETDATE())
+    GROUP BY s.RUN_ID, s.TICKET_REASON
+) agg
+        ON agg.RUN_ID = rt.run_id
+       AND (rt.ticket_reason = agg.TICKET_REASON
+            OR (rt.ticket_reason IS NULL AND agg.TICKET_REASON IS NULL))
+WHERE ISNULL(rt.ticket_num, '') <> ISNULL(agg.ticket_num, '')
+   OR rt.ticket_row_count <> agg.row_count
+   OR ISNULL(rt.ticket_date, '19000101') <> ISNULL(agg.ticket_date, '19000101');
+SELECT @@ROWCOUNT AS affected;
+"@
+
+        $ageQuery = @"
+UPDATE B2B.INT_RunTickets
+SET ticket_status = 'AGED_OUT',
+    updated_dttm = GETDATE()
+WHERE ticket_status = 'PENDING'
+  AND ticket_num IS NULL
+  AND first_inserted_dttm < DATEADD(HOUR, -24, GETDATE());
+SELECT @@ROWCOUNT AS affected;
+"@
+
+        if ($PreviewOnly) {
+            Write-Log "  [Preview] Ticket capture runs insert/update/age passes on execute" "INFO"
+            return @{ Inserted = 0; Updated = 0; Aged = 0 }
+        }
+
+        $result = Get-SqlData -Query $insertQuery
+        if ($result) { $inserted = [int]@($result)[0].affected }
+
+        $result = Get-SqlData -Query $updateQuery
+        if ($result) { $updated = [int]@($result)[0].affected }
+
+        $result = Get-SqlData -Query $ageQuery
+        if ($result) { $aged = [int]@($result)[0].affected }
+
+        if (($inserted + $updated + $aged) -eq 0) {
+            Write-Log "  No ticket changes" "INFO"
+        }
+        else {
+            Write-Log "  Tickets: $inserted new, $updated updated, $aged aged out" "SUCCESS"
+        }
+
+        return @{ Inserted = $inserted; Updated = $updated; Aged = $aged }
+    }
+    catch {
+        Write-Log "  Error in Step-b2b_CollectRunTickets: $($_.Exception.Message)" "ERROR"
+        return @{ Inserted = $inserted; Updated = $updated; Aged = $aged; Error = $_.Exception.Message }
+    }
+}
+
 # Resolves dispatcher workflow names from b2bi for tracked runs missing them.
 function Step-b2b_ResolveDispatcherNames {
     param([bool]$PreviewOnly = $true)
@@ -1681,7 +1903,9 @@ WHERE run_id = $runId
    failing step yields only a bare one-line MESSAGE, the full report is
    recovered from the run's last successful Translation step and captured as
    TRANSLATION_ESCALATED with the one-liner preserved in escalation_message.
-   Failures with no extractable report are marked NONE so they are not
+   When no report blob is resolvable at all, the first error step's
+   ADV_STATUS text is captured as a MESSAGE report with the failing service
+   as the source. Failures with neither are marked NONE so they are not
    re-attempted. All gzip and report-parsing helpers are local to this
    region.
    Prefix: b2b
@@ -2000,12 +2224,17 @@ function ConvertFrom-b2b_ReportText {
 
     # -- Shape 3: MESSAGE --
 
-    # A bare single-string message: the whole text is the summary.
+    # A bare single-string message: the whole text is the summary. A leading
+    # '<digits>:' prefix (Sterling ADV_STATUS style) is lifted as the code.
     $msg = $Text.Trim()
+    $msgCode = $null
+    if ($msg -match '^(\d{1,10}):') {
+        $msgCode = $Matches[1]
+    }
     return [PSCustomObject]@{
         type    = 'MESSAGE'
         source  = $null
-        code    = $null
+        code    = $msgCode
         summary = $msg
         payload = [PSCustomObject]@{
             message = $msg
@@ -2038,6 +2267,36 @@ SET fault_report_type = 'NONE',
 WHERE run_id = $RunId
 "@
     Invoke-SqlNonQuery -Query $sql | Out-Null
+}
+
+# Returns the first error step's ADV_STATUS text and service name for a run
+# whose failing steps carry no readable status report -- for those failures
+# the ADV_STATUS text is the only fault description Sterling recorded.
+# Returns null when no error step carries one.
+function Get-b2b_AdvStatusText {
+    param([long]$RunId)
+
+    $advQuery = @"
+SELECT TOP 1 SERVICE_NAME, ADV_STATUS
+FROM dbo.WORKFLOW_CONTEXT
+WHERE WORKFLOW_ID = $RunId
+  AND BASIC_STATUS <> 0
+  AND ADV_STATUS IS NOT NULL
+  AND LEN(ADV_STATUS) > 0
+ORDER BY STEP_ID
+"@
+    $row = Get-SqlData -Query $advQuery `
+                       -Instance $SourceInstance -DatabaseName $SourceDatabase
+    if ($row) {
+        $row = @($row)
+        if ($row.Count -gt 0) {
+            return @{
+                Text        = ([string]$row[0].ADV_STATUS).Trim()
+                ServiceName = [string]$row[0].SERVICE_NAME
+            }
+        }
+    }
+    return $null
 }
 
 # Recovers the full translation report for a run whose failing step yielded
@@ -2158,45 +2417,62 @@ ORDER BY STEP_ID
                 if ($handleRow.Count -gt 0) { $handle = [string]$handleRow[0].STATUS_RPT }
             }
 
-            if ([string]::IsNullOrEmpty($handle)) {
-                $noReport++
-                Set-b2b_FaultReportNone -RunId $runId -Reason "no report handle" -PreviewOnly $PreviewOnly
-                continue
-            }
+            # Resolve the report: the failing step's status report when one
+            # exists and is readable; otherwise the first error step's
+            # ADV_STATUS text (for report-less failures it is the only fault
+            # description Sterling recorded). Runs with neither are marked
+            # NONE.
+            $reportText = $null
+            $parsed     = $null
+            $noneReason = "no report handle"
 
-            # Fetch and decompress the status-report blob (parameterized so the
-            # handle binds safely and the VARBINARY returns as a full byte[]).
-            $blobQuery = "SELECT DATA_OBJECT FROM dbo.TRANS_DATA WHERE DATA_ID = @h AND PAGE_INDEX = 0"
-            $blobRow = Get-SqlData -Query $blobQuery `
-                                   -Instance $SourceInstance -DatabaseName $SourceDatabase `
-                                   -Parameters @{ h = $handle }
+            if (-not [string]::IsNullOrEmpty($handle)) {
+                # Fetch and decompress the status-report blob (parameterized so
+                # the handle binds safely and the VARBINARY returns as a full
+                # byte[]).
+                $blobQuery = "SELECT DATA_OBJECT FROM dbo.TRANS_DATA WHERE DATA_ID = @h AND PAGE_INDEX = 0"
+                $blobRow = Get-SqlData -Query $blobQuery `
+                                       -Instance $SourceInstance -DatabaseName $SourceDatabase `
+                                       -Parameters @{ h = $handle }
 
-            $blob = $null
-            if ($blobRow) {
-                $blobRow = @($blobRow)
-                if ($blobRow.Count -gt 0 -and $blobRow[0].DATA_OBJECT -isnot [System.DBNull]) {
-                    $blob = [byte[]]$blobRow[0].DATA_OBJECT
+                $blob = $null
+                if ($blobRow) {
+                    $blobRow = @($blobRow)
+                    if ($blobRow.Count -gt 0 -and $blobRow[0].DATA_OBJECT -isnot [System.DBNull]) {
+                        $blob = [byte[]]$blobRow[0].DATA_OBJECT
+                    }
+                }
+
+                if ($null -eq $blob -or $blob.Length -eq 0) {
+                    # Handle present but blob missing (aged out).
+                    $noneReason = "handle but no blob"
+                }
+                elseif (-not (Test-b2b_IsGzip -Blob $blob)) {
+                    # Handle points at a non-gzip object (e.g. a raw-serialized
+                    # process marker, not a compressed report).
+                    $noneReason = "blob not gzip"
+                }
+                else {
+                    # Decompress and parse.
+                    $reportText = Get-b2b_ReportText -Blob $blob
+                    $parsed     = ConvertFrom-b2b_ReportText -Text $reportText
                 }
             }
 
-            if ($null -eq $blob -or $blob.Length -eq 0) {
-                # Handle present but blob missing (aged out).
-                $noReport++
-                Set-b2b_FaultReportNone -RunId $runId -Reason "handle but no blob" -PreviewOnly $PreviewOnly
-                continue
+            if ($null -eq $parsed) {
+                $adv = Get-b2b_AdvStatusText -RunId $runId
+                if ($adv) {
+                    $reportText = $adv.Text
+                    $parsed     = ConvertFrom-b2b_ReportText -Text $reportText
+                    $parsed.source = $adv.ServiceName
+                }
             }
 
-            if (-not (Test-b2b_IsGzip -Blob $blob)) {
-                # Handle points at a non-gzip object (e.g. a raw-serialized
-                # process marker, not a compressed report). Nothing to capture.
+            if ($null -eq $parsed) {
                 $noReport++
-                Set-b2b_FaultReportNone -RunId $runId -Reason "blob not gzip" -PreviewOnly $PreviewOnly
+                Set-b2b_FaultReportNone -RunId $runId -Reason "$noneReason and no status text" -PreviewOnly $PreviewOnly
                 continue
             }
-
-            # Decompress and parse.
-            $reportText = Get-b2b_ReportText -Blob $blob
-            $parsed     = ConvertFrom-b2b_ReportText -Text $reportText
 
             # A bare one-line MESSAGE usually means the map completed with a
             # warning-bearing report and the BPML escalated the outcome to a
@@ -2493,16 +2769,22 @@ $stepResults.Collect = Step-b2b_CollectNewRuns -PreviewOnly $previewOnly
 # Step 4 - Re-poll incomplete pipeline runs
 $stepResults.Update = Step-b2b_UpdateIncompleteRuns -PreviewOnly $previewOnly
 
-# Step 5 - Resolve dispatcher names
+# Step 5 - Mirror run files
+$stepResults.RunFiles = Step-b2b_CollectRunFiles -PreviewOnly $previewOnly
+
+# Step 6 - Capture run tickets
+$stepResults.RunTickets = Step-b2b_CollectRunTickets -PreviewOnly $previewOnly
+
+# Step 7 - Resolve dispatcher names
 $stepResults.Dispatchers = Step-b2b_ResolveDispatcherNames -PreviewOnly $previewOnly
 
-# Step 6 - Sterling instance cross-check
+# Step 8 - Sterling instance cross-check
 $stepResults.CrossCheck = Step-b2b_CheckSterlingInstances -PreviewOnly $previewOnly
 
-# Step 7 - Fault report enrichment
+# Step 9 - Fault report enrichment
 $stepResults.FaultReports = Step-b2b_EnrichFaultReports -PreviewOnly $previewOnly
 
-# Step 8 - Alert evaluation
+# Step 10 - Alert evaluation
 $stepResults.Alerts = Step-b2b_EvaluateAlerts -PreviewOnly $previewOnly
 
 # SUMMARY
@@ -2517,7 +2799,7 @@ if ($stepResults.Schedules.Error -or $stepResults.Schedules.Errors -gt 0) {
 if ($stepResults.Census.Error -or $stepResults.Census.Errors -gt 0) {
     $finalStatus = "FAILED"
 }
-if ($stepResults.Collect.Error -or $stepResults.Update.Error) {
+if ($stepResults.Collect.Error -or $stepResults.Update.Error -or $stepResults.RunFiles.Error -or $stepResults.RunTickets.Error) {
     $finalStatus = "FAILED"
 }
 if ($stepResults.Dispatchers.Error -or $stepResults.CrossCheck.Error -or $stepResults.Alerts.Error -or $stepResults.FaultReports.Error) {
@@ -2535,6 +2817,8 @@ Write-Console
 Write-Console "  Pipeline Mirror:"
 Write-Console "    New Runs:  $($stepResults.Collect.Inserted)"
 Write-Console "    Updated:   $($stepResults.Update.Updated)  Completed: $($stepResults.Update.Completed)"
+Write-Console "    Run Files: $($stepResults.RunFiles.Inserted)"
+Write-Console "    Tickets:   New $($stepResults.RunTickets.Inserted)  Updated $($stepResults.RunTickets.Updated)  Aged $($stepResults.RunTickets.Aged)"
 Write-Console "    Dispatchers Resolved: $($stepResults.Dispatchers.Resolved)"
 Write-Console
 Write-Console "  Sterling Cross-Check:"
@@ -2559,7 +2843,7 @@ Write-ConsoleBanner -Label "B2B Pipeline Collection Complete" -Color Cyan
 
 # Orchestrator callback
 if ($TaskId -gt 0) {
-    $output = "SchedIns:$($stepResults.Schedules.Inserted) SchedUpd:$($stepResults.Schedules.Updated) SchedDel:$($stepResults.Schedules.Deleted) | CensusNew:$($stepResults.Census.NewDefinitions) CensusChg:$($stepResults.Census.VersionChanges) | RunsNew:$($stepResults.Collect.Inserted) RunsUpd:$($stepResults.Update.Updated) RunsDone:$($stepResults.Update.Completed) Disp:$($stepResults.Dispatchers.Resolved) | XChkRun:$($stepResults.CrossCheck.StillRunning) XChkDead:$($stepResults.CrossCheck.DiedUnhandled) | AlertDet:$($stepResults.Alerts.Detected) AlertFired:$($stepResults.Alerts.Fired) | FaultCap:$($stepResults.FaultReports.Captured) FaultNone:$($stepResults.FaultReports.NoReport)"
+    $output = "SchedIns:$($stepResults.Schedules.Inserted) SchedUpd:$($stepResults.Schedules.Updated) SchedDel:$($stepResults.Schedules.Deleted) | CensusNew:$($stepResults.Census.NewDefinitions) CensusChg:$($stepResults.Census.VersionChanges) | RunsNew:$($stepResults.Collect.Inserted) RunsUpd:$($stepResults.Update.Updated) RunsDone:$($stepResults.Update.Completed) Files:$($stepResults.RunFiles.Inserted) Tkts:$($stepResults.RunTickets.Inserted) Disp:$($stepResults.Dispatchers.Resolved) | XChkRun:$($stepResults.CrossCheck.StillRunning) XChkDead:$($stepResults.CrossCheck.DiedUnhandled) | AlertDet:$($stepResults.Alerts.Detected) AlertFired:$($stepResults.Alerts.Fired) | FaultCap:$($stepResults.FaultReports.Captured) FaultNone:$($stepResults.FaultReports.NoReport)"
 
     Complete-OrchestratorTask -TaskId $TaskId -ProcessId $ProcessId `
         -Status $finalStatus -DurationMs $totalMs `
