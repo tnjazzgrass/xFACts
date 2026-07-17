@@ -143,11 +143,15 @@
     --size-panel-offset-wide:   -820px;
     --size-panel-width-xwide:   1000px;
     --size-panel-offset-xwide:  -1020px;
+    --size-panel-width-xxwide:  1300px;
+    --size-panel-offset-xxwide: -1320px;
 
     /* -- Size tokens: modal widths -- */
     --size-modal-width-default: 460px;
     --size-modal-width-medium:  600px;
     --size-modal-width-wide:    800px;
+    --size-modal-width-xwide:   1000px;
+    --size-modal-width-xxwide:  1300px;
 
     /* -- Size tokens: slide-up panel left edge -- */
     --size-slideup-left:          20px;
@@ -1194,11 +1198,14 @@ a { color: var(--color-text-link); }
      default       600px  -- single-column detail views
      .cc-wide      800px  -- tabular detail with multiple columns
      .cc-xwide     1000px -- wide multi-column tables
+     .cc-xxwide    1300px -- the widest summary list tables
 
    Width tiers for modal dialogs:
      default       380px  -- compact alerts and confirms
      .cc-medium    500px  -- typical detail views
-     .cc-wide      700px  -- tabular content or wider detail views
+     .cc-wide      800px  -- tabular content or wider detail views
+     .cc-xwide     1000px -- wide multi-column tables
+     .cc-xxwide    1300px -- the widest summary list tables
 
    A slide dialog uses .cc-open to slide into view (right: 0 overrides its
    off-screen right offset). A slide overlay uses .cc-open to switch from
@@ -1289,6 +1296,14 @@ a { color: var(--color-text-link); }
     width: var(--size-modal-width-wide);
 }
 
+.cc-dialog-modal.cc-xwide { /* wide multi-column-table modal dialog */
+    width: var(--size-modal-width-xwide);
+}
+
+.cc-dialog-modal.cc-xxwide { /* widest summary-list modal dialog */
+    width: var(--size-modal-width-xxwide);
+}
+
 /* Slide-kind dialog state. Right-anchored panel positioned over the slide-overlay
    dimmer; off-screen by default, slides in when .cc-open is added. */
 .cc-dialog-slide {
@@ -1309,9 +1324,17 @@ a { color: var(--color-text-link); }
 /* Width-tier modifier tag for the widest slide dialog variant. */
 .cc-xwide { }
 
-.cc-dialog-slide.cc-xwide { /* widest slide dialog for wide multi-column tables */
+.cc-dialog-slide.cc-xwide { /* wide multi-column-table slide dialog */
     width: var(--size-panel-width-xwide);
     right: var(--size-panel-offset-xwide);
+}
+
+/* Width-tier modifier tag for the widest slide and modal dialog variant. */
+.cc-xxwide { }
+
+.cc-dialog-slide.cc-xxwide { /* widest summary-list slide dialog */
+    width: var(--size-panel-width-xxwide);
+    right: var(--size-panel-offset-xxwide);
 }
 
 .cc-dialog-slide.cc-open { /* slid into view (overrides the off-screen right offset) */
