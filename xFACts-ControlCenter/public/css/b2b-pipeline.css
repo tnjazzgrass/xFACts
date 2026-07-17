@@ -20,6 +20,7 @@
    CONTENT: HISTORY SUMMARY TREE
    CONTENT: RUNS MODAL
    CONTENT: RUN DETAIL
+   CONTENT: FAULT REPORT VIEW
    ============================================================================ */
 
 /* ============================================================================
@@ -889,4 +890,149 @@
     white-space: pre-wrap;
     overflow-wrap: break-word;
     overflow-y: auto;
+}
+
+/* ============================================================================
+   CONTENT: FAULT REPORT VIEW
+   ----------------------------------------------------------------------------
+   The formatted Sterling status-report view inside the full-report slideout:
+   the view and filter toolbar, the report metadata block, the count-chip
+   row, per-entry cards with severity badges, and the collapsible raw-block-
+   data regions. Entry detail rows reuse the run-detail row construct; count
+   chips and severity badges reuse the classification badge.
+   Prefix: b2b
+   ============================================================================ */
+
+/* State token marking a segmented control button as the active selection. */
+.b2b-active {
+}
+
+/* State token marking a collapsible region as collapsed. */
+.b2b-collapsed {
+}
+
+/* Toolbar of view and filter controls at the top of the report body. */
+.b2b-fault-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--size-spacing-md);
+    flex-wrap: wrap;
+}
+
+/* A group of segmented control buttons in the toolbar. */
+.b2b-fault-ctl-group {
+    display: flex;
+    gap: var(--size-spacing-xs);
+}
+
+/* Segmented control button; b2b-active marks the selected segment. */
+.b2b-fault-ctl-btn {
+    padding: var(--size-spacing-xs) var(--size-spacing-md);
+    border-radius: var(--size-radius-sm);
+    background: var(--color-bg-card-hover);
+    color: var(--color-text-muted);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    font-size: var(--font-size-body);
+    cursor: pointer;
+}
+
+.b2b-fault-ctl-btn:hover { /* hovered segment button */
+    border-color: var(--color-border-strong);
+}
+
+.b2b-fault-ctl-btn.b2b-active { /* selected segment button */
+    color: var(--color-text-primary);
+    border-color: var(--color-border-strong);
+    font-weight: 600;
+}
+
+/* Report metadata block above the entries. */
+.b2b-fault-meta {
+    padding: var(--size-spacing-md);
+    background: var(--color-bg-card-hover);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-sm);
+}
+
+/* Count-chip row under the report metadata. */
+.b2b-fault-chips {
+    display: flex;
+    gap: var(--size-spacing-sm);
+    flex-wrap: wrap;
+}
+
+/* One report entry card. */
+.b2b-fault-entry {
+    padding: var(--size-spacing-sm) var(--size-spacing-md);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-sm);
+    margin-bottom: var(--size-spacing-sm);
+}
+
+/* Header line of an entry card: severity badge, code title, section, index. */
+.b2b-fault-entry-head {
+    display: flex;
+    align-items: baseline;
+    gap: var(--size-spacing-md);
+    margin-bottom: var(--size-spacing-xs);
+}
+
+/* Code and label title of an entry card. */
+.b2b-fault-entry-title {
+    font-weight: 600;
+    color: var(--color-text-primary);
+    font-size: var(--font-size-body);
+}
+
+/* Report section token (HEADER, INPUT, OUTPUT, TRAILER) on the entry head. */
+.b2b-fault-entry-section {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Entry ordinal pushed to the right edge of the entry head. */
+.b2b-fault-entry-idx {
+    margin-left: auto;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body);
+}
+
+/* Collapsible raw-block-data region of an entry card. */
+.b2b-fault-rawblock {
+    margin-top: var(--size-spacing-xs);
+}
+
+/* Link-styled button expanding and collapsing the raw block data. */
+.b2b-fault-rawblock-btn {
+    background: none;
+    border: none;
+    padding: 0;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body);
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+.b2b-fault-rawblock-btn:hover { /* hovered raw-block toggle */
+    color: var(--color-text-primary);
+}
+
+/* Raw block data content of an entry card. */
+.b2b-fault-rawblock-pre {
+    margin: var(--size-spacing-xs) 0 0 0;
+    padding: var(--size-spacing-sm);
+    background: var(--color-bg-card-hover);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    border-radius: var(--size-radius-sm);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-body);
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+}
+
+.b2b-fault-rawblock-pre.b2b-collapsed { /* collapsed raw block data */
+    display: none;
 }
