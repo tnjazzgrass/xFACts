@@ -303,8 +303,10 @@ Add-PodeRoute -Method Get -Path '/api/b2b-pipeline/run' -Authentication 'ADLogin
 
 # Fault Report - the full captured Sterling status report for one failed run.
 # Query parameter: ?runId=. Returns the single SI_FaultReport row (1:1 with the
-# run) carrying the parsed report JSON and the decompressed raw-text fallback,
-# or a null report when the run carried no extractable report.
+# run) carrying the parsed report JSON, the decompressed raw-text fallback,
+# and the escalation message (populated only for TRANSLATION_ESCALATED rows,
+# where the report was recovered from the run's last successful Translation
+# step), or a null report when the run carried no extractable report.
 Add-PodeRoute -Method Get -Path '/api/b2b-pipeline/fault-report' -Authentication 'ADLogin' -ScriptBlock {
     if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
 
@@ -323,6 +325,7 @@ Add-PodeRoute -Method Get -Path '/api/b2b-pipeline/fault-report' -Authentication
                 source_name,
                 report_json,
                 raw_report_text,
+                escalation_message,
                 captured_dttm
             FROM B2B.SI_FaultReport
             WHERE run_id = @runId
