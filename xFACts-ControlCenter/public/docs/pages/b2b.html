@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IBM/B2B Pipeline &mdash; xFACts Secrets Revealed</title>
+    <link rel="stylesheet" href="../css/docs-base.css">
+    <link rel="stylesheet" href="../css/docs-narrative.css">
+</head>
+<body>
+<div class="doc-layout">
+
+    <nav class="doc-nav"></nav>
+
+    <div class="doc-content">
+
+        <div class="doc-header">
+            <div class="doc-header-inner">
+                <h1 class="doc-page-title">IBM/B2B Pipeline</h1>
+                <div class="doc-page-subtitle">Watching the middleman &mdash; so files don't vanish into the space between systems</div>
+                <div class="doc-subpage-links"></div>
+            </div>
+        </div>
+
+        <div class="doc-body">
+            <div class="doc-body-inner">
+
+<div class="doc-context-bar">
+        The B2B Pipeline module watches IBM Sterling B2B Integrator &mdash; the middleware that moves files between the outside world and Debt Manager. It follows each run from the moment a file shows up to the moment the work either lands safely in DM or fails, tells you which of those actually happened, and captures the error report when something breaks. It turns a black box into a page you can read.
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Problem -->
+    <!-- ============================================ -->
+    <div class="doc-section">
+        <h2 class="doc-section-title">The Problem</h2>
+
+        <p>Files don't teleport from a client into Debt Manager. They pass through a middleman: IBM Sterling B2B Integrator. Sterling picks files up, translates them, hands them off, sends things back out, and generally does the unglamorous work of connecting systems that were never designed to talk to each other.</p>
+
+        <p>When it works, nobody thinks about it. When it doesn't, the questions start &mdash; and they're surprisingly hard to answer. Did the file actually arrive? Did it get processed, or is it still sitting in a queue? Did it make it into DM, or did it fault somewhere in the middle? Was that failure a real problem, or just a run that correctly found nothing to do?</p>
+
+        <p>Historically, answering any of those meant logging into Sterling's own admin console and reading through screens designed for administrators, not humans. The information existed, but it was locked behind a tool nobody wanted to open at 7 AM. The pipeline was doing thousands of runs a day and almost none of them were visible.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: What It Does -->
+    <!-- ============================================ -->
+    <div class="doc-section">
+        <h2 class="doc-section-title">What It Does</h2>
+
+        <p>The B2B Pipeline module keeps a running mirror of every pipeline run and, crucially, decides what each one <em>means</em>. A run isn't just "done" or "not done" &mdash; the module sorts each one into a plain outcome so you're not left interpreting raw status codes.</p>
+
+        <table class="doc-info-table">
+            <thead>
+                <tr><th class="doc-info-table-th">Outcome</th><th class="doc-info-table-th">What It Means</th></tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td class="doc-info-table-td"><strong>Success</strong></td>
+                    <td class="doc-info-table-td">The run did its job. If it handed work off to Debt Manager, DM confirmed it landed.</td>
+                </tr>
+                <tr>
+                    <td class="doc-info-table-td"><strong>No Action</strong></td>
+                    <td class="doc-info-table-td">The run genuinely had nothing to do &mdash; a scheduled check that looked, found no files waiting, and correctly moved on. Not a problem.</td>
+                </tr>
+                <tr>
+                    <td class="doc-info-table-td doc-info-table-td-last"><strong>Failed</strong></td>
+                    <td class="doc-info-table-td doc-info-table-td-last">Something broke &mdash; a translation error, a rejection from DM, or a run that died without ever reaching a clean ending.</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <p>That "No Action" bucket is the quiet hero. A huge share of pipeline runs are scheduled pollers that check for files and find nothing. Without a way to recognize those as normal, every quiet run looks like a suspicious non-event. Separating "nothing to do" from "something went wrong" is most of what makes the page readable.</p>
+
+        <p>Underneath the three plain outcomes sits a more detailed classification &mdash; a dozen finer shades like "waiting on DM to confirm," "faulted before any handoff," or "died without reaching a fault handler." You don't need those to read the page, but they're there the moment you want to know exactly what a specific run did.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Following a Run -->
+    <!-- ============================================ -->
+    <div class="doc-section">
+        <h2 class="doc-section-title">Following a Run</h2>
+
+        <div class="doc-flow-diagram">
+            <div class="doc-flow-steps">
+                <div class="doc-flow-step doc-flow-blue">File<br>Arrives</div>
+                <span class="doc-flow-arrow">&rarr;</span>
+                <div class="doc-flow-step doc-flow-orange">Sterling<br>Processes</div>
+                <span class="doc-flow-arrow">&rarr;</span>
+                <div class="doc-flow-step doc-flow-purple">Hand Off<br>to DM</div>
+                <span class="doc-flow-arrow">&rarr;</span>
+                <div class="doc-flow-step doc-flow-green">DM<br>Confirms</div>
+                <span class="doc-flow-arrow">&rarr;</span>
+                <div class="doc-flow-step doc-flow-blue">Outcome<br>Recorded</div>
+            </div>
+            <div class="doc-flow-caption">A file's journey through the middleman &mdash; and where the module is watching at each step</div>
+        </div>
+
+        <p>Not every run takes the full journey. Some hand work to Debt Manager and wait for DM to confirm the batch landed; those aren't marked complete until that confirmation comes back. Others never hand anything off at all &mdash; a file gets emailed, a report gets sent, a folder gets swept &mdash; and those finish on the Sterling side alone. The module knows the difference and doesn't hold a run open waiting for a confirmation that was never coming.</p>
+
+        <p>Each run also gets tagged with who it was for (the client) and what kind of work it was (new business, a payment, a bulk data load, an outbound file, and so on). That's what lets you search the history for a specific client or filter down to just one type of activity.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: When Things Break -->
+    <!-- ============================================ -->
+    <div class="doc-section">
+        <h2 class="doc-section-title">When Things Break</h2>
+
+        <p>A failed run is only useful if you can find out <em>why</em> it failed. Sterling produces a detailed status report when a translation goes wrong &mdash; which field, which record, what rule it violated &mdash; but that report normally lives inside Sterling's own tooling.</p>
+
+        <p>This module reaches in, grabs that report at the moment of failure, and keeps it. When you open a failed run, the error report is right there: the specific problem, in a readable layout, without a single login to Sterling. For the trickier cases &mdash; a run that faulted after already handing off to DM, or one that died so hard it never wrote a proper ending &mdash; the module has specific handling so those don't just show up as a shrug.</p>
+
+        <p>Failures also raise their voice. When a run fails in a way that matters, a Teams alert goes out automatically, so the first anyone hears of a problem isn't a client asking where their file went.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Control Center View -->
+    <!-- ============================================ -->
+    <div class="doc-section">
+        <h2 class="doc-section-title">The Control Center View</h2>
+
+        <p>The B2B Pipeline page in the Control Center is the live window into all of this. The top gives you today at a glance &mdash; how many runs, how many are still in motion, how many succeeded, did nothing, or failed. A live activity panel shows what's moving through the pipeline right now. And a full run history, organized by year, month, and day, lets you drill down to any single run and read its whole story &mdash; the files it touched, any Jira tickets it generated, and the error report if it failed.</p>
+
+        <p>It's the page you open when a client asks "did you get our file?" and you'd like to answer with a fact instead of a guess.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Bottom Line -->
+    <!-- ============================================ -->
+    <div class="doc-section">
+        <h2 class="doc-section-title">The Bottom Line</h2>
+
+        <p>Middleware is one of those things that works beautifully until it doesn't &mdash; and when it doesn't, it tends to fail silently, in the gap between two systems where nobody's looking. The B2B Pipeline module puts a light in that gap.</p>
+
+        <p>Every run is tracked. Every outcome is named in plain language. Every failure keeps its evidence and raises an alert. What used to require an administrator and a Sterling login is now a page anyone can read &mdash; and the difference between "the file is fine" and "the file never made it" is no longer a mystery you have to go digging for.</p>
+    </div>
+
+                <div class="doc-footer"></div>
+
+            </div>
+        </div>
+
+    </div>
+
+</div>
+<script src="../js/docs-shared.js"></script>
+<script src="../js/nav.js"></script>
+</body>
+</html>
