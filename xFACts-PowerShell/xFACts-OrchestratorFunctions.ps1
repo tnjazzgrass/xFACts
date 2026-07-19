@@ -42,6 +42,13 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-07-19  Send-TeamsAlert dedup made same-run safe. The queue insert is now a
+#             guarded atomic INSERT ... SELECT ... WHERE NOT EXISTS against a
+#             Pending row with the same trigger, with UPDLOCK/HOLDLOCK so the
+#             collapse holds even when two collectors race the same trigger.
+#             OUTPUT writes INTO a table variable; the returned queue_id
+#             distinguishes an insert from a guard-skip for the return value
+#             and log line.
 # 2026-06-19  Added Get-SourceData (FUNCTIONS: SQL DATA ACCESS), the shared
 #             source-database read wrapper. Takes -ReadServer and -SourceDB
 #             explicitly rather than reading caller script-scope state. Lifted
@@ -1308,16 +1315,27 @@ function Send-TeamsAlert {
 
     .DESCRIPTION
         Inserts a row into Teams.AlertQueue for delivery by
-        Process-TeamsAlertQueue. Always checks Teams.RequestLog for an existing
-        successfully-sent alert with the same TriggerType and TriggerValue
-        before inserting; on a match the alert is skipped and a log message is
-        written. Dedup is mandatory with no opt-out, so callers needing a
-        repeating alert must pass a unique TriggerValue each time. Supports both
-        plain-text alerts and rich Adaptive Card payloads via the optional
-        -CardJson parameter; Title, Message, and Color remain required even when
-        a card is supplied, populating the audit trail and the plain-text
-        fallback. Returns $true if the alert was queued and $false if it was
-        skipped (dedup) or failed.
+        Process-TeamsAlertQueue. Deduplication is mandatory with no opt-out and
+        runs on two levels. First, it checks Teams.RequestLog for an existing
+        successfully-sent alert with the same TriggerType and TriggerValue, which
+        suppresses re-alerting across runs for a trigger already delivered.
+        Second, the queue insert itself is guarded so it only writes when no
+        Pending row with the same TriggerType and TriggerValue already exists,
+        which collapses a burst of identical-trigger calls within a single run
+        (for example an AG manager-state-change flapping hundreds of times during
+        a failover) down to one queued alert. The guard is an atomic
+        INSERT ... SELECT ... WHERE NOT EXISTS with UPDLOCK/HOLDLOCK, so it holds
+        even when two callers race, such as two collectors dispatching the same
+        trigger at once. The OUTPUT clause writes INTO a table variable rather
+        than being emitted directly, because Teams.AlertQueue carries an AFTER
+        INSERT trigger and SQL Server forbids a bare OUTPUT clause on a table
+        with enabled triggers. Callers needing a repeating alert must pass a
+        unique TriggerValue each time. Supports both plain-text alerts and rich
+        Adaptive Card payloads via the optional -CardJson parameter; Title,
+        Message, and Color remain required even when a card is supplied,
+        populating the audit trail and the plain-text fallback. Returns $true if
+        the alert was queued and $false if it was skipped (either dedup level) or
+        failed.
 
     .PARAMETER SourceModule
         The owning module (e.g., 'ServerOps', 'BatchOps').
@@ -1350,7 +1368,10 @@ function Send-TeamsAlert {
     #>
 
     try {
-        # Dedup check: has this alert already been successfully sent?
+        # Cross-run dedup: has this alert already been successfully delivered in
+        # a prior run? RequestLog only carries alerts that reached a webhook, so
+        # this guards against re-alerting for a trigger already sent, but it
+        # cannot see same-run duplicates that are still queued and undelivered.
         $triggerTypeSafe = $TriggerType -replace "'", "''"
         $triggerValueSafe = $TriggerValue -replace "'", "''"
 
@@ -1367,54 +1388,88 @@ WHERE trigger_type = '$triggerTypeSafe'
             return $false
         }
 
-        # Queue the alert.
+        # Queue the alert. The insert is guarded by WHERE NOT EXISTS against a
+        # Pending row with the same trigger, so a burst of identical-trigger
+        # calls in one run collapses to a single queued alert. UPDLOCK/HOLDLOCK
+        # on the existence probe makes the check-and-insert atomic, so the
+        # collapse holds even if two callers race on the same trigger. OUTPUT
+        # writes INTO @inserted (not a bare OUTPUT) because Teams.AlertQueue has
+        # an AFTER INSERT trigger, which SQL Server requires for OUTPUT. The
+        # trailing SELECT returns the new queue_id only when a row was actually
+        # inserted; an empty result means the guard matched and the duplicate
+        # was skipped.
         $titleSafe = $Title -replace "'", "''"
         $messageSafe = $Message -replace "'", "''"
 
-        # Build the INSERT, including the card_json column only when supplied.
+        # Build the guarded INSERT, including card_json only when supplied.
         if ([string]::IsNullOrEmpty($CardJson)) {
             $insertQuery = @"
+SET NOCOUNT ON;
+DECLARE @inserted TABLE (queue_id INT);
+
 INSERT INTO Teams.AlertQueue (
     source_module, alert_category, title, message, color,
     trigger_type, trigger_value, status, created_dttm
 )
-VALUES (
+OUTPUT INSERTED.queue_id INTO @inserted
+SELECT
     '$SourceModule', '$AlertCategory', N'$titleSafe',
     N'$messageSafe', '$Color',
     '$triggerTypeSafe', '$triggerValueSafe',
     'Pending', GETDATE()
-)
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM Teams.AlertQueue WITH (UPDLOCK, HOLDLOCK)
+    WHERE trigger_type = '$triggerTypeSafe'
+      AND trigger_value = '$triggerValueSafe'
+      AND status = 'Pending'
+);
+
+SELECT queue_id AS new_queue_id FROM @inserted;
 "@
         }
         else {
             $cardJsonSafe = $CardJson -replace "'", "''"
             $insertQuery = @"
+SET NOCOUNT ON;
+DECLARE @inserted TABLE (queue_id INT);
+
 INSERT INTO Teams.AlertQueue (
     source_module, alert_category, title, message, color, card_json,
     trigger_type, trigger_value, status, created_dttm
 )
-VALUES (
+OUTPUT INSERTED.queue_id INTO @inserted
+SELECT
     '$SourceModule', '$AlertCategory', N'$titleSafe',
     N'$messageSafe', '$Color', N'$cardJsonSafe',
     '$triggerTypeSafe', '$triggerValueSafe',
     'Pending', GETDATE()
-)
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM Teams.AlertQueue WITH (UPDLOCK, HOLDLOCK)
+    WHERE trigger_type = '$triggerTypeSafe'
+      AND trigger_value = '$triggerValueSafe'
+      AND status = 'Pending'
+);
+
+SELECT queue_id AS new_queue_id FROM @inserted;
 "@
         }
 
-        $result = Invoke-SqlNonQuery -Query $insertQuery
-        if ($result) {
+        $insertResult = Get-SqlData -Query $insertQuery
+
+        if ($insertResult -and $null -ne $insertResult.new_queue_id) {
             $cardSuffix = if ($CardJson) { " (with card)" } else { "" }
             Write-Log "  Teams alert queued: $TriggerType/$TriggerValue$cardSuffix" "SUCCESS"
             return $true
         }
         else {
-            Write-Log "  Teams alert queue INSERT failed: $TriggerType/$TriggerValue" "ERROR"
+            Write-Log "  Teams alert skipped (already queued this run): $TriggerType/$TriggerValue" "INFO"
             return $false
         }
     }
     catch {
-        Write-Log "  Teams alert failed: $($_.Exception.Message)" "ERROR"
+        Write-Log "  Teams alert failed to queue: $($_.Exception.Message)" "ERROR"
         return $false
     }
 }
