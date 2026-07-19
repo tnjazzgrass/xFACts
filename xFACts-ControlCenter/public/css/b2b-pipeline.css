@@ -21,6 +21,7 @@
    CONTENT: RUNS MODAL
    CONTENT: RUN DETAIL
    CONTENT: FAULT REPORT VIEW
+   CONTENT: SCHEDULE MODAL
    ============================================================================ */
 
 /* ============================================================================
@@ -372,6 +373,16 @@
     text-align: right;
     color: var(--color-text-muted);
     white-space: nowrap;
+}
+
+/* Right-aligned Jira indicator header cell, clearing the Duration column. */
+.b2b-head-jira {
+    text-align: right;
+}
+
+/* Right-aligned Jira indicator body cell. */
+.b2b-cell-jira {
+    text-align: right;
 }
 
 /* ============================================================================
@@ -1243,4 +1254,116 @@
 
 .b2b-fault-rawblock-pre.b2b-collapsed { /* collapsed raw block data */
     display: none;
+}
+
+/* ============================================================================
+   CONTENT: SCHEDULE MODAL
+   ----------------------------------------------------------------------------
+   The Sterling Schedules modal opened from the Run History header. The
+   trigger button matches the filter-bar action buttons; the panel body reuses
+   the shared cc-slide-table-* chrome, so only the launcher, the filter bar,
+   the result count, and the numeric-column alignment are defined here. Status
+   and pattern cells reuse the shared .b2b-badge and .b2b-type-badge classes.
+   Prefix: b2b
+   ============================================================================ */
+
+/* Schedules launcher in the Run History header, styled as a filter action. */
+.b2b-schedules-btn {
+    margin-left: auto;
+    margin-right: var(--size-spacing-md);
+    padding: var(--size-spacing-xs) 10px;
+    background: var(--color-border-divider);
+    border: var(--size-border-thin) solid var(--color-border-strong);
+    border-radius: var(--size-radius-sm);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body);
+    cursor: pointer;
+    transition: all var(--duration-fast);
+}
+
+.b2b-schedules-btn:hover { /* hover state for the schedules launcher */
+    background: var(--color-bg-card-hover);
+    color: var(--color-text-primary);
+}
+
+/* Filter bar holding the three control groups spread across the full width. */
+.b2b-sched-filter-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--size-spacing-md);
+    margin-bottom: var(--size-spacing-md);
+}
+
+/* A visual group of related controls within the filter bar. */
+.b2b-sched-group {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--size-spacing-sm);
+}
+
+/* Fixed-width search field so it does not flex to fill the group. */
+.b2b-sched-search {
+    flex: 0 0 auto;
+    width: 320px;
+}
+
+/* Runs-today checkbox label. */
+.b2b-sched-today-lbl {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--size-spacing-xs);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body);
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+/* Fires-between window group. */
+.b2b-sched-window-grp {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--size-spacing-xs);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body);
+    white-space: nowrap;
+}
+
+/* Fires-between leading label text. */
+.b2b-sched-window-lbl {
+    color: var(--color-text-muted);
+}
+
+/* Fires-between "and" separator text. */
+.b2b-sched-window-sep {
+    color: var(--color-text-muted);
+}
+
+/* Result count line above the schedule table. */
+.b2b-sched-count {
+    margin-bottom: var(--size-spacing-sm);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body);
+}
+
+/* Service column: constrain long workflow names, keep them readable. */
+.b2b-sched-service {
+    width: 450px;
+    font-weight: 600;
+    color: var(--color-text-primary);
+    word-break: break-all;
+}
+
+/* Right-aligned Runs/Day header cell. */
+.b2b-sched-th-num {
+    text-align: right;
+    white-space: nowrap;
+}
+
+/* Right-aligned Runs/Day body cell. */
+.b2b-sched-td-num {
+    text-align: right;
+    white-space: nowrap;
 }
