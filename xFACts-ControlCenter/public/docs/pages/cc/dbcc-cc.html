@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DBCC Operations &mdash; Control Center Guide &mdash; xFACts Secrets Revealed</title>
+    <link rel="stylesheet" href="../../css/docs-base.css">
+    <link rel="stylesheet" href="../../css/docs-controlcenter.css">
+</head>
+<body>
+<div class="doc-layout">
+
+    <nav class="doc-nav"></nav>
+
+    <div class="doc-content">
+
+        <div class="doc-header">
+            <div class="doc-header-inner">
+                <h1 class="doc-page-title">DBCC Operations &mdash; Control Center Guide</h1>
+                <div class="doc-page-subtitle">What you&rsquo;re looking at and what it means</div>
+                <div class="doc-subpage-links"></div>
+            </div>
+        </div>
+
+        <div class="doc-body">
+            <div class="doc-body-inner">
+
+<div class="doc-sticky-ref-zone">
+
+        <div class="doc-sticky-ref-main-layout">
+            <!-- LEFT: Key + Mockup stacked -->
+            <div class="doc-sticky-ref-primary">
+
+                <!-- Key to the Page -->
+                <div class="doc-key-section">
+                    <div class="doc-key-section-header">
+                        <h2 class="doc-key-section-title">Key to the Page</h2>
+                        <span class="doc-key-section-hint">Click on any card to learn more about it.</span>
+                    </div>
+                    <div class="doc-key-flip-grid">
+                        <div class="doc-key-flip-card"><div class="doc-key-flip-inner">
+                            <div class="doc-key-flip-front"><span class="doc-key-flip-icon"><span class="doc-key-badge-live"><span class="doc-key-badge-dot"></span></span></span><span class="doc-key-flip-label">Live Badge</span></div>
+                            <div class="doc-key-flip-back"><div class="doc-key-flip-desc">Section refreshes automatically on the page&rsquo;s polling interval. Data is always current.</div></div>
+                        </div></div>
+                        <div class="doc-key-flip-card"><div class="doc-key-flip-inner">
+                            <div class="doc-key-flip-front"><span class="doc-key-flip-icon"><span class="doc-key-badge-static">&#128204;</span></span><span class="doc-key-flip-label">Static Badge</span></div>
+                            <div class="doc-key-flip-back"><div class="doc-key-flip-desc">Section loads once when the page opens and doesn&rsquo;t auto-refresh. The schedule rarely changes.</div></div>
+                        </div></div>
+                        <div class="doc-key-flip-card"><div class="doc-key-flip-inner">
+                            <div class="doc-key-flip-front"><span class="doc-key-flip-icon"><span class="doc-key-badge-event"><span class="doc-key-badge-bolt">&#9889;</span></span></span><span class="doc-key-flip-label">Event Badge</span></div>
+                            <div class="doc-key-flip-back"><div class="doc-key-flip-desc">Section refreshes when the DBCC engine process completes an execution.</div></div>
+                        </div></div>
+                        <div class="doc-key-flip-card"><div class="doc-key-flip-inner">
+                            <div class="doc-key-flip-front"><span class="doc-key-flip-icon"><div class="doc-key-engine-indicator"><span class="doc-key-engine-label">DBCC</span><div class="doc-key-engine-bar"></div><span class="doc-key-engine-cd">10m</span></div></span><span class="doc-key-flip-label">Engine Indicator</span></div>
+                            <div class="doc-key-flip-back"><div class="doc-key-flip-desc">The DBCC executor process. Green bar = last run healthy. Countdown to next run. Red = last run failed.</div></div>
+                        </div></div>
+                        <div class="doc-key-flip-card"><div class="doc-key-flip-inner">
+                            <div class="doc-key-flip-front"><span class="doc-key-flip-icon"><span style="display:inline-block; padding:2px 8px; background:#1e3a5f; color:#569cd6; border:1px solid #2a4a6a; border-radius:3px; font-size:9px; font-weight:600;">CHECKDB</span></span><span class="doc-key-flip-label">Operation Badge</span></div>
+                            <div class="doc-key-flip-back"><div class="doc-key-flip-desc">Which integrity check ran: CHECKDB, CHECKALLOC, CHECKCATALOG, or CHECKCONSTRAINTS. Each has its own color.</div></div>
+                        </div></div>
+                        <div class="doc-key-flip-card"><div class="doc-key-flip-inner">
+                            <div class="doc-key-flip-front"><span class="doc-key-flip-icon"><span style="display:inline-block; padding:2px 8px; background:#1a2a1a; color:#4ec9b0; border:1px solid #2a4a2a; border-radius:3px; font-size:9px;">SUCCESS</span></span><span class="doc-key-flip-label">Status Badge</span></div>
+                            <div class="doc-key-flip-back"><div class="doc-key-flip-desc">How a check ended: SUCCESS, FAILED, ERRORS_FOUND, IN_PROGRESS, or PENDING.</div></div>
+                        </div></div>
+                        <div class="doc-key-flip-card"><div class="doc-key-flip-inner">
+                            <div class="doc-key-flip-front"><span class="doc-key-flip-icon"><span style="font-size:14px; color:#569cd6;">&#128197;</span></span><span class="doc-key-flip-label">Edit Icon</span></div>
+                            <div class="doc-key-flip-back"><div class="doc-key-flip-desc">Admins only. Opens the schedule editor for one database &mdash; set check mode and per-operation days and times.</div></div>
+                        </div></div>
+                    </div>
+                </div>
+
+                <!-- Page Overview - mockup -->
+                <div class="doc-overview-section">
+                    <div class="doc-overview-section-header">
+                        <h2 class="doc-overview-section-title">Page Overview</h2>
+                        <p class="doc-overview-section-caption">Click a numbered marker to learn about that section or feature.</p>
+                    </div>
+                    <div class="doc-mock-container doc-mock-wide">
+
+                        <!-- Header Bar -->
+                        <div class="doc-mock-header">
+                            <div class="doc-mock-header-left">
+                                <div class="doc-mock-page-title">DBCC Operations</div>
+                                <div class="doc-mock-page-subtitle">Live integrity check progress, execution history, schedule overview</div>
+                            </div>
+                            <div class="doc-mock-header-right">
+                                <div class="doc-mock-live-row">
+                                    <span class="doc-mock-live-dot"></span>
+                                    <span>Live</span> | Updated: <span style="color:#4ec9b0;">5:52:24 PM</span>
+                                </div>
+                                <div class="doc-mock-engine-row" data-section="1" style="position: relative;">
+                                    <a href="#doc-section-1" class="doc-callout-marker" style="position:absolute; top: 8px; right: 110%;">1</a>
+                                    <div class="doc-mock-engine">
+                                        <div class="doc-mock-engine-label">DBCC</div>
+                                        <div class="doc-mock-engine-bar"></div>
+                                        <div class="doc-mock-engine-cd">10m</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Two-column body: left (live progress + today) / right (schedule + history) -->
+                        <div style="display:flex; gap:14px; align-items:flex-start;">
+
+                            <!-- LEFT COLUMN -->
+                            <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:12px;">
+
+                                <!-- Live Progress -->
+                                <div class="doc-mock-section" data-section="2" style="position: relative;">
+                                    <a href="#doc-section-2" class="doc-callout-marker" style="position:absolute; top: 6px; left: 26%;">2</a>
+                                    <div class="doc-mock-section-header">
+                                        <span class="doc-mock-section-title">Live Progress</span>
+                                        <span class="doc-mock-badge-live"><span class="doc-mock-live-dot" style="width:6px; height:6px;"></span></span>
+                                    </div>
+                                    <div style="padding:22px 8px; text-align:center; color:#666; font-size:9px; font-style:italic;">No active executions</div>
+                                </div>
+
+                                <!-- Today's Executions -->
+                                <div class="doc-mock-section doc-mock-section-tall" data-section="3" style="position: relative;">
+                                    <a href="#doc-section-3" class="doc-callout-marker" style="position:absolute; top: 6px; left: 26%;">3</a>
+                                    <div class="doc-mock-section-header">
+                                        <span class="doc-mock-section-title">Today&rsquo;s Executions</span>
+                                        <span style="display:flex; align-items:center; gap:6px;">
+                                            <span style="font-size:8px; color:#aaa; border:1px solid #404040; border-radius:3px; padding:2px 7px;">&#9202; Pending <span style="background:#333; border-radius:6px; padding:0 5px; color:#ccc;">0</span></span>
+                                            <span class="doc-mock-badge-live"><span class="doc-mock-live-dot" style="width:6px; height:6px;"></span></span>
+                                        </span>
+                                    </div>
+                                    <div style="padding:26px 8px; text-align:center; color:#666; font-size:9px; font-style:italic;">No executions today</div>
+                                </div>
+                            </div>
+
+                            <!-- RIGHT COLUMN -->
+                            <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:12px;">
+
+                                <!-- Schedule Overview -->
+                                <div class="doc-mock-section" data-section="5" style="position: relative;">
+                                    <a href="#doc-section-5" class="doc-callout-marker" style="position:absolute; top: 6px; left: 26%;">5</a>
+                                    <div class="doc-mock-section-header">
+                                        <span class="doc-mock-section-title">Schedule Overview</span>
+                                        <span data-section="4" style="position: relative;">
+                                            <a href="#doc-section-4" class="doc-callout-marker" style="position:absolute; top: -4px; right: 100%;">4</a>
+                                            <span class="doc-mock-badge-static">&#128204;</span>
+                                        </span>
+                                    </div>
+                                    <!-- Server rows; marker 6 on the first row = schedule modal trigger -->
+                                    <div style="font-size:8px;">
+                                        <div data-section="6" style="position: relative; display:flex; align-items:center; padding:5px 4px; border-bottom:1px solid #2a2a2a; cursor:pointer;">
+                                            <a href="#doc-section-6" class="doc-callout-marker" style="position:absolute; top: 2px; left: 40%; z-index:5;">6</a>
+                                            <span style="flex:1; color:#d4d4d4;">AVG-PROD-LSNR</span>
+                                            <span style="color:#888; margin-right:10px;">13 database(s)</span>
+                                            <span style="background:#1a2a1a; color:#4ec9b0; border:1px solid #2a4a2a; border-radius:2px; padding:1px 6px; font-size:7px;">ACTIVE</span>
+                                        </div>
+                                        <div style="display:flex; align-items:center; padding:5px 4px; border-bottom:1px solid #2a2a2a;">
+                                            <span style="flex:1; color:#d4d4d4;">DM-PROD-DB</span>
+                                            <span style="color:#888; margin-right:10px;">7 database(s)</span>
+                                            <span style="background:#1a2a1a; color:#4ec9b0; border:1px solid #2a4a2a; border-radius:2px; padding:1px 6px; font-size:7px;">ACTIVE</span>
+                                        </div>
+                                        <div style="display:flex; align-items:center; padding:5px 4px; border-bottom:1px solid #2a2a2a;">
+                                            <span style="flex:1; color:#d4d4d4;">FA-INT-DBP</span>
+                                            <span style="color:#888; margin-right:10px;">5 database(s)</span>
+                                            <span style="background:#1a2a1a; color:#4ec9b0; border:1px solid #2a4a2a; border-radius:2px; padding:1px 6px; font-size:7px;">ACTIVE</span>
+                                        </div>
+                                        <div style="display:flex; align-items:center; padding:5px 4px; border-bottom:1px solid #2a2a2a;">
+                                            <span style="flex:1; color:#d4d4d4;">ATLAS-DB</span>
+                                            <span style="color:#888; margin-right:10px;">10 database(s)</span>
+                                            <span style="background:#1a2a1a; color:#4ec9b0; border:1px solid #2a4a2a; border-radius:2px; padding:1px 6px; font-size:7px;">ACTIVE</span>
+                                        </div>
+                                        <div style="display:flex; align-items:center; padding:5px 4px;">
+                                            <span style="flex:1; color:#d4d4d4;">FA-SQLDBB</span>
+                                            <span style="color:#888; margin-right:10px;">5 database(s)</span>
+                                            <span style="background:#1a2a1a; color:#4ec9b0; border:1px solid #2a4a2a; border-radius:2px; padding:1px 6px; font-size:7px;">ACTIVE</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Execution History -->
+                                <div class="doc-mock-section doc-mock-section-tall" data-section="7" style="position: relative;">
+                                    <a href="#doc-section-7" class="doc-callout-marker" style="position:absolute; top: 6px; left: 24%;">7</a>
+                                    <div class="doc-mock-section-header">
+                                        <span class="doc-mock-section-title">Execution History</span>
+                                        <span class="doc-mock-badge-event">&#9889;</span>
+                                    </div>
+                                    <div style="font-size:8px;">
+                                        <!-- Year 2026 expanded -->
+                                        <div style="display:flex; align-items:center; padding:4px 2px; border-bottom:1px solid #333;">
+                                            <span style="color:#569cd6; margin-right:4px;">&#9660;</span>
+                                            <span style="color:#d4d4d4; font-weight:600;">2026</span>
+                                            <span style="margin-left:auto; display:flex; gap:10px; font-size:7px;">
+                                                <span style="color:#888;">843 executions</span>
+                                                <span style="color:#4ec9b0;">838 succeeded</span>
+                                                <span style="color:#e07070;">5 failed</span>
+                                            </span>
+                                        </div>
+                                        <!-- Month table header -->
+                                        <div style="display:flex; gap:4px; padding:3px 2px 3px 14px; border-bottom:1px solid #2a2a2a; color:#666; text-transform:uppercase; font-size:6px;">
+                                            <span style="width:10px;"></span><span style="flex:1.2;">Month</span><span style="flex:1; text-align:right;">Executions</span><span style="flex:1; text-align:right;">Succeeded</span><span style="flex:1; text-align:right;">Failed</span>
+                                        </div>
+                                        <!-- July expanded -->
+                                        <div style="display:flex; gap:4px; padding:3px 2px 3px 14px; border-bottom:1px solid #2a2a2a;">
+                                            <span style="width:10px; color:#4ec9b0;">&#9660;</span><span style="flex:1.2; color:#d4d4d4; font-weight:600;">July</span><span style="flex:1; text-align:right; color:#ccc;">98</span><span style="flex:1; text-align:right; color:#4ec9b0;">98</span><span style="flex:1; text-align:right; color:#666;">-</span>
+                                        </div>
+                                        <!-- Day table header -->
+                                        <div style="display:flex; gap:4px; padding:3px 2px 3px 26px; border-bottom:1px solid #2a2a2a; color:#666; text-transform:uppercase; font-size:6px; background:#1a1a1a;">
+                                            <span style="width:10px;"></span><span style="flex:0.8;">Day</span><span style="flex:0.7;">Date</span><span style="flex:0.6; text-align:right;">Runs</span><span style="flex:1; text-align:right;">Exec</span><span style="flex:1; text-align:right;">Duration</span><span style="flex:1; text-align:right;">Succ</span><span style="flex:0.8; text-align:right;">Fail</span><span style="flex:0.9; text-align:right;">Warn</span>
+                                        </div>
+                                        <!-- Day rows -->
+                                        <div style="display:flex; gap:4px; padding:3px 2px 3px 26px; border-bottom:1px solid #222; cursor:pointer;">
+                                            <span style="width:10px; color:#569cd6;">&#9654;</span><span style="flex:0.8; color:#ccc;">Sunday</span><span style="flex:0.7; color:#ccc;">07/12</span><span style="flex:0.6; text-align:right; color:#ccc;">3</span><span style="flex:1; text-align:right; color:#ccc;">26</span><span style="flex:1; text-align:right; color:#888;">11m 38s</span><span style="flex:1; text-align:right; color:#4ec9b0;">26</span><span style="flex:0.8; text-align:right; color:#666;">-</span><span style="flex:0.9; text-align:right; color:#666;">-</span>
+                                        </div>
+                                        <!-- Saturday expanded, with DBCC OUTPUT detail (marker 8) -->
+                                        <div data-section="8" style="position: relative; display:flex; gap:4px; padding:3px 2px 3px 26px; border-bottom:1px solid #222; cursor:pointer;">
+                                            <a href="#doc-section-8" class="doc-callout-marker" style="position:absolute; top: 14px; left: 4px; z-index:5;">8</a>
+                                            <span style="width:10px; color:#4ec9b0;">&#9660;</span><span style="flex:0.8; color:#ccc;">Saturday</span><span style="flex:0.7; color:#ccc;">07/11</span><span style="flex:0.6; text-align:right; color:#ccc;">2</span><span style="flex:1; text-align:right; color:#ccc;">23</span><span style="flex:1; text-align:right; color:#888;">6h 44m</span><span style="flex:1; text-align:right; color:#4ec9b0;">23</span><span style="flex:0.8; text-align:right; color:#666;">-</span><span style="flex:0.9; text-align:right; color:#666;">-</span>
+                                        </div>
+                                        <!-- Day detail op row -->
+                                        <div style="display:flex; gap:4px; padding:4px 2px 4px 34px; border-bottom:1px solid #222; align-items:center; background:#161616;">
+                                            <span style="flex:1.4;"><span style="background:#1e3a5f; color:#569cd6; border-radius:2px; padding:1px 5px; font-size:7px;">CHECKDB</span> <span style="color:#888; font-size:7px;">PHYSICAL_ONLY</span></span>
+                                            <span style="flex:1.2; color:#d4d4d4;">AVG-PROD-LSNR</span>
+                                            <span style="flex:1; color:#d4d4d4;">crs5_oltp</span>
+                                            <span style="flex:0.8; color:#888;">08:15:31</span>
+                                            <span style="flex:0.8; color:#888;">13:37:08</span>
+                                            <span style="flex:0.7; color:#888;">5h 21m</span>
+                                            <span style="flex:0.8;"><span style="background:#1a2a1a; color:#4ec9b0; border:1px solid #2a4a2a; border-radius:2px; padding:1px 5px; font-size:7px;">SUCCESS</span> <span style="color:#569cd6;">&#9660;</span></span>
+                                        </div>
+                                        <!-- DBCC OUTPUT expandable detail -->
+                                        <div style="margin:2px 6px 6px 34px; padding:6px 8px; background:#1a1a1a; border:1px solid #2a2a2a; border-radius:3px;">
+                                            <div style="color:#888; font-size:6px; text-transform:uppercase; margin-bottom:3px;">DBCC Output</div>
+                                            <div style="color:#9cb89c; font-size:7px; font-family:monospace; line-height:1.4;">DBCC CHECKDB (crs5_oltp) WITH all_errormsgs, no_infomsgs, physical_only, maxdop = 4 executed by FAC\sqlmon found 0 errors and repaired 0 errors. Elapsed time: 5 hours 18 minutes 56 seconds.</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Schedule modal preview (marker 6) -->
+                        <div class="doc-mock-modal-preview" data-section="6" style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:66%; background:#252526; border:2px solid var(--accent-blue); border-radius:6px; padding:0; z-index:10; box-shadow:0 8px 32px rgba(0,0,0,0.6);">
+                            <div style="display:flex; align-items:center; justify-content:space-between; padding:10px 14px; border-bottom:1px solid #383838;">
+                                <span style="color:#4ec9b0; font-size:12px; font-weight:600;">FA-INT-DBP &mdash; DBCC Schedule</span>
+                                <span style="color:#888; font-size:14px;">&times;</span>
+                            </div>
+                            <div style="padding:12px 14px;">
+                                <table style="width:100%; border-collapse:collapse; font-size:8px;">
+                                    <thead>
+                                        <tr style="color:#888; text-transform:uppercase; font-size:7px;">
+                                            <th style="text-align:left; padding:4px;">Database</th>
+                                            <th style="text-align:left; padding:4px;">Mode</th>
+                                            <th style="text-align:left; padding:4px;">CHECKDB</th>
+                                            <th style="text-align:left; padding:4px;">CHECKALLOC</th>
+                                            <th style="text-align:left; padding:4px;">CHECKCATALOG</th>
+                                            <th style="text-align:left; padding:4px;">CHECKCONST.</th>
+                                            <th style="width:20px;"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr style="border-top:1px solid #2a2a2a;">
+                                            <td style="padding:5px 4px; color:#d4d4d4; font-weight:600;">b2bi</td>
+                                            <td style="padding:5px 4px; color:#569cd6;">PHYSICAL</td>
+                                            <td style="padding:5px 4px; color:#4ec9b0;">Sun 6:00 AM</td>
+                                            <td style="padding:5px 4px; color:#555;">&mdash;</td>
+                                            <td style="padding:5px 4px; color:#555;">&mdash;</td>
+                                            <td style="padding:5px 4px; color:#555;">&mdash;</td>
+                                            <td style="padding:5px 4px; color:#569cd6;">&#128197;</td>
+                                        </tr>
+                                        <tr style="border-top:1px solid #2a2a2a;">
+                                            <td style="padding:5px 4px; color:#d4d4d4; font-weight:600;">DBA</td>
+                                            <td style="padding:5px 4px; color:#569cd6;">PHYSICAL</td>
+                                            <td style="padding:5px 4px; color:#4ec9b0;">Sun 6:00 AM</td>
+                                            <td style="padding:5px 4px; color:#555;">&mdash;</td>
+                                            <td style="padding:5px 4px; color:#555;">&mdash;</td>
+                                            <td style="padding:5px 4px; color:#555;">&mdash;</td>
+                                            <td style="padding:5px 4px; color:#569cd6;">&#128197;</td>
+                                        </tr>
+                                        <tr style="border-top:1px solid #2a2a2a;">
+                                            <td style="padding:5px 4px; color:#d4d4d4; font-weight:600;">master</td>
+                                            <td style="padding:5px 4px; color:#569cd6;">PHYSICAL</td>
+                                            <td style="padding:5px 4px; color:#4ec9b0;">Sun 6:00 AM</td>
+                                            <td style="padding:5px 4px; color:#555;">&mdash;</td>
+                                            <td style="padding:5px 4px; color:#555;">&mdash;</td>
+                                            <td style="padding:5px 4px; color:#555;">&mdash;</td>
+                                            <td style="padding:5px 4px; color:#569cd6;">&#128197;</td>
+                                        </tr>
+                                        <tr style="border-top:1px solid #2a2a2a;">
+                                            <td style="padding:5px 4px; color:#d4d4d4; font-weight:600;">model</td>
+                                            <td style="padding:5px 4px; color:#569cd6;">PHYSICAL</td>
+                                            <td style="padding:5px 4px; color:#4ec9b0;">Sun 6:00 AM</td>
+                                            <td style="padding:5px 4px; color:#555;">&mdash;</td>
+                                            <td style="padding:5px 4px; color:#555;">&mdash;</td>
+                                            <td style="padding:5px 4px; color:#555;">&mdash;</td>
+                                            <td style="padding:5px 4px; color:#569cd6;">&#128197;</td>
+                                        </tr>
+                                        <tr style="border-top:1px solid #2a2a2a;">
+                                            <td style="padding:5px 4px; color:#d4d4d4; font-weight:600;">msdb</td>
+                                            <td style="padding:5px 4px; color:#569cd6;">PHYSICAL</td>
+                                            <td style="padding:5px 4px; color:#4ec9b0;">Sun 6:00 AM</td>
+                                            <td style="padding:5px 4px; color:#555;">&mdash;</td>
+                                            <td style="padding:5px 4px; color:#555;">&mdash;</td>
+                                            <td style="padding:5px 4px; color:#555;">&mdash;</td>
+                                            <td style="padding:5px 4px; color:#569cd6;">&#128197;</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+
+            <!-- RIGHT: Overview text + clickable section index -->
+            <div class="doc-sticky-ref-sidebar">
+                <div class="doc-sidebar-intro">
+                    <h3 class="doc-sidebar-heading">About This Page</h3>
+                    <p>The DBCC Operations page is the window into scheduled database-integrity checking &mdash; the automated <code>DBCC CHECKDB</code> family of commands that verify SQL Server databases aren&rsquo;t silently corrupting.</p>
+                    <p>The left side is the live view: what&rsquo;s running right now, and what has run today. The right side is the reference view: the schedule (what&rsquo;s configured to run, and when) and the full execution history.</p>
+                    <p>Most of the time this page is quiet &mdash; integrity checks run on a schedule, usually overnight or on weekends, so during the day you&rsquo;ll often see &ldquo;no active executions.&rdquo; That&rsquo;s healthy. This guide walks through each section and the schedule editor.</p>
+                </div>
+                <h3 class="doc-sidebar-heading">Sections and Features at a Glance</h3>
+                <p class="doc-sidebar-hint">Click a number below to highlight it on the diagram. Click a marker on the diagram for details.</p>
+                <div class="doc-sidebar-items">
+                    <div class="doc-sidebar-item" data-marker="1"><span class="doc-sidebar-num">1</span> Engine Indicator</div>
+                    <div class="doc-sidebar-item" data-marker="2"><span class="doc-sidebar-num">2</span> Live Progress</div>
+                    <div class="doc-sidebar-item" data-marker="3"><span class="doc-sidebar-num">3</span> Today&rsquo;s Executions &amp; Pending</div>
+                    <div class="doc-sidebar-item" data-marker="4"><span class="doc-sidebar-num">4</span> Refresh Badges</div>
+                    <div class="doc-sidebar-item" data-marker="5"><span class="doc-sidebar-num">5</span> Schedule Overview</div>
+                    <div class="doc-sidebar-item" data-marker="6"><span class="doc-sidebar-num">6</span> Schedule Modal &amp; Editor</div>
+                    <div class="doc-sidebar-item" data-marker="7"><span class="doc-sidebar-num">7</span> Execution History</div>
+                    <div class="doc-sidebar-item" data-marker="8"><span class="doc-sidebar-num">8</span> DBCC Output Detail</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- HIDDEN SECTION CONTENT (data source for slideout) -->
+    <!-- ============================================ -->
+    <div class="doc-cc-guide-content">
+
+        <div class="doc-guide-section" id="doc-section-1"><div class="doc-guide-section-inner">
+            <h2 class="doc-guide-section-title"><span class="doc-section-number">1</span>Engine Indicator</h2>
+            <p>One engine card in the upper right represents the process behind this page: the <strong>DBCC</strong> executor. It works through the queue of due integrity checks, running each one and recording the result.</p>
+            <p>A green bar means the last run succeeded; red means it failed. The countdown shows time until the next scheduled run. This card updates on its own, independently of the page&rsquo;s refresh cycle.</p>
+            <div class="doc-callout doc-info"><p>Unlike the collector-style engines on other pages that constantly poll a source, the DBCC engine mostly waits &mdash; it wakes on its interval, runs whatever integrity checks are due, and goes quiet again. A long countdown with nothing running is the normal daytime state.</p></div>
+        </div></div>
+
+        <div class="doc-guide-section" id="doc-section-2"><div class="doc-guide-section-inner">
+            <h2 class="doc-guide-section-title"><span class="doc-section-number">2</span>Live Progress</h2>
+            <p>Shows integrity checks that are executing <em>right now</em>, refreshed on the live interval. When a check is running, this panel shows a progress card for it: the operation and database, the check mode and parallelism, which server it&rsquo;s running on, elapsed time, an ETA, and a percent-complete bar.</p>
+            <p>Integrity checks &mdash; especially a full <code>CHECKDB</code> on a large database &mdash; can run for hours, so the progress bar and ETA are genuinely useful for knowing how much longer a maintenance window will be occupied.</p>
+            <div class="doc-callout doc-info"><p>Most of the day this panel reads &ldquo;No active executions,&rdquo; because checks are scheduled for off-hours. An empty panel here is the normal, healthy daytime state &mdash; not a sign anything is wrong.</p></div>
+        </div></div>
+
+        <div class="doc-guide-section" id="doc-section-3"><div class="doc-guide-section-inner">
+            <h2 class="doc-guide-section-title"><span class="doc-section-number">3</span>Today&rsquo;s Executions &amp; Pending</h2>
+            <p>A running list of every integrity check that has executed today &mdash; completed and in-progress alike. Each row shows the operation, server, database, duration, completion time, check mode, and final status. Failed and errors-found rows are tinted so they stand out.</p>
+            <p>In the header, the <strong>Pending</strong> button shows how many checks are queued but haven&rsquo;t started yet (the count badge appears when there are any). Clicking it opens the pending queue &mdash; the operations waiting their turn, with the database, server, and how long each has been queued.</p>
+            <div class="doc-callout doc-info"><p>The pending queue exists because checks are claimed and run one (or a few) at a time to avoid hammering a server with simultaneous full scans. A backlog in the queue during a maintenance window is normal; it drains as each check finishes.</p></div>
+        </div></div>
+
+        <div class="doc-guide-section" id="doc-section-4"><div class="doc-guide-section-inner">
+            <h2 class="doc-guide-section-title"><span class="doc-section-number">4</span>Refresh Badges</h2>
+            <p>This page is a good example of the three refresh rhythms used across the Control Center, and it shows all three at once:</p>
+            <p><strong>Live</strong> (pulsing dot) &mdash; Live Progress and Today&rsquo;s Executions poll on a short interval, so an in-flight check&rsquo;s progress and a just-finished result appear quickly.</p>
+            <p><strong>Static</strong> (pin) &mdash; Schedule Overview loads once when the page opens and doesn&rsquo;t auto-refresh. The schedule is configuration; it rarely changes, so there&rsquo;s no reason to re-poll it.</p>
+            <p><strong>Event</strong> (lightning) &mdash; Execution History refreshes when the DBCC engine completes a check, since that&rsquo;s the only moment new history appears.</p>
+            <div class="doc-callout doc-tip"><p>Matching each section&rsquo;s refresh style to how often its data actually changes keeps the page efficient &mdash; the fast-moving panels stay current, and the slow-moving ones don&rsquo;t waste queries re-fetching data that hasn&rsquo;t changed.</p></div>
+        </div></div>
+
+        <div class="doc-guide-section" id="doc-section-5"><div class="doc-guide-section-inner">
+            <h2 class="doc-guide-section-title"><span class="doc-section-number">5</span>Schedule Overview</h2>
+            <p>The list of servers that have DBCC schedules configured. Each row shows the server, how many databases are scheduled on it, and whether the server&rsquo;s checking is Active or Disabled. A warning marker appears when one or more databases on that server have a replica override (more on that below).</p>
+            <p>This is a summary &mdash; click any server row to open its full schedule detail (see the next section). It loads once when the page opens (the pin badge), since the schedule rarely changes.</p>
+        </div></div>
+
+        <div class="doc-guide-section" id="doc-section-6"><div class="doc-guide-section-inner">
+            <h2 class="doc-guide-section-title"><span class="doc-section-number">6</span>Schedule Modal &amp; Editor</h2>
+            <p>Clicking a server in the Schedule Overview opens its <strong>schedule modal</strong> &mdash; shown on the mockup. It lists every database on that server with its check mode and, for each of the four operations (CHECKDB, CHECKALLOC, CHECKCATALOG, CHECKCONSTRAINTS), the day and time it&rsquo;s scheduled to run, or a dash when that operation is off. A warning icon flags any database whose checks are pinned to a specific replica.</p>
+            <p>For most people this modal is read-only &mdash; a clear picture of exactly what integrity checking is configured. For admins, each row has an <strong>edit icon</strong> (the calendar) that opens the schedule editor for that one database.</p>
+            <p>The editor is where scheduling actually happens. It has:</p>
+            <p><strong>Check mode</strong> &mdash; None, Physical Only, or Full. This controls how thorough (and how expensive) the <code>CHECKDB</code> is. Setting it to None disables CHECKDB for that database &mdash; the editor warns you when that&rsquo;s about to happen.</p>
+            <p><strong>Per-operation toggles</strong> &mdash; a switch for each of the four operations, and when one is on, a day-of-week and time-of-day selector for when it should run.</p>
+            <p><strong>Target replica</strong> (Availability Group databases only) &mdash; Default, Primary, or Secondary. This lets an AG database&rsquo;s checks be pinned to run on a specific replica &mdash; typically the secondary, so the expensive scan doesn&rsquo;t load the primary. That&rsquo;s the replica override the warning icons refer to.</p>
+            <p>Changes are saved with <strong>Save Changes</strong>; each modified value is written back and the schedule refreshes.</p>
+            <div class="doc-callout doc-info"><p>This scheduling editor is specific to DBCC &mdash; it&rsquo;s a different design from the scheduling modals on the Index Maintenance and DM Operations pages, because integrity checking has its own per-operation, per-database, per-replica needs.</p></div>
+            <div class="doc-callout doc-warning"><p>Editing is admin-only, and enforced on the server side &mdash; the edit icon only appears for admins, and the save endpoints reject non-admin requests regardless. Changing a schedule changes when real integrity checks run against production databases, so treat it with the same care as any maintenance-window change.</p></div>
+        </div></div>
+
+        <div class="doc-guide-section" id="doc-section-7"><div class="doc-guide-section-inner">
+            <h2 class="doc-guide-section-title"><span class="doc-section-number">7</span>Execution History</h2>
+            <p>The full history of every integrity check, organized as a collapsible year &rarr; month &rarr; day tree. It refreshes when the DBCC engine completes a check (the lightning badge), since that&rsquo;s when new history appears.</p>
+            <p>Each level rolls up its counts: executions, succeeded, and failed. Click a year to expand its months, a month to expand its days. A day row adds a few more columns &mdash; the number of scheduled runs, total duration, and a warnings count for checks that finished but found something worth noting.</p>
+            <div class="doc-callout doc-info"><p>&ldquo;Succeeded&rdquo; here includes checks that completed and found issues (the errors-found outcome) as well as clean passes &mdash; the check itself ran successfully either way. The separate warnings column is what tells you a completed check actually found something. A failed check, by contrast, is one that couldn&rsquo;t complete at all.</p></div>
+        </div></div>
+
+        <div class="doc-guide-section" id="doc-section-8"><div class="doc-guide-section-inner">
+            <h2 class="doc-guide-section-title"><span class="doc-section-number">8</span>DBCC Output Detail</h2>
+            <p>Expanding a day row reveals the individual checks that ran that day &mdash; each with its operation, server, database, start and completion times, duration, and status. On an Availability Group database, if the check ran on a different replica than the listener, that target server is noted alongside.</p>
+            <p>A check row that has captured output or an error is itself expandable. Clicking it reveals the <strong>DBCC Output</strong> &mdash; the actual message SQL Server returned, like the classic &ldquo;found 0 errors and repaired 0 errors&rdquo; summary line &mdash; and, for a failure, the error detail. This is the ground truth: the raw result straight from the engine, without needing to open SQL Server Management Studio.</p>
+            <div class="doc-callout doc-tip"><p>The output line includes the exact command that ran (options, MAXDOP, and the account that executed it) plus the elapsed time. When you need to prove an integrity check happened and passed &mdash; for an audit, or after a scare &mdash; this is the record to point at.</p></div>
+        </div></div>
+
+    </div>
+
+                <div class="doc-footer"></div>
+
+            </div>
+        </div>
+
+    </div>
+
+</div>
+
+<!-- Slideout Panel (outside the app-frame to avoid clipping) -->
+<div class="doc-guide-slideout">
+    <div class="doc-guide-slideout-header">
+        <h3 class="doc-guide-slideout-title">Section and Features Guide</h3>
+        <div class="doc-slideout-header-controls">
+            <button class="doc-mode-btn doc-mode-active" data-doc-mode="tour" title="Reset and start the guided tour">Take The Tour</button>
+            <button class="doc-mode-btn" data-doc-mode="showall" title="Show all sections at once">Show Me Everything</button>
+            <button class="doc-guide-slideout-close" title="Close panel">&times;</button>
+        </div>
+    </div>
+    <div class="doc-guide-slideout-body"></div>
+</div>
+
+<script src="../../js/docs-shared.js"></script>
+<script src="../../js/nav.js"></script>
+<script src="../../js/docs-controlcenter.js"></script>
+</body>
+</html>
