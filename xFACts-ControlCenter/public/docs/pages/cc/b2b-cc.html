@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IBM/B2B Pipeline &mdash; Control Center Guide &mdash; xFACts Secrets Revealed</title>
+    <link rel="stylesheet" href="../../css/docs-base.css">
+    <link rel="stylesheet" href="../../css/docs-controlcenter.css">
+</head>
+<body>
+<div class="doc-layout">
+
+    <nav class="doc-nav"></nav>
+
+    <div class="doc-content">
+
+        <div class="doc-header">
+            <div class="doc-header-inner">
+                <h1 class="doc-page-title">IBM/B2B Pipeline &mdash; Control Center Guide</h1>
+                <div class="doc-page-subtitle">What you&rsquo;re looking at and what it means</div>
+                <div class="doc-subpage-links"></div>
+            </div>
+        </div>
+
+        <div class="doc-body">
+            <div class="doc-body-inner">
+
+<div class="doc-sticky-ref-zone">
+
+        <div class="doc-sticky-ref-main-layout">
+            <!-- LEFT: Key + Mockup stacked -->
+            <div class="doc-sticky-ref-primary">
+
+                <!-- Key to the Page -->
+                <div class="doc-key-section">
+                    <div class="doc-key-section-header">
+                        <h2>Key to the Page</h2>
+                        <span class="doc-key-section-hint">Click on any card to learn more about it.</span>
+                    </div>
+                    <div class="doc-key-flip-grid">
+                        <div class="doc-key-flip-card"><div class="doc-key-flip-inner">
+                            <div class="doc-key-flip-front"><span class="doc-key-flip-icon"><span class="doc-key-badge-live"><span class="doc-key-badge-dot"></span></span></span><span class="doc-key-flip-label">Live Badge</span></div>
+                            <div class="doc-key-flip-back"><div class="doc-key-flip-desc">Section refreshes automatically on the page&rsquo;s polling interval. Data is always current.</div></div>
+                        </div></div>
+                        <div class="doc-key-flip-card"><div class="doc-key-flip-inner">
+                            <div class="doc-key-flip-front"><span class="doc-key-flip-icon"><span class="doc-key-badge-event"><span class="doc-key-badge-bolt">&#9889;</span></span></span><span class="doc-key-flip-label">Event Badge</span></div>
+                            <div class="doc-key-flip-back"><div class="doc-key-flip-desc">Section refreshes when the collector process completes a collection cycle.</div></div>
+                        </div></div>
+                        <div class="doc-key-flip-card"><div class="doc-key-flip-inner">
+                            <div class="doc-key-flip-front"><span class="doc-key-flip-icon"><div class="doc-key-engine-indicator"><span class="doc-key-engine-label">B2B</span><div class="doc-key-engine-bar"></div><span class="doc-key-engine-cd">3m</span></div></span><span class="doc-key-flip-label">Engine Indicator</span></div>
+                            <div class="doc-key-flip-back"><div class="doc-key-flip-desc">The B2B collector process. Green bar = last run healthy. Countdown to next run. Red = last run failed.</div></div>
+                        </div></div>
+                        <div class="doc-key-flip-card"><div class="doc-key-flip-inner">
+                            <div class="doc-key-flip-front"><span class="doc-key-flip-icon"><div class="doc-key-metric-card"><div class="doc-key-metric-value">8</div><div class="doc-key-metric-label">Failed</div></div></span><span class="doc-key-flip-label">Pulse Tile</span></div>
+                            <div class="doc-key-flip-back"><div class="doc-key-flip-desc">A count for today. The bottom three tiles (Success, No Action, Failed) are clickable and open a filtered runs list.</div></div>
+                        </div></div>
+                        <div class="doc-key-flip-card"><div class="doc-key-flip-inner">
+                            <div class="doc-key-flip-front"><span class="doc-key-flip-icon"><span style="display:inline-block; padding:2px 8px; background:#1e3a5f; color:#569cd6; border:1px solid #2a4a6a; border-radius:3px; font-size:9px; font-weight:600;">NB</span></span><span class="doc-key-flip-label">Type Badge</span></div>
+                            <div class="doc-key-flip-back"><div class="doc-key-flip-desc">The run&rsquo;s process type, shortened. Hover for the full value. A run with no type is a parent/dispatcher run and badges as DISPATCHER.</div></div>
+                        </div></div>
+                        <div class="doc-key-flip-card"><div class="doc-key-flip-inner">
+                            <div class="doc-key-flip-front"><span class="doc-key-flip-icon"><span style="display:inline-block; padding:2px 8px; background:#1e3a5f; color:#569cd6; border:1px solid #2a4a6a; border-radius:3px; font-size:9px;">Awaiting DM</span></span><span class="doc-key-flip-label">Status Badge</span></div>
+                            <div class="doc-key-flip-back"><div class="doc-key-flip-desc">The run&rsquo;s status. Live activity shows the detailed classification; history and the runs list show the coarser Sterling status.</div></div>
+                        </div></div>
+                        <div class="doc-key-flip-card"><div class="doc-key-flip-inner">
+                            <div class="doc-key-flip-front"><span class="doc-key-flip-icon"><span style="font-size:11px; color:#569cd6;">&#9654; 2026</span></span><span class="doc-key-flip-label">Expand Row</span></div>
+                            <div class="doc-key-flip-back"><div class="doc-key-flip-desc">A clickable row in the history tree. Click to expand year &rarr; month, then click a day to open that day&rsquo;s runs.</div></div>
+                        </div></div>
+                    </div>
+                </div>
+
+                <!-- Page Overview - mockup -->
+                <div class="doc-overview-section">
+                    <div class="doc-overview-section-header">
+                        <h2>Page Overview</h2>
+                        <p>Click a numbered marker to learn about that section or feature.</p>
+                    </div>
+                    <div class="doc-mock-container doc-mock-wide">
+
+                        <!-- Header Bar -->
+                        <div class="doc-mock-header">
+                            <div class="doc-mock-header-left">
+                                <div class="doc-mock-page-title">IBM/B2B Pipeline</div>
+                                <div class="doc-mock-page-subtitle">IBM/Sterling B2B pipeline activity, run classification, and execution history</div>
+                            </div>
+                            <div class="doc-mock-header-right">
+                                <div class="doc-mock-live-row">
+                                    <span class="doc-mock-live-dot"></span>
+                                    <span>Live</span> | Updated: <span style="color:#4ec9b0;">5:43:13 PM</span>
+                                </div>
+                                <div class="doc-mock-engine-row" data-section="1" style="position: relative;">
+                                    <a href="#doc-section-1" class="doc-callout-marker" style="position:absolute; top: 8px; right: 110%;">1</a>
+                                    <div class="doc-mock-engine">
+                                        <div class="doc-mock-engine-label">B2B</div>
+                                        <div class="doc-mock-engine-bar"></div>
+                                        <div class="doc-mock-engine-cd">3m</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Two-column body: left (pulse + live) / right (history) -->
+                        <div style="display:flex; gap:14px; align-items:flex-start;">
+
+                            <!-- LEFT COLUMN -->
+                            <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:12px;">
+
+                                <!-- Today's Pipeline Pulse -->
+                                <div class="doc-mock-section" data-section="2" style="position: relative;">
+                                    <a href="#doc-section-2" class="doc-callout-marker" style="position:absolute; top: 6px; left: 30%;">2</a>
+                                    <div class="doc-mock-section-header">
+                                        <span class="doc-mock-section-title">Today&rsquo;s Pipeline Pulse</span>
+                                        <span class="doc-mock-badge-live"><span class="doc-mock-live-dot" style="width:6px; height:6px;"></span></span>
+                                    </div>
+                                    <!-- top row: live-sourced, not clickable -->
+                                    <div style="display:flex; gap:8px; margin-bottom:8px;">
+                                        <div style="flex:1; background:#1e1e1e; border:1px solid #404040; border-radius:4px; padding:8px;">
+                                            <div style="font-size:8px; color:#888; text-transform:uppercase;">Runs Today</div>
+                                            <div style="font-size:20px; font-weight:600; color:#d4d4d4;">1,709</div>
+                                        </div>
+                                        <div style="flex:1; background:#1e1e1e; border:1px solid #2a4a6a; border-radius:4px; padding:8px;">
+                                            <div style="font-size:8px; color:#888; text-transform:uppercase;">In Flight</div>
+                                            <div style="font-size:20px; font-weight:600; color:#569cd6;">1</div>
+                                        </div>
+                                        <div style="flex:1; background:#1e1e1e; border:1px solid #2a4a6a; border-radius:4px; padding:8px;">
+                                            <div style="font-size:8px; color:#888; text-transform:uppercase;">Awaiting DM</div>
+                                            <div style="font-size:20px; font-weight:600; color:#569cd6;">1</div>
+                                        </div>
+                                    </div>
+                                    <!-- bottom row: table-sourced, clickable -->
+                                    <div data-section="3" style="position: relative; display:flex; gap:8px;">
+                                        <a href="#doc-section-3" class="doc-callout-marker" style="position:absolute; top: -6px; left: 44%; z-index:5;">3</a>
+                                        <div style="flex:1; background:#1a2a1a; border:1px solid #2a4a2a; border-radius:4px; padding:8px; cursor:pointer;">
+                                            <div style="font-size:8px; color:#888; text-transform:uppercase;">Success</div>
+                                            <div style="font-size:20px; font-weight:600; color:#4ec9b0;">1,149</div>
+                                        </div>
+                                        <div style="flex:1; background:#1e1e1e; border:1px solid #404040; border-radius:4px; padding:8px; cursor:pointer;">
+                                            <div style="font-size:8px; color:#888; text-transform:uppercase;">No Action</div>
+                                            <div style="font-size:20px; font-weight:600; color:#d4d4d4;">515</div>
+                                        </div>
+                                        <div style="flex:1; background:#2a1a1a; border:1px solid #5a3030; border-radius:4px; padding:8px; cursor:pointer;">
+                                            <div style="font-size:8px; color:#888; text-transform:uppercase;">Failed</div>
+                                            <div style="font-size:20px; font-weight:600; color:#e07070;">8</div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Live Pipeline Activity -->
+                                <div class="doc-mock-section doc-mock-section-tall" data-section="4" style="position: relative;">
+                                    <a href="#doc-section-4" class="doc-callout-marker" style="position:absolute; top: 6px; left: 30%;">4</a>
+                                    <div class="doc-mock-section-header">
+                                        <span class="doc-mock-section-title">Live Pipeline Activity</span>
+                                        <span class="doc-mock-badge-live"><span class="doc-mock-live-dot" style="width:6px; height:6px;"></span></span>
+                                    </div>
+                                    <div style="font-size:8px; color:#888;">
+                                        <div style="display:flex; gap:6px; padding:3px 2px; border-bottom:1px solid #333; color:#666; text-transform:uppercase; font-size:7px;">
+                                            <span style="flex:1.2;">Type</span><span style="flex:1;">Run ID</span><span style="width:24px;">Seq</span><span style="flex:1.5;">Client</span><span style="flex:1;">Status</span><span style="width:30px; text-align:right;">Age</span>
+                                        </div>
+                                        <div style="display:flex; gap:6px; padding:5px 2px; border-bottom:1px solid #2a2a2a; align-items:center;">
+                                            <span style="flex:1.2;"><span style="background:#3a2a3a; color:#c586c0; border-radius:2px; padding:1px 5px; font-size:7px;">SPECIAL_PROCESS</span></span>
+                                            <span style="flex:1; color:#888;">8619031</span><span style="width:24px; color:#888;">12</span>
+                                            <span style="flex:1.5; color:#d4d4d4;">INTEGRATION TOOLS</span>
+                                            <span style="flex:1;"><span style="background:#1e3a5f; color:#569cd6; border-radius:2px; padding:1px 5px; font-size:7px;">In Flight</span></span>
+                                            <span style="width:30px; text-align:right; color:#888;">&lt;1m</span>
+                                        </div>
+                                        <div style="display:flex; gap:6px; padding:5px 2px; align-items:center;">
+                                            <span style="flex:1.2;"><span style="background:#3a2a3a; color:#c586c0; border-radius:2px; padding:1px 5px; font-size:7px;">SPECIAL_PROCESS</span></span>
+                                            <span style="flex:1; color:#888;">8619030</span><span style="width:24px; color:#888;">12</span>
+                                            <span style="flex:1.5; color:#d4d4d4;">INTEGRATION TOOLS</span>
+                                            <span style="flex:1;"><span style="background:#1e3a5f; color:#569cd6; border-radius:2px; padding:1px 5px; font-size:7px;">Awaiting DM</span></span>
+                                            <span style="width:30px; text-align:right; color:#888;">&lt;1m</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- RIGHT COLUMN: Run History -->
+                            <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:12px;">
+                                <div class="doc-mock-section doc-mock-section-tall" data-section="5" style="position: relative;">
+                                    <a href="#doc-section-5" class="doc-callout-marker" style="position:absolute; top: 6px; left: 22%;">5</a>
+                                    <div class="doc-mock-section-header">
+                                        <span class="doc-mock-section-title">Run History</span>
+                                        <span data-section="9" style="position: relative; margin-left:auto; margin-right:8px;">
+                                            <a href="#doc-section-9" class="doc-callout-marker" style="position:absolute; top: -6px; right: 100%;">9</a>
+                                            <span style="background:#2a2a2a; border:1px solid #4a4a4a; border-radius:3px; padding:2px 7px; font-size:7px; color:#aaa;">Schedules</span>
+                                        </span>
+                                        <span class="doc-mock-badge-event">&#9889;</span>
+                                    </div>
+
+                                    <!-- Filter bar -->
+                                    <div data-section="6" style="position: relative; display:flex; gap:4px; margin-bottom:8px; flex-wrap:wrap; align-items:center;">
+                                        <a href="#doc-section-6" class="doc-callout-marker" style="position:absolute; top: -8px; left: 46%; z-index:5;">6</a>
+                                        <span style="flex:1; min-width:70px; background:#1e1e1e; border:1px solid #404040; border-radius:3px; padding:3px 6px; font-size:7px; color:#666;">Search by Run ID...</span>
+                                        <span style="flex:1; min-width:70px; background:#1e1e1e; border:1px solid #404040; border-radius:3px; padding:3px 6px; font-size:7px; color:#666;">Search by Client...</span>
+                                        <span style="background:#1e1e1e; border:1px solid #404040; border-radius:3px; padding:3px 6px; font-size:7px; color:#888;">All Statuses &#9662;</span>
+                                        <span style="background:#1e1e1e; border:1px solid #404040; border-radius:3px; padding:3px 6px; font-size:7px; color:#888;">All Types &#9662;</span>
+                                        <span style="background:#1e1e1e; border:1px solid #404040; border-radius:3px; padding:3px 6px; font-size:7px; color:#666;">mm/dd/yyyy</span>
+                                        <span style="background:#1e1e1e; border:1px solid #404040; border-radius:3px; padding:3px 6px; font-size:7px; color:#666;">mm/dd/yyyy</span>
+                                        <span style="background:#264f6b; color:#9cd6ff; border-radius:3px; padding:3px 8px; font-size:7px;">Search</span>
+                                        <span style="background:#333; color:#aaa; border-radius:3px; padding:3px 8px; font-size:7px;">Reset</span>
+                                    </div>
+
+                                    <!-- History tree -->
+                                    <div style="font-size:8px;">
+                                        <!-- Year 2026 expanded -->
+                                        <div style="display:flex; align-items:center; padding:4px 2px; border-bottom:1px solid #333;">
+                                            <span style="color:#569cd6; margin-right:4px;">&#9660;</span>
+                                            <span style="color:#d4d4d4; font-weight:600; flex:0 0 auto;">2026</span>
+                                            <span style="margin-left:auto; display:flex; gap:8px; font-size:7px;">
+                                                <span style="color:#888;">368,745 runs</span>
+                                                <span style="color:#4ec9b0;">245,724 success</span>
+                                                <span style="color:#e07070;">1,260 failed</span>
+                                                <span style="color:#888;">117,809 no action</span>
+                                                <span style="color:#888;">3,952 undefined</span>
+                                            </span>
+                                        </div>
+                                        <!-- Month table header -->
+                                        <div style="display:flex; gap:4px; padding:3px 2px 3px 14px; border-bottom:1px solid #2a2a2a; color:#666; text-transform:uppercase; font-size:6px;">
+                                            <span style="width:10px;"></span><span style="flex:1.2;">Month</span><span style="flex:1; text-align:right;">Runs</span><span style="flex:1; text-align:right;">Success</span><span style="flex:1; text-align:right;">Failed</span><span style="flex:1; text-align:right;">No Action</span><span style="flex:1; text-align:right;">In Prog</span><span style="flex:1; text-align:right;">Undef</span><span style="flex:0.8; text-align:right;">Avg</span>
+                                        </div>
+                                        <!-- July expanded -->
+                                        <div data-section="7" style="position: relative; display:flex; gap:4px; padding:3px 2px 3px 14px; border-bottom:1px solid #2a2a2a;">
+                                            <a href="#doc-section-7" class="doc-callout-marker" style="position:absolute; top: 0px; left: -22px;">7</a>
+                                            <span style="width:10px; color:#4ec9b0;">&#9660;</span><span style="flex:1.2; color:#d4d4d4; font-weight:600;">July</span><span style="flex:1; text-align:right; color:#ccc;">31,242</span><span style="flex:1; text-align:right; color:#4ec9b0;">21,063</span><span style="flex:1; text-align:right; color:#e07070;">153</span><span style="flex:1; text-align:right; color:#888;">9,562</span><span style="flex:1; text-align:right; color:#666;">-</span><span style="flex:1; text-align:right; color:#888;">464</span><span style="flex:0.8; text-align:right; color:#888;">1m</span>
+                                        </div>
+                                        <!-- Day table header -->
+                                        <div data-section="8" style="position: relative; display:flex; gap:4px; padding:3px 2px 3px 26px; border-bottom:1px solid #2a2a2a; color:#666; text-transform:uppercase; font-size:6px; background:#1a1a1a;">
+                                            <a href="#doc-section-8" class="doc-callout-marker" style="position:absolute; top: 12px; left: -22px;">8</a>
+                                            <span style="flex:0.8;">Date</span><span style="flex:0.6;">Day</span><span style="flex:1; text-align:right;">Runs</span><span style="flex:1; text-align:right;">Success</span><span style="flex:1; text-align:right;">Failed</span><span style="flex:1; text-align:right;">No Action</span><span style="flex:1; text-align:right;">In Prog</span><span style="flex:1; text-align:right;">Undef</span><span style="flex:0.8; text-align:right;">Avg</span>
+                                        </div>
+                                        <!-- Day rows -->
+                                        <div style="display:flex; gap:4px; padding:3px 2px 3px 26px; border-bottom:1px solid #222; cursor:pointer;">
+                                            <span style="flex:0.8; color:#ccc;">7/17</span><span style="flex:0.6; color:#4ec9b0;">Fri</span><span style="flex:1; text-align:right; color:#ccc;">1,709</span><span style="flex:1; text-align:right; color:#4ec9b0;">1,149</span><span style="flex:1; text-align:right; color:#e07070;">8</span><span style="flex:1; text-align:right; color:#888;">515</span><span style="flex:1; text-align:right; color:#666;">-</span><span style="flex:1; text-align:right; color:#888;">37</span><span style="flex:0.8; text-align:right; color:#888;">1m</span>
+                                        </div>
+                                        <div style="display:flex; gap:4px; padding:3px 2px 3px 26px; border-bottom:1px solid #222; cursor:pointer;">
+                                            <span style="flex:0.8; color:#ccc;">7/16</span><span style="flex:0.6; color:#4ec9b0;">Thu</span><span style="flex:1; text-align:right; color:#ccc;">1,943</span><span style="flex:1; text-align:right; color:#4ec9b0;">1,331</span><span style="flex:1; text-align:right; color:#e07070;">9</span><span style="flex:1; text-align:right; color:#888;">588</span><span style="flex:1; text-align:right; color:#666;">-</span><span style="flex:1; text-align:right; color:#888;">15</span><span style="flex:0.8; text-align:right; color:#888;">2m</span>
+                                        </div>
+                                        <div style="display:flex; gap:4px; padding:3px 2px 3px 26px; border-bottom:1px solid #222; cursor:pointer;">
+                                            <span style="flex:0.8; color:#ccc;">7/15</span><span style="flex:0.6; color:#4ec9b0;">Wed</span><span style="flex:1; text-align:right; color:#ccc;">1,996</span><span style="flex:1; text-align:right; color:#4ec9b0;">1,362</span><span style="flex:1; text-align:right; color:#e07070;">5</span><span style="flex:1; text-align:right; color:#888;">603</span><span style="flex:1; text-align:right; color:#666;">-</span><span style="flex:1; text-align:right; color:#888;">26</span><span style="flex:0.8; text-align:right; color:#888;">1m</span>
+                                        </div>
+                                        <div style="color:#555; font-size:7px; padding:4px 0 6px 26px; font-style:italic;">&hellip; (click any day row to open that day&rsquo;s runs)</div>
+
+                                        <!-- Collapsed years -->
+                                        <div style="display:flex; align-items:center; padding:4px 2px; border-bottom:1px solid #333;">
+                                            <span style="color:#569cd6; margin-right:4px;">&#9654;</span><span style="color:#d4d4d4; font-weight:600;">2025</span>
+                                            <span style="margin-left:auto; display:flex; gap:8px; font-size:7px;"><span style="color:#888;">740,146 runs</span><span style="color:#4ec9b0;">459,717 success</span><span style="color:#e07070;">9,742 failed</span></span>
+                                        </div>
+                                        <div style="display:flex; align-items:center; padding:4px 2px; border-bottom:1px solid #333;">
+                                            <span style="color:#569cd6; margin-right:4px;">&#9654;</span><span style="color:#d4d4d4; font-weight:600;">2024</span>
+                                            <span style="margin-left:auto; display:flex; gap:8px; font-size:7px;"><span style="color:#888;">443,913 runs</span><span style="color:#4ec9b0;">277,117 success</span><span style="color:#e07070;">7,062 failed</span></span>
+                                        </div>
+                                        <div style="display:flex; align-items:center; padding:4px 2px;">
+                                            <span style="color:#569cd6; margin-right:4px;">&#9654;</span><span style="color:#d4d4d4; font-weight:600;">2023</span>
+                                            <span style="margin-left:auto; display:flex; gap:8px; font-size:7px;"><span style="color:#888;">140,126 runs</span><span style="color:#4ec9b0;">72,124 success</span><span style="color:#e07070;">3,724 failed</span></span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Schedule modal preview (marker 9) -->
+                        <div class="doc-mock-modal-preview" data-section="9" style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:82%; background:#252526; border:2px solid var(--accent-blue); border-radius:6px; padding:0; z-index:10; box-shadow:0 8px 32px rgba(0,0,0,0.6);">
+                            <div style="display:flex; align-items:center; justify-content:space-between; padding:8px 12px; border-bottom:1px solid #383838;">
+                                <span style="color:#4ec9b0; font-size:11px; font-weight:600;">Sterling Schedules</span>
+                                <span style="color:#888; font-size:12px;">&times;</span>
+                            </div>
+                            <div style="padding:10px 12px;">
+                                <!-- Filter bar: three groups spread across -->
+                                <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
+                                    <span style="display:flex; gap:5px; align-items:center;">
+                                        <span style="background:#1e1e1e; border:1px solid #404040; border-radius:3px; padding:2px 6px; font-size:7px; color:#666;">Search by service...</span>
+                                        <span style="background:#1e1e1e; border:1px solid #404040; border-radius:3px; padding:2px 6px; font-size:7px; color:#888;">All Patterns &#9662;</span>
+                                        <span style="background:#1e1e1e; border:1px solid #404040; border-radius:3px; padding:2px 6px; font-size:7px; color:#888;">All Statuses &#9662;</span>
+                                    </span>
+                                    <span style="display:flex; gap:8px; align-items:center; font-size:7px; color:#aaa;">
+                                        <span>&#9744; Runs today</span>
+                                        <span>&#9744; Hide system processes</span>
+                                    </span>
+                                    <span style="display:flex; gap:5px; align-items:center; font-size:7px; color:#888;">
+                                        <span>Fires between</span>
+                                        <span style="background:#1e1e1e; border:1px solid #404040; border-radius:3px; padding:2px 5px;">Start &#9662;</span>
+                                        <span>and</span>
+                                        <span style="background:#1e1e1e; border:1px solid #404040; border-radius:3px; padding:2px 5px;">End &#9662;</span>
+                                        <span style="background:#333; color:#aaa; border-radius:3px; padding:2px 7px;">Reset</span>
+                                    </span>
+                                </div>
+                                <div style="color:#888; font-size:7px; margin-bottom:5px;">631 of 631 schedules</div>
+                                <!-- Table header -->
+                                <div style="display:flex; gap:6px; padding:3px 4px; border-bottom:1px solid #333; color:#888; text-transform:uppercase; font-size:6px;">
+                                    <span style="flex:2;">Service</span><span style="flex:2.4;">Schedule</span><span style="flex:0.8;">Pattern</span><span style="flex:0.7; text-align:right;">Runs/Day</span><span style="flex:0.7;">Status</span>
+                                </div>
+                                <!-- Rows -->
+                                <div style="display:flex; gap:6px; padding:4px 4px; border-bottom:1px solid #222; align-items:center; font-size:7px;">
+                                    <span style="flex:2; color:#d4d4d4; font-weight:600;">AFTPurgeArchiveMailboxes</span><span style="flex:2.4; color:#ccc;">Daily at 04:00</span><span style="flex:0.8;"><span style="background:#2a2a2a; color:#aaa; border-radius:2px; padding:1px 5px;">DAILY</span></span><span style="flex:0.7; text-align:right; color:#ccc;">1</span><span style="flex:0.7;"><span style="background:#1a2a1a; color:#4ec9b0; border:1px solid #2a4a2a; border-radius:2px; padding:1px 5px;">ACTIVE</span></span>
+                                </div>
+                                <div style="display:flex; gap:6px; padding:4px 4px; border-bottom:1px solid #222; align-items:center; font-size:7px;">
+                                    <span style="flex:2; color:#d4d4d4; font-weight:600;">AssociateBPsToDocs</span><span style="flex:2.4; color:#ccc;">Every 10 min at :00, 00:00-23:59, daily</span><span style="flex:0.8;"><span style="background:#2a2a2a; color:#aaa; border-radius:2px; padding:1px 5px;">INTERVAL</span></span><span style="flex:0.7; text-align:right; color:#ccc;">144</span><span style="flex:0.7;"><span style="background:#1a2a1a; color:#4ec9b0; border:1px solid #2a4a2a; border-radius:2px; padding:1px 5px;">ACTIVE</span></span>
+                                </div>
+                                <div style="display:flex; gap:6px; padding:4px 4px; align-items:center; font-size:7px;">
+                                    <span style="flex:2; color:#d4d4d4; font-weight:600;">FA_DM_ACCOUNTS_RETURN...</span><span style="flex:2.4; color:#ccc;">Daily at 09:40, 17:16</span><span style="flex:0.8;"><span style="background:#2a2a2a; color:#aaa; border-radius:2px; padding:1px 5px;">DAILY</span></span><span style="flex:0.7; text-align:right; color:#ccc;">2</span><span style="flex:0.7;"><span style="background:#2a2a2a; color:#888; border:1px solid #404040; border-radius:2px; padding:1px 5px;">INACTIVE</span></span>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+
+            <!-- RIGHT: Overview text + clickable section index -->
+            <div class="doc-sticky-ref-sidebar">
+                <div class="doc-sidebar-intro">
+                    <h3>About This Page</h3>
+                    <p>The IBM/B2B Pipeline page is the live window into IBM Sterling B2B Integrator &mdash; the middleware that moves files between the outside world and Debt Manager.</p>
+                    <p>The left side is today and now: a pulse of the day&rsquo;s counts up top, and a live view of the runs currently in motion below. The right side is the full run history, organized year &rarr; month &rarr; day, with search and filters that open a runs list you can drill into.</p>
+                    <p>This guide walks through every section, the two status vocabularies you&rsquo;ll see, and the slide-out panels that open when you click into a run.</p>
+                </div>
+                <h3>Sections and Features at a Glance</h3>
+                <p class="doc-sidebar-hint">Click a number below to highlight it on the diagram. Click a marker on the diagram for details.</p>
+                <div class="doc-sidebar-items">
+                    <div class="doc-sidebar-item" data-marker="1"><span class="doc-sidebar-num">1</span> Engine Indicator</div>
+                    <div class="doc-sidebar-item" data-marker="2"><span class="doc-sidebar-num">2</span> Pulse &mdash; Live Row</div>
+                    <div class="doc-sidebar-item" data-marker="3"><span class="doc-sidebar-num">3</span> Pulse &mdash; Clickable Row</div>
+                    <div class="doc-sidebar-item" data-marker="4"><span class="doc-sidebar-num">4</span> Live Pipeline Activity</div>
+                    <div class="doc-sidebar-item" data-marker="5"><span class="doc-sidebar-num">5</span> Run History</div>
+                    <div class="doc-sidebar-item" data-marker="6"><span class="doc-sidebar-num">6</span> Filter Bar &amp; Runs List</div>
+                    <div class="doc-sidebar-item" data-marker="7"><span class="doc-sidebar-num">7</span> Year / Month Tree</div>
+                    <div class="doc-sidebar-item" data-marker="8"><span class="doc-sidebar-num">8</span> Day Rows &amp; Run Detail</div>
+                    <div class="doc-sidebar-item" data-marker="9"><span class="doc-sidebar-num">9</span> Schedules Modal</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- HIDDEN SECTION CONTENT (data source for slideout) -->
+    <!-- ============================================ -->
+    <div class="doc-cc-guide-content">
+
+        <div class="doc-guide-section" id="doc-section-1"><div class="doc-guide-section-inner">
+            <h2 class="doc-guide-section-title"><span class="doc-section-number">1</span>Engine Indicator</h2>
+            <p>One engine card in the upper right represents the process behind this page: the <strong>B2B</strong> collector (<code>Collect-B2BPipeline.ps1</code>). It mirrors Sterling&rsquo;s pipeline runs into the tracking tables, classifies each one, and enriches failed runs with their captured fault report.</p>
+            <p>A green bar means the last run succeeded; red means it failed. The countdown shows time until the next scheduled run. This card updates on its own, independently of the page&rsquo;s refresh cycle.</p>
+            <div class="doc-callout doc-info"><p>The same shared engine-indicator appears on every monitoring page in the Control Center, so this card behaves identically to the ones on Batch Monitoring, Server Health, and the rest.</p></div>
+        </div></div>
+
+        <div class="doc-guide-section" id="doc-section-2"><div class="doc-guide-section-inner">
+            <h2 class="doc-guide-section-title"><span class="doc-section-number">2</span>Pulse &mdash; Live Row</h2>
+            <p>Today&rsquo;s Pipeline Pulse is a row of six tiles giving the day at a glance. The top three describe what&rsquo;s happening <em>right now</em> and are sourced from the same live feed as the activity panel below, so they can&rsquo;t lag behind it.</p>
+            <p><strong>Runs Today</strong> &mdash; the total number of pipeline runs that have started today.</p>
+            <p><strong>In Flight</strong> &mdash; runs currently executing in Sterling.</p>
+            <p><strong>Awaiting DM</strong> &mdash; runs that finished on the Sterling side and are waiting for Debt Manager to confirm the handoff landed.</p>
+            <p>These three are informational &mdash; they are not clickable. The In Flight and Awaiting DM counts always match the rows you see in the Live Pipeline Activity panel directly below.</p>
+        </div></div>
+
+        <div class="doc-guide-section" id="doc-section-3"><div class="doc-guide-section-inner">
+            <h2 class="doc-guide-section-title"><span class="doc-section-number">3</span>Pulse &mdash; Clickable Row</h2>
+            <p>The bottom three tiles describe how today&rsquo;s <em>finished</em> runs turned out. Unlike the top row, these are drawn from the tracked history table &mdash; and each one is clickable.</p>
+            <p><strong>Success</strong> (green), <strong>No Action</strong> (neutral), and <strong>Failed</strong> (red) each show today&rsquo;s count for that outcome. Clicking any of them opens the runs list (a slide-out panel) pre-filtered to exactly that outcome for today &mdash; so the runs you land on match the number on the tile.</p>
+            <div class="doc-callout doc-tip"><p>Clicking <strong>Failed</strong> is the fastest way to see today&rsquo;s problems: it drops you straight into the list of failed runs, each of which you can open for its full detail and fault report.</p></div>
+            <div class="doc-callout doc-info"><p>&ldquo;No Action&rdquo; is a normal, healthy outcome &mdash; it counts runs that correctly checked for work and found nothing to do. A large No Action count is expected, not a problem.</p></div>
+        </div></div>
+
+        <div class="doc-guide-section" id="doc-section-4"><div class="doc-guide-section-inner">
+            <h2 class="doc-guide-section-title"><span class="doc-section-number">4</span>Live Pipeline Activity</h2>
+            <p>A live table of the runs currently in motion, read straight from the source so it&rsquo;s genuinely real-time. Each row shows the process-type badge, the Run ID, the sequence id, the client, a status badge, and the run&rsquo;s age.</p>
+            <p>The status here uses the <strong>detailed</strong> classification &mdash; you&rsquo;ll see specific states like &ldquo;In Flight&rdquo; and &ldquo;Awaiting DM&rdquo; rather than the coarser Sterling status used elsewhere. A run with no process type is a parent/dispatcher run and badges as <strong>DISPATCHER</strong>.</p>
+            <div class="doc-callout doc-info"><p>Rows here are <em>not</em> clickable. Because this panel runs ahead of the collector, a run shown here may not have been recorded into the history table yet &mdash; so its full detail would be empty. Once it&rsquo;s collected, it appears in the Run History on the right, where its row <em>is</em> clickable.</p></div>
+        </div></div>
+
+        <div class="doc-guide-section" id="doc-section-5"><div class="doc-guide-section-inner">
+            <h2 class="doc-guide-section-title"><span class="doc-section-number">5</span>Run History</h2>
+            <p>The full history of every pipeline run, organized as a collapsible year &rarr; month &rarr; day tree. It refreshes when the collector completes a cycle (the lightning-bolt badge), since that&rsquo;s the only time new history appears.</p>
+            <p>Every level is bucketed by the five coarse Sterling statuses &mdash; Runs, Success, Failed, No Action, In Progress &mdash; plus an Undefined column and an average duration. A dash means zero, which keeps the grid quiet and lets the real numbers stand out.</p>
+            <div class="doc-callout doc-info"><p>The counts here use the <strong>Sterling status</strong> &mdash; the &ldquo;how did this end in Sterling&rdquo; view. That&rsquo;s the coarser of the two status vocabularies on the page; the detailed classification appears when you open an individual run.</p></div>
+        </div></div>
+
+        <div class="doc-guide-section" id="doc-section-6"><div class="doc-guide-section-inner">
+            <h2 class="doc-guide-section-title"><span class="doc-section-number">6</span>Filter Bar &amp; Runs List</h2>
+            <p>The filter bar above the tree lets you find specific runs. It doesn&rsquo;t filter the tree itself &mdash; instead, Search opens a <strong>runs list</strong> (a slide-out panel) matching whatever you entered.</p>
+            <p>You can search by <strong>Run ID</strong> (exact match), by <strong>client</strong> (partial match), and narrow by <strong>status</strong>, <strong>process type</strong>, and a <strong>date range</strong>. The Type dropdown only lists types that actually appear in the data, so it never offers an empty result. <strong>Reset</strong> clears everything.</p>
+            <p>The runs list is paged, and each run in it is clickable &mdash; opening its full detail. This same list is what the clickable pulse tiles open, just pre-filled with their filter.</p>
+        </div></div>
+
+        <div class="doc-guide-section" id="doc-section-7"><div class="doc-guide-section-inner">
+            <h2 class="doc-guide-section-title"><span class="doc-section-number">7</span>Year / Month Tree</h2>
+            <p>Click a <strong>year</strong> to expand its months; click a <strong>month</strong> to expand its days. The tree opens one branch at a time &mdash; opening a new year closes the previous one, and opening a new month closes the previous one &mdash; so it never grows into an unreadable wall.</p>
+            <p>Year rows carry the roll-up totals for the whole year; month rows break it down by month; both use the same status columns as the day rows below them.</p>
+        </div></div>
+
+        <div class="doc-guide-section" id="doc-section-8"><div class="doc-guide-section-inner">
+            <h2 class="doc-guide-section-title"><span class="doc-section-number">8</span>Day Rows &amp; Run Detail</h2>
+            <p>Each day row shows that date&rsquo;s totals. Click one to open the <strong>day runs</strong> slide-out &mdash; a paged list of every run on that date, with its type, Run ID, start time, client, dispatcher, status, duration, and a Jira indicator where tickets exist.</p>
+            <p>Clicking any run &mdash; whether from a day list, the filtered runs list, or a pulse tile &mdash; opens the <strong>run-detail</strong> slide-out. That panel tells the run&rsquo;s whole story: a header carrying both status readings (the Sterling result and the detailed classification), at-a-glance facts, and cards for its identity, timing, files, and any Jira tickets. The panel appears right away; the Files and Tickets cards load separately, so they may fill in a moment after the rest of the panel is already on screen.</p>
+            <div class="doc-callout doc-tip"><p>If a run failed and Sterling produced an error report, the run-detail panel shows a fault summary with a <strong>View Full Report</strong> button. That opens the captured Sterling status report in a readable form &mdash; the specific translation or service error, right there, with no need to log into Sterling.</p></div>
+            <div class="doc-callout doc-info"><p>If you open a run that the collector hasn&rsquo;t recorded yet (one still showing in Live Pipeline Activity), the panel doesn&rsquo;t error out &mdash; it shows an &ldquo;awaiting first collection&rdquo; note alongside whatever live snapshot is available, then fills in completely once the run is collected.</p></div>
+        </div></div>
+
+        <div class="doc-guide-section" id="doc-section-9"><div class="doc-guide-section-inner">
+            <h2 class="doc-guide-section-title"><span class="doc-section-number">9</span>Schedules Modal</h2>
+            <p>The <strong>Schedules</strong> button at the right of the Run History header opens a pop-up modal listing the Sterling schedules &mdash; the recurring jobs that drive the pipeline. It answers two everyday questions: what&rsquo;s scheduled to run, and when. Each row shows the service (the workflow), a plain-English schedule (&ldquo;Daily at 04:00,&rdquo; &ldquo;Mon-Fri at 14:00,&rdquo; &ldquo;Every 10 min...&rdquo;), the timing pattern, how many times it runs per day, and whether it&rsquo;s active or inactive.</p>
+            <p>The filter bar across the top is built for quickly narrowing the list. It groups into three: search plus pattern and status dropdowns; two checkboxes (runs today, and hide the system/utility schedules); and a &ldquo;fires between&rdquo; time window with a reset. Everything filters instantly as you change it &mdash; the whole schedule set is loaded once when the modal opens, so there&rsquo;s no waiting between filters.</p>
+            <div class="doc-callout doc-tip"><p>The <strong>fires between</strong> window is the useful one for planning maintenance. Set a start and end time and the list narrows to only the schedules that would fire in that window today &mdash; so an <em>empty</em> result means the window is clear. That&rsquo;s the quick way to find a safe gap to restart a server without interrupting a scheduled job.</p></div>
+            <div class="doc-callout doc-info"><p>This is a read-only view today &mdash; it surfaces what Sterling has scheduled. The active/inactive state shown here is Sterling&rsquo;s own; changing it isn&rsquo;t done from this modal.</p></div>
+        </div></div>
+
+    </div>
+
+                <div class="doc-footer"></div>
+
+            </div>
+        </div>
+
+    </div>
+
+</div>
+
+<!-- Slideout Panel (outside the app-frame to avoid clipping) -->
+<div class="doc-guide-slideout">
+    <div class="doc-guide-slideout-header">
+        <h3>Section and Features Guide</h3>
+        <div class="doc-slideout-header-controls">
+            <button class="doc-mode-btn doc-mode-active" data-doc-mode="tour" title="Reset and start the guided tour">Take The Tour</button>
+            <button class="doc-mode-btn" data-doc-mode="showall" title="Show all sections at once">Show Me Everything</button>
+            <button class="doc-guide-slideout-close" title="Close panel">&times;</button>
+        </div>
+    </div>
+    <div class="doc-guide-slideout-body"></div>
+</div>
+
+<script src="../../js/docs-shared.js"></script>
+<script src="../../js/nav.js"></script>
+<script src="../../js/docs-controlcenter.js"></script>
+</body>
+</html>
