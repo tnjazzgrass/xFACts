@@ -527,6 +527,8 @@
                    {
                        "name":  "INT_RunFiles",
                        "description":  "One row per file associated with a Sterling run: the Integration file listing (etl.tbl_B2B_CLIENTS_BATCH_FILES) mirrored for tracked runs, covering both pickups and deliveries.",
+                       "module":  "B2B",
+                       "category":  "B2B",
                        "dataFlow":  "Collect-B2BPipeline.ps1 mirrors file rows from Integration etl.tbl_B2B_CLIENTS_BATCH_FILES for runs present in INT_PipelineTracking, inserting any source rows not yet captured and keyed on source_file_id, on each cycle, within the collection lookback period.",
                        "columns":  [
                                        {
@@ -644,6 +646,8 @@
                    {
                        "name":  "INT_RunTickets",
                        "description":  "One row per (run, ticket reason): the Jira ticket outcomes recorded against a Sterling run, aggregated from the per-failed-account rows in Integration etl.tbl_B2B_CLIENTS_TICKETS.",
+                       "module":  "B2B",
+                       "category":  "B2B",
                        "dataFlow":  "Collect-B2BPipeline.ps1 aggregates etl.tbl_B2B_CLIENTS_TICKETS rows with a populated RUN_ID for tracked runs to (run_id, ticket_reason) grain each cycle within the collection lookback: new pairs are inserted, existing pairs are updated when the ticket number, ticket date, or row count changes, and ticket_status is set from the assignment state (GENERATED when a ticket number is present, PENDING while unassigned within 24 hours of the first source row, AGED_OUT after). The Control Center B2B Pipeline run-detail slideout reads this table on demand.",
                        "columns":  [
                                        {
@@ -1243,6 +1247,8 @@
                    },
                    {
                        "name":  "SI_WorkflowRegistry",
+                       "module":  "B2B",
+                       "category":  "B2B",
                        "dataFlow":  "Populated and maintained solely by Collect-B2BPipeline.ps1 step 2. Each cycle queries b2bi.dbo.WFD deduplicated to MAX(WFD_VERSION) per WFD_ID and compares against this table: definitions not yet catalogued INSERT (first_captured_dttm stamps their appearance), version bumps UPDATE current_version while preserving previous_version and stamping last_version_change_dttm, and unchanged rows receive a chunked last_synced_dttm touch. Definitions that disappear from the source are logged and retained - a stale last_synced_dttm marks them. Version changes recorded here feed the collector alert step, which queues a Teams alert per edit (deduped by wfd_id + version).",
                        "columns":  [
                                        {
