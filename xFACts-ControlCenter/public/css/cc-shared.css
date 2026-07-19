@@ -143,15 +143,15 @@
     --size-panel-offset-wide:   -820px;
     --size-panel-width-xwide:   1000px;
     --size-panel-offset-xwide:  -1020px;
-    --size-panel-width-xxwide:  1300px;
-    --size-panel-offset-xxwide: -1320px;
+    --size-panel-width-xxwide:  1400px;
+    --size-panel-offset-xxwide: -1420px;
 
     /* -- Size tokens: modal widths -- */
     --size-modal-width-default: 460px;
     --size-modal-width-medium:  600px;
     --size-modal-width-wide:    800px;
     --size-modal-width-xwide:   1000px;
-    --size-modal-width-xxwide:  1300px;
+    --size-modal-width-xxwide:  1400px;
 
     /* -- Size tokens: slide-up panel left edge -- */
     --size-slideup-left:          20px;
