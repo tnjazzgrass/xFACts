@@ -16,6 +16,7 @@ Sectioned by **priority**. Within each section, **Refactor Initiative** items ar
 
 | ID | Initiative | Component | Type | Item | Notes |
 |----|-----------|-----------|------|------|-------|
+
 ---
 
 ## High
