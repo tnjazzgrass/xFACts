@@ -32,6 +32,7 @@
    FUNCTIONS: RENDER RUN DETAIL
    FUNCTIONS: SLIDEOUT OPEN AND CLOSE
    FUNCTIONS: FAULT REPORT MODAL
+   FUNCTIONS: SCHEDULE MODAL
    FUNCTIONS: UTILITIES
    FUNCTIONS: PAGE LIFECYCLE HOOKS
    ============================================================================ */
@@ -198,12 +199,21 @@ const b2b_clickActions = {
     'b2b-close-fault-report': b2b_closeFaultReport,
     'b2b-fault-entries-mode': b2b_setFaultEntriesMode,
     'b2b-fault-view-mode':    b2b_setFaultViewMode,
-    'b2b-fault-rawblock-toggle': b2b_toggleFaultRawBlock
+    'b2b-fault-rawblock-toggle': b2b_toggleFaultRawBlock,
+    'b2b-open-schedules':   b2b_openSchedules,
+    'b2b-close-schedules':  b2b_closeSchedules,
+    'b2b-sched-reset':      b2b_resetScheduleFilters
 };
 
 /* Keydown action dispatch table. */
 const b2b_keydownActions = {
-    'b2b-search-on-enter': b2b_searchOnEnter
+    'b2b-search-on-enter': b2b_searchOnEnter,
+    'b2b-sched-filter-key': b2b_applyScheduleFilters
+};
+
+/* Change action dispatch table. */
+const b2b_changeActions = {
+    'b2b-sched-filter': b2b_applyScheduleFilters
 };
 
 /* ============================================================================
@@ -330,6 +340,21 @@ async function b2b_init() {
             return;
         }
         var handler = b2b_keydownActions[action];
+        if (handler) {
+            handler(target, event);
+        }
+    });
+
+    document.body.addEventListener('change', function(event) {
+        var target = event.target.closest('[data-action-change]');
+        if (!target) {
+            return;
+        }
+        var action = target.getAttribute('data-action-change');
+        if (!action || action.indexOf('b2b-') !== 0) {
+            return;
+        }
+        var handler = b2b_changeActions[action];
         if (handler) {
             handler(target, event);
         }
@@ -1041,7 +1066,7 @@ function b2b_renderDayRuns(runs) {
     }
     else {
         var html = '<div class="b2b-table-head b2b-cols-history">' +
-                   '<div>Type</div><div>Run ID</div><div>Run Start</div><div>Client</div><div>Dispatcher</div><div>Status</div><div class="b2b-head-num">Duration</div><div>Jira</div>' +
+                   '<div>Type</div><div>Run ID</div><div>Run Start</div><div>Client</div><div>Dispatcher</div><div>Status</div><div class="b2b-head-num">Duration</div><div class="b2b-head-jira">Jira</div>' +
                    '</div>';
 
         runs.forEach(function(run) {
@@ -1164,7 +1189,7 @@ function b2b_renderModalRuns(runs) {
     }
     else {
         var html = '<div class="b2b-table-head b2b-cols-history">' +
-                   '<div>Type</div><div>Run ID</div><div>Run Start</div><div>Client</div><div>Dispatcher</div><div>Status</div><div class="b2b-head-num">Duration</div><div>Jira</div>' +
+                   '<div>Type</div><div>Run ID</div><div>Run Start</div><div>Client</div><div>Dispatcher</div><div>Status</div><div class="b2b-head-num">Duration</div><div class="b2b-head-jira">Jira</div>' +
                    '</div>';
 
         runs.forEach(function(run) {
@@ -1260,8 +1285,8 @@ function b2b_buildRunRowHtml(run, colsClass, withTiming, useSterlingStatus) {
         cells += '<div class="b2b-cell-num">' + cc_escapeHtml(b2b_formatDurationMinutes(run.duration_minutes)) + '</div>';
         var tkMeta = run.ticket_status_worst ? b2b_ticketStatusMeta[run.ticket_status_worst] : null;
         cells += tkMeta
-            ? '<div><span class="b2b-badge ' + tkMeta.state + '">Jira</span></div>'
-            : '<div></div>';
+            ? '<div class="b2b-cell-jira"><span class="b2b-badge ' + tkMeta.state + '">Jira</span></div>'
+            : '<div class="b2b-cell-jira"></div>';
     }
     else {
         cells += '<div class="b2b-cell-num">' + cc_escapeHtml(b2b_formatDurationMinutes(run.age_minutes)) + '</div>';
@@ -2071,6 +2096,295 @@ function b2b_closeFaultReport(target, event) {
         overlay.classList.remove('cc-open');
     });
     dialog.classList.remove('cc-open');
+}
+
+/* ============================================================================
+   FUNCTIONS: SCHEDULE MODAL
+   ----------------------------------------------------------------------------
+   The Sterling Schedules modal opened from the Run History header. Fetches
+   the mirrored SI_ScheduleRegistry set once, caches it, and filters entirely
+   client-side by service, pattern, status, runs-today, hide-system-processes,
+   and a fires-in-window test. The window test answers "what would fire if I
+   restart during this window today" -- an empty result means the window is
+   clear.
+   Prefix: b2b
+   ============================================================================ */
+
+/* Cached schedule rows from the schedules endpoint (loaded once per open). */
+var b2b_scheduleData = null;
+
+/* Opens the schedule modal: fetches the schedule set on first open, renders,
+   and shows the centered modal. */
+function b2b_openSchedules(target, event) {
+    var overlay = document.getElementById('b2b-slideup-schedules');
+    overlay.classList.remove('cc-hidden');
+
+    if (b2b_scheduleData) {
+        b2b_renderSchedules();
+        return;
+    }
+
+    var content = document.getElementById('b2b-sched-content');
+    if (content) {
+        content.innerHTML = '<div class="b2b-loading">Loading...</div>';
+    }
+
+    b2b_populateScheduleWindowOptions();
+
+    cc_engineFetch('/api/b2b-pipeline/schedules')
+        .then(function(data) {
+            if (!data || !data.schedules) {
+                return;
+            }
+            b2b_scheduleData = data.schedules;
+            b2b_populateScheduleFilters();
+            b2b_renderSchedules();
+        })
+        .catch(function(e) {
+            b2b_renderSectionError('b2b-sched-content', e);
+        });
+}
+
+/* Closes the schedule modal on backdrop click or the close button. */
+function b2b_closeSchedules(target, event) {
+    if (event && target.id === 'b2b-slideup-schedules' && event.target !== target) {
+        return;
+    }
+    var overlay = document.getElementById('b2b-slideup-schedules');
+    overlay.classList.add('cc-hidden');
+}
+
+/* Populates the fires-between window dropdowns with 30-minute steps across the
+   day (00:00 through 23:30). The end dropdown carries an inclusive 23:59 final
+   option so a window can reach the end of the day. */
+function b2b_populateScheduleWindowOptions() {
+    var fromSel = document.getElementById('b2b-sched-from');
+    var toSel = document.getElementById('b2b-sched-to');
+    if (!fromSel || !toSel) {
+        return;
+    }
+    if (fromSel.options.length > 0) {
+        return; // already populated
+    }
+
+    var fromHtml = '<option value="">Start</option>';
+    var toHtml = '<option value="">End</option>';
+    for (var h = 0; h < 24; h++) {
+        for (var m = 0; m < 60; m += 30) {
+            var hh = ('0' + h).slice(-2);
+            var mm = ('0' + m).slice(-2);
+            var val = hh + ':' + mm;
+            fromHtml += '<option value="' + val + '">' + val + '</option>';
+            toHtml += '<option value="' + val + '">' + val + '</option>';
+        }
+    }
+    toHtml += '<option value="23:59">23:59</option>';
+    fromSel.innerHTML = fromHtml;
+    toSel.innerHTML = toHtml;
+}
+
+/* Populates the pattern and status filter dropdowns from the values actually
+   present in the loaded schedule set, so neither offers an empty option. */
+function b2b_populateScheduleFilters() {
+    var patternSelect = document.getElementById('b2b-sched-pattern');
+    var statusSelect = document.getElementById('b2b-sched-status');
+    if (!patternSelect || !statusSelect) {
+        return;
+    }
+
+    var patterns = {};
+    var statuses = {};
+    b2b_scheduleData.forEach(function(s) {
+        if (s.timing_pattern_type) { patterns[s.timing_pattern_type] = true; }
+        if (s.source_status) { statuses[s.source_status] = true; }
+    });
+
+    var patternHtml = '<option value="ALL">All Patterns</option>';
+    Object.keys(patterns).sort().forEach(function(p) {
+        patternHtml += '<option value="' + cc_escapeHtml(p) + '">' + cc_escapeHtml(p) + '</option>';
+    });
+    patternSelect.innerHTML = patternHtml;
+
+    var statusHtml = '<option value="ALL">All Statuses</option>';
+    Object.keys(statuses).sort().forEach(function(st) {
+        statusHtml += '<option value="' + cc_escapeHtml(st) + '">' + cc_escapeHtml(st) + '</option>';
+    });
+    statusSelect.innerHTML = statusHtml;
+}
+
+/* Filter-input handler: re-renders the table against the current filter values. */
+function b2b_applyScheduleFilters(target, event) {
+    b2b_renderSchedules();
+}
+
+/* Resets all schedule filters to their defaults and re-renders. */
+function b2b_resetScheduleFilters(target, event) {
+    var search = document.getElementById('b2b-sched-search');
+    var pattern = document.getElementById('b2b-sched-pattern');
+    var status = document.getElementById('b2b-sched-status');
+    var today = document.getElementById('b2b-sched-today');
+    var hideSys = document.getElementById('b2b-sched-hidesys');
+    var from = document.getElementById('b2b-sched-from');
+    var to = document.getElementById('b2b-sched-to');
+    if (search) { search.value = ''; }
+    if (pattern) { pattern.value = 'ALL'; }
+    if (status) { status.value = 'ALL'; }
+    if (today) { today.checked = false; }
+    if (hideSys) { hideSys.checked = false; }
+    if (from) { from.value = ''; }
+    if (to) { to.value = ''; }
+    b2b_renderSchedules();
+}
+
+/* Renders the schedule table from the cached rows, applying the active filters.
+   Builds from the shared cc-slide-table-* classes so it matches every other
+   slide/modal table on the platform. */
+function b2b_renderSchedules() {
+    var content = document.getElementById('b2b-sched-content');
+    var countEl = document.getElementById('b2b-sched-count');
+    if (!content) {
+        return;
+    }
+    if (!b2b_scheduleData) {
+        return;
+    }
+
+    var searchEl = document.getElementById('b2b-sched-search');
+    var patternEl = document.getElementById('b2b-sched-pattern');
+    var statusEl = document.getElementById('b2b-sched-status');
+    var todayEl = document.getElementById('b2b-sched-today');
+    var hideSysEl = document.getElementById('b2b-sched-hidesys');
+    var fromEl = document.getElementById('b2b-sched-from');
+    var toEl = document.getElementById('b2b-sched-to');
+
+    var search = searchEl ? searchEl.value.trim().toLowerCase() : '';
+    var pattern = patternEl ? patternEl.value : 'ALL';
+    var status = statusEl ? statusEl.value : 'ALL';
+    var todayOnly = todayEl ? todayEl.checked : false;
+    var hideSys = hideSysEl ? hideSysEl.checked : false;
+    var winFrom = fromEl ? fromEl.value : '';
+    var winTo = toEl ? toEl.value : '';
+    var hasWindow = winFrom !== '' && winTo !== '';
+
+    var rows = b2b_scheduleData.filter(function(s) {
+        if (search && (s.service_name || '').toLowerCase().indexOf(search) === -1) {
+            return false;
+        }
+        if (hideSys && (s.service_name || '').indexOf('FA_') !== 0) {
+            return false;
+        }
+        if (pattern !== 'ALL' && s.timing_pattern_type !== pattern) {
+            return false;
+        }
+        if (status !== 'ALL' && s.source_status !== status) {
+            return false;
+        }
+        if ((todayOnly || hasWindow) && !b2b_scheduleRunsToday(s)) {
+            return false;
+        }
+        if (hasWindow && !b2b_scheduleFiresInWindow(s, winFrom, winTo)) {
+            return false;
+        }
+        return true;
+    });
+
+    if (countEl) {
+        countEl.textContent = rows.length + ' of ' + b2b_scheduleData.length + ' schedules'
+            + (hasWindow ? ' firing between ' + winFrom + ' and ' + winTo + ' today' : '');
+    }
+
+    if (rows.length === 0) {
+        content.innerHTML = '<div class="cc-slide-empty">No schedules match the current filters.</div>';
+        return;
+    }
+
+    var html = '<table class="cc-slide-table">'
+        + '<thead><tr>'
+        + '<th class="cc-slide-table-th">Service</th>'
+        + '<th class="cc-slide-table-th">Schedule</th>'
+        + '<th class="cc-slide-table-th">Pattern</th>'
+        + '<th class="cc-slide-table-th b2b-sched-th-num">Runs/Day</th>'
+        + '<th class="cc-slide-table-th">Status</th>'
+        + '</tr></thead><tbody>';
+
+    rows.forEach(function(s) {
+        var statusClass = s.source_status === 'ACTIVE' ? 'b2b-ok' : 'b2b-neutral';
+        html += '<tr class="cc-slide-table-row">'
+            + '<td class="cc-slide-table-td b2b-sched-service">' + cc_escapeHtml(s.service_name || '') + '</td>'
+            + '<td class="cc-slide-table-td">' + cc_escapeHtml(s.schedule_description || '') + '</td>'
+            + '<td class="cc-slide-table-td"><span class="b2b-type-badge">' + cc_escapeHtml(s.timing_pattern_type || '') + '</span></td>'
+            + '<td class="cc-slide-table-td b2b-sched-td-num">' + (s.expected_runs_per_day != null ? cc_escapeHtml(String(s.expected_runs_per_day)) : '-') + '</td>'
+            + '<td class="cc-slide-table-td"><span class="b2b-badge ' + statusClass + '">' + cc_escapeHtml(s.source_status || '') + '</span></td>'
+            + '</tr>';
+    });
+
+    html += '</tbody></table>';
+    content.innerHTML = html;
+}
+
+/* Returns true if the schedule is due to run today, accounting for pattern
+   type, the day mask / days-of-month, and today's exclusion dates. */
+function b2b_scheduleRunsToday(s) {
+    var now = new Date();
+
+    // Excluded today? excluded_dates is a comma-separated MM-DD list.
+    if (s.excluded_dates) {
+        var mm = ('0' + (now.getMonth() + 1)).slice(-2);
+        var dd = ('0' + now.getDate()).slice(-2);
+        var todayMd = mm + '-' + dd;
+        var excluded = s.excluded_dates.split(',').some(function(d) {
+            return d.trim() === todayMd;
+        });
+        if (excluded) {
+            return false;
+        }
+    }
+
+    var pattern = s.timing_pattern_type;
+
+    // MONTHLY: run_days_of_month is a comma-separated day-number list.
+    if (pattern === 'MONTHLY') {
+        if (!s.run_days_of_month) {
+            return false;
+        }
+        var domToday = now.getDate();
+        return s.run_days_of_month.split(',').some(function(d) {
+            return parseInt(d.trim(), 10) === domToday;
+        });
+    }
+
+    // DAILY / WEEKLY / INTERVAL / MIXED: use the day mask when present.
+    // A DAILY schedule with a full mask runs every day; a WEEKLY or MIXED
+    // schedule runs only on its set days. An INTERVAL schedule is daily.
+    if (s.run_day_mask && s.run_day_mask.length === 7) {
+        var pos = now.getDay(); // 0=Sun..6=Sat, matching the SMTWTFS mask
+        return s.run_day_mask.charAt(pos) !== '-';
+    }
+
+    // No usable mask (e.g. pure INTERVAL): treat as daily.
+    return true;
+}
+
+/* Returns true if any of the schedule's fire times fall within [winFrom, winTo]
+   today. Explicit-time patterns test their listed times; range-based patterns
+   (INTERVAL / MIXED) test whether their fire range overlaps the window, since
+   they fire repeatedly throughout that range. Times compare lexically as HH:MM. */
+function b2b_scheduleFiresInWindow(s, winFrom, winTo) {
+    // Explicit fire times: DAILY / WEEKLY / MONTHLY carry run_times_explicit.
+    if (s.run_times_explicit) {
+        return s.run_times_explicit.split(',').some(function(t) {
+            var time = t.trim();
+            return time >= winFrom && time <= winTo;
+        });
+    }
+
+    // Range-based: INTERVAL / MIXED fire between run_range_start and
+    // run_range_end. The window is hit if the two ranges overlap at all.
+    if (s.run_range_start && s.run_range_end) {
+        return s.run_range_start <= winTo && s.run_range_end >= winFrom;
+    }
+
+    return false;
 }
 
 /* ============================================================================
