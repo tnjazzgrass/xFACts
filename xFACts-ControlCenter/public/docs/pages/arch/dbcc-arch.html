@@ -252,9 +252,13 @@
 
         <p>The script aggregates violations by table and constraint name, storing a summary in <code>error_details</code> with violation counts per constraint. <code>error_count</code> reflects distinct constraints with violations, not total violating rows. Detailed row-level investigation is handled by live queries from the Control Center page.</p>
 
-        <h3 class="doc-section-subtitle">CHECKTABLE (On-Demand Only)</h3>
+        <h3 class="doc-section-subtitle">CHECKTABLE</h3>
 
-        <p>Single-table integrity check. Not scheduled &mdash; executed on demand through the Control Center modal. The user selects a server, database, and table from system catalog lookups, then initiates the check. Results log to <code>DBCC_ExecutionLog</code> with the table name in <code>target_object</code>.</p>
+        <p>Single-table integrity check. Unlike the four operations above, CHECKTABLE is not part of the schedule &mdash; it targets one table rather than a whole database, so it isn't enrolled in <code>DBCC_ScheduleConfig</code>. It runs only through Manual Override Mode (described above), by invoking the script with an explicit server, database, and table. Results log to <code>DBCC_ExecutionLog</code> like any other operation.</p>
+
+        <div class="doc-tech-tip">
+            <strong class="doc-tech-tip-label">About <code>target_object</code>.</strong> <code>DBCC_ExecutionLog</code> carries a <code>target_object</code> column intended to hold the specific object a check targeted &mdash; the natural home for a CHECKTABLE table name. In current operation no code path populates it, so the column is present but NULL on every row. Database-wide operations have no single target object to record there.
+        </div>
     </div>
 
     <!-- ============================================ -->
@@ -263,9 +267,22 @@
     <div class="doc-section" id="ag-execution">
         <h2 class="doc-section-title">AG Secondary Execution</h2>
 
-        <p>For servers registered as AG listeners in <code>ServerRegistry</code>, the script resolves the current secondary replica using <code>sys.dm_hadr_availability_replica_states</code> and runs DBCC operations via a direct connection to the physical secondary. This eliminates production I/O impact entirely &mdash; the secondary has identical data (minus redo lag, typically seconds) and supports all DBCC operations.</p>
+        <p>For servers registered as AG listeners in <code>ServerRegistry</code>, the script resolves the appropriate physical replica through <code>sys.dm_hadr_availability_replica_states</code> and runs DBCC operations via a direct connection to it. Running on a secondary eliminates production I/O impact entirely &mdash; the secondary has identical data (minus redo lag, typically seconds) and supports all DBCC operations.</p>
 
-        <p>The AG name and preferred replica role are configured via GlobalConfig. Connection resolution results are cached per server within an invocation to avoid repeated AG topology queries. The physical server name is recorded in <code>executed_on_server</code> on the ExecutionLog row, preserving accurate history even if the AG topology changes between runs.</p>
+        <p>Where a check runs is decided <em>per database</em>, not globally. Each AG-listener database in <code>DBCC_ScheduleConfig</code> carries a <code>replica_override</code> setting with three values:</p>
+
+        <table class="doc-info-table">
+            <thead><tr><th class="doc-info-table-th">replica_override</th><th class="doc-info-table-th">Where the check runs</th></tr></thead>
+            <tbody>
+                <tr><td class="doc-info-table-td"><strong>Default</strong></td><td class="doc-info-table-td">Follows the platform-wide preferred-replica setting from GlobalConfig &mdash; the normal case, typically the secondary</td></tr>
+                <tr><td class="doc-info-table-td"><strong>Primary</strong></td><td class="doc-info-table-td">Pins this database's checks to the primary replica, overriding the global preference</td></tr>
+                <tr><td class="doc-info-table-td doc-info-table-td-last"><strong>Secondary</strong></td><td class="doc-info-table-td doc-info-table-td-last">Pins this database's checks to the secondary replica, overriding the global preference</td></tr>
+            </tbody>
+        </table>
+
+        <p>So the GlobalConfig preferred replica is the default that applies to every AG database, and <code>replica_override</code> lets an individual database opt out of that default when it needs to run somewhere specific. This override is what the warning marker on the Schedule Overview flags. It applies only to AG-listener servers &mdash; on a standalone server there is no replica choice to make. The setting is editable per database from the schedule editor on the Control Center page.</p>
+
+        <p>Connection resolution results are cached per server within an invocation to avoid repeated AG topology queries. The physical server name actually used is recorded in <code>executed_on_server</code> on the ExecutionLog row, preserving accurate history even if the AG topology changes between runs.</p>
 
         <div class="doc-tech-tip">
             <strong class="doc-tech-tip-label">AG resolution failure is not silent.</strong> If the secondary replica cannot be determined, all operations for that server are skipped with a FAILED status and a Teams alert. The next invocation will retry AG resolution fresh.
@@ -338,11 +355,11 @@
             <tbody>
                 <tr><td class="doc-info-table-td"><code>dbo.ServerRegistry</code></td><td class="doc-info-table-td">Engine Room</td><td class="doc-info-table-td">Server-level enable flag (<code>serverops_dbcc_enabled</code>), server type, AG cluster name, instance name</td></tr>
                 <tr><td class="doc-info-table-td"><code>dbo.DatabaseRegistry</code></td><td class="doc-info-table-td">Engine Room</td><td class="doc-info-table-td">Database enrollment &mdash; <code>DBCC_ScheduleConfig</code> has a FK to <code>DatabaseRegistry</code></td></tr>
-                <tr><td class="doc-info-table-td"><code>dbo.GlobalConfig</code></td><td class="doc-info-table-td">Engine Room</td><td class="doc-info-table-td">CHECKDB mode, MAXDOP, extended logical checks, alerting enabled, AG name, source replica preference</td></tr>
+                <tr><td class="doc-info-table-td"><code>dbo.GlobalConfig</code></td><td class="doc-info-table-td">Engine Room</td><td class="doc-info-table-td">CHECKDB mode, MAXDOP, extended logical checks, alerting enabled, AG name, platform-wide preferred replica (the default a per-database <code>replica_override</code> can supersede)</td></tr>
                 <tr><td class="doc-info-table-td"><code>Orchestrator.ProcessRegistry</code></td><td class="doc-info-table-td">Orchestrator</td><td class="doc-info-table-td">Interval-based scheduling with concurrent execution enabled; <code>TaskLog</code> provides task-level tracking</td></tr>
                 <tr><td class="doc-info-table-td"><code>sys.dm_hadr_availability_replica_states</code></td><td class="doc-info-table-td">SQL Server</td><td class="doc-info-table-td">AG topology resolution for secondary replica targeting</td></tr>
                 <tr><td class="doc-info-table-td"><code>sys.databases</code></td><td class="doc-info-table-td">SQL Server</td><td class="doc-info-table-td">Online state verification before executing DBCC on target server</td></tr>
-                <tr><td class="doc-info-table-td doc-info-table-td-last"><code>sys.dm_exec_requests</code></td><td class="doc-info-table-td doc-info-table-td-last">SQL Server</td><td class="doc-info-table-td doc-info-table-td-last">Live progress monitoring (<code>percent_complete</code>) for CHECKDB, CHECKALLOC, CHECKTABLE from the Control Center page</td></tr>
+                <tr><td class="doc-info-table-td doc-info-table-td-last"><code>sys.dm_exec_requests</code></td><td class="doc-info-table-td doc-info-table-td-last">SQL Server</td><td class="doc-info-table-td doc-info-table-td-last">Live progress monitoring (<code>percent_complete</code>) for running CHECKDB and CHECKALLOC operations, surfaced on the Control Center page</td></tr>
             </tbody>
         </table>
     </div>
