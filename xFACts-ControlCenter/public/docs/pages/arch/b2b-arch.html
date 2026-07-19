@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IBM/B2B Pipeline Architecture &mdash; xFACts Secrets Revealed</title>
+    <link rel="stylesheet" href="../../css/docs-base.css">
+    <link rel="stylesheet" href="../../css/docs-architecture.css">
+    <link rel="stylesheet" href="../../css/docs-erd.css">
+</head>
+<body>
+<div class="doc-layout">
+
+    <nav class="doc-nav"></nav>
+
+    <div class="doc-content">
+
+        <div class="doc-header">
+            <div class="doc-header-inner">
+                <h1 class="doc-page-title">IBM/B2B Pipeline Architecture</h1>
+                <div class="doc-page-subtitle">How one collector, six tables, and a two-layer status model turn a wall of Sterling runs into a page you can read</div>
+                <div class="doc-subpage-links"></div>
+                <div class="doc-section-jumps">
+                    <a href="#erd" class="doc-section-jump">Schema Overview</a>
+                    <a href="#data-source" class="doc-section-jump">Where the Data Comes From</a>
+                    <a href="#collection-cycle" class="doc-section-jump">The Collection Cycle</a>
+                    <a href="#classification" class="doc-section-jump">Run Classification</a>
+                    <a href="#status-model" class="doc-section-jump">Two-Layer Status Model</a>
+                    <a href="#cross-check" class="doc-section-jump">Sterling Cross-Check</a>
+                    <a href="#fault-capture" class="doc-section-jump">Fault Report Capture</a>
+                    <a href="#enrichment" class="doc-section-jump">Files &amp; Tickets</a>
+                    <a href="#alerting" class="doc-section-jump">Alerting</a>
+                    <a href="#refresh" class="doc-section-jump">Refresh Model</a>
+                    <a href="#connections" class="doc-section-jump">How Everything Connects</a>
+                </div>
+            </div>
+        </div>
+
+        <div class="doc-body">
+            <div class="doc-body-inner doc-arch-page-wrapper">
+    <!-- Context Bar -->
+    <div class="doc-context-bar">
+        The narrative page tells you <em>what</em> the B2B Pipeline module does and <em>why</em>. This page tells you <em>how</em>. One collector mirrors Sterling's pipeline runs into six tables and classifies each one; the page reads those tables through a two-layer status model. The first half of this page is how a run gets tracked and classified; the second half is how the page presents it.
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Schema Overview -->
+    <!-- ============================================ -->
+    <div class="doc-section" id="erd">
+        <h2 class="doc-section-title">Schema Overview</h2>
+
+        <p>The B2B module's data lives in six tables in the <code>B2B</code> schema. One is the spine everything hangs off; two catalog Sterling's own configuration (schedules and workflow definitions); three enrich a tracked run with related detail (files, tickets, fault reports). All logic lives in a single PowerShell collector &mdash; there are no stored procedures or triggers in the module, so the tables store state and the collector does everything else.</p>
+
+        <div class="doc-erd-root" data-schema="B2B"></div>
+
+        <p>This diagram shows keys and relationships only &mdash; the shape of the module, not every field. For the column-by-column definition of any table, see the <a href="../ref/b2b-ref.html" class="doc-ref-inline">Reference page</a>.</p>
+
+        <table class="doc-info-table">
+            <thead><tr><th class="doc-info-table-th">Table</th><th class="doc-info-table-th">Role</th><th class="doc-info-table-th">Cardinality</th></tr></thead>
+            <tbody>
+                <tr><td class="doc-info-table-td"><code>INT_PipelineTracking</code></td><td class="doc-info-table-td">The spine. Both status values, timing, identity, and outcome evidence for a run.</td><td class="doc-info-table-td">One row per tracked run</td></tr>
+                <tr><td class="doc-info-table-td"><code>SI_ScheduleRegistry</code></td><td class="doc-info-table-td">A current mirror of Sterling's schedule catalog &mdash; what runs when.</td><td class="doc-info-table-td">One row per Sterling schedule</td></tr>
+                <tr><td class="doc-info-table-td"><code>SI_WorkflowRegistry</code></td><td class="doc-info-table-td">Workflow-definition catalog and version memory &mdash; used to notice definition changes.</td><td class="doc-info-table-td">One row per workflow definition</td></tr>
+                <tr><td class="doc-info-table-td"><code>INT_RunFiles</code></td><td class="doc-info-table-td">The files a run touched. Feeds the run-detail Files card.</td><td class="doc-info-table-td">One row per file per run</td></tr>
+                <tr><td class="doc-info-table-td"><code>INT_RunTickets</code></td><td class="doc-info-table-td">Per-run Jira ticket outcomes. Feeds the Tickets card and hero badge.</td><td class="doc-info-table-td">One row per run per ticket reason</td></tr>
+                <tr><td class="doc-info-table-td doc-info-table-td-last"><code>SI_FaultReport</code></td><td class="doc-info-table-td doc-info-table-td-last">The captured Sterling status report for a failed run. Feeds the fault-report slideout.</td><td class="doc-info-table-td doc-info-table-td-last">One row per failed run with a report</td></tr>
+            </tbody>
+        </table>
+
+        <div class="doc-tech-tip">
+            <strong class="doc-tech-tip-label">The <code>SI_</code> and <code>INT_</code> prefixes carry meaning.</strong> <code>SI_</code> tables mirror or catalog Sterling's own state (schedules, workflow definitions, fault reports). <code>INT_</code> tables are sourced from the Integration database's pipeline-tracking layer (the run mirror, its files, its tickets). The prefix tells you where a table's data originates.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Where the Data Comes From -->
+    <!-- ============================================ -->
+    <div class="doc-section" id="data-source">
+        <h2 class="doc-section-title">Where the Data Comes From</h2>
+
+        <p>The page doesn't talk to Sterling. It reads the <code>B2B</code> tables, which the collector (<code>Collect-B2BPipeline.ps1</code>) keeps current on a configurable cycle. Understanding that split matters, because it explains why one part of the page behaves differently from the rest.</p>
+
+        <p>The collector reads three source systems: Sterling's <code>b2bi</code> database on its own server (via Windows auth), and the Integration and Debt Manager databases through the availability-group listener. The mirror steps run as single cross-database statements on the listener, so history and ongoing rows get classified by identical logic. The page's API, by contrast, only ever reads the <code>B2B</code> tables in xFACts &mdash; a clean read-only surface with no live dependency on Sterling being reachable when someone loads the page.</p>
+
+        <div class="doc-tech-tip">
+            <strong class="doc-tech-tip-label">One section skips the collector.</strong> The Live Pipeline Activity panel reads the Integration source <em>directly</em> rather than waiting for the next collection cycle, so it shows genuinely in-motion runs in real time. Everything else reads the collector's mirror. That's the reason live rows aren't clickable through to full detail: a run that just started may not have been mirrored yet, so its stored detail would be empty.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: The Collection Cycle -->
+    <!-- ============================================ -->
+    <div class="doc-section" id="collection-cycle">
+        <h2 class="doc-section-title">The Collection Cycle</h2>
+
+        <p>Each collector run works through a fixed sequence of steps. The early steps keep the Sterling catalogs current; the middle steps mirror and classify runs and enrich them; the late steps cross-check aged runs, capture fault reports, and evaluate alerts.</p>
+
+        <div class="doc-arch-flow">
+            <div class="doc-arch-flow-steps">
+                <div class="doc-arch-flow-step doc-flow-blue">
+                    <div class="doc-arch-flow-step-title">1&ndash;2. Catalogs</div>
+                    <div class="doc-arch-flow-step-detail">Sync schedules,<br>workflow census</div>
+                </div>
+                <span class="doc-arch-flow-arrow">&rarr;</span>
+                <div class="doc-arch-flow-step doc-flow-green">
+                    <div class="doc-arch-flow-step-title">3&ndash;4. Mirror</div>
+                    <div class="doc-arch-flow-step-detail">Collect new runs,<br>re-poll incomplete</div>
+                </div>
+                <span class="doc-arch-flow-arrow">&rarr;</span>
+                <div class="doc-arch-flow-step doc-flow-orange">
+                    <div class="doc-arch-flow-step-title">5&ndash;7. Enrich</div>
+                    <div class="doc-arch-flow-step-detail">Files, tickets,<br>dispatcher names</div>
+                </div>
+                <span class="doc-arch-flow-arrow">&rarr;</span>
+                <div class="doc-arch-flow-step doc-flow-purple">
+                    <div class="doc-arch-flow-step-title">8&ndash;9. Resolve</div>
+                    <div class="doc-arch-flow-step-detail">Sterling cross-check,<br>fault reports</div>
+                </div>
+                <span class="doc-arch-flow-arrow">&rarr;</span>
+                <div class="doc-flow-step doc-flow-red">
+                    <div class="doc-arch-flow-step-title">10. Alert</div>
+                    <div class="doc-arch-flow-step-detail">Evaluate and<br>queue alerts</div>
+                </div>
+            </div>
+            <div class="doc-flow-caption">One cycle, ten steps &mdash; catalogs first, then the run mirror, then enrichment, cross-check, and alerting</div>
+        </div>
+
+        <table class="doc-info-table">
+            <thead><tr><th class="doc-info-table-th">#</th><th class="doc-info-table-th">Step</th><th class="doc-info-table-th">What It Does</th></tr></thead>
+            <tbody>
+                <tr><td class="doc-info-table-td">1</td><td class="doc-info-table-td">Sync Schedules</td><td class="doc-info-table-td">Refreshes <code>SI_ScheduleRegistry</code> from Sterling's schedule catalog.</td></tr>
+                <tr><td class="doc-info-table-td">2</td><td class="doc-info-table-td">Workflow Census</td><td class="doc-info-table-td">Refreshes the workflow-definition catalog and detects version changes since the last cycle.</td></tr>
+                <tr><td class="doc-info-table-td">3</td><td class="doc-info-table-td">Collect New Runs</td><td class="doc-info-table-td">Inserts newly-seen runs into the tracker, classifying each as it lands.</td></tr>
+                <tr><td class="doc-info-table-td">4</td><td class="doc-info-table-td">Re-poll Incomplete</td><td class="doc-info-table-td">Re-evaluates runs still in flight or awaiting DM and updates any that have since resolved.</td></tr>
+                <tr><td class="doc-info-table-td">5</td><td class="doc-info-table-td">Mirror Run Files</td><td class="doc-info-table-td">Copies each tracked run's file listing into <code>INT_RunFiles</code>.</td></tr>
+                <tr><td class="doc-info-table-td">6</td><td class="doc-info-table-td">Capture Run Tickets</td><td class="doc-info-table-td">Captures per-run Jira ticket outcomes into <code>INT_RunTickets</code>.</td></tr>
+                <tr><td class="doc-info-table-td">7</td><td class="doc-info-table-td">Resolve Dispatcher Names</td><td class="doc-info-table-td">Fills in the dispatching schedule name for runs that don't carry one directly.</td></tr>
+                <tr><td class="doc-info-table-td">8</td><td class="doc-info-table-td">Sterling Cross-Check</td><td class="doc-info-table-td">Catches aged in-flight runs that died silently (see below).</td></tr>
+                <tr><td class="doc-info-table-td">9</td><td class="doc-info-table-td">Fault Report Enrichment</td><td class="doc-info-table-td">Captures the Sterling status report for freshly-failed runs.</td></tr>
+                <tr><td class="doc-info-table-td doc-info-table-td-last">10</td><td class="doc-info-table-td doc-info-table-td-last">Alert Evaluation</td><td class="doc-info-table-td doc-info-table-td-last">Queues Teams/Jira alerts for the conditions that warrant them.</td></tr>
+            </tbody>
+        </table>
+
+        <div class="doc-tech-tip">
+            <strong class="doc-tech-tip-label">Mirror and classify are one pass.</strong> The insert and re-poll steps classify each run inside the same statement that writes it, capturing the classification via OUTPUT rather than re-querying afterward. History rows and ongoing rows run through the identical classification logic, so a run from three years ago and a run from three minutes ago are judged the same way.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Run Classification -->
+    <!-- ============================================ -->
+    <div class="doc-section" id="classification">
+        <h2 class="doc-section-title">Run Classification</h2>
+
+        <p>Classification is the heart of the collector &mdash; it's what turns a raw source status into a meaning. The tracker keeps one row per run (keyed on the run's Sterling <code>WORKFLOW_ID</code>), mirrors the source's raw status verbatim, and alongside it derives a <code>status_classification</code> from that status plus supporting evidence.</p>
+
+        <h3 class="doc-section-subtitle">How the Source Status Maps</h3>
+
+        <p>The source carries a coarse numeric status, and two of its values are ambiguous &mdash; they mean two different things depending on what happened. The raw value alone can't tell them apart, so the collector consults independent evidence to disambiguate:</p>
+
+        <table class="doc-info-table">
+            <thead><tr><th class="doc-info-table-th">Ambiguous Value</th><th class="doc-info-table-th">Could Mean</th><th class="doc-info-table-th">Resolved By</th></tr></thead>
+            <tbody>
+                <tr><td class="doc-info-table-td">Fault (&minus;1)</td><td class="doc-info-table-td">A Sterling workflow fault, <em>or</em> a DM batch rejection written back by the reconciliation job</td><td class="doc-info-table-td">Checking the DM batch tables directly &mdash; the same tables the reconciliation job reads</td></tr>
+                <tr><td class="doc-info-table-td doc-info-table-td-last">Finished (4)</td><td class="doc-info-table-td doc-info-table-td-last">No files were acquired, <em>or</em> files came in but the handoff never happened</td><td class="doc-info-table-td doc-info-table-td-last">Checking for nonzero-size file pickups on the run</td></tr>
+            </tbody>
+        </table>
+
+        <p>With those two resolved, the full mapping falls out. Each source signal, plus any evidence it needs, lands on one classification:</p>
+
+        <table class="doc-info-table">
+            <thead><tr><th class="doc-info-table-th">Source Signal</th><th class="doc-info-table-th">Evidence Consulted</th><th class="doc-info-table-th">Resulting Classification</th></tr></thead>
+            <tbody>
+                <tr><td class="doc-info-table-td">Still running</td><td class="doc-info-table-td">None (may later be cross-checked)</td><td class="doc-info-table-td">IN_FLIGHT</td></tr>
+                <tr><td class="doc-info-table-td">Handed off, awaiting DM</td><td class="doc-info-table-td">Whether a sequence id is present</td><td class="doc-info-table-td">AWAITING_DM (or COMPLETE for non-handoff types)</td></tr>
+                <tr><td class="doc-info-table-td">Finished on the Sterling side</td><td class="doc-info-table-td">Whether any nonzero-size files were picked up</td><td class="doc-info-table-td">NO_HANDOFF (files present) or NO_FILES (none)</td></tr>
+                <tr><td class="doc-info-table-td">Faulted</td><td class="doc-info-table-td">Whether a DM batch id exists; process type; DM's own status code</td><td class="doc-info-table-td">STERLING_FAULT, DM_REJECTED, or FAULT_POST_HANDOFF</td></tr>
+                <tr><td class="doc-info-table-td">Skipped in a sequential chain</td><td class="doc-info-table-td">None</td><td class="doc-info-table-td">CASCADE_SKIP</td></tr>
+                <tr><td class="doc-info-table-td doc-info-table-td-last">Duplicate suppressed</td><td class="doc-info-table-td doc-info-table-td-last">None</td><td class="doc-info-table-td doc-info-table-td-last">DUPLICATE</td></tr>
+            </tbody>
+        </table>
+
+        <div class="doc-tech-tip">
+            <strong class="doc-tech-tip-label">A fault means different things depending on the arm.</strong> When a run faults, the collector asks whether it ever reached Debt Manager. No DM batch id, or a process type that has no DM arm at all (anything outside new business, payment, and BDL), means the fault is purely Sterling's &mdash; STERLING_FAULT. A DM batch that reached a rejection code is DM_REJECTED. A fault that occurred <em>after</em> DM had already accepted the work is FAULT_POST_HANDOFF &mdash; the data landed, but cleanup or notification may not have finished.
+        </div>
+
+        <h3 class="doc-section-subtitle">The Twelve Classifications</h3>
+
+        <p>Every tracked run lands on exactly one of these. The meanings below are the same plain-English descriptions shown in the run-detail slideout.</p>
+
+        <table class="doc-info-table">
+            <thead><tr><th class="doc-info-table-th">Classification</th><th class="doc-info-table-th">Meaning</th></tr></thead>
+            <tbody>
+                <tr><td class="doc-info-table-td"><strong>IN_FLIGHT</strong></td><td class="doc-info-table-td">Presumed executing &mdash; the source row is still open and hasn't aged past the cross-check threshold.</td></tr>
+                <tr><td class="doc-info-table-td"><strong>AWAITING_DM</strong></td><td class="doc-info-table-td">The Sterling side is done; waiting for the Integration reconciliation job to confirm the DM outcome.</td></tr>
+                <tr><td class="doc-info-table-td"><strong>COMPLETE</strong></td><td class="doc-info-table-td">Fully complete. For handoff types this includes DM-side confirmation.</td></tr>
+                <tr><td class="doc-info-table-td"><strong>NO_FILES</strong></td><td class="doc-info-table-td">The run genuinely acquired no files &mdash; a normal outcome for a poll that found nothing waiting.</td></tr>
+                <tr><td class="doc-info-table-td"><strong>NO_HANDOFF</strong></td><td class="doc-info-table-td">Files were acquired but the run never handed a batch to DM.</td></tr>
+                <tr><td class="doc-info-table-td"><strong>DUPLICATE</strong></td><td class="doc-info-table-td">A duplicate file was detected and processing was suppressed.</td></tr>
+                <tr><td class="doc-info-table-td"><strong>CASCADE_SKIP</strong></td><td class="doc-info-table-td">Skipped because a predecessor in a sequential chain failed.</td></tr>
+                <tr><td class="doc-info-table-td"><strong>STERLING_FAULT</strong></td><td class="doc-info-table-td">Faulted on the Sterling side with no DM rejection possible &mdash; before any handoff, or on a type with no DM arm.</td></tr>
+                <tr><td class="doc-info-table-td"><strong>DM_REJECTED</strong></td><td class="doc-info-table-td">DM rejected the batch after handoff; the DM batch reached a failed or deleted terminal code.</td></tr>
+                <tr><td class="doc-info-table-td"><strong>FAULT_POST_HANDOFF</strong></td><td class="doc-info-table-td">The data landed in DM but the pipeline faulted afterward &mdash; cleanup and notification may not have run.</td></tr>
+                <tr><td class="doc-info-table-td"><strong>DIED_UNHANDLED</strong></td><td class="doc-info-table-td">Terminated in Sterling without reaching a fault handler; its source row will never self-update. Set by the cross-check.</td></tr>
+                <tr><td class="doc-info-table-td doc-info-table-td-last"><strong>UNCLASSIFIED</strong></td><td class="doc-info-table-td doc-info-table-td-last">The collector could not resolve a classification from the available evidence. Persistent unclassified runs indicate a collector or source problem.</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Two-Layer Status Model -->
+    <!-- ============================================ -->
+    <div class="doc-section" id="status-model">
+        <h2 class="doc-section-title">Two-Layer Status Model</h2>
+
+        <p>Every tracked run carries <em>two</em> status values, and the reason isn't just "detailed versus summary" &mdash; the two answer genuinely different questions.</p>
+
+        <p>This module was meant to treat Sterling as the endpoint: a run happens in Sterling, and it either worked or it didn't. But the setup isn't that clean. A reconciliation process running in Sterling looks at what happened <em>after</em> the data left &mdash; whether Debt Manager accepted or rejected the handed-off batch &mdash; and writes that back into the source. So the source status carries the full pipeline story, downstream outcomes and all. The <code>status_classification</code> is that full story: the twelve values above, which include downstream dispositions like a DM rejection or a post-handoff fault.</p>
+
+        <p>That created a problem. If a run handed off cleanly and DM later rejected the batch, the full story is "DM rejected it" &mdash; but from <em>Sterling's</em> point of view, the run succeeded. It did its job and passed the work along. To keep a clean answer to "how did this end in Sterling," a second status was added: <code>sterling_status</code>, the rolled-up result considering Sterling alone as the endpoint. It's the primary status the page is organized around &mdash; the clickable pulse tiles, the history-tree columns, and the status filter all speak this vocabulary.</p>
+
+        <table class="doc-info-table">
+            <thead><tr><th class="doc-info-table-th">sterling_status</th><th class="doc-info-table-th">Meaning (Sterling as the endpoint)</th></tr></thead>
+            <tbody>
+                <tr><td class="doc-info-table-td"><strong>SUCCESS</strong></td><td class="doc-info-table-td">The run reached a successful terminal state within Sterling.</td></tr>
+                <tr><td class="doc-info-table-td"><strong>NO_ACTION</strong></td><td class="doc-info-table-td">The run performed no processing &mdash; there was nothing to act on.</td></tr>
+                <tr><td class="doc-info-table-td"><strong>FAILED</strong></td><td class="doc-info-table-td">The run failed within Sterling.</td></tr>
+                <tr><td class="doc-info-table-td"><strong>IN_PROGRESS</strong></td><td class="doc-info-table-td">The run has not yet reached a terminal state within Sterling.</td></tr>
+                <tr><td class="doc-info-table-td doc-info-table-td-last"><strong>UNDEFINED</strong></td><td class="doc-info-table-td doc-info-table-td-last">The Sterling-level status hasn't been determined. Also a <strong>drift sentinel</strong>: several classifications are still under review for how they should roll up, so a persistent UNDEFINED is a signal that a case is still being worked out.</td></tr>
+            </tbody>
+        </table>
+
+        <div class="doc-tech-tip">
+            <strong class="doc-tech-tip-label">Success and DM Rejected can sit side by side &mdash; on purpose.</strong> A run can show <code>sterling_status</code> = SUCCESS and <code>status_classification</code> = DM_REJECTED at the same time, and that's correct: Sterling succeeded (it handed off cleanly), and the rejection happened downstream. That downstream outcome is really Batch Monitoring's territory &mdash; there's a bit of baked-in crossover between the two modules that only became clear once the pipeline was built out. On this page, the coarse status deliberately answers only the Sterling question and leaves the downstream story to the detail layer.
+        </div>
+
+        <p>The two show up together in the run-detail slideout: the hero strip carries a Sterling badge (the coarse "how did it end in Sterling") and a Classification badge (the full "what happened to it") side by side, with the classification's plain-English meaning underneath. Tiles and history use the coarse status because it's the clean at-a-glance answer; the slideout adds the classification because that's where you've gone to understand the whole run, downstream and all. The page never computes either value &mdash; both are written by the collector and read as-is.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Sterling Cross-Check -->
+    <!-- ============================================ -->
+    <div class="doc-section" id="cross-check">
+        <h2 class="doc-section-title">Sterling Cross-Check</h2>
+
+        <p>Most runs report their own ending &mdash; they finish, and the source row updates to a terminal status the collector can classify. But some runs die so hard they never reach a fault handler, which means their source row stays "still running" forever. Left alone, those would sit as IN_FLIGHT indefinitely, quietly wrong.</p>
+
+        <p>The cross-check is the safety net. Each cycle it looks at in-flight runs that have aged past a configurable threshold, and checks each one against Sterling's own runtime instance state. If the run's Sterling instance has terminated or vanished, the run died without a handler and will never self-update &mdash; so the cross-check reclassifies it as DIED_UNHANDLED.</p>
+
+        <div class="doc-tech-tip">
+            <strong class="doc-tech-tip-label">Why the aging threshold exists.</strong> A run that's only been in flight a few minutes might genuinely still be working. The threshold gives every run a fair chance to finish and report itself before the cross-check steps in. Only runs that have been in flight too long to be plausibly alive get checked against Sterling &mdash; and only the confirmed-dead ones get reclassified.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Fault Report Capture -->
+    <!-- ============================================ -->
+    <div class="doc-section" id="fault-capture">
+        <h2 class="doc-section-title">Fault Report Capture</h2>
+
+        <p>A failed run is only useful if you can find out why. Sterling produces a detailed status report when a step fails, but it lives compressed inside Sterling's own runtime tables. The fault-report step reaches in and captures it so nobody has to open Sterling.</p>
+
+        <p>Capture is scoped to the two Sterling-internal failures &mdash; STERLING_FAULT and DIED_UNHANDLED. Downstream failures (a DM rejection, or a fault after handoff) are owned by other parts of the pipeline and deliberately excluded. For an eligible run without a captured report yet, the collector resolves the failing step's report handle, reads and decompresses the report blob, parses it, and writes both the parsed structure and the raw text to <code>SI_FaultReport</code> &mdash; then snapshots a short summary onto the tracking row so the run-detail slideout can show a callout without opening the full report.</p>
+
+        <h3 class="doc-section-subtitle">Report Shapes</h3>
+
+        <p>The captured report arrives in one of a few shapes, and the collector parses each into a consistent structure the slideout can render:</p>
+
+        <table class="doc-info-table">
+            <thead><tr><th class="doc-info-table-th">Shape</th><th class="doc-info-table-th">What It Is</th></tr></thead>
+            <tbody>
+                <tr><td class="doc-info-table-td"><strong>TRANSLATION</strong></td><td class="doc-info-table-td">A translation/map failure. Parsed to full fidelity &mdash; report metadata, per-entry detail (field, block, exception, raw block data), and error/warning/entry counts.</td></tr>
+                <tr><td class="doc-info-table-td"><strong>TRANSLATION_ESCALATED</strong></td><td class="doc-info-table-td">A map that completed with warnings, where the workflow then escalated the outcome to a fault. The full report is recovered from the run's last successful translation step; the failing step's one-liner is preserved as an escalation message.</td></tr>
+                <tr><td class="doc-info-table-td"><strong>SERVICE</strong></td><td class="doc-info-table-td">A service-level failure. Captures the service identity and every reported error line.</td></tr>
+                <tr><td class="doc-info-table-td doc-info-table-td-last"><strong>MESSAGE</strong></td><td class="doc-info-table-td doc-info-table-td-last">A report-less failure (for example, a database error surfaced through an adapter). No report blob exists, so the error text is lifted from the failing step's status field.</td></tr>
+            </tbody>
+        </table>
+
+        <div class="doc-tech-tip">
+            <strong class="doc-tech-tip-label">Unknown vocabulary is never dropped.</strong> The translation parser maps the report's known detail codes to named fields, but any code it doesn't recognize is preserved generically rather than discarded &mdash; so a new Sterling report field shows up in the captured detail even before the parser has a name for it. A run whose failure produces no recognizable report at all is recorded as having no report, rather than left looking uncaptured.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Files & Tickets -->
+    <!-- ============================================ -->
+    <div class="doc-section" id="enrichment">
+        <h2 class="doc-section-title">Files &amp; Tickets</h2>
+
+        <p>Two enrichment steps attach related detail to each run so the run-detail slideout can tell a fuller story.</p>
+
+        <h3 class="doc-section-subtitle">Run Files</h3>
+
+        <p>The file mirror copies each tracked run's file listing into <code>INT_RunFiles</code> &mdash; one row per file per run, with the file name, size, and how it arrived. It's idempotent on the source file row, so re-running a cycle never duplicates a file, and it captures files for every run regardless of status or type.</p>
+
+        <h3 class="doc-section-subtitle">Run Tickets</h3>
+
+        <p>The ticket capture records Jira ticket outcomes at the (run, ticket reason) grain &mdash; a single run can generate more than one ticket for different reasons. Each ticket carries an assignment state that the slideout badges:</p>
+
+        <table class="doc-info-table">
+            <thead><tr><th class="doc-info-table-th">State</th><th class="doc-info-table-th">Meaning</th></tr></thead>
+            <tbody>
+                <tr><td class="doc-info-table-td"><strong>GENERATED</strong></td><td class="doc-info-table-td">A ticket number has been assigned.</td></tr>
+                <tr><td class="doc-info-table-td"><strong>PENDING</strong></td><td class="doc-info-table-td">Recognized but not yet assigned a number &mdash; recently seen and still expected to be assigned.</td></tr>
+                <tr><td class="doc-info-table-td doc-info-table-td-last"><strong>AGED_OUT</strong></td><td class="doc-info-table-td doc-info-table-td-last">Went unassigned long enough that it's no longer expected to be. A late assignment still promotes an aged row back to GENERATED.</td></tr>
+            </tbody>
+        </table>
+
+        <p>In the run-detail slideout, the worst assignment state across a run's tickets wins the hero's Jira badge &mdash; so a run with one aged-out ticket among several reads as aged-out at a glance, and only shows the full picture when you look at the Tickets card.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Alerting -->
+    <!-- ============================================ -->
+    <div class="doc-section" id="alerting">
+        <h2 class="doc-section-title">Alerting</h2>
+
+        <p>The page is how you find a problem when you go looking; alerting is how a problem finds you when you're not. The final collector step evaluates two conditions and, when they fire, queues an alert through the shared Teams/Jira dispatch.</p>
+
+        <table class="doc-info-table">
+            <thead><tr><th class="doc-info-table-th">Condition</th><th class="doc-info-table-th">Fires When</th></tr></thead>
+            <tbody>
+                <tr><td class="doc-info-table-td"><strong>Sterling Fault</strong></td><td class="doc-info-table-td">A run classifies as a Sterling-internal failure (STERLING_FAULT or DIED_UNHANDLED).</td></tr>
+                <tr><td class="doc-info-table-td doc-info-table-td-last"><strong>Workflow Change</strong></td><td class="doc-info-table-td doc-info-table-td-last">A Sterling workflow definition changed version between cycles &mdash; a behavior change with no other notification path.</td></tr>
+            </tbody>
+        </table>
+
+        <p>Alerting sits behind a master switch, and each of the two conditions has its own routing so they can be sent to Teams, raised as a Jira ticket, both, or neither &mdash; independently. Alerting is also bounded to the working window, so backfilling years of history never fires a storm of alerts for runs that failed long ago.</p>
+
+        <div class="doc-tech-tip">
+            <strong class="doc-tech-tip-label">The failure alert is deliberately narrow.</strong> Only the two Sterling-internal faults alert. A DM rejection or a post-handoff fault is real, but it's visible and owned elsewhere in the pipeline &mdash; alerting on it here would be a duplicate. The B2B alert covers exactly the failures that <em>only</em> this module can see.
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Refresh Model -->
+    <!-- ============================================ -->
+    <div class="doc-section" id="refresh">
+        <h2 class="doc-section-title">Refresh Model</h2>
+
+        <p>The page refreshes on two different rhythms, matching how each section gets its data.</p>
+
+        <table class="doc-info-table">
+            <thead><tr><th class="doc-info-table-th">Sections</th><th class="doc-info-table-th">Rhythm</th><th class="doc-info-table-th">Badge</th></tr></thead>
+            <tbody>
+                <tr><td class="doc-info-table-td">Pulse tiles, Live Activity</td><td class="doc-info-table-td">A polling timer on a configurable live interval</td><td class="doc-info-table-td">Live (pulsing dot)</td></tr>
+                <tr><td class="doc-info-table-td doc-info-table-td-last">Run History tree</td><td class="doc-info-table-td doc-info-table-td-last">Refreshes when the collector completes a cycle</td><td class="doc-info-table-td doc-info-table-td-last">Event (lightning bolt)</td></tr>
+            </tbody>
+        </table>
+
+        <p>The live sections poll because they need to feel current between collection cycles; the history tree is event-driven because it only changes when the collector writes new tracked rows, so refreshing it on completion is both sufficient and efficient. A separate timer forces a full page reload when the calendar date rolls over, so an open page doesn't sit on yesterday's "today."</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: How Everything Connects -->
+    <!-- ============================================ -->
+    <div class="doc-section" id="connections">
+        <h2 class="doc-section-title">How Everything Connects</h2>
+
+        <p>The collector reads from three source systems and writes to the <code>B2B</code> tables plus the shared alert queue. The data flow is one-directional &mdash; read from the sources, write to xFACts, never back.</p>
+
+        <h3 class="doc-section-subtitle">Page to Data</h3>
+
+        <table class="doc-info-table">
+            <thead><tr><th class="doc-info-table-th">Section</th><th class="doc-info-table-th">Reads From</th><th class="doc-info-table-th">Via</th></tr></thead>
+            <tbody>
+                <tr><td class="doc-info-table-td">Pulse (bottom row), History, Runs/Day slideouts, Run Detail</td><td class="doc-info-table-td"><code>INT_PipelineTracking</code></td><td class="doc-info-table-td">The read-only page API</td></tr>
+                <tr><td class="doc-info-table-td">Live Activity + Pulse (top row)</td><td class="doc-info-table-td">The Integration source, directly</td><td class="doc-info-table-td">The page API's live endpoint</td></tr>
+                <tr><td class="doc-info-table-td">Run-detail Files card</td><td class="doc-info-table-td"><code>INT_RunFiles</code></td><td class="doc-info-table-td">The run-files endpoint</td></tr>
+                <tr><td class="doc-info-table-td">Run-detail Tickets card + hero badge</td><td class="doc-info-table-td"><code>INT_RunTickets</code></td><td class="doc-info-table-td">The run-tickets endpoint</td></tr>
+                <tr><td class="doc-info-table-td doc-info-table-td-last">Fault-report slideout</td><td class="doc-info-table-td doc-info-table-td-last"><code>SI_FaultReport</code></td><td class="doc-info-table-td doc-info-table-td-last">The fault-report endpoint</td></tr>
+            </tbody>
+        </table>
+
+        <h3 class="doc-section-subtitle">Source Systems</h3>
+
+        <table class="doc-info-table">
+            <thead><tr><th class="doc-info-table-th">Source</th><th class="doc-info-table-th">Read By</th><th class="doc-info-table-th">Purpose</th></tr></thead>
+            <tbody>
+                <tr><td class="doc-info-table-td">Sterling <code>b2bi</code> database</td><td class="doc-info-table-td">Schedule sync, workflow census, cross-check, fault capture</td><td class="doc-info-table-td">Schedules, workflow definitions, runtime instance state, and the compressed fault reports</td></tr>
+                <tr><td class="doc-info-table-td">Integration database</td><td class="doc-info-table-td">Run mirror, files, tickets, live panel</td><td class="doc-info-table-td">The pipeline-tracking layer that is the run mirror's source, plus per-run files and tickets</td></tr>
+                <tr><td class="doc-info-table-td doc-info-table-td-last">Debt Manager (<code>crs5_oltp</code>)</td><td class="doc-info-table-td doc-info-table-td-last">Classification (fault runs)</td><td class="doc-info-table-td doc-info-table-td-last">DM batch status codes that distinguish a Sterling fault from a DM rejection</td></tr>
+            </tbody>
+        </table>
+
+        <h3 class="doc-section-subtitle">Platform Dependencies</h3>
+
+        <table class="doc-info-table">
+            <thead><tr><th class="doc-info-table-th">Dependency</th><th class="doc-info-table-th">Purpose</th></tr></thead>
+            <tbody>
+                <tr><td class="doc-info-table-td"><code>Orchestrator.ProcessRegistry</code></td><td class="doc-info-table-td">Runs the collector on its interval and drives the engine card's health indicator.</td></tr>
+                <tr><td class="doc-info-table-td"><code>dbo.GlobalConfig</code></td><td class="doc-info-table-td">The live refresh interval, the collection lookback and in-flight aging thresholds, the alerting master switch, and the per-condition routing.</td></tr>
+                <tr><td class="doc-info-table-td doc-info-table-td-last"><code>Teams.AlertQueue</code> / Jira</td><td class="doc-info-table-td doc-info-table-td-last">Where the collector queues alerts for Sterling-internal failures and workflow-definition changes.</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+                <div class="doc-footer"></div>
+
+            </div>
+        </div>
+
+    </div>
+
+</div>
+<script src="../../js/docs-shared.js"></script>
+<script src="../../js/nav.js"></script>
+<script src="../../js/ddl-erd.js"></script>
+</body>
+</html>
