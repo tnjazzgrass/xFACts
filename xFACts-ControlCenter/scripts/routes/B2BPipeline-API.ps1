@@ -6,8 +6,9 @@
     Read-only API surface backing the B2B Pipeline dashboard. Exposes today's
     pulse counts, the true real-time live view read directly from the
     Integration source, the per-day history summary rollup, the filtered paged
-    run query behind the runs modal, the single-run detail read, and the full
-    captured Sterling status report for a failed run. All endpoints require
+    run query behind the runs modal, the single-run detail read, the full
+    captured Sterling status report for a failed run, and the mirrored Sterling
+    schedule set behind the schedule slide-up. All endpoints require
     ADLogin authentication and return JSON.
 
 .COMPONENT
@@ -33,7 +34,8 @@
    one tracking row in full; run-files lists the files a run carried;
    run-tickets lists the ticket outcomes recorded against a run;
    fault-report reads the full captured Sterling
-   status report for one failed run.
+   status report for one failed run; schedules returns the mirrored Sterling
+   schedule set for the schedule slide-up.
    Prefix: b2b
    ============================================================================ #>
 
@@ -146,6 +148,47 @@ Add-PodeRoute -Method Get -Path '/api/b2b-pipeline/process-types' -Authenticatio
 "@
 
         Write-PodeJsonResponse -Value @{ types = @($results | ForEach-Object { $_.process_type }) }
+    }
+    catch {
+        Write-PodeJsonResponse -Value @{ error = $_.Exception.Message } -StatusCode 500
+    }
+}
+
+# Schedules - the full set of Sterling schedules mirrored into SI_ScheduleRegistry,
+# for the schedule slide-up on the Run History header. Returns every schedule with
+# its parsed timing columns so the UI can display and filter (runs-today, time
+# window, status, pattern, service search) entirely client-side. Read-only mirror;
+# source_status reflects the Sterling-managed ACTIVE / INACTIVE state.
+Add-PodeRoute -Method Get -Path '/api/b2b-pipeline/schedules' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+
+    try {
+        $results = Invoke-XFActsQuery -Query @"
+            SELECT
+                schedule_id,
+                service_name,
+                source_status,
+                timing_pattern_type,
+                schedule_description,
+                run_day_mask,
+                run_days_of_month,
+                run_times_explicit,
+                run_range_start,
+                run_range_end,
+                run_interval_minutes,
+                excluded_dates,
+                first_run_time_of_day,
+                last_run_time_of_day,
+                expected_runs_per_day
+            FROM B2B.SI_ScheduleRegistry
+            WHERE 1 = 1
+                -- Phase 1 returns every schedule. A utility-schedule filter
+                -- (e.g. AND service_name LIKE 'FA[_]%') drops in here when the
+                -- team decides which non-pipeline schedules to hide.
+            ORDER BY service_name
+"@
+
+        Write-PodeJsonResponse -Value @{ schedules = @($results) }
     }
     catch {
         Write-PodeJsonResponse -Value @{ error = $_.Exception.Message } -StatusCode 500
