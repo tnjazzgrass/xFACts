@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-07-19 06:57:42
+Generated: 2026-07-19 07:09:47
 
 ## Module Registry
 
@@ -162,6 +162,10 @@ Generated: 2026-07-19 06:57:42
 | Documentation.Site | docs-hub.css | Documentation | CSS | E:\xFACts-ControlCenter\public\docs\css\docs-hub.css | Documentation hub page styles |
 | Documentation.Site | docs-narrative.css | Documentation | CSS | E:\xFACts-ControlCenter\public\docs\css\docs-narrative.css | Narrative page styles |
 | Documentation.Site | docs-reference.css | Documentation | CSS | E:\xFACts-ControlCenter\public\docs\css\docs-reference.css | Reference page styles |
+| Documentation.Site | b2b-arch.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\arch\b2b-arch.html | IBM/B2B architecture page |
+| Documentation.Site | b2b-cc.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\cc\b2b-cc.html | IBM/B2B Control Center guide page |
+| Documentation.Site | b2b-ref.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\ref\b2b-ref.html | IBM/B2B DDL reference page |
+| Documentation.Site | b2b.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\b2b.html | IBM/B2B narrative documentation page |
 | Documentation.Site | backup-arch.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\arch\backup-arch.html | Backup architecture page |
 | Documentation.Site | backup-cc.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\cc\backup-cc.html | Backup Monitoring Control Center guide page |
 | Documentation.Site | backup-ref.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\ref\backup-ref.html | Backup DDL reference page |
@@ -181,6 +185,7 @@ Generated: 2026-07-19 06:57:42
 | Documentation.Site | controlcenter-ref.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\ref\controlcenter-ref.html | Control Center DDL reference page |
 | Documentation.Site | controlcenter.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\controlcenter.html | Control Center narrative page |
 | Documentation.Site | dbcc-arch.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\arch\dbcc-arch.html | DBCC Operations architecture page |
+| Documentation.Site | dbcc-cc.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\cc\dbcc-cc.html | DBCC Control Center guide page |
 | Documentation.Site | dbcc-ref.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\ref\dbcc-ref.html | DBCC Operations DDL reference page |
 | Documentation.Site | dbcc.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\dbcc.html | DBCC Operations narrative page |
 | Documentation.Site | dmops-arch.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\arch\dmops-arch.html | DM Operations architecture documentation page |
