@@ -31,6 +31,12 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-07-18  Added the Sterling Schedules modal: a Schedules button at the
+#             right of the Run History header opens a centered modal listing
+#             the mirrored SI_ScheduleRegistry schedules, with client-side
+#             filtering by service, pattern, status, runs-today, hide-system-
+#             processes, and a fires-in-window test (30-minute range dropdowns)
+#             for identifying open maintenance windows.
 # 2026-07-17  Visual tweaks batch: the runs and day summary-list slideouts
 #             widen to the new cc-xxwide tier; a Run ID exact-match search
 #             input leads the history filter bar ahead of the client search.
@@ -146,6 +152,7 @@ $navHtml
             <div class="cc-section cc-fill b2b-section-flex">
                 <div class="cc-section-header">
                     <h2 class="cc-section-title">Run History</h2>
+                    <button class="b2b-schedules-btn" data-action-click="b2b-open-schedules">Schedules</button>
                     <span class="cc-refresh-badge-event" title="Refreshes when engine process completes">&#9889;</span>
                 </div>
                 <div class="b2b-filter-bar">
@@ -233,6 +240,42 @@ $navHtml
             </div>
             <div class="cc-dialog-body" id="b2b-fault-report-body">
                 <div class="b2b-loading">Loading...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Purpose: schedule modal surfacing the mirrored Sterling schedules with client-side filtering -->
+    <div id="b2b-slideup-schedules" class="cc-modal-overlay cc-hidden" data-action-click="b2b-close-schedules">
+        <div class="cc-dialog cc-dialog-modal cc-xxwide">
+            <div class="cc-dialog-header">
+                <h3 class="cc-dialog-title">Sterling Schedules</h3>
+                <button class="cc-dialog-close" data-action-click="b2b-close-schedules">&times;</button>
+            </div>
+            <div class="cc-dialog-body">
+                <div class="b2b-sched-filter-bar">
+                    <div class="b2b-sched-group">
+                        <input id="b2b-sched-search" class="b2b-search-input b2b-sched-search" type="text" placeholder="Search by service..." data-action-keydown="b2b-sched-filter-key">
+                        <select id="b2b-sched-pattern" class="b2b-filter-select" data-action-change="b2b-sched-filter"></select>
+                        <select id="b2b-sched-status" class="b2b-filter-select" data-action-change="b2b-sched-filter"></select>
+                    </div>
+                    <div class="b2b-sched-group">
+                        <label class="b2b-sched-today-lbl"><input id="b2b-sched-today" type="checkbox" data-action-change="b2b-sched-filter"> Runs today</label>
+                        <label class="b2b-sched-today-lbl"><input id="b2b-sched-hidesys" type="checkbox" data-action-change="b2b-sched-filter"> Hide system processes</label>
+                    </div>
+                    <div class="b2b-sched-group">
+                        <span class="b2b-sched-window-grp">
+                            <span class="b2b-sched-window-lbl">Fires between</span>
+                            <select id="b2b-sched-from" class="b2b-filter-select" data-action-change="b2b-sched-filter" title="Window start"></select>
+                            <span class="b2b-sched-window-sep">and</span>
+                            <select id="b2b-sched-to" class="b2b-filter-select" data-action-change="b2b-sched-filter" title="Window end"></select>
+                        </span>
+                        <button class="b2b-filter-btn" data-action-click="b2b-sched-reset">Reset</button>
+                    </div>
+                </div>
+                <div id="b2b-sched-count" class="b2b-sched-count">-</div>
+                <div id="b2b-sched-content" class="b2b-table-scroll">
+                    <div class="b2b-loading">Loading...</div>
+                </div>
             </div>
         </div>
     </div>
