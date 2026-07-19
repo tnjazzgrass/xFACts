@@ -85,6 +85,16 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-07-18  Fixed single-explicit-time schedule parsing: first_run_time_of_day
+#             and last_run_time_of_day were derived by indexing $sortedTimes[0]
+#             and [-1], but Sort-Object returns a scalar (not an array) when the
+#             pipeline yields one item, so single-time schedules indexed into the
+#             time STRING and stored one character (e.g. "0737" -> "0"/"7")
+#             instead of the HH:MM value. Multi-time and range-based schedules
+#             were unaffected. Forced array context with @(...) on the
+#             $sortedTimes assignment; applied the same @(...) hardening to
+#             $sortedMonth defensively. Existing rows corrected by a one-time
+#             backfill from the (already-correct) run_times_explicit column.
 # 2026-07-17  Third fault-report shape: report-less failures. Some failures
 #             (observed: SQL errors raised through the JDBC adapter) carry no
 #             status report on any step; the error text lives only in the
@@ -573,7 +583,7 @@ function ConvertTo-b2b_ParsedSchedule {
 
     if ($hasMonthDays) {
         $patternType = 'MONTHLY'
-        $sortedMonth = $monthDays | Sort-Object
+        $sortedMonth = @($monthDays | Sort-Object)
         $dayMonthStr = ($sortedMonth -join ',')
     }
     elseif ($hasWeekDays) {
@@ -601,7 +611,7 @@ function ConvertTo-b2b_ParsedSchedule {
 
     $sortedTimes = @()
     if ($usesExplicit) {
-        $sortedTimes = $explicitTimes | Sort-Object -Unique
+        $sortedTimes = @($explicitTimes | Sort-Object -Unique)
         $result.run_times_explicit = ($sortedTimes | ForEach-Object { Format-b2b_HHMM -Value $_ }) -join ','
     }
 
