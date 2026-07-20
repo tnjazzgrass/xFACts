@@ -9,7 +9,9 @@
    -----------------
    CONSTANTS: ENGINE PROCESSES
    CONSTANTS: STATIC LOOKUPS
+   CONSTANTS: SEARCH PAGING
    STATE: PAGE STATE
+   STATE: SEARCH STATE
    FUNCTIONS: INITIALIZATION
    FUNCTIONS: ACTION DISPATCH TABLES
    FUNCTIONS: REFRESH ORCHESTRATION
@@ -24,6 +26,7 @@
    FUNCTIONS: DAILY SUMMARY RENDER
    FUNCTIONS: STALL SLIDEOUTS
    FUNCTIONS: EXECUTION HISTORY RENDER
+   FUNCTIONS: JOB SEARCH
    FUNCTIONS: DAY DETAILS RENDER
    FUNCTIONS: PENDING AND AD-HOC SLIDEOUTS
    FUNCTIONS: CONFIGSYNC MODAL
@@ -72,6 +75,16 @@ const jfm_PROCESS_ICONS = {
     'Flow Validation':         '&#x2714;',
     'Missing Flows':           '&#x26A0;'
 };
+
+/* ============================================================================
+   CONSTANTS: SEARCH PAGING
+   ----------------------------------------------------------------------------
+   Fixed paging size for the job-search results slideout.
+   Prefix: jfm
+   ============================================================================ */
+
+/* Number of job rows fetched per search-results page. */
+const jfm_SEARCH_PAGE_SIZE = 30;
 
 /* ============================================================================
    STATE: PAGE STATE
@@ -128,6 +141,23 @@ var jfm_configSyncSelectedFlow = null;
 var jfm_configSyncTaskSchedule = null;
 
 /* ============================================================================
+   STATE: SEARCH STATE
+   ----------------------------------------------------------------------------
+   The filter set, page position, and total row count driving the job-search
+   results slideout.
+   Prefix: jfm
+   ============================================================================ */
+
+/* Filter set the search slideout is currently displaying. */
+var jfm_searchFilters = {};
+
+/* Current zero-based search-results page index. */
+var jfm_searchPageIndex = 0;
+
+/* Total row count matching the current search filters. */
+var jfm_searchTotal = 0;
+
+/* ============================================================================
    FUNCTIONS: INITIALIZATION
    ----------------------------------------------------------------------------
    The page entry point invoked by the cc-shared bootloader once the module
@@ -138,9 +168,9 @@ var jfm_configSyncTaskSchedule = null;
    ============================================================================ */
 
 /* Page entry point. Called by the cc-shared bootloader after this module
-   loads. Connects shared engine events, registers delegated click/change
-   listeners that route jfm- actions to the page dispatch tables, then loads
-   data and starts the live and daily timers. */
+   loads. Connects shared engine events, registers delegated click/change/
+   keydown listeners that route jfm- actions to the page dispatch tables, then
+   loads data and starts the live and daily timers. */
 function jfm_init() {
     cc_connectEngineEvents();
 
@@ -150,6 +180,11 @@ function jfm_init() {
     document.body.addEventListener('change', function(event) {
         jfm_handleAction('change', jfm_changeActions, event);
     });
+    document.body.addEventListener('keydown', function(event) {
+        jfm_handleAction('keydown', jfm_keydownActions, event);
+    });
+
+    jfm_populateSearchStatusOptions();
 
     jfm_loadRefreshInterval().then(function() {
         jfm_refreshAll();
@@ -162,9 +197,9 @@ function jfm_init() {
 /* ============================================================================
    FUNCTIONS: ACTION DISPATCH TABLES
    ----------------------------------------------------------------------------
-   The delegated dispatcher and the click/change action maps. Handlers receive
-   (target, event); argument values travel on data-* attributes of the target
-   element and are read inside the handler.
+   The delegated dispatcher and the click/change/keydown action maps. Handlers
+   receive (target, event); argument values travel on data-* attributes of the
+   target element and are read inside the handler.
    Prefix: jfm
    ============================================================================ */
 
@@ -212,13 +247,22 @@ const jfm_clickActions = {
     'jfm-toggle-year':             function(target, event) { jfm_toggleYear(target); },
     'jfm-toggle-month':            function(target, event) { jfm_toggleMonthGroup(target); },
     'jfm-select-flow-type':        function(target, event) { jfm_selectFlowType(target.getAttribute('data-flow-type'), target); },
-    'jfm-save-configsync':         function(target, event) { jfm_saveConfigSync(); }
+    'jfm-save-configsync':         function(target, event) { jfm_saveConfigSync(); },
+    'jfm-run-search':              function(target, event) { jfm_runSearch(); },
+    'jfm-reset-filters':           function(target, event) { jfm_resetFilters(); },
+    'jfm-search-page':             function(target, event) { jfm_searchPage(target); },
+    'jfm-close-search-slideout':   function(target, event) { jfm_closeSearchSlideout(target, event); }
 };
 
 /* Change-action dispatch table for page-local jfm- change actions. */
 const jfm_changeActions = {
     'jfm-configsync-flow-selected': function(target, event) { jfm_onConfigSyncFlowSelected(); },
     'jfm-cs-schedule-type-changed': function(target, event) { jfm_onCsScheduleTypeChanged(); }
+};
+
+/* Keydown-action dispatch table for page-local jfm- keydown actions. */
+const jfm_keydownActions = {
+    'jfm-search-on-enter': function(target, event) { jfm_searchOnEnter(target, event); }
 };
 
 /* ============================================================================
@@ -1396,6 +1440,282 @@ function jfm_loadMonthDays(year, month, container) {
             jfm_renderMonthDays(container, data.days || []);
         })
         .catch(function(err) { container.innerHTML = '<div class="jfm-no-activity">Failed to load: ' + err.message + '</div>'; });
+}
+
+/* ============================================================================
+   FUNCTIONS: JOB SEARCH
+   ----------------------------------------------------------------------------
+   The Execution History job search: reads the filter bar (job short name and
+   job name contains matches, status, exact log id, date range), opens the
+   search-results slideout, and drives the paged history-search endpoint.
+   Result rows reuse the shared cc-slide-table chrome and are not clickable.
+   Prefix: jfm
+   ============================================================================ */
+
+/* Populates the search status dropdown with its fixed options at page boot. */
+function jfm_populateSearchStatusOptions() {
+    var statusSelect = document.getElementById('jfm-filter-status');
+    if (!statusSelect) {
+        return;
+    }
+    statusSelect.innerHTML = '<option value="ALL">All Statuses</option>' +
+                             '<option value="FAILED">Failed</option>' +
+                             '<option value="SUCCEEDED">Succeeded</option>';
+}
+
+/* Search button handler: reads the filter-bar values and opens the results
+   slideout. A non-numeric Log ID value is rejected before any fetch. */
+function jfm_runSearch() {
+    var jobName = document.getElementById('jfm-search-jobname');
+    var jobFullName = document.getElementById('jfm-search-jobfullname');
+    var status = document.getElementById('jfm-filter-status');
+    var logId = document.getElementById('jfm-search-logid');
+    var from = document.getElementById('jfm-filter-from');
+    var to = document.getElementById('jfm-filter-to');
+
+    var logIdValue = logId ? logId.value.trim() : '';
+    if (logIdValue && !/^\d+$/.test(logIdValue)) {
+        cc_showAlert('Log ID must be numeric');
+        return;
+    }
+
+    jfm_searchFilters = {
+        jobName: jobName ? jobName.value.trim() : '',
+        jobFullName: jobFullName ? jobFullName.value.trim() : '',
+        status: status ? status.value : 'ALL',
+        logId: logIdValue,
+        from: from ? from.value : '',
+        to: to ? to.value : ''
+    };
+
+    jfm_openSearchSlideout();
+}
+
+/* Filter-input Enter-key handler: runs the search. */
+function jfm_searchOnEnter(target, event) {
+    if (event && event.key === 'Enter') {
+        jfm_runSearch();
+    }
+}
+
+/* Clears every control in the filter bar. */
+function jfm_resetFilters() {
+    var jobName = document.getElementById('jfm-search-jobname');
+    var jobFullName = document.getElementById('jfm-search-jobfullname');
+    var status = document.getElementById('jfm-filter-status');
+    var logId = document.getElementById('jfm-search-logid');
+    var from = document.getElementById('jfm-filter-from');
+    var to = document.getElementById('jfm-filter-to');
+
+    if (jobName) { jobName.value = ''; }
+    if (jobFullName) { jobFullName.value = ''; }
+    if (status) { status.value = 'ALL'; }
+    if (logId) { logId.value = ''; }
+    if (from) { from.value = ''; }
+    if (to) { to.value = ''; }
+}
+
+/* Opens the search-results slideout, sets its caption, and loads page one. */
+function jfm_openSearchSlideout() {
+    jfm_searchPageIndex = 0;
+
+    var caption = document.getElementById('jfm-search-caption');
+    if (caption) {
+        caption.textContent = jfm_describeSearchFilters();
+    }
+
+    var content = document.getElementById('jfm-search-content');
+    if (content) {
+        content.innerHTML = '<div class="jfm-loading">Loading...</div>';
+    }
+
+    var overlay = document.getElementById('jfm-slideout-search');
+    var dialog = overlay.querySelector('.cc-dialog');
+    overlay.classList.add('cc-open');
+    requestAnimationFrame(function() {
+        dialog.classList.add('cc-open');
+    });
+
+    jfm_loadSearchResults();
+}
+
+/* Closes the search-results slideout on backdrop click or the close button. */
+function jfm_closeSearchSlideout(target, event) {
+    if (event && target.id === 'jfm-slideout-search' && event.target !== target) {
+        return;
+    }
+    var overlay = document.getElementById('jfm-slideout-search');
+    var dialog = overlay.querySelector('.cc-dialog');
+    dialog.addEventListener('transitionend', function handler() {
+        dialog.removeEventListener('transitionend', handler);
+        overlay.classList.remove('cc-open');
+    });
+    dialog.classList.remove('cc-open');
+}
+
+/* Builds the caption text describing the active search filters. */
+function jfm_describeSearchFilters() {
+    var parts = [];
+    if (jfm_searchFilters.jobName) {
+        parts.push('job short name contains "' + jfm_searchFilters.jobName + '"');
+    }
+    if (jfm_searchFilters.jobFullName) {
+        parts.push('job name contains "' + jfm_searchFilters.jobFullName + '"');
+    }
+    if (jfm_searchFilters.status && jfm_searchFilters.status !== 'ALL') {
+        parts.push('status ' + (jfm_searchFilters.status === 'FAILED' ? 'Failed' : 'Succeeded'));
+    }
+    if (jfm_searchFilters.logId) {
+        parts.push('log id ' + jfm_searchFilters.logId);
+    }
+    if (jfm_searchFilters.from && jfm_searchFilters.to && jfm_searchFilters.from === jfm_searchFilters.to) {
+        parts.push(jfm_formatDisplayDate(jfm_searchFilters.from));
+    }
+    else {
+        if (jfm_searchFilters.from) {
+            parts.push('from ' + jfm_formatDisplayDate(jfm_searchFilters.from));
+        }
+        if (jfm_searchFilters.to) {
+            parts.push('to ' + jfm_formatDisplayDate(jfm_searchFilters.to));
+        }
+    }
+    return parts.length > 0 ? parts.join(' | ') : 'All job executions';
+}
+
+/* Loads a page of matching job executions into the results slideout. */
+function jfm_loadSearchResults() {
+    var params = [];
+    params.push('page=' + jfm_searchPageIndex);
+    params.push('pageSize=' + jfm_SEARCH_PAGE_SIZE);
+    if (jfm_searchFilters.jobName) {
+        params.push('jobName=' + encodeURIComponent(jfm_searchFilters.jobName));
+    }
+    if (jfm_searchFilters.jobFullName) {
+        params.push('jobFullName=' + encodeURIComponent(jfm_searchFilters.jobFullName));
+    }
+    if (jfm_searchFilters.status && jfm_searchFilters.status !== 'ALL') {
+        params.push('status=' + encodeURIComponent(jfm_searchFilters.status));
+    }
+    if (jfm_searchFilters.logId) {
+        params.push('logId=' + encodeURIComponent(jfm_searchFilters.logId));
+    }
+    if (jfm_searchFilters.from) {
+        params.push('from=' + encodeURIComponent(jfm_searchFilters.from));
+    }
+    if (jfm_searchFilters.to) {
+        params.push('to=' + encodeURIComponent(jfm_searchFilters.to));
+    }
+
+    cc_engineFetch('/api/jobflow/history-search?' + params.join('&'))
+        .then(function(data) {
+            if (!data) return;
+            if (data.error) {
+                document.getElementById('jfm-search-content').innerHTML = '<div class="cc-slide-empty">Error: ' + data.error + '</div>';
+                return;
+            }
+            jfm_searchTotal = data.total || 0;
+            jfm_renderSearchResults(data.jobs || []);
+        })
+        .catch(function(err) {
+            document.getElementById('jfm-search-content').innerHTML = '<div class="cc-slide-empty">Failed to load: ' + err.message + '</div>';
+        });
+}
+
+/* Renders the search-results page and updates the pager. */
+function jfm_renderSearchResults(jobs) {
+    var content = document.getElementById('jfm-search-content');
+    if (!content) {
+        return;
+    }
+
+    if (!jobs || jobs.length === 0) {
+        content.innerHTML = '<div class="cc-slide-empty">No job executions match the current filters</div>';
+    }
+    else {
+        var html = '<table class="cc-slide-table"><thead><tr>' +
+                   '<th class="cc-slide-table-th"></th>' +
+                   '<th class="cc-slide-table-th">Date</th>' +
+                   '<th class="cc-slide-table-th">Start</th>' +
+                   '<th class="cc-slide-table-th">Job</th>' +
+                   '<th class="cc-slide-table-th">Flow</th>' +
+                   '<th class="cc-slide-table-th">Total</th>' +
+                   '<th class="cc-slide-table-th">Success</th>' +
+                   '<th class="cc-slide-table-th">Failed</th>' +
+                   '<th class="cc-slide-table-th">Duration</th>' +
+                   '<th class="cc-slide-table-th">Rate</th>' +
+                   '<th class="cc-slide-table-th">User</th>' +
+                   '<th class="cc-slide-table-th">Log ID</th>' +
+                   '</tr></thead><tbody>';
+
+        jobs.forEach(function(job) {
+            var jobTitle = job.job_full_name ? cc_escapeHtml(job.job_full_name) : '';
+            var badgeClass = job.is_failed ? 'jfm-job-status-badge-failed' : 'jfm-job-status-badge-success';
+            var badgeLabel = job.is_failed ? 'FAILED' : 'SUCCESS';
+            html += '<tr class="cc-slide-table-row">';
+            html += '<td class="cc-slide-table-td"><span class="jfm-job-status-badge ' + badgeClass + '">' + badgeLabel + '</span></td>';
+            html += '<td class="cc-slide-table-td">' + (job.execution_date || '-') + '</td>';
+            html += '<td class="cc-slide-table-td">' + (job.start_time || '-') + '</td>';
+            html += '<td class="cc-slide-table-td" title="' + jobTitle + '">' + cc_escapeHtml(job.job_name) + '</td>';
+            html += '<td class="cc-slide-table-td">';
+            if (job.flow_code) {
+                html += '<span class="jfm-flow-badge">' + cc_escapeHtml(job.flow_code) + '</span>';
+            } else {
+                html += '<span class="jfm-flow-code-adhoc">ad-hoc</span>';
+            }
+            html += '</td>';
+            html += '<td class="cc-slide-table-td">' + (job.total_records !== null ? job.total_records.toLocaleString() : '-') + '</td>';
+            html += '<td class="cc-slide-table-td jfm-job-cell-success">' + (job.succeeded_count !== null ? job.succeeded_count.toLocaleString() : '-') + '</td>';
+            html += '<td class="cc-slide-table-td jfm-job-cell-failed">' + (job.failed_count || 0) + '</td>';
+            html += '<td class="cc-slide-table-td">' + (job.duration || '-') + '</td>';
+            html += '<td class="cc-slide-table-td">' + (job.records_per_second ? job.records_per_second.toFixed(1) + '/s' : '-') + '</td>';
+            html += '<td class="cc-slide-table-td">' + (job.executed_by ? cc_escapeHtml(job.executed_by) : '-') + '</td>';
+            html += '<td class="cc-slide-table-td jfm-job-cell-log-id">' + (job.job_log_id || '-') + '</td></tr>';
+            if (job.error_message) {
+                html += '<tr class="cc-slide-table-row"><td class="jfm-error-row-cell" colspan="12"><span class="jfm-error-message">' + cc_escapeHtml(job.error_message) + '</span></td></tr>';
+            }
+        });
+
+        html += '</tbody></table>';
+        content.innerHTML = html;
+    }
+
+    jfm_updateSearchPager();
+}
+
+/* Updates the search pager caption and button disabled states. */
+function jfm_updateSearchPager() {
+    var info = document.getElementById('jfm-search-count');
+    var prev = document.getElementById('jfm-search-prev');
+    var next = document.getElementById('jfm-search-next');
+
+    var pageCount = Math.max(1, Math.ceil(jfm_searchTotal / jfm_SEARCH_PAGE_SIZE));
+    var pageNum = jfm_searchPageIndex + 1;
+
+    if (info) {
+        info.textContent = jfm_searchTotal.toLocaleString() + ' executions | page ' +
+            pageNum.toLocaleString() + ' of ' + pageCount.toLocaleString();
+    }
+    if (prev) {
+        prev.disabled = (jfm_searchPageIndex <= 0);
+    }
+    if (next) {
+        next.disabled = (pageNum >= pageCount);
+    }
+}
+
+/* Search pager handler: moves one page in the direction carried by the button. */
+function jfm_searchPage(target) {
+    var dir = target.getAttribute('data-jfm-dir');
+    var pageCount = Math.max(1, Math.ceil(jfm_searchTotal / jfm_SEARCH_PAGE_SIZE));
+
+    if (dir === 'prev' && jfm_searchPageIndex > 0) {
+        jfm_searchPageIndex--;
+        jfm_loadSearchResults();
+    }
+    if (dir === 'next' && (jfm_searchPageIndex + 1) < pageCount) {
+        jfm_searchPageIndex++;
+        jfm_loadSearchResults();
+    }
 }
 
 /* ============================================================================
