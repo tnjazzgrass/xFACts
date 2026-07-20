@@ -1375,6 +1375,14 @@
                                            "includedColumns":  "job_status, execution_time_seconds, total_records, succeeded_count, failed_count"
                                        },
                                        {
+                                           "name":  "IX_JobExecutionLog_ByJobName",
+                                           "type":  "NONCLUSTERED",
+                                           "isUnique":  false,
+                                           "isPrimaryKey":  false,
+                                           "isUniqueConstraint":  false,
+                                           "keyColumns":  "job_shrt_nm, execution_date"
+                                       },
+                                       {
                                            "name":  "IX_JobExecutionLog_Failures",
                                            "type":  "NONCLUSTERED",
                                            "isUnique":  false,
