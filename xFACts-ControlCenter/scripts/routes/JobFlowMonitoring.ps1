@@ -5,7 +5,7 @@
 .DESCRIPTION
     Renders the JobFlow monitoring dashboard: live Debt Manager activity, the
     orchestrator process-status grid, the day's flow summary, and the
-    expandable execution history. Authenticated and access-gated, then composes
+    searchable, expandable execution history. Authenticated and access-gated, then composes
     the page shell from shared chrome helpers and emits page-specific content
     plus the overlay constructs the page's JavaScript drives.
 
@@ -29,6 +29,10 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-07-20  Added the Execution History job search: a filter bar (job short
+#             name, job name, status, log id, date range) beneath the section
+#             header opens a paged search-results slideout listing matching
+#             job executions, served by /api/jobflow/history-search.
 # 2026-06-04  Refactored to the CC file-format specs. Adopted the cc-shared
 #             chrome model (cc-shared.css, cc-shared.js bootloader), the
 #             data-cc-page / data-cc-prefix body contract, $bannerHtml chrome
@@ -148,6 +152,16 @@ $navHtml
                         <span class="cc-refresh-badge-event" title="Refreshes when engine process completes">&#9889;</span>
                     </div>
                 </div>
+                <div class="jfm-filter-bar">
+                    <input id="jfm-search-jobname" class="jfm-search-input" type="text" placeholder="Search by Job Short Name..." data-action-keydown="jfm-search-on-enter">
+                    <input id="jfm-search-jobfullname" class="jfm-search-input" type="text" placeholder="Search by Job Name..." data-action-keydown="jfm-search-on-enter">
+                    <select id="jfm-filter-status" class="jfm-filter-select"></select>
+                    <input id="jfm-search-logid" class="jfm-logid-input" type="text" placeholder="Log ID..." data-action-keydown="jfm-search-on-enter">
+                    <input id="jfm-filter-from" class="jfm-filter-date" type="date" title="From date">
+                    <input id="jfm-filter-to" class="jfm-filter-date" type="date" title="To date">
+                    <button class="jfm-filter-btn" data-action-click="jfm-run-search">Search</button>
+                    <button class="jfm-filter-btn" data-action-click="jfm-reset-filters">Reset</button>
+                </div>
                 <div id="jfm-execution-history" class="jfm-history-content">
                     <div class="jfm-loading">Loading...</div>
                 </div>
@@ -165,6 +179,29 @@ $navHtml
             </div>
             <div id="jfm-slideout-body" class="cc-dialog-body">
                 <div class="jfm-loading">Loading...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Purpose: job-search results slideout listing matching job executions with paging -->
+    <div id="jfm-slideout-search" class="cc-slide-overlay" data-action-click="jfm-close-search-slideout">
+        <div class="cc-dialog cc-dialog-slide cc-xwide">
+            <div class="cc-dialog-header">
+                <h3 id="jfm-slideout-search-title" class="cc-dialog-title">Job Search</h3>
+                <button class="cc-dialog-close" data-action-click="jfm-close-search-slideout">&times;</button>
+            </div>
+            <div class="cc-dialog-body">
+                <div class="jfm-search-layout">
+                    <div id="jfm-search-caption" class="jfm-search-caption">-</div>
+                    <div id="jfm-search-content" class="jfm-search-scroll">
+                        <div class="jfm-loading">Loading...</div>
+                    </div>
+                    <div class="jfm-pager">
+                        <button id="jfm-search-prev" class="jfm-pager-btn" data-action-click="jfm-search-page" data-jfm-dir="prev">&larr; Prev</button>
+                        <span id="jfm-search-count" class="jfm-pager-info">-</span>
+                        <button id="jfm-search-next" class="jfm-pager-btn" data-action-click="jfm-search-page" data-jfm-dir="next">Next &rarr;</button>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
