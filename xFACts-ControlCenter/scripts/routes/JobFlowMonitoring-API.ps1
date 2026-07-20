@@ -5,8 +5,9 @@
 .DESCRIPTION
     Serves the JobFlow Monitoring dashboard: live Debt Manager activity, the
     orchestrator process-status grid, the day's flow summary, expandable
-    execution history, app-server scheduled-task distribution, stall-event
-    history, and the flow-configuration sync viewer/editor. Reads from the
+    execution history with a filtered paged job search, app-server
+    scheduled-task distribution, stall-event history, and the
+    flow-configuration sync viewer/editor. Reads from the
     xFACts availability group and the crs5_oltp source database via the shared
     data-access helpers, and reaches the application servers' Task Scheduler via
     PowerShell remoting.
@@ -1124,6 +1125,149 @@ WHERE execution_date = @date
             flows = $flows
             adhoc_jobs = $adhocJobs
             total_jobs = $totalJobs
+            timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+        }
+    }
+    catch {
+        Write-PodeJsonResponse -Value @{ error = $_.Exception.Message } -StatusCode 500
+    }
+}
+
+# Job Search - filtered paged query over JobExecutionLog for the search-results
+# slideout. Query parameters: ?jobName=&jobFullName=&status=&logId=&from=&to=
+# &page=&pageSize=. jobName and jobFullName are contains matches; logId is an
+# exact job_log_id match; status accepts ALL, FAILED, or SUCCEEDED using the
+# same computed failure definition as every other view on this page (error
+# message present, or total_records > 0 with zero succeeded); from/to bound
+# execution_date inclusively. Rows return newest-first with server-formatted
+# duration and times.
+Add-PodeRoute -Method Get -Path '/api/jobflow/history-search' -Authentication 'ADLogin' -ScriptBlock {
+    if ((Test-ActionEndpoint -WebEvent $WebEvent) -eq $false) { return }
+    try {
+        $jobName     = $WebEvent.Query['jobName']
+        $jobFullName = $WebEvent.Query['jobFullName']
+        $status      = $WebEvent.Query['status']
+        $logId       = $WebEvent.Query['logId']
+        $fromDate    = $WebEvent.Query['from']
+        $toDate      = $WebEvent.Query['to']
+
+        $page = 0
+        if ($WebEvent.Query['page'] -match '^\d+$') { $page = [int]$WebEvent.Query['page'] }
+
+        $pageSize = 30
+        if ($WebEvent.Query['pageSize'] -match '^\d+$') { $pageSize = [Math]::Min([int]$WebEvent.Query['pageSize'], 200) }
+
+        # Build the WHERE clause from the supplied filters; every value is parameterized.
+        $failedSql = "((total_records > 0 AND (succeeded_count IS NULL OR succeeded_count = 0)) OR error_message IS NOT NULL)"
+        $whereClauses = New-Object System.Collections.Generic.List[string]
+        $parameters = @{}
+
+        if ($jobName) {
+            [void]$whereClauses.Add("job_shrt_nm LIKE '%' + @jobName + '%'")
+            $parameters['jobName'] = $jobName
+        }
+        if ($jobFullName) {
+            [void]$whereClauses.Add("job_nm LIKE '%' + @jobFullName + '%'")
+            $parameters['jobFullName'] = $jobFullName
+        }
+        if ($logId) {
+            if ($logId -notmatch '^\d+$') {
+                Write-PodeJsonResponse -Value @{ error = 'logId must be numeric' } -StatusCode 400
+                return
+            }
+            [void]$whereClauses.Add("job_log_id = @logId")
+            $parameters['logId'] = [long]$logId
+        }
+        if ($status -eq 'FAILED') {
+            [void]$whereClauses.Add($failedSql)
+        }
+        elseif ($status -eq 'SUCCEEDED') {
+            [void]$whereClauses.Add("NOT $failedSql")
+        }
+        if ($fromDate -match '^\d{4}-\d{2}-\d{2}$') {
+            [void]$whereClauses.Add("execution_date >= @fromDate")
+            $parameters['fromDate'] = $fromDate
+        }
+        if ($toDate -match '^\d{4}-\d{2}-\d{2}$') {
+            [void]$whereClauses.Add("execution_date <= @toDate")
+            $parameters['toDate'] = $toDate
+        }
+
+        $whereSql = ''
+        if ($whereClauses.Count -gt 0) {
+            $whereSql = 'WHERE ' + ($whereClauses -join ' AND ')
+        }
+
+        $countRows = Invoke-XFActsQuery -Parameters $parameters -Query @"
+SELECT COUNT(*) AS total_rows
+FROM JobFlow.JobExecutionLog
+$whereSql
+"@
+        $totalRows = [long]$countRows[0]['total_rows']
+
+        $parameters['offsetRows'] = $page * $pageSize
+        $parameters['pageSize'] = $pageSize
+
+        $rows = Invoke-XFActsQuery -Parameters $parameters -Query @"
+SELECT
+    execution_detail_id,
+    job_log_id,
+    job_shrt_nm AS job_name,
+    job_nm AS job_full_name,
+    job_sqnc_shrt_nm AS flow_code,
+    execution_date,
+    job_start_dttm,
+    job_end_dttm,
+    total_records,
+    succeeded_count,
+    failed_count,
+    execution_time_seconds,
+    records_per_second,
+    executed_by,
+    error_message
+FROM JobFlow.JobExecutionLog
+$whereSql
+ORDER BY job_exec_dttm DESC
+OFFSET @offsetRows ROWS FETCH NEXT @pageSize ROWS ONLY
+"@
+
+        $jobs = @()
+        foreach ($row in $rows) {
+            $totalRec = if ($row['total_records'] -is [DBNull]) { $null } else { [int]$row['total_records'] }
+            $succeededCnt = if ($row['succeeded_count'] -is [DBNull]) { $null } else { [int]$row['succeeded_count'] }
+            $hasError = -not ($row['error_message'] -is [DBNull])
+            $isFailed = ($null -ne $totalRec -and $totalRec -gt 0 -and ($null -eq $succeededCnt -or $succeededCnt -eq 0)) -or $hasError
+
+            $execSeconds = if ($row['execution_time_seconds'] -is [DBNull]) { $null } else { [int]$row['execution_time_seconds'] }
+            $jobDuration = if ($null -eq $execSeconds) { '-' } else {
+                $m = [math]::Floor($execSeconds / 60)
+                $s = $execSeconds % 60
+                if ($m -gt 0) { "{0}m {1}s" -f $m, $s } else { "{0}s" -f $s }
+            }
+
+            $jobs += @{
+                execution_detail_id = $row['execution_detail_id']
+                job_log_id = if ($row['job_log_id'] -is [DBNull]) { $null } else { $row['job_log_id'] }
+                job_name = $row['job_name']
+                job_full_name = if ($row['job_full_name'] -is [DBNull]) { $null } else { $row['job_full_name'] }
+                flow_code = if ($row['flow_code'] -is [DBNull]) { $null } else { $row['flow_code'] }
+                execution_date = ([DateTime]$row['execution_date']).ToString("yyyy-MM-dd")
+                is_failed = $isFailed
+                total_records = $totalRec
+                succeeded_count = $succeededCnt
+                failed_count = if ($row['failed_count'] -is [DBNull]) { 0 } else { [int]$row['failed_count'] }
+                duration = $jobDuration
+                records_per_second = if ($row['records_per_second'] -is [DBNull]) { $null } else { [decimal]$row['records_per_second'] }
+                executed_by = if ($row['executed_by'] -is [DBNull]) { $null } else { $row['executed_by'] }
+                start_time = if ($row['job_start_dttm'] -is [DBNull]) { $null } else { ([DateTime]$row['job_start_dttm']).ToString("HH:mm:ss") }
+                end_time = if ($row['job_end_dttm'] -is [DBNull]) { $null } else { ([DateTime]$row['job_end_dttm']).ToString("HH:mm:ss") }
+                error_message = if ($row['error_message'] -is [DBNull]) { $null } else { $row['error_message'] }
+            }
+        }
+
+        Write-PodeJsonResponse -Value @{
+            jobs = $jobs
+            total = $totalRows
             timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
         }
     }
