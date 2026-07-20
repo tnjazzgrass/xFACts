@@ -15,6 +15,7 @@
    CONTENT: FLOW ITEMS
    CONTENT: STALL EPISODES
    CONTENT: EXECUTION HISTORY
+   CONTENT: JOB SEARCH
    CONTENT: SLIDEOUT DETAIL
    CONTENT: APP SERVER TASKS
    CONTENT: CONFIRM CHANGES
@@ -1212,6 +1213,174 @@
 /* Error color for the status indicator dot. */
 .jfm-status-indicator-error {
     background: var(--color-status-critical);
+}
+
+/* ============================================================================
+   CONTENT: JOB SEARCH
+   ----------------------------------------------------------------------------
+   The Execution History job search: the filter bar beneath the section header
+   (text inputs, status select, log-id input, date range, and action buttons)
+   and the search-results slideout body layout with its caption, internally
+   scrolling results region, and the pager pinned beneath the results.
+   Prefix: jfm
+   ============================================================================ */
+
+/* Filter bar beneath the Execution History section header. */
+.jfm-filter-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--size-spacing-sm);
+    flex-wrap: wrap;
+    margin-bottom: var(--size-spacing-md);
+}
+
+/* Text input for the job-name contains searches. */
+.jfm-search-input {
+    background: var(--color-bg-page);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    color: var(--color-text-primary);
+    font-family: var(--font-family-default);
+    font-size: var(--font-size-body);
+    padding: var(--size-spacing-sm) var(--size-spacing-md);
+    border-radius: var(--size-radius-sm);
+    outline: none;
+    flex: 1;
+    min-width: 140px;
+}
+
+.jfm-search-input:focus { /* focus state -- platform accent border */
+    border-color: var(--color-accent-platform);
+}
+
+/* Narrow text input for the exact log-id match. */
+.jfm-logid-input {
+    background: var(--color-bg-page);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    color: var(--color-text-primary);
+    font-family: var(--font-family-default);
+    font-size: var(--font-size-body);
+    padding: var(--size-spacing-sm) var(--size-spacing-md);
+    border-radius: var(--size-radius-sm);
+    outline: none;
+    width: 90px;
+}
+
+.jfm-logid-input:focus { /* focus state -- platform accent border */
+    border-color: var(--color-accent-platform);
+}
+
+/* Status dropdown in the filter bar. */
+.jfm-filter-select {
+    background: var(--color-bg-page);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    color: var(--color-text-primary);
+    font-family: var(--font-family-default);
+    font-size: var(--font-size-body);
+    padding: var(--size-spacing-sm) var(--size-spacing-md);
+    border-radius: var(--size-radius-sm);
+    outline: none;
+    cursor: pointer;
+}
+
+.jfm-filter-select:focus { /* focus state -- platform accent border */
+    border-color: var(--color-accent-platform);
+}
+
+/* Date input in the filter bar. */
+.jfm-filter-date {
+    background: var(--color-bg-page);
+    border: var(--size-border-thin) solid var(--color-border-default);
+    color: var(--color-text-primary);
+    font-family: var(--font-family-default);
+    font-size: var(--font-size-body);
+    padding: var(--size-spacing-sm) var(--size-spacing-md);
+    border-radius: var(--size-radius-sm);
+    outline: none;
+    width: 130px;
+}
+
+.jfm-filter-date:focus { /* focus state -- platform accent border */
+    border-color: var(--color-accent-platform);
+}
+
+/* Search and Reset action buttons in the filter bar. */
+.jfm-filter-btn {
+    background: transparent;
+    border: var(--size-border-thin) solid var(--color-border-strong);
+    color: var(--color-text-muted);
+    font-family: var(--font-family-default);
+    font-size: var(--font-size-body);
+    padding: var(--size-spacing-sm) var(--size-spacing-md);
+    border-radius: var(--size-radius-sm);
+    cursor: pointer;
+    transition: all var(--duration-fast);
+}
+
+.jfm-filter-btn:hover { /* hover state -- brighten border and label */
+    background: var(--color-border-divider);
+    color: var(--color-text-primary);
+    border-color: var(--color-text-subtle);
+}
+
+/* Column layout filling the search slideout body. */
+.jfm-search-layout {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+}
+
+/* Caption line describing the active search filters. */
+.jfm-search-caption {
+    font-size: var(--font-size-body);
+    color: var(--color-text-muted);
+    margin-bottom: var(--size-spacing-md);
+}
+
+/* Internally scrolling results region above the pager. */
+.jfm-search-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+}
+
+/* Pager row pinned beneath the search results. */
+.jfm-pager {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: var(--size-spacing-md);
+    border-top: var(--size-border-thin) solid var(--color-border-divider);
+}
+
+/* Prev/Next pager button. */
+.jfm-pager-btn {
+    background: transparent;
+    border: var(--size-border-thin) solid var(--color-border-strong);
+    color: var(--color-text-muted);
+    font-family: var(--font-family-default);
+    font-size: var(--font-size-body);
+    padding: var(--size-spacing-sm) var(--size-spacing-lg);
+    border-radius: var(--size-radius-sm);
+    cursor: pointer;
+    transition: all var(--duration-fast);
+}
+
+.jfm-pager-btn:hover { /* hover state -- brighten border and label */
+    background: var(--color-border-divider);
+    color: var(--color-text-primary);
+    border-color: var(--color-text-subtle);
+}
+
+.jfm-pager-btn:disabled { /* disabled state -- dim and drop the pointer */
+    opacity: 0.4;
+    cursor: default;
+}
+
+/* Row-count and page-position caption between the pager buttons. */
+.jfm-pager-info {
+    font-size: var(--font-size-body);
+    color: var(--color-text-muted);
 }
 
 /* ============================================================================
