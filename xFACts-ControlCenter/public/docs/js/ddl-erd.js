@@ -36,7 +36,7 @@
 
 /* Fixed geometry, paths, and styling for ERD layout and rendering. */
 const doc_config = {
-    jsonBasePath: '../../data/ddl/',
+    jsonBasePath: '/generated/ddl/',
     tableWidth: 210,
     rowHeight: 22,
     headerHeight: 32,
