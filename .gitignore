@@ -1,0 +1,2 @@
+# Machine-local Claude Code settings (per-clone, not shared)
+.claude/settings.local.json

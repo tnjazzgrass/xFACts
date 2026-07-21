@@ -3,12 +3,56 @@
     xFACts - Documentation Pipeline Wrapper
 
 .DESCRIPTION
-    Orchestrates documentation scripts in sequence (DDL > Publish), writing
-    real-time status to a JSON file that the Control Center Admin page polls
-    for progress updates.
+    Orchestrates the documentation pipeline in sequence
+    (Deploy > Generate DDL > Confluence > Publish GitHub > Manifests), writing
+    real-time status to a JSON file that the Control Center Admin page polls for
+    progress updates.
+
+    Every step is individually toggleable and defaults on, so a bare run performs
+    the full sequence. For backward compatibility with the Admin doc-pipeline API,
+    when -StepsJson is supplied it selects the steps by key and the per-step
+    switches are ignored.
 
     Launched by the /api/admin/doc-pipeline endpoint (fire-and-forget).
-    Not intended for direct manual execution.
+
+.PARAMETER StepsJson
+    Comma-separated step keys to run (deploy, generate_ddl, publish_confluence,
+    publish_github, manifests). When supplied, it selects the steps and the
+    per-step switches are ignored. When empty, the per-step switches govern.
+
+.PARAMETER StatusFile
+    Path to the status JSON file the Admin page polls.
+
+.PARAMETER Deploy
+    Run the Deploy step (deploy authored content GitHub -> live). Default on.
+
+.PARAMETER GenerateDDL
+    Run the Generate DDL Reference step. Default on.
+
+.PARAMETER Confluence
+    Run the Confluence publish/export step. Default on.
+
+.PARAMETER PublishGitHub
+    Run the GitHub publish step (generated content). Default on.
+
+.PARAMETER Manifests
+    Run the dedicated manifest rebuild step. Default on. When this step runs in the
+    same invocation as PublishGitHub, the GitHub step is told to skip its own
+    manifest rebuild so manifests build exactly once.
+
+.PARAMETER PublishToConfluence
+    Shapes the Confluence step: publish to the Confluence server.
+
+.PARAMETER ExportMarkdown
+    Shapes the Confluence step: export markdown.
+
+.PARAMETER IncludeSQLObjects
+    Reserved option passed through by the Admin doc-pipeline API. Inert until that
+    endpoint is updated.
+
+.PARAMETER IncludeJSON
+    Reserved option passed through by the Admin doc-pipeline API. Inert until that
+    endpoint is updated.
 
 .COMPONENT
     Documentation.Pipeline
@@ -35,6 +79,16 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-07-21  Pipeline flip (Task 1). New step order: Deploy > Generate DDL >
+#             Confluence > Publish GitHub > Manifests. Added the deploy step
+#             (Deploy-xFACts.ps1) and the dedicated manifest step (the publisher in
+#             -ManifestsOnly mode). Every step is now individually toggleable via a
+#             per-step switch defaulting on, so a bare run performs the full
+#             sequence; -StepsJson still selects steps by key for the existing
+#             Admin API call, which is preserved unchanged. Manifest-once: when the
+#             manifest step is selected alongside the GitHub step, the GitHub step
+#             runs with -SkipManifests so manifests build exactly once; when the
+#             manifest step is not selected, the GitHub step rebuilds them itself.
 # 2026-07-21  Removed the retired consolidate_upload step from the pipeline
 #             definition (Consolidate-UploadFiles.ps1 is retired; the script
 #             file itself is retained). The -IncludeSQLObjects and -IncludeJSON
@@ -52,8 +106,10 @@
 <# ============================================================================
    PARAMETERS: SCRIPT PARAMETERS
    ----------------------------------------------------------------------------
-   Requested steps, status-file path, and the publish/export toggles that
-   shape each step's arguments.
+   The step selector (StepsJson) and per-step toggles, the status-file path, and
+   the publish/export options that shape the Confluence step. StepsJson, when
+   supplied, overrides the per-step switches for backward compatibility with the
+   Admin doc-pipeline API.
    Prefix: (none)
    ============================================================================ #>
 
@@ -61,6 +117,11 @@
 param(
     [string]$StepsJson,
     [string]$StatusFile = "E:\xFACts-PowerShell\Logs\doc-pipeline-status.json",
+    [switch]$Deploy = $true,
+    [switch]$GenerateDDL = $true,
+    [switch]$Confluence = $true,
+    [switch]$PublishGitHub = $true,
+    [switch]$Manifests = $true,
     [switch]$PublishToConfluence,
     [switch]$ExportMarkdown,
     [switch]$IncludeSQLObjects,
@@ -70,22 +131,28 @@ param(
 <# ============================================================================
    CONSTANTS: PIPELINE DEFINITION
    ----------------------------------------------------------------------------
-   The scripts root, the parsed step list, the log directory, and the ordered
-   pipeline definition. Order matters: steps run in declaration order.
+   The scripts root, the log directory, and the ordered pipeline definition.
+   Order matters: steps run in declaration order. The Confluence step's arguments
+   are shaped by the publish/export options; the GitHub step's -SkipManifests is
+   added at run time when the manifest step is also selected (see EXECUTION), so
+   manifests build exactly once.
    Prefix: (none)
    ============================================================================ #>
 
 # Root directory containing the documentation pipeline scripts.
 $ScriptsRoot = "E:\xFACts-PowerShell"
 
-# Parse requested steps (passed as comma-separated string).
-$steps = $StepsJson -split ','
-
 # Log directory derived from the status-file path.
 $logDir = Split-Path $StatusFile -Parent
 
 # Pipeline definition - order matters.
 $pipeline = @(
+    @{
+        Key    = 'deploy'
+        Label  = 'Deploy Authored Content'
+        Script = 'Deploy-xFACts.ps1'
+        Args   = '-Execute'
+    },
     @{
         Key    = 'generate_ddl'
         Label  = 'Generate DDL Reference'
@@ -106,6 +173,12 @@ $pipeline = @(
         Label  = 'Publish to GitHub'
         Script = 'Publish-GitHubRepository.ps1'
         Args   = '-Execute'
+    },
+    @{
+        Key    = 'manifests'
+        Label  = 'Rebuild Manifests'
+        Script = 'Publish-GitHubRepository.ps1'
+        Args   = '-Execute -ManifestsOnly'
     }
 )
 
@@ -145,10 +218,29 @@ function Write-Status {
 <# ============================================================================
    EXECUTION: SCRIPT EXECUTION
    ----------------------------------------------------------------------------
-   Ensures the log directory exists, writes the initial status, then runs each
-   selected step in order, capturing output and halting on failure.
+   Resolves which steps run (StepsJson selection when supplied, otherwise the
+   per-step switches), ensures the log directory exists, writes the initial
+   status, then runs each selected step in order, capturing output and halting on
+   failure. The GitHub step is given -SkipManifests when the manifest step also
+   runs, so manifests build exactly once.
    Prefix: (none)
    ============================================================================ #>
+
+# When StepsJson is supplied it selects the steps (backward compatibility with the
+# Admin API); otherwise the per-step switches do.
+$useStepsJson = -not [string]::IsNullOrWhiteSpace($StepsJson)
+$requestedSteps = if ($useStepsJson) { ($StepsJson -split ',') | ForEach-Object { $_.Trim() } } else { @() }
+$stepSwitches = [ordered]@{
+    deploy             = [bool]$Deploy
+    generate_ddl       = [bool]$GenerateDDL
+    publish_confluence = [bool]$Confluence
+    publish_github     = [bool]$PublishGitHub
+    manifests          = [bool]$Manifests
+}
+$selected = @{}
+foreach ($key in $stepSwitches.Keys) {
+    $selected[$key] = if ($useStepsJson) { $requestedSteps -contains $key } else { $stepSwitches[$key] }
+}
 
 # Ensure log directory exists.
 if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }
@@ -157,7 +249,7 @@ if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir -Forc
 Write-Status
 
 foreach ($step in $pipeline) {
-    if ($step.Key -notin $steps) { continue }
+    if (-not $selected[$step.Key]) { continue }
 
     $scriptPath = Join-Path $ScriptsRoot $step.Script
 
@@ -189,7 +281,14 @@ foreach ($step in $pipeline) {
     $errFile = "$env:TEMP\xfacts-doc-$($step.Key)-err.txt"
 
     try {
-        $arguments = "-ExecutionPolicy Bypass -File `"$scriptPath`" $($step.Args)"
+        # Manifest-once: suppress the GitHub step's own manifest rebuild only when
+        # the dedicated manifest step also runs this invocation.
+        $stepArgs = $step.Args
+        if ($step.Key -eq 'publish_github' -and $selected['manifests']) {
+            $stepArgs = "$stepArgs -SkipManifests"
+        }
+
+        $arguments = "-ExecutionPolicy Bypass -File `"$scriptPath`" $stepArgs"
 
         $proc = Start-Process -FilePath "powershell.exe" `
             -ArgumentList $arguments `
