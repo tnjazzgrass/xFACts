@@ -17,7 +17,7 @@
     placeholders become note panels, and tech-tip divs become tip panels. Pages
     are created or updated under a configurable root parent, forming a hub with
     one branch per module (narrative, architecture, CC guide, and reference
-    children). The same converters also produce full and reference-only markdown
+    children). The same converters also produce the full module markdown
     exports. Confluence access uses session-based login; credentials resolve from
     the -Credential parameter, then dbo.Credentials, then an interactive prompt.
 
@@ -58,7 +58,7 @@
 
 .PARAMETER ExportPath
     Output folder for markdown export. Default:
-    E:\xFACts-ControlCenter\public\docs\data\md
+    E:\xFACts-Generated\md
 
 .PARAMETER ExportOnly
     Export markdown only; skip all Confluence publishing.
@@ -93,6 +93,24 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-07-21  Retired the ref-only markdown export entirely: removed the
+#             _Ref.md generation loop, the ref\ subfolder path and creation, the
+#             Reference-Only console banner, and the summary line. The ref-only
+#             files were a strict subset of the full module exports (identical
+#             "## Reference" content) and had no remaining consumer. The full
+#             module export to E:\xFACts-Generated\md is unchanged; the shared
+#             Convert-JsonToMarkdown converter is retained.
+# 2026-07-21  Repointed the markdown export output to E:\xFACts-Generated\md
+#             (and its ref\ subfolder) so generated markdown joins the other
+#             machine-generated content under the generated root. Changed the
+#             $ExportPath parameter default and its help text; $RefExportPath
+#             already derives from $ExportPath, and the script creates both
+#             folders on demand, so no server pre-creation is needed.
+# 2026-07-21  Repointed the schema JSON and doc-registry reads to
+#             E:\xFACts-Generated\ddl via a new $GeneratedRoot path constant,
+#             tracking the DDL output relocation. $JsonPath and $DocRegistryPath
+#             now derive from $GeneratedRoot instead of $DocsRoot; the script's
+#             parameters are unchanged.
 # 2026-07-21  Guide converters now strip the redesigned mock UI. Both
 #             Convert-GuideToStorageFormat and Convert-GuideToMarkdown matched the
 #             pre-June class names (guide-mock, mock-*, guide-jump-nav, step-num-badge,
@@ -186,7 +204,7 @@ param(
     [string]$TitlePrefix = '',
 
     # Path for markdown export
-    [string]$ExportPath = 'E:\xFACts-ControlCenter\public\docs\data\md',
+    [string]$ExportPath = 'E:\xFACts-Generated\md',
 
     # Skip Confluence publishing (markdown export only)
     [switch]$ExportOnly
@@ -220,11 +238,14 @@ Initialize-XFActsScript -ScriptName 'Publish-ConfluenceDocumentation' -ServerIns
 <# ============================================================================
    CONSTANTS: PATHS AND REGISTRY SOURCE
    ----------------------------------------------------------------------------
-   Documentation source subpaths derived from DocsRoot and the doc-registry.json
-   path that drives dynamic page discovery.
+   Documentation source subpaths derived from DocsRoot, the machine-generated
+   content root (DDL JSON and doc registry), and the doc-registry.json path that
+   drives dynamic page discovery.
    Prefix: (none)
    ============================================================================ #>
 
+# Root of machine-generated content (DDL JSON and doc registry), served at /generated.
+$GeneratedRoot = 'E:\xFACts-Generated'
 # Narrative HTML pages directory.
 $PagesPath   = Join-Path $DocsRoot 'pages'
 # Architecture HTML pages directory.
@@ -234,13 +255,13 @@ $CcPath      = Join-Path $DocsRoot 'pages\cc'
 # Reference HTML pages directory.
 $RefPath     = Join-Path $DocsRoot 'pages\ref'
 # Schema JSON reference data directory.
-$JsonPath    = Join-Path $DocsRoot 'data\ddl'
+$JsonPath    = Join-Path $GeneratedRoot 'ddl'
 # Hub index.html lives in the pages root.
 $HubPath     = $PagesPath
 # Standalone guide HTML pages directory.
 $GuidesPath  = Join-Path $DocsRoot 'pages\guides'
 # Documentation registry JSON that drives dynamic page discovery.
-$DocRegistryPath = Join-Path $DocsRoot 'data\ddl\doc-registry.json'
+$DocRegistryPath = Join-Path $GeneratedRoot 'ddl\doc-registry.json'
 
 <# ============================================================================
    FUNCTIONS: STORAGE FORMAT CONVERSION
@@ -1605,7 +1626,7 @@ function Publish-ConfluencePage {
    FUNCTIONS: MARKDOWN CONVERSION
    ----------------------------------------------------------------------------
    Converters that render the same documentation HTML and reference JSON into
-   markdown for the full and reference-only exports.
+   markdown for the full module exports.
    Prefix: (none)
    ============================================================================ #>
 
@@ -2531,7 +2552,7 @@ function Convert-CcGuideToMarkdown {
    ----------------------------------------------------------------------------
    Builds the page registry from doc-registry.json, discovers standalone guide
    pages, then publishes to Confluence (unless -ExportOnly) and writes the full
-   and reference-only markdown exports.
+   module markdown exports.
    Prefix: (none)
    ============================================================================ #>
 
@@ -3252,92 +3273,6 @@ foreach ($page in $modulePages) {
     Write-Console ""
 }
 
-# Reference-only markdown export: produces one _Ref.md file per module
-# containing only the Object_Metadata-driven reference content (field
-# descriptions, design notes, queries, status values). These are compact
-# alternatives to the full markdown exports for downstream context upload.
-
-$RefExportPath = Join-Path $ExportPath 'ref'
-if (-not (Test-Path $RefExportPath)) {
-    New-Item -Path $RefExportPath -ItemType Directory -Force | Out-Null
-}
-
-Write-Console ""
-Write-Console "============================================" 'Cyan'
-Write-Console " Reference-Only Markdown Export" 'Cyan'
-Write-Console "============================================" 'Cyan'
-
-foreach ($page in $modulePages) {
-    if (-not $page.RefSections) { continue }
-
-    $moduleId = $page.Id -replace '-', '_'
-    $moduleName = $page.Title -replace '[/\\]', '_' -replace '\s+', '_'
-    $fileName = "xFACts_${moduleName}_Ref.md"
-    $md = "# $($page.Title) $([char]0x2014) Reference`n"
-    $md += "Auto-generated from xFACts Object_Metadata and system catalog.`n"
-    $hasContent = $false
-
-    foreach ($refSection in $page.RefSections) {
-        $schema = $refSection.Schema
-        $jsonData = $null
-
-        if ($JsonDataCache.ContainsKey($schema)) {
-            $jsonData = $JsonDataCache[$schema]
-        } else {
-            $jsonFile = Join-Path $JsonPath "$schema.json"
-            if (Test-Path $jsonFile) {
-                $jsonData = Get-Content -Path $jsonFile -Raw -Encoding UTF8 | ConvertFrom-Json
-            }
-        }
-
-        # Apply category filtering (same logic as full export)
-        if ($jsonData -and $refSection.Categories) {
-            $cats = @($refSection.Categories)
-            $filtered = $jsonData.PSObject.Copy()
-            if ($filtered.tables)     { $filtered.tables     = @($filtered.tables     | Where-Object { $_.category -in $cats }) }
-            if ($filtered.procedures) { $filtered.procedures = @($filtered.procedures | Where-Object { $_.category -in $cats }) }
-            if ($filtered.triggers)   { $filtered.triggers   = @($filtered.triggers   | Where-Object { $_.category -in $cats }) }
-            if ($filtered.functions)  { $filtered.functions  = @($filtered.functions  | Where-Object { $_.category -in $cats }) }
-            if ($filtered.views)      { $filtered.views      = @($filtered.views      | Where-Object { $_.category -in $cats }) }
-            if ($filtered.scripts)    { $filtered.scripts    = @($filtered.scripts    | Where-Object { $_.category -in $cats }) }
-            if ($filtered.xeSessions) { $filtered.xeSessions = @($filtered.xeSessions | Where-Object { $_.category -in $cats }) }
-            $jsonData = $filtered
-        }
-        elseif ($jsonData -and $refSection.ExcludeCategories) {
-            $excl = @($refSection.ExcludeCategories)
-            $filtered = $jsonData.PSObject.Copy()
-            if ($filtered.tables)     { $filtered.tables     = @($filtered.tables     | Where-Object { $_.category -notin $excl }) }
-            if ($filtered.procedures) { $filtered.procedures = @($filtered.procedures | Where-Object { $_.category -notin $excl }) }
-            if ($filtered.triggers)   { $filtered.triggers   = @($filtered.triggers   | Where-Object { $_.category -notin $excl }) }
-            if ($filtered.functions)  { $filtered.functions  = @($filtered.functions  | Where-Object { $_.category -notin $excl }) }
-            if ($filtered.views)      { $filtered.views      = @($filtered.views      | Where-Object { $_.category -notin $excl }) }
-            if ($filtered.scripts)    { $filtered.scripts    = @($filtered.scripts    | Where-Object { $_.category -notin $excl }) }
-            if ($filtered.xeSessions) { $filtered.xeSessions = @($filtered.xeSessions | Where-Object { $_.category -notin $excl }) }
-            $jsonData = $filtered
-        }
-
-        if ($jsonData) {
-            if ($page.RefSections.Count -gt 1) {
-                $mdLabel = $schema
-                if ($refSection.Categories) {
-                    $mdLabel = "$schema $([char]0x2014) $($refSection.Categories -join ', ')"
-                }
-                $md += "`n## $mdLabel`n"
-            }
-            $md += Convert-JsonToMarkdown -JsonData $jsonData
-            $hasContent = $true
-        }
-    }
-
-    if ($hasContent) {
-        Write-Console "[$fileName]" 'White'
-        $outFile = Join-Path $RefExportPath $fileName
-        $md | Out-File -FilePath $outFile -Encoding UTF8 -Force
-        Write-Console "  Exported: $($md.Length) chars" 'Gray'
-    }
-    Write-Console ""
-}
-
 # Summary
 Write-Console "============================================" 'Cyan'
 Write-Console " Complete" 'Green'
@@ -3345,7 +3280,6 @@ if (-not $ExportOnly -and -not $Execute) {
     Write-Console " (Preview only - use -Execute to publish)" 'DarkYellow'
 }
 Write-Console "  Markdown exported to: $ExportPath" 'Gray'
-Write-Console "  Ref-only markdown exported to: $RefExportPath" 'Gray'
 Write-Console "  Pages attempted: $pagesAttempted" 'Gray'
 Write-Console "  Pages succeeded: $pagesSucceeded" 'Gray'
 $failColor = if ($pagesFailed -gt 0) { 'Red' } else { 'Gray' }
