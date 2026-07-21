@@ -1246,7 +1246,7 @@ Example: The Engine Room page (`doc_page_id = 'engine-room'`):
 
 #### doc-registry.json
 
-`Generate-DDLReference.ps1` queries all Component_Registry rows where `doc_page_id IS NOT NULL`, groups them by `doc_page_id`, identifies the primary row, and writes `doc-registry.json` to `public/docs/data/ddl/`. This file is consumed by `nav.js` for navigation and by the hub page for the module card grid.
+`Generate-DDLReference.ps1` queries all Component_Registry rows where `doc_page_id IS NOT NULL`, groups them by `doc_page_id`, identifies the primary row, and writes `doc-registry.json` to `E:\xFACts-Generated\ddl\` (served by the Control Center at `/generated/ddl/`). This file is consumed by `nav.js` for navigation and by the hub page for the module card grid.
 
 Structure per page entry:
 
@@ -1302,9 +1302,6 @@ docs/
 |   |   +-- {pageId}-arch.html              <- Architecture pages
 |   +-- ref/
 |       +-- {pageId}-ref.html               <- Reference pages
-+-- data/ddl/
-|   +-- doc-registry.json                   <- Page registry (drives nav.js)
-|   +-- {Schema}.json                       <- Per-schema DDL (drives ddl-loader.js)
 +-- css/
 |   +-- docs-base.css, docs-narrative.css, docs-architecture.css, etc.
 +-- js/
@@ -1312,6 +1309,8 @@ docs/
     +-- ddl-loader.js                       <- Reference page renderer
     +-- ddl-erd.js                          <- ERD diagram renderer
 ```
+
+Machine-generated DDL reference data no longer lives under `docs/`. `Generate-DDLReference.ps1` writes `doc-registry.json` and the per-schema `{Schema}.json` files to `E:\xFACts-Generated\ddl\`, which the Control Center serves at `/generated/ddl/`. `nav.js` (doc-registry.json), `ddl-loader.js`, and `ddl-erd.js` ({Schema}.json) fetch them from that root-absolute URL.
 
 #### nav.js Page Discovery
 
