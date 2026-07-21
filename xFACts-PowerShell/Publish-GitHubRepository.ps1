@@ -5,14 +5,20 @@
 .DESCRIPTION
     Publishes the xFACts platform to a GitHub repository via the REST API,
     maintaining a complete, current snapshot: PowerShell scripts, Control Center
-    files, documentation, SQL object definitions, and generated reference data.
-    The run collects the file inventory from the server source directories,
-    extracts SQL object definitions, generates the Platform Registry markdown,
-    audits collected files against Object_Registry, fetches the current repo
-    state, computes the create/update/delete diff against it, pushes the changes
-    via the Contents API, and generates a segmented set of manifests (a
-    lightweight master index plus per-category sub-manifests). Runs standalone
-    or as a step in the Invoke-DocPipeline.ps1 pipeline.
+    application and documentation-site files, authored documentation, and the
+    generated artifact tree (SQL object definitions, DDL JSON, module markdown,
+    and the Platform Registry snapshot). The run collects the file inventory from
+    the server source directories, extracts SQL object definitions, generates the
+    Platform Registry markdown, audits collected files against Object_Registry,
+    fetches the current repo state, computes the create/update/delete diff against
+    it, and pushes the changes via the Contents API. Two safety guards protect the
+    orphan-deletion path: a floor guard that aborts when a source directory is
+    missing or unreadable, or when an emptied source would orphan-delete live
+    repository files, and a deletion-threshold guard that requires an explicit
+    override to execute an unusually large delete set. The run finishes by
+    generating a segmented set of manifests (a master index carrying a path-prefix
+    routing table plus per-category sub-manifests). Runs standalone or as a step
+    in the Invoke-DocPipeline.ps1 pipeline.
 
 .PARAMETER Owner
     GitHub repository owner. Default: tnjazzgrass
@@ -35,6 +41,14 @@
 
 .PARAMETER Execute
     Required to actually push changes. Without this, runs in preview mode.
+
+.PARAMETER DeleteThreshold
+    Maximum orphan deletions allowed on an execute run without the
+    -AllowMassDeletion override. Default: 25
+
+.PARAMETER AllowMassDeletion
+    Authorizes an execute run whose planned deletions exceed DeleteThreshold.
+    Preview always shows the full delta regardless of this switch.
 
 .COMPONENT
     Documentation.Pipeline
@@ -63,6 +77,28 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-07-21  Phase 2 of the repository restructure. Source map: dropped the empty
+#             images/cc and the relocated data/ddl Control Center sources; kept
+#             *.js on the PowerShell source - it publishes the authored Node AST
+#             helpers parse-js.js and parse-css.js and is annotated so it is not
+#             again mistaken for dead; un-flattened authored
+#             docs from the repo root to xFACts-Documentation/docs; added the
+#             xFACts-Generated tree (ddl JSON and recursive module markdown from
+#             E:\xFACts-Generated). The SQL object dump moved from xFACts-SQL to
+#             xFACts-Generated/sql and the Platform Registry snapshot from the
+#             Documentation root to xFACts-Generated/registry. Managed prefixes
+#             gained xFACts-Generated and retain xFACts-SQL for one cutover so the
+#             old dump location is orphan-cleaned. Added the orphan-deletion floor
+#             guard (a missing or unreadable source aborts before comparison; an
+#             emptied source aborts only when it would orphan live repo files) and
+#             a deletion-threshold override (-DeleteThreshold/-AllowMassDeletion)
+#             gating only the execute path. Manifests re-segmented into powershell,
+#             cc-app, cc-docs, documentation, and generated; the master manifest
+#             gained a path-prefix routing table and every file entry gained a
+#             class of authored or generated. Removed the dead $GeneratedRepoPaths
+#             set (orphan protection comes from membership in the collected file
+#             set). Legacy schema objects are now excluded at extraction in
+#             xFACts-DocPipelineFunctions.ps1 rather than skipped in the audit.
 # 2026-06-20  Conformed to the PowerShell file format spec: block-comment header
 #             and section banners, dedicated CHANGELOG section, single EXECUTION
 #             section, function purpose comments in place of docblocks, and the
@@ -87,8 +123,9 @@
    PARAMETERS: SCRIPT PARAMETERS
    ----------------------------------------------------------------------------
    Repository target (owner, repo, branch), the credential service name, the
-   SQL connection target for object extraction and registry queries, and the
-   execute guard.
+   SQL connection target for object extraction and registry queries, the execute
+   guard, and the orphan-deletion safety controls (deletion threshold and the
+   mass-deletion override).
    Prefix: (none)
    ============================================================================ #>
 
@@ -100,7 +137,9 @@ param(
     [string]$ServiceName = "GitHub_xFACts",
     [string]$xFACtsServer = "AVG-PROD-LSNR",
     [string]$xFACtsDB = "xFACts",
-    [switch]$Execute
+    [switch]$Execute,
+    [int]$DeleteThreshold = 25,
+    [switch]$AllowMassDeletion
 )
 
 <# ============================================================================
@@ -131,27 +170,35 @@ Initialize-XFActsScript -ScriptName 'Publish-GitHubRepository' -ServerInstance $
    CONSTANTS: PATHS AND SOURCES
    ----------------------------------------------------------------------------
    Server source roots, the server-to-repository file-source map, the managed
-   repository path prefixes considered for orphan cleanup, and the sub-manifest
-   category definitions used when generating the segmented manifests.
+   repository path prefixes considered for orphan cleanup, and the manifest
+   segment routing table used to bucket files and generate the segmented
+   manifests.
    Prefix: (none)
    ============================================================================ #>
 
 # Root of the orchestrator PowerShell script tree.
-$ScriptsRoot = "E:\xFACts-PowerShell"
+$ScriptsRoot   = "E:\xFACts-PowerShell"
 # Root of the Control Center application and documentation-site tree.
-$CCRoot      = "E:\xFACts-ControlCenter"
-# Root of the standalone documentation and planning tree.
-$DocsRoot    = "E:\xFACts-Documentation"
+$CCRoot        = "E:\xFACts-ControlCenter"
+# Root of the authored documentation and planning tree.
+$DocsRoot      = "E:\xFACts-Documentation"
+# Root of the machine-generated artifact tree (DDL JSON and module markdown).
+$GeneratedRoot = "E:\xFACts-Generated"
 
 # Server-to-repository file-source map: each entry maps a server directory to a
-# repository path, with a filename filter set and a recurse flag.
+# repository path, with a filename filter set and a recurse flag. SQL object
+# definitions and the Platform Registry snapshot are not disk sources; they are
+# generated into the collected file set during EXECUTION.
 $FileSources = @(
+    # *.js is required, not dead: it publishes the two authored Node AST helpers
+    # co-located here - parse-js.js (called by Populate-AssetRegistry-JS.ps1) and
+    # parse-css.js (called by Populate-AssetRegistry-CSS.ps1). Do not remove it.
     @{
         ServerPath  = $ScriptsRoot
         RepoPath    = "xFACts-PowerShell"
-        Filter      = @("*.ps1", "*.js", "*.psm1")
+        Filter      = @("*.ps1", "*.psm1", "*.js")
         Recurse     = $false
-        Description = "Orchestrator scripts"
+        Description = "Orchestrator scripts and Node AST helpers (parse-js.js, parse-css.js)"
     }
     @{
         ServerPath  = "$CCRoot\scripts"
@@ -196,25 +243,11 @@ $FileSources = @(
         Description = "Documentation JS"
     }
     @{
-        ServerPath  = "$CCRoot\public\docs\data\ddl"
-        RepoPath    = "xFACts-ControlCenter/public/docs/data/ddl"
-        Filter      = @("*.json")
-        Recurse     = $false
-        Description = "Schema JSON data files"
-    }
-    @{
-        ServerPath  = "$CCRoot\public\docs\images\cc"
-        RepoPath    = "xFACts-ControlCenter/public/docs/images/cc"
-        Filter      = @("*.png")
-        Recurse     = $false
-        Description = "CC guide screenshots"
-    }
-    @{
         ServerPath  = "$DocsRoot\docs"
-        RepoPath    = "xFACts-Documentation"
+        RepoPath    = "xFACts-Documentation/docs"
         Filter      = @("*.md")
         Recurse     = $false
-        Description = "Platform documentation (Guidelines, Backlog)"
+        Description = "Authored documentation (Guidelines, Backlog)"
     }
     @{
         ServerPath  = "$DocsRoot\Planning"
@@ -230,19 +263,38 @@ $FileSources = @(
         Recurse     = $true
         Description = "Working reference files for active builds"
     }
+    @{
+        ServerPath  = "$GeneratedRoot\ddl"
+        RepoPath    = "xFACts-Generated/ddl"
+        Filter      = @("*.json")
+        Recurse     = $false
+        Description = "Generated schema DDL JSON"
+    }
+    @{
+        ServerPath  = "$GeneratedRoot\md"
+        RepoPath    = "xFACts-Generated/md"
+        Filter      = @("*.md")
+        Recurse     = $true
+        Description = "Generated module markdown"
+    }
 )
 
 # Repository path prefixes the publisher manages; only files under these are
-# considered for orphan deletion.
-$ManagedPrefixes = @("xFACts-PowerShell/", "xFACts-ControlCenter/", "xFACts-Documentation/", "xFACts-SQL/")
+# considered for orphan deletion. xFACts-SQL/ is retained for the restructure
+# cutover so the retired dump location is orphan-cleaned, and can be dropped
+# from this set after the cutover run.
+$ManagedPrefixes = @("xFACts-PowerShell/", "xFACts-ControlCenter/", "xFACts-Documentation/", "xFACts-Generated/", "xFACts-SQL/")
 
-# Sub-manifest category definitions: bucket key, output filename, and title.
-$SubManifestDefs = @(
-    @{ Key = "cc-app";        Filename = "manifest-cc-app.json";        Title = "Control Center Application" }
-    @{ Key = "cc-docs";       Filename = "manifest-cc-docs.json";       Title = "Control Center Documentation Site" }
-    @{ Key = "powershell";    Filename = "manifest-powershell.json";    Title = "PowerShell Scripts" }
-    @{ Key = "sql";           Filename = "manifest-sql.json";           Title = "SQL Object Definitions" }
-    @{ Key = "documentation"; Filename = "manifest-documentation.json"; Title = "Documentation and Working Files" }
+# Segment manifest routing table, most-specific prefix first. Each collected
+# repo path is routed to the first entry whose Prefix it starts with; this same
+# table drives sub-manifest generation and is emitted in the master manifest so
+# the owning segment of any path is resolvable from the master alone.
+$ManifestSegments = @(
+    @{ Key = "cc-docs";       Prefix = "xFACts-ControlCenter/public/docs/"; Filename = "manifest-cc-docs.json";       Title = "Control Center Documentation Site" }
+    @{ Key = "cc-app";        Prefix = "xFACts-ControlCenter/";             Filename = "manifest-cc-app.json";        Title = "Control Center Application" }
+    @{ Key = "powershell";    Prefix = "xFACts-PowerShell/";                Filename = "manifest-powershell.json";    Title = "PowerShell Scripts" }
+    @{ Key = "documentation"; Prefix = "xFACts-Documentation/";             Filename = "manifest-documentation.json"; Title = "Documentation and Working Files" }
+    @{ Key = "generated";     Prefix = "xFACts-Generated/";                 Filename = "manifest-generated.json";     Title = "Generated Artifacts (SQL, DDL, Markdown, Registry)" }
 )
 
 <# ============================================================================
@@ -387,23 +439,17 @@ function Get-GitBlobSha {
 <# ============================================================================
    EXECUTION: SCRIPT EXECUTION
    ----------------------------------------------------------------------------
-   Runs the publish pipeline: retrieve credentials, collect local files, extract
-   SQL object definitions, generate the Platform Registry markdown, audit against
-   Object_Registry, compute the repository diff, push the create/update/delete
-   changes, generate and push the segmented manifests, and report a summary.
+   Runs the publish pipeline: retrieve credentials, collect local files (with the
+   floor guard on missing or unreadable sources), extract SQL object definitions,
+   generate the Platform Registry markdown, audit against Object_Registry, compute
+   the repository diff, apply the floor and deletion-threshold guards, push the
+   create/update/delete changes, generate and push the segmented manifests, and
+   report a summary.
    Prefix: (none)
    ============================================================================ #>
 
 # Force TLS 1.2 for GitHub API connectivity.
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-
-# Generated repository paths that orphan cleanup must not delete (the manifests).
-$GeneratedRepoPaths = [System.Collections.Generic.HashSet[string]]::new()
-$GeneratedRepoPaths.Add("manifest-cc-app.json")        | Out-Null
-$GeneratedRepoPaths.Add("manifest-cc-docs.json")       | Out-Null
-$GeneratedRepoPaths.Add("manifest-powershell.json")    | Out-Null
-$GeneratedRepoPaths.Add("manifest-sql.json")           | Out-Null
-$GeneratedRepoPaths.Add("manifest-documentation.json") | Out-Null
 
 # -- Phase 1: Retrieve credentials --
 
@@ -451,13 +497,21 @@ Write-Log "-------------------------------"
 
 # Hashtable of repoPath -> @{ ContentBytes, Source }.
 $localFiles = @{}
+# Per-source collected file counts, keyed by RepoPath, for the floor guard.
+$sourceFileCounts = @{}
 
 foreach ($source in $FileSources) {
     $serverPath = $source.ServerPath
 
+    # Floor guard: a missing or unreadable source directory is an infrastructure
+    # fault. Abort before any repository comparison so a vanished or locked
+    # folder can never be read as "everything under it was deleted".
     if (-not (Test-Path $serverPath)) {
-        Write-Log "  SKIP  $($source.Description) - path not found: $serverPath" "WARN"
-        continue
+        Write-Log ""
+        Write-Log "ABORT  Source directory not found: $serverPath ($($source.Description))." "ERROR"
+        Write-Log "       A missing source is an infrastructure fault, not an empty set." "ERROR"
+        Write-Log "       No repository comparison was performed and nothing was changed." "ERROR"
+        exit 1
     }
 
     $fileCount = 0
@@ -473,7 +527,18 @@ foreach ($source in $FileSources) {
             $params.Recurse = $true
         }
 
-        $files = Get-ChildItem @params
+        $enumErrors = $null
+        $files = Get-ChildItem @params -ErrorVariable enumErrors
+
+        # A readable directory that returns nothing is a valid empty set; a
+        # directory that errors and returns nothing is unreadable - abort.
+        if ($enumErrors -and @($files).Count -eq 0) {
+            Write-Log ""
+            Write-Log "ABORT  Source directory unreadable: $serverPath ($($source.Description))." "ERROR"
+            Write-Log "       $($enumErrors[0].Exception.Message)" "ERROR"
+            Write-Log "       No repository comparison was performed and nothing was changed." "ERROR"
+            exit 1
+        }
 
         foreach ($file in $files) {
             # Build repo path: base repo path plus the relative path from the server source.
@@ -498,6 +563,7 @@ foreach ($source in $FileSources) {
         }
     }
 
+    $sourceFileCounts[$source.RepoPath] = $fileCount
     Write-Log "  OK    $($source.Description) - $fileCount files" "SUCCESS"
 }
 
@@ -515,14 +581,13 @@ $sqlCount = 0
 if ($sqlObjects) {
     foreach ($obj in @($sqlObjects)) {
         $fileName = "$($obj.schema_name).$($obj.object_name).sql"
-        $repoPath = "xFACts-SQL/$fileName"
+        $repoPath = "xFACts-Generated/sql/$fileName"
         $contentBytes = [System.Text.Encoding]::UTF8.GetBytes($obj.definition)
 
         $localFiles[$repoPath] = @{
             ContentBytes = $contentBytes
             Source       = "SQL:$($obj.schema_name).$($obj.object_name)"
         }
-        $GeneratedRepoPaths.Add($repoPath) | Out-Null
         $sqlCount++
     }
     Write-Log "  OK    SQL object definitions - $sqlCount extracted" "SUCCESS"
@@ -542,13 +607,12 @@ $exportedTables = $registryExport.TableCount
 
 if ($exportedTables -gt 0) {
     $registryBytes = [System.Text.Encoding]::UTF8.GetBytes($registryExport.Markdown)
-    $registryRepoPath = "xFACts-Documentation/xFACts_Platform_Registry.md"
+    $registryRepoPath = "xFACts-Generated/registry/xFACts_Platform_Registry.md"
 
     $localFiles[$registryRepoPath] = @{
         ContentBytes = $registryBytes
         Source       = "Generated:PlatformRegistry"
     }
-    $GeneratedRepoPaths.Add($registryRepoPath) | Out-Null
     Write-Log "  OK    Platform Registry - $exportedTables tables exported" "SUCCESS"
 }
 
@@ -617,18 +681,17 @@ foreach ($repoPath in $localFiles.Keys) {
     # Planning/working docs are transient session documents, not platform objects.
     if ($repoPath -like "xFACts-Documentation/Planning/*") { continue }
     if ($repoPath -like "xFACts-Documentation/WorkingFiles/*") { continue }
-    # Standalone documentation files (Guidelines, Backlog) are reference documents, not module objects.
-    if ($repoPath -like "xFACts-Documentation/*.md") { continue }
-    # Generated DDL JSON data files are output of Generate-DDLReference.ps1, not authored objects.
-    if ($repoPath -like "xFACts-ControlCenter/public/docs/data/ddl/*.json") { continue }
+    # Authored documentation files (Guidelines, Backlog) are reference documents, not module objects.
+    if ($repoPath -like "xFACts-Documentation/docs/*.md") { continue }
+    # Generated DDL JSON and module markdown are pipeline output, not authored objects.
+    if ($repoPath -like "xFACts-Generated/ddl/*.json") { continue }
+    if ($repoPath -like "xFACts-Generated/md/*") { continue }
 
     # SQL objects: match by schema.objectname pattern.
     if ($sourcePath -like "SQL:*") {
         # Remove the "SQL:" prefix.
         $sqlIdentifier = $sourcePath.Substring(4)
         $parts = $sqlIdentifier.Split('.')
-        # Skip Legacy schema objects - deprecated, not tracked.
-        if ($parts.Count -ge 1 -and $parts[0] -eq 'Legacy') { continue }
         if ($parts.Count -eq 2) {
             $schemaName = $parts[0]
             $objectName = $parts[1]
@@ -797,6 +860,50 @@ if ($toCreate.Count -eq 0 -and $toUpdate.Count -eq 0 -and $toDelete.Count -eq 0)
     Write-Log "Repository is already current. Nothing to push." "SUCCESS"
 }
 
+# Floor guard: a configured disk source that exists and is readable but yielded
+# zero files is legitimate only when nothing under its repo prefix would be
+# orphaned. If an emptied source would orphan-delete live repository files, that
+# is a lost-content fault - abort before any delete. An empty source with no
+# matching remote files is a valid empty set and only logs a notice.
+foreach ($source in $FileSources) {
+    if ($sourceFileCounts[$source.RepoPath] -ne 0) { continue }
+
+    $sourcePrefix = "$($source.RepoPath)/"
+    $orphanedByEmpty = @($toDelete | Where-Object { $_.RepoPath.StartsWith($sourcePrefix) })
+
+    if ($orphanedByEmpty.Count -gt 0) {
+        Write-Log ""
+        Write-Log "ABORT  Source '$($source.Description)' ($($source.RepoPath)) yielded zero files," "ERROR"
+        Write-Log "       but $($orphanedByEmpty.Count) live repository file(s) under $sourcePrefix would" "ERROR"
+        Write-Log "       be orphan-deleted. Refusing to let a source that lost its content wipe the repo." "ERROR"
+        Write-Log "       No changes were made." "ERROR"
+        exit 1
+    }
+    else {
+        Write-Log "  NOTE  Source '$($source.Description)' ($($source.RepoPath)) is empty; no remote orphans." "WARN"
+    }
+}
+
+# Deletion-threshold guard: an unusually large delete set requires an explicit
+# override to execute. Preview always shows the full delta; only the execute
+# path is gated, so a legitimately large cutover is a deliberate, one-time
+# -AllowMassDeletion run.
+if ($toDelete.Count -gt $DeleteThreshold) {
+    Write-Log ""
+    Write-Log "  Planned deletions ($($toDelete.Count)) exceed the threshold ($DeleteThreshold)." "WARN"
+    if ($Execute -and -not $AllowMassDeletion) {
+        Write-Log "ABORT  Refusing to execute $($toDelete.Count) deletions without -AllowMassDeletion." "ERROR"
+        Write-Log "       Re-run with -AllowMassDeletion to authorize this delete set. No changes were made." "ERROR"
+        exit 1
+    }
+    elseif ($Execute) {
+        Write-Log "  -AllowMassDeletion set: proceeding with $($toDelete.Count) deletions." "WARN"
+    }
+    else {
+        Write-Log "  PREVIEW: executing this delta would require -AllowMassDeletion." "WARN"
+    }
+}
+
 # -- Phase 7: Push changes to GitHub --
 
 if ($toCreate.Count -gt 0 -or $toUpdate.Count -gt 0 -or $toDelete.Count -gt 0) {
@@ -893,40 +1000,29 @@ $baseRawUrl = "https://raw.githubusercontent.com/$Owner/$Repo/$Branch"
 $cacheBuster = (Get-Date).ToUniversalTime().ToString("yyyyMMddHHmmss")
 $generatedTimestamp = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
 
-# Classify files into sub-manifest categories. ControlCenter splits into cc-app
-# (routes, CSS, JS) and cc-docs (the documentation site under public/docs).
+# Route each collected file into its segment bucket via the routing table (first
+# matching prefix wins, most-specific first), and tag it authored or generated
+# by whether it lives under the generated tree.
 $subManifestBuckets = @{}
 
 foreach ($repoPath in ($localFiles.Keys | Sort-Object)) {
-    $subCategory = $null
-
-    if ($repoPath.StartsWith("xFACts-PowerShell/")) {
-        $subCategory = "powershell"
-    }
-    elseif ($repoPath.StartsWith("xFACts-SQL/")) {
-        $subCategory = "sql"
-    }
-    elseif ($repoPath.StartsWith("xFACts-Documentation/")) {
-        $subCategory = "documentation"
-    }
-    elseif ($repoPath.StartsWith("xFACts-ControlCenter/")) {
-        if ($repoPath -like "xFACts-ControlCenter/public/docs/*") {
-            $subCategory = "cc-docs"
-        }
-        else {
-            $subCategory = "cc-app"
+    $segmentKey = "other"
+    foreach ($segment in $ManifestSegments) {
+        if ($repoPath.StartsWith($segment.Prefix)) {
+            $segmentKey = $segment.Key
+            break
         }
     }
-    else {
-        $subCategory = "other"
-    }
 
-    if (-not $subManifestBuckets.ContainsKey($subCategory)) {
-        $subManifestBuckets[$subCategory] = @()
+    $fileClass = if ($repoPath.StartsWith("xFACts-Generated/")) { "generated" } else { "authored" }
+
+    if (-not $subManifestBuckets.ContainsKey($segmentKey)) {
+        $subManifestBuckets[$segmentKey] = @()
     }
 
     $fileEntry = [ordered]@{
         path    = $repoPath
+        class   = $fileClass
         raw_url = "$baseRawUrl/${repoPath}?v=$cacheBuster"
     }
 
@@ -937,7 +1033,7 @@ foreach ($repoPath in ($localFiles.Keys | Sort-Object)) {
         $fileEntry.component = $enrichment.component_name
     }
 
-    $subManifestBuckets[$subCategory] += $fileEntry
+    $subManifestBuckets[$segmentKey] += $fileEntry
 }
 
 # Generate each sub-manifest and collect its summary for the master index.
@@ -945,30 +1041,30 @@ $subManifestSummaries = @()
 # repoPath -> bytes, for pushing.
 $allManifestFiles = @{}
 
-foreach ($def in $SubManifestDefs) {
-    $bucketKey = $def.Key
-    $filename = $def.Filename
-    $files = if ($subManifestBuckets.ContainsKey($bucketKey)) { $subManifestBuckets[$bucketKey] } else { @() }
+foreach ($segment in $ManifestSegments) {
+    $files = if ($subManifestBuckets.ContainsKey($segment.Key)) { $subManifestBuckets[$segment.Key] } else { @() }
 
     $subManifest = [ordered]@{
         generated  = $generatedTimestamp
-        category   = $def.Title
+        category   = $segment.Title
+        segment    = $segment.Key
         file_count = $files.Count
         files      = @($files)
     }
 
     $subJson = $subManifest | ConvertTo-Json -Depth 4
     $subBytes = [System.Text.Encoding]::UTF8.GetBytes($subJson)
-    $allManifestFiles[$filename] = $subBytes
+    $allManifestFiles[$segment.Filename] = $subBytes
 
     $subManifestSummaries += [ordered]@{
-        category   = $def.Title
-        filename   = $filename
-        raw_url    = "$baseRawUrl/${filename}?v=$cacheBuster"
+        category   = $segment.Title
+        segment    = $segment.Key
+        filename   = $segment.Filename
+        raw_url    = "$baseRawUrl/$($segment.Filename)?v=$cacheBuster"
         file_count = $files.Count
     }
 
-    Write-Log "  Sub-manifest: $filename - $($files.Count) files"
+    Write-Log "  Sub-manifest: $($segment.Filename) - $($files.Count) files"
 }
 
 # Warn about any "other" category files (should not normally exist).
@@ -976,7 +1072,19 @@ if ($subManifestBuckets.ContainsKey("other") -and $subManifestBuckets["other"].C
     Write-Log "  WARN  $($subManifestBuckets['other'].Count) files in 'other' category - not in any sub-manifest" "WARN"
 }
 
-# Generate the master manifest (index only).
+# Build the routing table (repo path prefix -> owning segment manifest),
+# most-specific first, so a consumer can resolve which segment holds any path
+# from the master manifest alone.
+$routingTable = @()
+foreach ($segment in $ManifestSegments) {
+    $routingTable += [ordered]@{
+        prefix   = $segment.Prefix
+        segment  = $segment.Key
+        manifest = $segment.Filename
+    }
+}
+
+# Generate the master manifest (index plus routing table).
 $totalFileCount = 0
 foreach ($s in $subManifestSummaries) { $totalFileCount += $s.file_count }
 
@@ -985,6 +1093,7 @@ $masterManifest = [ordered]@{
     repository   = "https://github.com/$Owner/$Repo"
     base_raw_url = $baseRawUrl
     file_count   = $totalFileCount
+    routing      = @($routingTable)
     manifests    = @($subManifestSummaries)
 }
 
