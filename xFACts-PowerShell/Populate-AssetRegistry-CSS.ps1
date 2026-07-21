@@ -2389,7 +2389,7 @@ foreach ($fname in $fileMeta.Keys) {
         $sigHasPseudoElement = ($r.Signature -and $r.Signature -match '::')
         if ($r.ComponentType -eq 'CSS_CLASS' -and -not $sigHasPseudoElement) {
             # Base class definition. If multiple, keep the earliest line as
-            # the canonical "base" for ordering comparisons.
+            # the base for ordering comparisons.
             if ($null -eq $classInfo[$cname].BaseLine -or $r.LineStart -lt $classInfo[$cname].BaseLine) {
                 $classInfo[$cname].BaseLine = $r.LineStart
             }
