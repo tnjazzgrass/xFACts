@@ -19,6 +19,11 @@
     launches real runs). That implication is a temporary bridge to be removed in
     Task 2 once the API passes -Execute explicitly.
 
+    The Confluence-shaping options (-PublishToConfluence, -ExportMarkdown) are
+    likewise kept only for Admin API compatibility and are inert: the Confluence
+    step always runs a full publish in execute mode. Task 2 removes them together
+    with the Admin UI export-markdown checkbox.
+
     Launched by the /api/admin/doc-pipeline endpoint (fire-and-forget).
 
 .PARAMETER StepsJson
@@ -58,10 +63,15 @@
     manifest rebuild so manifests build exactly once.
 
 .PARAMETER PublishToConfluence
-    Shapes the Confluence step in execute mode: publish to the Confluence server.
+    Retired Confluence-shaping option, still accepted for Admin API compatibility
+    but inert: the Confluence step always runs a full publish in execute mode.
+    Removed in Task 2 with the Admin UI checkbox.
 
 .PARAMETER ExportMarkdown
-    Shapes the Confluence step in execute mode: export markdown.
+    Retired export-only option, still accepted for Admin API compatibility but
+    inert: the markdown export is now part of every full publish. A run that
+    requests it is accepted, logged, and ignored. Removed in Task 2 with the Admin
+    UI checkbox.
 
 .PARAMETER IncludeSQLObjects
     Reserved option passed through by the Admin doc-pipeline API. Inert until that
@@ -97,6 +107,16 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-07-21  Confluence step always runs a full publish in execute mode. The step
+#             now passes -Execute (preview passes nothing); the retired -ExportOnly
+#             pathway is gone. This also fixes the original defect where a direct
+#             -Execute run published nothing because the arguments fell through to
+#             -ExportOnly. The -PublishToConfluence and -ExportMarkdown options are
+#             kept declared for Admin API compatibility but are inert: a run that
+#             requests export-only is accepted, logged ("export-only retired -
+#             running full publish"), and ignored. Task 2 removes these options,
+#             the StepsJson-implies-Execute bridge, and the Admin UI
+#             export-markdown checkbox.
 # 2026-07-21  Preview-by-default, single-step selection, and mandatory console
 #             output. The wrapper now previews unless -Execute is passed: a bare
 #             run selects all five steps and runs each in its own safe preview
@@ -216,10 +236,7 @@ $script:pipeline = @(
         Label       = 'Publish to Confluence'
         Script      = 'Publish-ConfluenceDocumentation.ps1'
         PreviewArgs = ''
-        ExecuteArgs = if ($PublishToConfluence -and $ExportMarkdown) { '-Execute' }
-                      elseif ($ExportMarkdown -and -not $PublishToConfluence) { '-ExportOnly' }
-                      elseif ($PublishToConfluence) { '-Execute' }
-                      else { '-ExportOnly' }
+        ExecuteArgs = '-Execute'
     },
     @{
         Key         = 'publish_github'
@@ -348,6 +365,17 @@ if ($unknownKeys.Count) {
     Write-Console ("Unrecognized step keys ignored: " + ($unknownKeys -join ', ')) 'DarkYellow'
 }
 Write-Console ''
+
+# Tolerant-ignore for the retired Confluence export-only pathway. The Admin UI's
+# "export markdown" checkbox still sends -ExportMarkdown; export-only was retired
+# (the markdown export is now part of every full publish), so the option is
+# accepted and ignored here rather than erroring. Task 2 removes the checkbox, the
+# -PublishToConfluence/-ExportMarkdown parameters, and this note - alongside the
+# -StepsJson-implies-Execute bridge.
+if ($ExportMarkdown -and $selected['publish_confluence']) {
+    Write-Console "Note: export-only retired - running full publish. The -ExportMarkdown option is accepted and ignored." 'DarkYellow'
+    Write-Console ''
+}
 
 # Ensure log directory exists.
 if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }

@@ -60,9 +60,6 @@
     Output folder for markdown export. Default:
     E:\xFACts-Generated\md
 
-.PARAMETER ExportOnly
-    Export markdown only; skip all Confluence publishing.
-
 .COMPONENT
     Documentation.Pipeline
 
@@ -93,6 +90,13 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-07-21  Retired the -ExportOnly standalone export mode. The markdown export
+#             is now part of every publish, gated on -Execute like every other
+#             write: a bare preview writes nothing (prints [PREVIEW] Would export
+#             lines and leaves the folder untouched), and -Execute publishes to
+#             Confluence and writes the .md files. Removed the -ExportOnly
+#             parameter, its mode branch, its banner text, and the publishing
+#             skip-guard.
 # 2026-07-21  Retired the ref-only markdown export entirely: removed the
 #             _Ref.md generation loop, the ref\ subfolder path and creation, the
 #             Reference-Only console banner, and the summary line. The ref-only
@@ -170,8 +174,7 @@
    ----------------------------------------------------------------------------
    Publish target (base URL, space, root parent), the documentation source root,
    credential resolution inputs (manual credential plus SQL connection), title
-   and editor controls, the markdown export path, and the execute and
-   export-only guards.
+   and editor controls, the markdown export path, and the execute guard.
    Prefix: (none)
    ============================================================================ #>
 
@@ -204,10 +207,7 @@ param(
     [string]$TitlePrefix = '',
 
     # Path for markdown export
-    [string]$ExportPath = 'E:\xFACts-Generated\md',
-
-    # Skip Confluence publishing (markdown export only)
-    [switch]$ExportOnly
+    [string]$ExportPath = 'E:\xFACts-Generated\md'
 )
 
 <# ============================================================================
@@ -2551,8 +2551,8 @@ function Convert-CcGuideToMarkdown {
    EXECUTION: SCRIPT EXECUTION
    ----------------------------------------------------------------------------
    Builds the page registry from doc-registry.json, discovers standalone guide
-   pages, then publishes to Confluence (unless -ExportOnly) and writes the full
-   module markdown exports.
+   pages, then publishes to Confluence and writes the full module markdown
+   exports.
    Prefix: (none)
    ============================================================================ #>
 
@@ -2760,10 +2760,7 @@ Write-Console "  JSON:       $JsonPath" 'Gray'
 Write-Console "  MD Export:  $ExportPath" 'Gray'
 Write-Console ""
 
-if ($ExportOnly) {
-    Write-Console "[EXPORT ONLY] Markdown export - no Confluence publishing." 'DarkYellow'
-    Write-Console ""
-} elseif (-not $Execute) {
+if (-not $Execute) {
     Write-Console "[PREVIEW MODE] No changes will be made. Use -Execute to publish." 'DarkYellow'
     Write-Console ""
 }
@@ -2797,53 +2794,51 @@ foreach ($page in $activePages) {
 Write-Console "  JSON cache loaded: $($JsonDataCache.Count) schemas" 'Gray'
 Write-Console ""
 
-# -- CONFLUENCE PUBLISHING (Phases 1, 1.5, 2) - skipped with -ExportOnly --
+# -- CONFLUENCE PUBLISHING (Phases 1, 1.5, 2) --
 
-if (-not $ExportOnly) {
+# Resolve credentials: -Credential param > dbo.Credentials > manual prompt
+if (-not $Credential) {
+    Write-Console "  Attempting credential retrieval from dbo.Credentials..." 'Cyan'
+    $dbCreds = Get-ServiceCredentials -ServiceName 'Confluence'
 
-    # Resolve credentials: -Credential param > dbo.Credentials > manual prompt
-    if (-not $Credential) {
-        Write-Console "  Attempting credential retrieval from dbo.Credentials..." 'Cyan'
-        $dbCreds = Get-ServiceCredentials -ServiceName 'Confluence'
-
-        if ($dbCreds -and $dbCreds.ConfluenceUser -and $dbCreds.ConfluencePassword) {
-            $secPass = ConvertTo-SecureString $dbCreds.ConfluencePassword -AsPlainText -Force
-            $Credential = New-Object System.Management.Automation.PSCredential($dbCreds.ConfluenceUser, $secPass)
-            Write-Console "  Credentials loaded from database." 'Green'
-        } else {
-            Write-Console "  Database credentials not available. Falling back to manual entry." 'Yellow'
-        }
+    if ($dbCreds -and $dbCreds.ConfluenceUser -and $dbCreds.ConfluencePassword) {
+        $secPass = ConvertTo-SecureString $dbCreds.ConfluencePassword -AsPlainText -Force
+        $Credential = New-Object System.Management.Automation.PSCredential($dbCreds.ConfluenceUser, $secPass)
+        Write-Console "  Credentials loaded from database." 'Green'
+    } else {
+        Write-Console "  Database credentials not available. Falling back to manual entry." 'Yellow'
     }
+}
 
-    if (-not $Credential) {
-        Write-Console ""
-        Write-Console "Enter Confluence credentials (AD account):" 'Cyan'
-        $Credential = Get-Credential
-    }
-
-    $session = Connect-Confluence -BaseUrl $BaseUrl -Credential $Credential
+if (-not $Credential) {
     Write-Console ""
+    Write-Console "Enter Confluence credentials (AD account):" 'Cyan'
+    $Credential = Get-Credential
+}
 
-    # Look up root parent page
-    $rootParentId = $null
-    if ($RootParentTitle) {
-        Write-Console "  Looking up root parent page: '$RootParentTitle'..." 'Cyan'
-        $rootParent = Get-ConfluencePage -BaseUrl $BaseUrl -Session $session -SpaceKey $SpaceKey -Title "$TitlePrefix$RootParentTitle"
-        if (-not $rootParent) {
-            # Try without prefix (the parent page likely doesn't have our test prefix)
-            $rootParent = Get-ConfluencePage -BaseUrl $BaseUrl -Session $session -SpaceKey $SpaceKey -Title $RootParentTitle
-        }
-        if ($rootParent) {
-            $rootParentId = $rootParent.id
-            Write-Console "  Found parent page: ID $rootParentId" 'Green'
-        } else {
-            Write-Warning "Root parent page '$RootParentTitle' not found. Hub will be created at space root."
-        }
-        Write-Console ""
+$session = Connect-Confluence -BaseUrl $BaseUrl -Credential $Credential
+Write-Console ""
+
+# Look up root parent page
+$rootParentId = $null
+if ($RootParentTitle) {
+    Write-Console "  Looking up root parent page: '$RootParentTitle'..." 'Cyan'
+    $rootParent = Get-ConfluencePage -BaseUrl $BaseUrl -Session $session -SpaceKey $SpaceKey -Title "$TitlePrefix$RootParentTitle"
+    if (-not $rootParent) {
+        # Try without prefix (the parent page likely doesn't have our test prefix)
+        $rootParent = Get-ConfluencePage -BaseUrl $BaseUrl -Session $session -SpaceKey $SpaceKey -Title $RootParentTitle
     }
+    if ($rootParent) {
+        $rootParentId = $rootParent.id
+        Write-Console "  Found parent page: ID $rootParentId" 'Green'
+    } else {
+        Write-Warning "Root parent page '$RootParentTitle' not found. Hub will be created at space root."
+    }
+    Write-Console ""
+}
 
-    # Track page IDs for parent-child relationships
-    $pageIds = @{}
+# Track page IDs for parent-child relationships
+$pageIds = @{}
 
 # Phase 1: Publish narrative pages (Hub first, then modules)
 Write-Console "--- Phase 1: Narrative Pages ---" 'Cyan'
@@ -3105,15 +3100,14 @@ foreach ($page in $modulePages) {
     Write-Console ""
 }
 
-}
-
-# -- MARKDOWN EXPORT (Phase 3) - always runs --
+# -- MARKDOWN EXPORT (Phase 3) - writes only with -Execute --
 
 Write-Console "--- Phase 3: Markdown Export ---" 'Cyan'
 Write-Console ""
 
-# Create export folder if needed
-if (-not (Test-Path $ExportPath)) {
+# Create export folder if needed. Preview writes nothing; the export is gated on
+# -Execute like every other write path.
+if ($Execute -and -not (Test-Path $ExportPath)) {
     New-Item -Path $ExportPath -ItemType Directory -Force | Out-Null
     Write-Console "  Created export folder: $ExportPath" 'Gray'
 }
@@ -3148,9 +3142,13 @@ if ($hubPage) {
             $md = $md -replace [regex]::Escape($Matches[1]), "$($Matches[1])$castMd`n"
         }
 
-        $outFile = Join-Path $ExportPath "xFACts_Hub.md"
-        $md | Out-File -FilePath $outFile -Encoding UTF8 -Force
-        Write-Console "  Exported: $($md.Length) chars" 'Gray'
+        if ($Execute) {
+            $outFile = Join-Path $ExportPath "xFACts_Hub.md"
+            $md | Out-File -FilePath $outFile -Encoding UTF8 -Force
+            Write-Console "  Exported: $($md.Length) chars" 'Gray'
+        } else {
+            Write-Console "  [PREVIEW] Would export: xFACts_Hub.md ($($md.Length) chars)" 'DarkYellow'
+        }
     }
 }
 
@@ -3266,9 +3264,13 @@ foreach ($page in $modulePages) {
 
     if ($md) {
         Write-Console "[$fileName]" 'White'
-        $outFile = Join-Path $ExportPath $fileName
-        $md | Out-File -FilePath $outFile -Encoding UTF8 -Force
-        Write-Console "  Exported: $($md.Length) chars" 'Gray'
+        if ($Execute) {
+            $outFile = Join-Path $ExportPath $fileName
+            $md | Out-File -FilePath $outFile -Encoding UTF8 -Force
+            Write-Console "  Exported: $($md.Length) chars" 'Gray'
+        } else {
+            Write-Console "  [PREVIEW] Would export: $fileName ($($md.Length) chars)" 'DarkYellow'
+        }
     }
     Write-Console ""
 }
@@ -3276,10 +3278,14 @@ foreach ($page in $modulePages) {
 # Summary
 Write-Console "============================================" 'Cyan'
 Write-Console " Complete" 'Green'
-if (-not $ExportOnly -and -not $Execute) {
+if (-not $Execute) {
     Write-Console " (Preview only - use -Execute to publish)" 'DarkYellow'
 }
-Write-Console "  Markdown exported to: $ExportPath" 'Gray'
+if ($Execute) {
+    Write-Console "  Markdown exported to: $ExportPath" 'Gray'
+} else {
+    Write-Console "  Markdown export: [PREVIEW] no files written" 'DarkYellow'
+}
 Write-Console "  Pages attempted: $pagesAttempted" 'Gray'
 Write-Console "  Pages succeeded: $pagesSucceeded" 'Gray'
 $failColor = if ($pagesFailed -gt 0) { 'Red' } else { 'Gray' }

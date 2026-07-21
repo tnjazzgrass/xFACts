@@ -55,6 +55,11 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-07-21  Counted scripts, XE sessions, and DDL triggers in the per-schema
+#             object summary. Schemas whose JSON held only these types (for
+#             example ControlCenter, which has scripts and no tables) logged an
+#             empty "()" summary; all object types the JSON can carry are now
+#             tallied.
 # 2026-07-21  Relocated JSON output to E:\xFACts-Generated\ddl, the new live home
 #             for machine-generated content. Changed the $OutputDirectory default
 #             and its help-text path. All downstream writes (doc-registry.json,
@@ -1112,12 +1117,18 @@ try {
                 $triggerCount = 0
                 $functionCount = 0
                 $viewCount = 0
+                $scriptCount = 0
+                $xeSessionCount = 0
+                $ddlTriggerCount = 0
 
                 if ($parsed.tables) { $tableCount = @($parsed.tables).Count }
                 if ($parsed.procedures) { $procCount = @($parsed.procedures).Count }
                 if ($parsed.triggers) { $triggerCount = @($parsed.triggers).Count }
                 if ($parsed.functions) { $functionCount = @($parsed.functions).Count }
                 if ($parsed.views) { $viewCount = @($parsed.views).Count }
+                if ($parsed.scripts) { $scriptCount = @($parsed.scripts).Count }
+                if ($parsed.xeSessions) { $xeSessionCount = @($parsed.xeSessions).Count }
+                if ($parsed.ddlTriggers) { $ddlTriggerCount = @($parsed.ddlTriggers).Count }
 
                 $objectSummary = @()
                 if ($tableCount -gt 0) { $objectSummary += "$tableCount tables" }
@@ -1125,6 +1136,9 @@ try {
                 if ($triggerCount -gt 0) { $objectSummary += "$triggerCount triggers" }
                 if ($functionCount -gt 0) { $objectSummary += "$functionCount functions" }
                 if ($viewCount -gt 0) { $objectSummary += "$viewCount views" }
+                if ($scriptCount -gt 0) { $objectSummary += "$scriptCount scripts" }
+                if ($xeSessionCount -gt 0) { $objectSummary += "$xeSessionCount XE sessions" }
+                if ($ddlTriggerCount -gt 0) { $objectSummary += "$ddlTriggerCount DDL triggers" }
                 $summary = $objectSummary -join ", "
 
                 if ($Execute) {
