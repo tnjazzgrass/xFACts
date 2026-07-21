@@ -95,7 +95,6 @@ const adm_clickActions = {
     'adm-close-docpipeline':   adm_closeDocPipeline,
     'adm-doc-run':             adm_runDocPipeline,
     'adm-doc-toggle-step':     adm_docToggleStep,
-    'adm-doc-toggle-pill':     adm_docTogglePill,
     'adm-doc-detail-toggle':   adm_docToggleDetail,
     'adm-open-assetregistry':  adm_openAssetRegistry,
     'adm-close-assetregistry': adm_closeAssetRegistry,
@@ -152,7 +151,7 @@ var adm_ENGINE_PROCESSES = {};
    ----------------------------------------------------------------------------
    Static lookup tables for the process timeline: the numeric tuning constants,
    the module color palette, the status-color overrides, the dependency-group
-   labels, and the documentation step-to-card/options mappings.
+   labels, and the documentation step-to-card mappings.
    Prefix: adm
    ============================================================================ */
 
@@ -200,18 +199,13 @@ const adm_GROUP_LABELS = {
     99: 'Queue Processors'
 };
 
-/* Documentation step toggle -> card + sub-options element mapping. */
-const adm_DOC_STEP_OPTION_MAP = [
-    { step: 'adm-doc-step-publish',     card: 'adm-doc-card-publish',     options: 'adm-doc-step-publish-options' },
-    { step: 'adm-doc-step-consolidate', card: 'adm-doc-card-consolidate', options: 'adm-doc-step-consolidate-options' }
-];
-
-/* All documentation step toggles, for card dimming. */
+/* All documentation pipeline steps: API step key -> toggle + card element ids. */
 const adm_DOC_ALL_STEPS = [
-    { step: 'adm-doc-step-ddl',         card: 'adm-doc-card-ddl' },
-    { step: 'adm-doc-step-publish',     card: 'adm-doc-card-publish' },
-    { step: 'adm-doc-step-github',      card: 'adm-doc-card-github' },
-    { step: 'adm-doc-step-consolidate', card: 'adm-doc-card-consolidate' }
+    { key: 'deploy',             step: 'adm-doc-step-deploy',    card: 'adm-doc-card-deploy' },
+    { key: 'generate_ddl',       step: 'adm-doc-step-ddl',       card: 'adm-doc-card-ddl' },
+    { key: 'publish_confluence', step: 'adm-doc-step-publish',   card: 'adm-doc-card-publish' },
+    { key: 'publish_github',     step: 'adm-doc-step-github',    card: 'adm-doc-card-github' },
+    { key: 'manifests',          step: 'adm-doc-step-manifests', card: 'adm-doc-card-manifests' }
 ];
 
 /* Asset-registry pipeline stages: orchestrator stage key -> toggle + card + status ids. */
@@ -3364,9 +3358,9 @@ function adm_toggleSetEnabled(wrapId, enabled, clickAction) {
 /* ============================================================================
    FUNCTIONS: DOCUMENTATION PIPELINE
    ----------------------------------------------------------------------------
-   The Documentation slide-up: step toggles with card dimming and sub-option
-   reveal, the run action that launches the pipeline and polls for status, and
-   the collapsible per-step results. The step toggles are class-driven
+   The Documentation slide-up: step toggles with card dimming, the run action
+   that launches the pipeline and polls for status, and the collapsible per-step
+   results. The step toggles are class-driven
    cc-toggle switches whose clickable wraps route through the delegated click
    dispatcher; state lives in the cc-on / cc-off class on each wrap.
    Prefix: adm
@@ -3396,8 +3390,8 @@ function adm_openDocPipeline() {
         btn.textContent = 'Run Selected';
         btn.setAttribute('data-action-click', 'adm-doc-run');
     }
-    ['generate_ddl', 'publish_confluence', 'publish_github', 'consolidate_upload'].forEach(function(k) {
-        var el = document.getElementById('adm-doc-status-' + adm_docStepIdSuffix(k));
+    adm_DOC_ALL_STEPS.forEach(function(s) {
+        var el = document.getElementById('adm-doc-status-' + adm_docStepIdSuffix(s.key));
         if (el) {
             el.textContent = '';
             el.className = 'adm-doc-card-status';
@@ -3433,7 +3427,7 @@ function adm_closeDocPipeline(target, event) {
     dialog.classList.remove('cc-open');
 }
 
-/* Updates step-card dimming and sub-option visibility from the toggle states. */
+/* Updates step-card dimming from the toggle states. */
 function adm_docUpdateCards() {
     adm_DOC_ALL_STEPS.forEach(function(s) {
         var on = adm_toggleIsOn(s.step);
@@ -3442,23 +3436,12 @@ function adm_docUpdateCards() {
             card.classList.toggle('adm-off', !on);
         }
     });
-    adm_DOC_STEP_OPTION_MAP.forEach(function(pair) {
-        var opts = document.getElementById(pair.options);
-        if (opts) {
-            opts.classList.toggle('adm-hidden', !adm_toggleIsOn(pair.step));
-        }
-    });
 }
 
 /* Flips a documentation step toggle and refreshes the cards. */
 function adm_docToggleStep(target) {
     adm_toggleSet(target.id, !adm_toggleIsOn(target.id));
     adm_docUpdateCards();
-}
-
-/* Toggles a sub-option pill's active state. */
-function adm_docTogglePill(target) {
-    target.classList.toggle('adm-active');
 }
 
 /* Expands or collapses a per-step result disclosure (summary row clicked). */
@@ -3484,18 +3467,11 @@ function adm_runDocPipeline() {
         return;
     }
     var steps = [];
-    if (adm_toggleIsOn('adm-doc-step-ddl')) {
-        steps.push('generate_ddl');
-    }
-    if (adm_toggleIsOn('adm-doc-step-publish')) {
-        steps.push('publish_confluence');
-    }
-    if (adm_toggleIsOn('adm-doc-step-github')) {
-        steps.push('publish_github');
-    }
-    if (adm_toggleIsOn('adm-doc-step-consolidate')) {
-        steps.push('consolidate_upload');
-    }
+    adm_DOC_ALL_STEPS.forEach(function(s) {
+        if (adm_toggleIsOn(s.step)) {
+            steps.push(s.key);
+        }
+    });
     var st = document.getElementById('adm-doc-run-status');
     if (steps.length === 0) {
         st.textContent = 'Select at least one step';
@@ -3503,11 +3479,7 @@ function adm_runDocPipeline() {
         return;
     }
     var payload = {
-        steps: steps,
-        publish_to_confluence: document.getElementById('adm-doc-opt-confluence').classList.contains('adm-active'),
-        export_markdown: document.getElementById('adm-doc-opt-markdown').classList.contains('adm-active'),
-        include_sql_objects: document.getElementById('adm-doc-opt-sql').classList.contains('adm-active'),
-        include_json: document.getElementById('adm-doc-opt-json').classList.contains('adm-active')
+        steps: steps
     };
     adm_docRunning = true;
     adm_docSelectedSteps = steps.slice();
@@ -3619,22 +3591,8 @@ function adm_pollDocStatus() {
                 var icon = r.status === 'warning' ? '\u26A0' : (ok ? '\u2713' : '\u2717');
                 var expanded = !(ok && r.status !== 'warning');
                 var expCls = expanded ? ' adm-expanded' : '';
-                var outputText = '';
-                if (r.output) {
-                    if (typeof r.output === 'string') {
-                        outputText = r.output.trim();
-                    } else if (r.output.value && typeof r.output.value === 'string') {
-                        outputText = r.output.value.trim();
-                    }
-                }
-                var errorText = '';
-                if (r.error) {
-                    if (typeof r.error === 'string') {
-                        errorText = r.error.trim();
-                    } else if (r.error.value && typeof r.error.value === 'string') {
-                        errorText = r.error.value.trim();
-                    }
-                }
+                var outputText = (typeof r.output === 'string') ? r.output.trim() : '';
+                var errorText = (typeof r.error === 'string') ? r.error.trim() : '';
                 html += '<div class="adm-doc-detail ' + cls + '">';
                 html += '<div class="adm-doc-detail-summary" data-action-click="adm-doc-detail-toggle">';
                 html += '<span class="adm-doc-detail-arrow' + expCls + '">\u25B6</span>';

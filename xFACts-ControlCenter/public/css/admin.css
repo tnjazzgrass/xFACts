@@ -2566,7 +2566,7 @@
    CONTENT: PIPELINE MODALS
    ----------------------------------------------------------------------------
    Content inside the Documentation and Asset Registry slide-ups: the pipeline
-   step cards, sub-option pills, run button and overall status, and the
+   step cards and section labels, the run button and overall status, and the
    collapsible per-step result disclosures. Both modals drive their on/off
    switches through the shared cc-toggle chrome; the only page-local toggle
    rule here is the locked-state dimming applied to a non-interactive switch.
@@ -2586,6 +2586,14 @@
     flex-direction: column;
     gap: var(--size-spacing-sm);
     margin-bottom: var(--size-spacing-xl);
+}
+
+/* A group label separating the pipeline step sections. */
+.adm-doc-section-label {
+    font-size: var(--font-size-default);
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--color-text-subtle);
 }
 
 /* A single pipeline step card. */
@@ -2670,44 +2678,6 @@
     opacity: 0.4;
     cursor: default;
     pointer-events: none;
-}
-
-/* Sub-option pill row revealed under a step card. */
-.adm-doc-card-options {
-    display: flex;
-    gap: var(--size-spacing-md);
-    flex-wrap: wrap;
-    margin-top: var(--size-spacing-md);
-    padding-top: var(--size-spacing-md);
-    border-top: var(--size-border-thin) solid var(--color-border-subtle);
-}
-
-/* A single sub-option pill. */
-.adm-doc-pill {
-    display: inline-flex;
-    align-items: center;
-    padding: var(--size-spacing-xs) var(--size-spacing-lg);
-    border-radius: var(--size-radius-lg);
-    font-size: var(--font-size-body);
-    cursor: pointer;
-    transition: all var(--duration-instant);
-    border: var(--size-border-thin) solid transparent;
-    user-select: none;
-    background: var(--color-bg-card);
-    border-color: var(--color-border-default);
-    color: var(--color-text-subtle);
-    font-family: inherit;
-    text-decoration: none;
-}
-
-.adm-doc-pill:hover { /* hover state for a sub-option pill */
-    border-color: var(--color-accent-platform);
-}
-
-.adm-doc-pill.adm-active { /* selected sub-option pill */
-    background: rgba(86, 156, 214, 0.15);
-    border-color: rgba(86, 156, 214, 0.35);
-    color: var(--color-accent-platform);
 }
 
 /* Run-button row at the bottom of the pipeline. */

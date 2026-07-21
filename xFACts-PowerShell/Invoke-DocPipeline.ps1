@@ -13,32 +13,25 @@
     passing -Execute runs them for real. Naming one or more per-step switches
     (for example -Deploy) selects only those steps; naming none selects all.
 
-    For backward compatibility with the Admin doc-pipeline API, when -StepsJson
-    is supplied it selects the steps by key, the per-step switches are ignored,
-    and the run executes for real (-StepsJson implies -Execute, because the API
-    launches real runs). That implication is a temporary bridge to be removed in
-    Task 2 once the API passes -Execute explicitly.
-
-    The Confluence-shaping options (-PublishToConfluence, -ExportMarkdown) are
-    likewise kept only for Admin API compatibility and are inert: the Confluence
-    step always runs a full publish in execute mode. Task 2 removes them together
-    with the Admin UI export-markdown checkbox.
+    When -StepsJson is supplied it selects the steps by key and the per-step
+    switches are ignored; the run mode is still governed by -Execute (preview
+    unless -Execute is passed). The Admin doc-pipeline API passes -Execute and
+    -StepsJson explicitly.
 
     Launched by the /api/admin/doc-pipeline endpoint (fire-and-forget).
 
 .PARAMETER StepsJson
     Comma-separated step keys to run (deploy, generate_ddl, publish_confluence,
-    publish_github, manifests). When supplied, it selects the steps, the per-step
-    switches are ignored, and the run executes for real (-StepsJson implies
-    -Execute). When empty, the per-step switches govern and the run previews
-    unless -Execute is passed.
+    publish_github, manifests). When supplied, it selects the steps and the
+    per-step switches are ignored. When empty, the per-step switches govern the
+    selection. Either way the run previews unless -Execute is passed.
 
 .PARAMETER StatusFile
     Path to the status JSON file the Admin page polls.
 
 .PARAMETER Execute
-    Run the pipeline for real. Without it (and without -StepsJson) every selected
-    step runs its own safe preview and makes no changes.
+    Run the pipeline for real. Without it, every selected step runs its own safe
+    preview and makes no changes.
 
 .PARAMETER Deploy
     Select the Deploy step (deploy authored content GitHub -> live). If no
@@ -61,25 +54,6 @@
     all steps run; naming any runs only the named ones. When this step runs in
     the same invocation as PublishGitHub, the GitHub step is told to skip its own
     manifest rebuild so manifests build exactly once.
-
-.PARAMETER PublishToConfluence
-    Retired Confluence-shaping option, still accepted for Admin API compatibility
-    but inert: the Confluence step always runs a full publish in execute mode.
-    Removed in Task 2 with the Admin UI checkbox.
-
-.PARAMETER ExportMarkdown
-    Retired export-only option, still accepted for Admin API compatibility but
-    inert: the markdown export is now part of every full publish. A run that
-    requests it is accepted, logged, and ignored. Removed in Task 2 with the Admin
-    UI checkbox.
-
-.PARAMETER IncludeSQLObjects
-    Reserved option passed through by the Admin doc-pipeline API. Inert until that
-    endpoint is updated.
-
-.PARAMETER IncludeJSON
-    Reserved option passed through by the Admin doc-pipeline API. Inert until that
-    endpoint is updated.
 
 .COMPONENT
     Documentation.Pipeline
@@ -107,6 +81,12 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-07-21  Pipeline flip (Task 2). Removed the StepsJson-implies-Execute bridge:
+#             the Admin doc-pipeline API now passes -Execute explicitly, so the run
+#             mode comes only from -Execute. Removed the retired -PublishToConfluence,
+#             -ExportMarkdown, -IncludeSQLObjects, and -IncludeJSON parameters and
+#             the export-only tolerant-ignore block; the API no longer passes any of
+#             them.
 # 2026-07-21  Confluence step always runs a full publish in execute mode. The step
 #             now passes -Execute (preview passes nothing); the retired -ExportOnly
 #             pathway is gone. This also fixes the original defect where a direct
@@ -162,9 +142,8 @@
    PARAMETERS: SCRIPT PARAMETERS
    ----------------------------------------------------------------------------
    The step selector (StepsJson), the run-mode switch (Execute), the per-step
-   toggles, the status-file path, and the publish/export options that shape the
-   Confluence step. StepsJson, when supplied, overrides the per-step switches and
-   implies Execute for backward compatibility with the Admin doc-pipeline API.
+   toggles, and the status-file path. StepsJson, when supplied, overrides the
+   per-step switches; the run mode is governed by Execute in every case.
    Prefix: (none)
    ============================================================================ #>
 
@@ -177,11 +156,7 @@ param(
     [switch]$GenerateDDL,
     [switch]$Confluence,
     [switch]$PublishGitHub,
-    [switch]$Manifests,
-    [switch]$PublishToConfluence,
-    [switch]$ExportMarkdown,
-    [switch]$IncludeSQLObjects,
-    [switch]$IncludeJSON
+    [switch]$Manifests
 )
 
 <# ============================================================================
@@ -202,9 +177,9 @@ param(
    The scripts root, the log directory, and the ordered pipeline definition.
    Order matters: steps run in declaration order. Each step carries the arguments
    for both preview and execute mode; the resolver in EXECUTION picks one set per
-   the run mode. The Confluence step's execute-mode arguments are shaped by the
-   publish/export options; the GitHub step's -SkipManifests is added at run time
-   when the manifest step is also selected, so manifests build exactly once.
+   the run mode. The Confluence step always runs a full publish in execute mode;
+   the GitHub step's -SkipManifests is added at run time when the manifest step is
+   also selected, so manifests build exactly once.
    Prefix: (none)
    ============================================================================ #>
 
@@ -290,9 +265,9 @@ function Write-Status {
 <# ============================================================================
    EXECUTION: SCRIPT EXECUTION
    ----------------------------------------------------------------------------
-   Resolves the run mode (execute when -Execute or -StepsJson is supplied,
-   otherwise preview) and which steps run (StepsJson selection when supplied, a
-   named subset of per-step switches when any are named, otherwise all), announces
+   Resolves the run mode (execute when -Execute is supplied, otherwise preview)
+   and which steps run (StepsJson selection when supplied, a named subset of
+   per-step switches when any are named, otherwise all), announces
    both on the console, then runs each selected step in order - narrating each and
    relaying its output - and halting on failure. An empty or unrecognized
    selection prints what it resolved and exits 1; the wrapper never exits without
@@ -301,11 +276,10 @@ function Write-Status {
    Prefix: (none)
    ============================================================================ #>
 
-# Resolve run mode. -Execute runs for real. A supplied -StepsJson also implies
-# execute for the Admin API's fire-and-forget launch (legacy bridge; remove in
-# Task 2 once the API passes -Execute explicitly). Absent both, the run previews.
+# Resolve run mode. -Execute runs for real; absent it, the run previews. The
+# Admin doc-pipeline API passes -Execute explicitly alongside -StepsJson.
 $useStepsJson = -not [string]::IsNullOrWhiteSpace($StepsJson)
-$isExecute = ([bool]$Execute) -or $useStepsJson
+$isExecute = [bool]$Execute
 
 # Requested step keys when -StepsJson is supplied (trimmed, blanks dropped).
 $requestedSteps = if ($useStepsJson) {
@@ -358,24 +332,13 @@ if ($isExecute) {
     Write-Console "Mode: PREVIEW - no changes will be made. Pass -Execute to run for real." 'Yellow'
 }
 if ($useStepsJson) {
-    Write-Console "Selection: -StepsJson '$StepsJson' (implies -Execute; Task 2 will remove that implication)." 'Gray'
+    Write-Console "Selection: -StepsJson '$StepsJson'." 'Gray'
 }
 Write-Console ("Steps selected: " + $(if ($selectedList.Count) { $selectedList -join ', ' } else { '(none)' })) 'Gray'
 if ($unknownKeys.Count) {
     Write-Console ("Unrecognized step keys ignored: " + ($unknownKeys -join ', ')) 'DarkYellow'
 }
 Write-Console ''
-
-# Tolerant-ignore for the retired Confluence export-only pathway. The Admin UI's
-# "export markdown" checkbox still sends -ExportMarkdown; export-only was retired
-# (the markdown export is now part of every full publish), so the option is
-# accepted and ignored here rather than erroring. Task 2 removes the checkbox, the
-# -PublishToConfluence/-ExportMarkdown parameters, and this note - alongside the
-# -StepsJson-implies-Execute bridge.
-if ($ExportMarkdown -and $selected['publish_confluence']) {
-    Write-Console "Note: export-only retired - running full publish. The -ExportMarkdown option is accepted and ignored." 'DarkYellow'
-    Write-Console ''
-}
 
 # Ensure log directory exists.
 if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }

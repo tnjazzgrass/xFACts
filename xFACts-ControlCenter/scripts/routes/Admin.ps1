@@ -266,6 +266,18 @@ $navHtml
             <div class="cc-dialog-body">
                 <div class="adm-doc-pipeline-body">
                     <div class="adm-doc-step-list">
+                        <div class="adm-doc-section-label">Deployment</div>
+                        <div class="adm-doc-card" id="adm-doc-card-deploy">
+                            <div class="adm-doc-card-row">
+                                <div class="adm-doc-card-body">
+                                    <div class="adm-doc-card-title">Deploy Authored Content</div>
+                                    <div class="adm-doc-card-desc">Pull authored files from GitHub into the live server folders</div>
+                                </div>
+                                <span class="adm-doc-card-status" id="adm-doc-status-deploy"></span>
+                                <button class="adm-toggle-btn cc-toggle-wrap" data-action-click="adm-doc-toggle-step" id="adm-doc-step-deploy"><span class="cc-toggle-track cc-on"><span class="cc-toggle-knob cc-on"></span></span></button>
+                            </div>
+                        </div>
+                        <div class="adm-doc-section-label">Documentation</div>
                         <div class="adm-doc-card" id="adm-doc-card-ddl">
                             <div class="adm-doc-card-row">
                                 <div class="adm-doc-card-body">
@@ -285,33 +297,25 @@ $navHtml
                                 <span class="adm-doc-card-status" id="adm-doc-status-publish-confluence"></span>
                                 <button class="adm-toggle-btn cc-toggle-wrap" data-action-click="adm-doc-toggle-step" id="adm-doc-step-publish"><span class="cc-toggle-track cc-on"><span class="cc-toggle-knob cc-on"></span></span></button>
                             </div>
-                            <div class="adm-doc-card-options" id="adm-doc-step-publish-options">
-                                <button class="adm-doc-pill adm-active" id="adm-doc-opt-confluence" data-action-click="adm-doc-toggle-pill" title="Push pages to Confluence Server via REST API">Publish to Confluence</button>
-                                <button class="adm-doc-pill adm-active" id="adm-doc-opt-markdown" data-action-click="adm-doc-toggle-pill" title="Export markdown files for Claude upload">Export Markdown</button>
-                            </div>
                         </div>
                         <div class="adm-doc-card" id="adm-doc-card-github">
                             <div class="adm-doc-card-row">
                                 <div class="adm-doc-card-body">
                                     <div class="adm-doc-card-title">Publish to GitHub</div>
-                                    <div class="adm-doc-card-desc">Push platform files and manifest to GitHub repository</div>
+                                    <div class="adm-doc-card-desc">Push generated platform files to the GitHub repository</div>
                                 </div>
                                 <span class="adm-doc-card-status" id="adm-doc-status-publish-github"></span>
                                 <button class="adm-toggle-btn cc-toggle-wrap" data-action-click="adm-doc-toggle-step" id="adm-doc-step-github"><span class="cc-toggle-track cc-on"><span class="cc-toggle-knob cc-on"></span></span></button>
                             </div>
                         </div>
-                        <div class="adm-doc-card" id="adm-doc-card-consolidate">
+                        <div class="adm-doc-card" id="adm-doc-card-manifests">
                             <div class="adm-doc-card-row">
                                 <div class="adm-doc-card-body">
-                                    <div class="adm-doc-card-title">Consolidate Upload Files</div>
-                                    <div class="adm-doc-card-desc">Collect all platform files into upload folder</div>
+                                    <div class="adm-doc-card-title">Rebuild Manifests</div>
+                                    <div class="adm-doc-card-desc">Rebuild the repository manifest files</div>
                                 </div>
-                                <span class="adm-doc-card-status" id="adm-doc-status-consolidate-upload"></span>
-                                <button class="adm-toggle-btn cc-toggle-wrap" data-action-click="adm-doc-toggle-step" id="adm-doc-step-consolidate"><span class="cc-toggle-track cc-on"><span class="cc-toggle-knob cc-on"></span></span></button>
-                            </div>
-                            <div class="adm-doc-card-options" id="adm-doc-step-consolidate-options">
-                                <button class="adm-doc-pill adm-active" id="adm-doc-opt-sql" data-action-click="adm-doc-toggle-pill" title="Extract SQL object definitions from database">Include SQL Objects</button>
-                                <button class="adm-doc-pill" id="adm-doc-opt-json" data-action-click="adm-doc-toggle-pill" title="Include JSON data files in upload folder">Include JSON</button>
+                                <span class="adm-doc-card-status" id="adm-doc-status-manifests"></span>
+                                <button class="adm-toggle-btn cc-toggle-wrap" data-action-click="adm-doc-toggle-step" id="adm-doc-step-manifests"><span class="cc-toggle-track cc-on"><span class="cc-toggle-knob cc-on"></span></span></button>
                             </div>
                         </div>
                     </div>

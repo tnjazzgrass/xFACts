@@ -1335,14 +1335,6 @@ Add-PodeRoute -Method Post -Path '/api/admin/doc-pipeline' -Authentication 'ADLo
 
         $stepsJoined = $steps -join ','
 
-        # Build switch arguments for options
-        $optionArgs = @()
-        if ([bool]$body.publish_to_confluence) { $optionArgs += '-PublishToConfluence' }
-        if ([bool]$body.export_markdown)       { $optionArgs += '-ExportMarkdown' }
-        if ([bool]$body.include_sql_objects)    { $optionArgs += '-IncludeSQLObjects' }
-        if ([bool]$body.include_json)           { $optionArgs += '-IncludeJSON' }
-        $optionString = $optionArgs -join ' '
-
         $scriptsRoot = 'E:\xFACts-PowerShell'
         $wrapperScript = Join-Path $scriptsRoot 'Invoke-DocPipeline.ps1'
 
@@ -1357,8 +1349,9 @@ Add-PodeRoute -Method Post -Path '/api/admin/doc-pipeline' -Authentication 'ADLo
             Remove-Item $statusFile -Force -ErrorAction SilentlyContinue
         }
 
-        # Launch fire-and-forget
-        $arguments = "-ExecutionPolicy Bypass -File `"$wrapperScript`" -StepsJson `"$stepsJoined`" $optionString"
+        # Launch fire-and-forget. -Execute runs the pipeline for real; -StepsJson
+        # selects the steps the user toggled on.
+        $arguments = "-ExecutionPolicy Bypass -File `"$wrapperScript`" -Execute -StepsJson `"$stepsJoined`""
         Start-Process -FilePath "powershell.exe" `
             -ArgumentList $arguments `
             -WorkingDirectory $scriptsRoot `
