@@ -32,14 +32,14 @@
 /* ============================================================================
    CONSTANTS: RENDER CONFIGURATION
    ----------------------------------------------------------------------------
-   The render configuration: the relative path to the DDL data directory, the
-   set of card labels open by default, the object-kind display order, and the
+   The render configuration: the root-absolute path to the DDL data directory,
+   the set of card labels open by default, the object-kind display order, and the
    JSON-array-to-kind mapping that drives object discovery.
    Prefix: doc
    ============================================================================ */
 
-/* Relative path from a reference page to the DDL data directory. */
-const doc_DATA_BASE_PATH = '../../data/ddl/';
+/* Root-absolute path to the DDL data directory, served by the /generated route. */
+const doc_DATA_BASE_PATH = '/generated/ddl/';
 
 /* Card labels rendered open by default; empty means every card starts closed. */
 const doc_defaultOpenCards = [];
