@@ -775,18 +775,17 @@ For the complete technical reference of every monitoring module’s database sch
 
 ## Reference
 
-### Consolidate-UploadFiles.ps1
+### Deploy-xFACts.ps1
 
-Collects all xFACts platform files from their various server locations into a single flat folder for uploading to Claude as project context. Scans orchestrator scripts, Control Center routes, APIs, modules, CSS, JS, documentation pages, and markdown exports. Optionally extracts stored procedure, trigger, and function definitions from the database and includes JSON data files. Generates a manifest file with source path mappings, collection summary, and per-file origin tracking.
+The deploy half of the inverted xFACts sync: it deploys authored content from GitHub into the live server folders. GitHub is the source of truth for authored files, and this script brings the changed authored files into their live locations. Runs in preview by default and requires -Execute to pull and copy.
 
-**Data Flow:** Scans configured source directories across the xFACts server (orchestrator scripts, Control Center routes, APIs, modules, CSS, JS, documentation pages, planning documents). Copies all discovered files into a single flat output folder at E:\xFACts-Upload and generates a _manifest.txt with the server directory structure map, collection summary, and per-file origin listing.
+**Data Flow:** Reads the GitHub Personal Access Token from dbo.Credentials via Get-ServiceCredentials (ServiceName GitHub_xFACts) and injects it into each git command as a one-shot HTTP Authorization header. Fetches the target branch of tnjazzgrass/xFACts into the server-side staging clone (E:\xFACts-Staging by default), computes the files changed between the clone HEAD and the fetched branch, maps each changed authored repository path to its live location under E:\xFACts-PowerShell, E:\xFACts-ControlCenter, or E:\xFACts-Documentation via the authored deploy map, and copies the changed files there on -Execute. Generated repository paths (xFACts-Generated/*, the manifests, repository-root files) are never copied. Launched as the Deploy Authored Content step of the Admin page pipeline modal, or run standalone.
 
-**Optional Inclusions:** [sort:1] Two optional switches expand the collection scope: -IncludeSQLObjects extracts stored procedure, trigger, and function definitions from the database via sys.sql_modules and writes each as a separate .sql file. -IncludeJSON adds the DDL data files from the documentation data directory. Both default to off when run manually; the Admin page Documentation card provides toggle checkboxes for each.
+**Staging Clone Verified, Never Created:** [sort:1] The script verifies that the staging clone (E:\xFACts-Staging by default) exists, is a git working tree, and has its origin remote pointing at tnjazzgrass/xFACts; any failed check aborts the run. It never creates, clones, or repairs the staging directory - that one-time setup is a manual operation, so the deploy path can never silently stand up a clone against the wrong remote.
 
-**Collision Detection:** [sort:2] Because files from multiple source directories are flattened into a single folder, filename collisions are possible. The script detects and reports collisions rather than silently overwriting, skipping the duplicate file and logging the conflict.
+**Per-Invocation Token, Never Persisted:** [sort:2] The GitHub token is retrieved from dbo.Credentials at run time and passed to each git command as a single-use HTTP Authorization header via git -c http.extraHeader. It is never written to git config, the remote URL, or any file on disk, so the credential does not persist in the staging clone between runs.
 
-  - **Markdown Exports**: [sort:1] Collects the markdown files produced by Publish-ConfluenceDocumentation.ps1 from the data\md directory. When run as part of the full pipeline, these reflect the most current documentation state.
-  - **Documentation Pipeline**: [sort:2] Third and final step in the documentation pipeline. Collects all platform files including freshly generated JSON (from step 1) and markdown exports (from step 2) into a single folder ready for Claude project context upload.
+**Authored-Only Scope:** [sort:3] Deploy copies only authored files, selected through an authored deploy map that is the inverse of the generated file map in Publish-GitHubRepository.ps1. Generated repository paths (xFACts-Generated/*, the manifests) and repository-root files are classified as ignored and never copied. The two maps partition the repository so that every managed path is either authored (deployed by this script) or generated (published in the other direction), never both and never neither.
 
 
 ### Generate-DDLReference.ps1
