@@ -241,7 +241,7 @@ function Invoke-GitStaging {
 
     if ($Token) {
         # Basic auth with the token as the x-access-token password, injected only
-        # for this one invocation via -c; nothing is persisted to disk.
+        # for this one invocation via -c; the token is never persisted to disk.
         $b64 = [Convert]::ToBase64String([System.Text.Encoding]::ASCII.GetBytes("x-access-token:$Token"))
         $gitArgs += @('-c', "http.extraHeader=Authorization: Basic $b64")
     }
