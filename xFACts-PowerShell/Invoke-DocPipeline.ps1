@@ -3,9 +3,9 @@
     xFACts - Documentation Pipeline Wrapper
 
 .DESCRIPTION
-    Orchestrates documentation scripts in sequence (DDL > Publish > Consolidate),
-    writing real-time status to a JSON file that the Control Center Admin page
-    polls for progress updates.
+    Orchestrates documentation scripts in sequence (DDL > Publish), writing
+    real-time status to a JSON file that the Control Center Admin page polls
+    for progress updates.
 
     Launched by the /api/admin/doc-pipeline endpoint (fire-and-forget).
     Not intended for direct manual execution.
@@ -35,6 +35,11 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-07-21  Removed the retired consolidate_upload step from the pipeline
+#             definition (Consolidate-UploadFiles.ps1 is retired; the script
+#             file itself is retained). The -IncludeSQLObjects and -IncludeJSON
+#             switches stay declared because the Admin doc-pipeline API still
+#             passes them; they are inert until that endpoint is updated.
 # 2026-04-02  Bumped output truncation from 2000 to 8000 chars.
 #             Added 'warning' status for exit code 2 (success with warnings).
 #             Pipeline continues on warning - only halts on failure (non-zero,
@@ -101,14 +106,6 @@ $pipeline = @(
         Label  = 'Publish to GitHub'
         Script = 'Publish-GitHubRepository.ps1'
         Args   = '-Execute'
-    },
-    @{
-        Key    = 'consolidate_upload'
-        Label  = 'Consolidate Upload Files'
-        Script = 'Consolidate-UploadFiles.ps1'
-        Args   = @('-Execute') +
-                 $(if ($IncludeSQLObjects) { '-IncludeSQLObjects' } else { @() }) +
-                 $(if ($IncludeJSON) { '-IncludeJSON' } else { @() }) -join ' '
     }
 )
 
