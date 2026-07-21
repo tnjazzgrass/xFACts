@@ -1,5 +1,5 @@
 # xFACts Platform Registry
-Generated: 2026-07-21 16:49:45
+Generated: 2026-07-21 18:06:10
 
 ## Module Registry
 
@@ -149,7 +149,7 @@ Generated: 2026-07-21 16:49:45
 | DmOps | dm-operations.css | WebAsset | CSS | E:\xFACts-ControlCenter\public\css\dm-operations.css | DM Operations CC styles |
 | DmOps | dm-operations.js | WebAsset | JavaScript | E:\xFACts-ControlCenter\public\js\dm-operations.js | DM Operations CC client-side logic |
 | DmOps | DmOperations.ps1 | WebAsset | Route | E:\xFACts-ControlCenter\scripts\routes\DmOperations.ps1 | DM Operations CC page route |
-| Documentation.Pipeline | Consolidate-UploadFiles.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Consolidate-UploadFiles.ps1 | Collects all platform files into upload folder |
+| Documentation.Pipeline | Deploy-xFACts.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Deploy-xFACts.ps1 | Deploys authored xFACts content from GitHub into the live server folders - the deploy half of the inverted sync. Verifies a server-side staging clone, pulls authored files with a per-invocation GitHub token, maps changed authored repository paths to their live locations and copies them. |
 | Documentation.Pipeline | Generate-DDLReference.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Generate-DDLReference.ps1 | Orchestrates DDL reference JSON generation |
 | Documentation.Pipeline | Invoke-DocPipeline.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Invoke-DocPipeline.ps1 | Orchestrates the full documentation pipeline |
 | Documentation.Pipeline | Publish-ConfluenceDocumentation.ps1 | PowerShell | Script | E:\xFACts-PowerShell\Publish-ConfluenceDocumentation.ps1 | Publishes HTML docs to Confluence and exports markdown |
