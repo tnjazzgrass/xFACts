@@ -38,8 +38,8 @@ Import-Module Pode
 <# ============================================================================
    CONSTANTS: SERVER CONFIGURATION
    ----------------------------------------------------------------------------
-   Base paths and the server configuration map (port, bind address, public and
-   log roots, AD domain) used throughout server startup.
+   Base paths and the server configuration map (port, bind address, public, log,
+   and generated-content roots, AD domain) used throughout server startup.
    Prefix: (none)
    ============================================================================ #>
 
@@ -53,6 +53,7 @@ $script:Config = @{
     ScriptRoot  = $PSScriptRoot
     PublicRoot  = Join-Path $script:BaseRoot 'public'
     LogPath     = Join-Path $script:BaseRoot 'logs'
+    GeneratedRoot = 'E:\xFACts-Generated'
     ADDomain    = 'fac.local'
 }
 
@@ -76,6 +77,7 @@ Start-PodeServer {
     Add-PodeStaticRoute -Path '/js' -Source (Join-Path $script:Config.PublicRoot 'js')
     Add-PodeStaticRoute -Path '/images' -Source (Join-Path $script:Config.PublicRoot 'images')
     Add-PodeStaticRoute -Path '/docs' -Source (Join-Path $script:Config.PublicRoot 'docs')
+    Add-PodeStaticRoute -Path '/generated' -Source $script:Config.GeneratedRoot
 
     # Pode File Logging
     New-PodeLoggingMethod -File -Name 'requests' -Path $script:Config.LogPath | Enable-PodeRequestLogging
