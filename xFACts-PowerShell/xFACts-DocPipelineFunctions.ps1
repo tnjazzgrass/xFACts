@@ -34,6 +34,12 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-07-21  Get-SqlObjectDefinitions now excludes retired platform schemas at
+#             extraction via a named $ExcludedSchemas list (currently Legacy),
+#             applied alongside the sys/INFORMATION_SCHEMA catalog exclusions.
+#             Legacy objects are treated as nonexistent - they never reach the
+#             repository or the publish audit. Add a schema name to the list to
+#             drop it from every extraction in one edit.
 # 2026-06-20  Get-RegistryExportMarkdown now returns a hashtable with Markdown
 #             and TableCount instead of a bare markdown string, so callers can
 #             report how many registry tables the snapshot covered.
@@ -98,6 +104,13 @@ function Get-SqlObjectDefinitions {
         [string]$DatabaseName = $script:XFActsDatabase
     )
 
+    # Platform schemas treated as nonexistent by the pipeline. Legacy is retired
+    # content excluded here at extraction so it never reaches the repository or
+    # the publish audit. Add a schema name to drop it from every extraction.
+    $ExcludedSchemas = @('Legacy')
+    # Render the exclusion list as a quoted, comma-separated SQL set literal.
+    $excludedSchemaList = ($ExcludedSchemas | ForEach-Object { "'$_'" }) -join ', '
+
     $query = @"
 SELECT
     s.name AS schema_name,
@@ -108,6 +121,7 @@ FROM sys.sql_modules m
 INNER JOIN sys.objects o ON m.object_id = o.object_id
 INNER JOIN sys.schemas s ON o.schema_id = s.schema_id
 WHERE s.name NOT IN ('sys', 'INFORMATION_SCHEMA')
+  AND s.name NOT IN ($excludedSchemaList)
   AND o.is_ms_shipped = 0
 ORDER BY s.name, o.type_desc, o.name
 "@
