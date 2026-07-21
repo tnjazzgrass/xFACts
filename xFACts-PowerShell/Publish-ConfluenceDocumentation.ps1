@@ -93,6 +93,39 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-07-21  Guide converters now strip the redesigned mock UI. Both
+#             Convert-GuideToStorageFormat and Convert-GuideToMarkdown matched the
+#             pre-June class names (guide-mock, mock-*, guide-jump-nav, step-num-badge,
+#             key-item), so none fired and the doc-guide-mock blocks survived into the
+#             output; the mock <input readonly> markup then failed Confluence XHTML
+#             validation with a 400. Updated every guide selector to its doc- prefixed
+#             name. Also dropped the guide-step wrapper strip: it removed the opening
+#             div only, which unbalanced the doc-body-inner extraction and truncated
+#             the page - the wrapper is now removed by the downstream tag strip.
+# 2026-07-21  Guide-page discovery updated for the current page structure: the
+#             title is read from the classed heading (h1 with attributes), and the
+#             parent is derived by reverse-lookup - the single narrative page whose
+#             HTML links to guides/<file>. Zero or multiple linking pages exclude
+#             the guide with a specific warning and count toward the
+#             excluded-at-discovery tally. Replaces the stale bare-h1 title scrape
+#             and the static doc-nav breadcrumb parse the redesign removed.
+# 2026-07-21  Markdown exports regain their title and subtitle headings: the
+#             narrative, architecture, and CC-guide converters now read the title
+#             from the current doc-page-title heading (allowing attributes) and the
+#             subtitle from doc-page-subtitle, taken from the full page header since
+#             it sits outside the extracted doc-body-inner content. Removed the
+#             obsolete page-header strip, and the architecture converter now emits
+#             its title heading. Added a pages-excluded-at-discovery tally to the
+#             run summary (exclusions are not failures and do not affect the exit
+#             code).
+# 2026-07-21  Replaced the stale page-wrapper body-extraction regex in
+#             Convert-HtmlToStorageFormat and Convert-ArchHtmlToStorageFormat with
+#             Get-DocBodyInner, which extracts the doc-body-inner wrapper the pages
+#             now use. Extraction failure returns null so the caller skips the page
+#             instead of submitting the whole document (doctype included) for a 400.
+#             Added attempted/succeeded/failed page counters, an end-of-run summary,
+#             and exit code 2 on any page failure (0 when all succeed) so the
+#             pipeline surfaces partial failures instead of reporting clean success.
 # 2026-06-20  Conformed to the PowerShell file format spec: comment-based-help
 #             header and section banners, dedicated CHANGELOG section, single
 #             EXECUTION section after the functions, function purpose comments,
@@ -219,15 +252,50 @@ $DocRegistryPath = Join-Path $DocsRoot 'data\ddl\doc-registry.json'
    Prefix: (none)
    ============================================================================ #>
 
+# Extracts the inner HTML of the doc-body-inner wrapper div, or returns null when the page has no such wrapper.
+function Get-DocBodyInner {
+    param([string]$HtmlContent)
+
+    $match = [regex]::Match($HtmlContent, '<div class="doc-body-inner[^"]*">')
+    if (-not $match.Success) {
+        return $null
+    }
+
+    $innerStart = $match.Index + $match.Length
+    $depth = 1
+    $searchIdx = $innerStart
+    while ($searchIdx -lt $HtmlContent.Length) {
+        $nextOpen = $HtmlContent.IndexOf('<div', $searchIdx)
+        $nextClose = $HtmlContent.IndexOf('</div>', $searchIdx)
+        if ($nextClose -eq -1) {
+            return $null
+        }
+        if ($nextOpen -ne -1 -and $nextOpen -lt $nextClose) {
+            $depth++
+            $searchIdx = $nextOpen + 4
+        }
+        else {
+            $depth--
+            if ($depth -eq 0) {
+                return $HtmlContent.Substring($innerStart, $nextClose - $innerStart)
+            }
+            $searchIdx = $nextClose + 6
+        }
+    }
+
+    return $null
+}
+
 # Converts a narrative documentation HTML page into Confluence Storage Format.
 function Convert-HtmlToStorageFormat {
     param([string]$HtmlContent, [string]$PageTitle)
 
-    $body = $HtmlContent
-
-    # Extract body content inside page-wrapper
-    if ($body -match '(?s)<div class="page-wrapper">(.*)</div>\s*<script') {
-        $body = $Matches[1]
+    # Extract the inner content of the doc-body-inner wrapper. When the wrapper is
+    # absent the page structure is unrecognized; return null so the caller skips
+    # publishing rather than submitting the whole document, doctype included.
+    $body = Get-DocBodyInner -HtmlContent $HtmlContent
+    if ($null -eq $body) {
+        return $null
     }
 
     # -- PHASE 1: Remove non-Confluence elements --
@@ -555,11 +623,12 @@ function Convert-ArchHtmlToStorageFormat {
         [hashtable]$JsonDataCache
     )
 
-    $body = $HtmlContent
-
-    # Extract body content inside page-wrapper
-    if ($body -match '(?s)<div class="page-wrapper">(.*)</div>\s*<script') {
-        $body = $Matches[1]
+    # Extract the inner content of the doc-body-inner wrapper. When the wrapper is
+    # absent the page structure is unrecognized; return null so the caller skips
+    # publishing rather than submitting the whole document, doctype included.
+    $body = Get-DocBodyInner -HtmlContent $HtmlContent
+    if ($null -eq $body) {
+        return $null
     }
 
     # -- PHASE 0: Architecture-specific element conversion --
@@ -1058,8 +1127,8 @@ function Convert-GuideToStorageFormat {
     $body = $body -replace '(?s)<style>.*?</style>', ''
 
     # Guide mockup blocks (visual renderings) - depth-counted removal
-    while ($body.Contains('<div class="guide-mock"')) {
-        $gmStart = $body.IndexOf('<div class="guide-mock"')
+    while ($body.Contains('<div class="doc-guide-mock"')) {
+        $gmStart = $body.IndexOf('<div class="doc-guide-mock"')
         if ($gmStart -eq -1) { break }
         $depth = 0; $si = $gmStart; $gmEnd = -1
         while ($si -lt $body.Length) {
@@ -1075,27 +1144,24 @@ function Convert-GuideToStorageFormat {
     }
 
     # Jump nav
-    $body = $body -replace '(?s)<div class="guide-jump-nav">.*?</div>', ''
+    $body = $body -replace '(?s)<div class="doc-guide-jump-nav">.*?</div>', ''
 
     # Step number badges inside h2 tags - convert to plain number prefix
-    $body = $body -replace '<span class="step-num-badge">(\d+)</span>\s*', '$1. '
-
-    # Guide step wrapper divs (keep content, strip wrapper)
-    $body = $body -replace '<div class="guide-step"[^>]*>', ''
+    $body = $body -replace '<span class="doc-step-num-badge">(\d+)</span>\s*', '$1. '
 
     # Inline key-item spans
-    $body = $body -replace '<span class="key-item">(.*?)</span>', '$1'
+    $body = $body -replace '<span class="doc-key-item">(.*?)</span>', '$1'
 
     # Mock environment badge spans - convert to plain text
-    $body = $body -replace '<span class="mock-env-badge[^"]*">([^<]*)</span>', '<strong>$1</strong>'
+    $body = $body -replace '<span class="doc-mock-env-badge[^"]*">([^<]*)</span>', '<strong>$1</strong>'
 
     # Mock badge-fv spans
-    $body = $body -replace '<span class="mock-badge-fv">([^<]*)</span>', '($1)'
+    $body = $body -replace '<span class="doc-mock-badge-fv">([^<]*)</span>', '($1)'
 
     # Mock chip spans (various types)
-    $body = $body -replace '<span class="mock-chip[^"]*">([^<]*(?:<[^>]+>[^<]*)*)</span>', '$1'
-    $body = $body -replace '<span class="mock-chip-nullify"[^>]*>[^<]*</span>', ''
-    $body = $body -replace '<span class="mock-chip-required"[^>]*>[^<]*</span>', ''
+    $body = $body -replace '<span class="doc-mock-chip[^"]*">([^<]*(?:<[^>]+>[^<]*)*)</span>', '$1'
+    $body = $body -replace '<span class="doc-mock-chip-nullify"[^>]*>[^<]*</span>', ''
+    $body = $body -replace '<span class="doc-mock-chip-required"[^>]*>[^<]*</span>', ''
 
     # Standalone breadcrumb nav (guide pages use a simple breadcrumb, not nav.js)
     $body = $body -replace '(?s)<div class="doc-nav">\s*<a[^>]*>.*?</a>\s*<span[^>]*>.*?</span>\s*<span[^>]*>.*?</span>\s*</div>', ''
@@ -1109,16 +1175,13 @@ function Convert-GuideToStorageFormat {
     $body = $body -replace '&ensp;', '&#8194;'
     $body = $body -replace '&empty;', '&#8709;'
 
-    # Extract page-wrapper content
-    # Guide pages have no <script> tag at the end, so the standard converter's
-    # extraction regex (which anchors on </div>\s*<script) won't match.
-    # Extract here before delegating.
-    if ($body -match '(?s)<div class="page-wrapper">(.*)</div>\s*</body>') {
-        $body = '<div class="page-wrapper">' + $Matches[1] + '</div>'
-    }
-
-    # Now run the standard narrative converter
+    # Delegate to the standard narrative converter, which extracts the
+    # doc-body-inner wrapper from the stripped guide HTML. Propagate its null
+    # result so the caller skips the page rather than publishing a bare banner.
     $converted = Convert-HtmlToStorageFormat -HtmlContent $body -PageTitle $PageTitle
+    if ($null -eq $converted) {
+        return $null
+    }
 
     return $banner + "`n" + $converted
 }
@@ -1280,8 +1343,6 @@ function Convert-CcGuideToStorageFormat {
    edit-restriction application, and the publish wrapper that ties them together.
    Prefix: (none)
    ============================================================================ #>
-
-# Establishes an authenticated Confluence Server session via form login.
 
 # Establishes an authenticated Confluence Server session via form login.
 function Connect-Confluence {
@@ -1516,10 +1577,10 @@ function Publish-ConfluencePage {
             if ($Editors) {
                 Set-ConfluencePageRestrictions -BaseUrl $BaseUrl -Session $Session -PageId $existing.id -Editors $Editors
             }
-            return $existing.id
+            return [pscustomobject]@{ PageId = $existing.id; Ok = [bool]$result }
         } else {
             Write-Console "  [PREVIEW] Would update to v$($existing.version.number + 1)" 'DarkYellow'
-            return $existing.id
+            return [pscustomobject]@{ PageId = $existing.id; Ok = $true }
         }
     } else {
         Write-Console "  Page does not exist. Creating..." 'Yellow'
@@ -1530,12 +1591,12 @@ function Publish-ConfluencePage {
                 if ($Editors) {
                     Set-ConfluencePageRestrictions -BaseUrl $BaseUrl -Session $Session -PageId $result.id -Editors $Editors
                 }
-                return $result.id
+                return [pscustomobject]@{ PageId = $result.id; Ok = $true }
             }
-            return $null
+            return [pscustomobject]@{ PageId = $null; Ok = $false }
         } else {
             Write-Console "  [PREVIEW] Would create as child of $ParentPageId" 'DarkYellow'
-            return 'preview-id'
+            return [pscustomobject]@{ PageId = 'preview-id'; Ok = $true }
         }
     }
 }
@@ -1552,25 +1613,25 @@ function Publish-ConfluencePage {
 function Convert-HtmlToMarkdown {
     param([string]$HtmlContent)
 
-    $body = $HtmlContent
-
-    # Extract page-wrapper content
-    if ($body -match '(?s)<div class="page-wrapper">(.*)</div>\s*<script') {
-        $body = $Matches[1]
+    # Narrow to the doc-body-inner wrapper content; yield empty markdown when the
+    # wrapper is absent rather than emitting the whole document.
+    $body = Get-DocBodyInner -HtmlContent $HtmlContent
+    if ($null -eq $body) {
+        return ''
     }
 
-    # Extract title
+    # Extract title and subtitle from the full page header (they live in doc-header,
+    # outside the doc-body-inner content extracted above).
     $title = ''
-    if ($body -match '<h1>(.*?)</h1>') {
+    if ($HtmlContent -match '<h1[^>]*>(.*?)</h1>') {
         $title = $Matches[1] -replace '<[^>]+>', ''
         $title = $title -replace '&mdash;', [char]0x2014
         $title = $title -replace '&rsquo;', [char]0x2019
         $title = $title -replace '&amp;', '&'
     }
 
-    # Extract subtitle
     $subtitle = ''
-    if ($body -match '<div class="subtitle">(.*?)</div>') {
+    if ($HtmlContent -match '<div class="doc-page-subtitle">(.*?)</div>') {
         $subtitle = $Matches[1]
         $subtitle = $subtitle -replace '&mdash;', [char]0x2014
         $subtitle = $subtitle -replace '&rsquo;', [char]0x2019
@@ -1579,8 +1640,8 @@ function Convert-HtmlToMarkdown {
         $subtitle = $subtitle -replace '&amp;', '&'
     }
 
-    # Remove non-content elements
-    $body = $body -replace '(?s)<div class="page-header">.*?</div>\s*</div>', ''
+    # Remove non-content elements (the page header lives outside doc-body-inner and
+    # is captured separately above, so no header strip is needed here).
     $body = $body -replace '(?s)<div class="doc-nav">.*?</div>', ''
     $body = $body -replace '(?s)<div class="doc-footer">\s*(?:<p[^>]*>.*?</p>\s*)*</div>', ''
     $body = $body -replace '(?s)<div style="text-align: center;">\s*<a[^>]*class="ref-link"[^>]*>.*?</a>\s*</div>', ''
@@ -1721,16 +1782,17 @@ function Convert-ArchHtmlToMarkdown {
         [hashtable]$JsonDataCache
     )
 
-    $body = $HtmlContent
-
-    # Extract page-wrapper content
-    if ($body -match '(?s)<div class="page-wrapper">(.*)</div>\s*<script') {
-        $body = $Matches[1]
+    # Narrow to the doc-body-inner wrapper content; yield empty markdown when the
+    # wrapper is absent rather than emitting the whole document.
+    $body = Get-DocBodyInner -HtmlContent $HtmlContent
+    if ($null -eq $body) {
+        return ''
     }
 
-    # Extract title
+    # Extract title from the full page header (it lives in doc-header, outside the
+    # doc-body-inner content extracted above).
     $title = ''
-    if ($body -match '<h1>(.*?)</h1>') {
+    if ($HtmlContent -match '<h1[^>]*>(.*?)</h1>') {
         $title = $Matches[1] -replace '<[^>]+>', ''
         $title = $title -replace '&mdash;', [char]0x2014
         $title = $title -replace '&rsquo;', [char]0x2019
@@ -1839,8 +1901,8 @@ function Convert-ArchHtmlToMarkdown {
         $body = $body.Substring(0, $afStart) + $mdTable + $body.Substring($afEnd)
     }
 
-    # Remove non-content elements
-    $body = $body -replace '(?s)<div class="page-header">.*?</div>\s*</div>', ''
+    # Remove non-content elements (the page header lives outside doc-body-inner and
+    # is captured separately above, so no header strip is needed here).
     $body = $body -replace '(?s)<div class="doc-nav">.*?</div>', ''
     $body = $body -replace '(?s)<div class="doc-footer">\s*(?:<p[^>]*>.*?</p>\s*)*</div>', ''
     $body = $body -replace '(?s)<div style="text-align: center;">\s*<a[^>]*class="ref-link"[^>]*>.*?</a>\s*</div>', ''
@@ -1932,6 +1994,11 @@ function Convert-ArchHtmlToMarkdown {
     # Collapse 3+ consecutive newlines to 2
     $body = $body -replace '(?m)\n{3,}', "`n`n"
     $body = $body.Trim()
+
+    # Prepend the page title as an H1 heading so the export carries its title.
+    if ($title) {
+        return "# $title`n`n" + $body
+    }
 
     return $body
 }
@@ -2254,8 +2321,8 @@ function Convert-GuideToMarkdown {
     $body = $body -replace '(?s)<style>.*?</style>', ''
 
     # Guide mockup blocks - depth-counted removal
-    while ($body.Contains('<div class="guide-mock"')) {
-        $gmStart = $body.IndexOf('<div class="guide-mock"')
+    while ($body.Contains('<div class="doc-guide-mock"')) {
+        $gmStart = $body.IndexOf('<div class="doc-guide-mock"')
         if ($gmStart -eq -1) { break }
         $depth = 0; $si = $gmStart; $gmEnd = -1
         while ($si -lt $body.Length) {
@@ -2271,21 +2338,18 @@ function Convert-GuideToMarkdown {
     }
 
     # Jump nav
-    $body = $body -replace '(?s)<div class="guide-jump-nav">.*?</div>', ''
+    $body = $body -replace '(?s)<div class="doc-guide-jump-nav">.*?</div>', ''
 
     # Step number badges - convert to plain number
-    $body = $body -replace '<span class="step-num-badge">(\d+)</span>\s*', '$1. '
-
-    # Guide step wrapper divs
-    $body = $body -replace '<div class="guide-step"[^>]*>', ''
+    $body = $body -replace '<span class="doc-step-num-badge">(\d+)</span>\s*', '$1. '
 
     # Inline visual elements
-    $body = $body -replace '<span class="key-item">(.*?)</span>', '$1'
-    $body = $body -replace '<span class="mock-env-badge[^"]*">([^<]*)</span>', '$1'
-    $body = $body -replace '<span class="mock-badge-fv">([^<]*)</span>', '($1)'
-    $body = $body -replace '<span class="mock-chip[^"]*">([^<]*(?:<[^>]+>[^<]*)*)</span>', '$1'
-    $body = $body -replace '<span class="mock-chip-nullify"[^>]*>[^<]*</span>', ''
-    $body = $body -replace '<span class="mock-chip-required"[^>]*>[^<]*</span>', ''
+    $body = $body -replace '<span class="doc-key-item">(.*?)</span>', '$1'
+    $body = $body -replace '<span class="doc-mock-env-badge[^"]*">([^<]*)</span>', '$1'
+    $body = $body -replace '<span class="doc-mock-badge-fv">([^<]*)</span>', '($1)'
+    $body = $body -replace '<span class="doc-mock-chip[^"]*">([^<]*(?:<[^>]+>[^<]*)*)</span>', '$1'
+    $body = $body -replace '<span class="doc-mock-chip-nullify"[^>]*>[^<]*</span>', ''
+    $body = $body -replace '<span class="doc-mock-chip-required"[^>]*>[^<]*</span>', ''
 
     # Standalone breadcrumb nav
     $body = $body -replace '(?s)<div class="doc-nav">\s*<a[^>]*>.*?</a>\s*<span[^>]*>.*?</span>\s*<span[^>]*>.*?</span>\s*</div>', ''
@@ -2294,14 +2358,8 @@ function Convert-GuideToMarkdown {
     $body = $body -replace '<span[^>]*>', ''
     $body = $body -replace '</span>', ''
 
-    # Extract page-wrapper content
-    # Guide pages have no <script> tag, so the standard converter's extraction
-    # regex won't match. Extract here before delegating.
-    if ($body -match '(?s)<div class="page-wrapper">(.*)</div>\s*</body>') {
-        $body = '<div class="page-wrapper">' + $Matches[1] + '</div>'
-    }
-
-    # Delegate to standard narrative markdown converter
+    # Delegate to the standard narrative markdown converter, which narrows the
+    # stripped guide HTML to its doc-body-inner wrapper.
     return Convert-HtmlToMarkdown -HtmlContent $body
 }
 
@@ -2318,7 +2376,7 @@ function Convert-CcGuideToMarkdown {
 
     # Extract title
     $title = ''
-    if ($HtmlContent -match '<h1>(.*?)</h1>') {
+    if ($HtmlContent -match '<h1[^>]*>(.*?)</h1>') {
         $title = $Matches[1] -replace '<[^>]+>', ''
         # Decode entities in title
         $title = $title -replace '&mdash;', [char]0x2014
@@ -2477,6 +2535,14 @@ function Convert-CcGuideToMarkdown {
    Prefix: (none)
    ============================================================================ #>
 
+# Publishing outcome counters for the end-of-run summary and exit code.
+$pagesAttempted = 0
+$pagesSucceeded = 0
+$pagesFailed = 0
+
+# Count of pages dropped during discovery. Not failures, so not counted in the exit code.
+$pagesExcludedAtDiscovery = 0
+
 if (-not (Test-Path $DocRegistryPath)) {
     Write-Error "doc-registry.json not found at $DocRegistryPath. Run Generate-DDLReference.ps1 -Execute first."
     exit 1
@@ -2595,8 +2661,9 @@ Write-Console "Loaded $($PageRegistry.Count) pages from doc-registry.json" 'Cyan
 Write-Console ""
 
 # Guide pages: standalone user guide pages discovered by scanning the guides
-# directory. Title and parent pageId are extracted from the HTML content (title
-# from the <h1> tag, parent from the breadcrumb link in <div class="doc-nav">).
+# directory. The title comes from the page heading; the parent is inferred by
+# reverse-lookup - the narrative page whose HTML links to guides/<file>. Exactly
+# one linking page is required; zero or several exclude the guide with a warning.
 # No registry file needed - drop an HTML file in the folder and it is discovered.
 
 $GuideRegistry = @()
@@ -2605,9 +2672,9 @@ if (Test-Path $GuidesPath) {
     foreach ($guideFile in $guideFiles) {
         $guideHtml = Get-Content -Path $guideFile.FullName -Raw -Encoding UTF8
 
-        # Extract title from <h1> tag
+        # Extract the title from the page heading (allow attributes on the h1 tag).
         $guideTitle = ''
-        if ($guideHtml -match '<h1>(.*?)</h1>') {
+        if ($guideHtml -match '<h1[^>]*>(.*?)</h1>') {
             $guideTitle = $Matches[1] -replace '<[^>]+>', ''
             $guideTitle = $guideTitle -replace '&mdash;', [char]0x2014
             $guideTitle = $guideTitle -replace '&rsquo;', [char]0x2019
@@ -2615,21 +2682,40 @@ if (Test-Path $GuidesPath) {
             $guideTitle = $guideTitle.Trim()
         }
 
-        # Extract parent pageId from breadcrumb nav link
-        $guideParent = ''
-        if ($guideHtml -match '<div class="doc-nav">\s*<a href="[^"]*?([^/]+)\.html"') {
-            $guideParent = $Matches[1]
+        if (-not $guideTitle) {
+            Write-Warning "Guide page excluded - no title heading found: $($guideFile.Name)"
+            $pagesExcludedAtDiscovery++
+            continue
         }
 
-        if ($guideTitle -and $guideParent) {
-            $GuideRegistry += @{
-                File         = $guideFile.Name
-                Title        = $guideTitle
-                ParentPageId = $guideParent
-                FullPath     = $guideFile.FullName
+        # Derive the parent by reverse-lookup: the narrative page whose HTML links to
+        # this guide (the tile that makes it reachable). The inference is guarded -
+        # exactly one linking page is required; zero or several exclude the guide.
+        $linkingPages = @()
+        $narrativeFiles = Get-ChildItem -Path $PagesPath -Filter "*.html" -File -ErrorAction SilentlyContinue
+        foreach ($narrativeFile in $narrativeFiles) {
+            $narrativeHtml = Get-Content -Path $narrativeFile.FullName -Raw -Encoding UTF8
+            if ($narrativeHtml -match [regex]::Escape("guides/$($guideFile.Name)")) {
+                $linkingPages += $narrativeFile.BaseName
             }
-        } else {
-            Write-Warning "Guide page missing title or breadcrumb parent: $($guideFile.Name)"
+        }
+
+        if ($linkingPages.Count -eq 0) {
+            Write-Warning "Guide page excluded - no linking page found: $($guideFile.Name)"
+            $pagesExcludedAtDiscovery++
+            continue
+        }
+        if ($linkingPages.Count -gt 1) {
+            Write-Warning "Guide page excluded - multiple linking pages for $($guideFile.Name): $($linkingPages -join ', ')"
+            $pagesExcludedAtDiscovery++
+            continue
+        }
+
+        $GuideRegistry += @{
+            File         = $guideFile.Name
+            Title        = $guideTitle
+            ParentPageId = $linkingPages[0]
+            FullPath     = $guideFile.FullName
         }
     }
     if ($GuideRegistry.Count -gt 0) {
@@ -2748,37 +2834,46 @@ if ($hubPage) {
     $htmlPath = Join-Path $PagesPath $hubPage.HtmlFile
     if (Test-Path $htmlPath) {
         Write-Console "[$($hubPage.Title)]" 'White'
+        $pagesAttempted++
         $htmlContent = Get-Content -Path $htmlPath -Raw -Encoding UTF8
         $storageBody = Convert-HtmlToStorageFormat -HtmlContent $htmlContent -PageTitle $hubPage.Title
 
-        # Build Cast of Characters table from registry data
-        $castTable = '<table><tbody><tr><th>Module</th><th>Description</th></tr>'
-        foreach ($mod in ($activePages | Where-Object { -not $_.IsHub })) {
-            # Find description from the registry JSON sections
-            $regEntry = $registryJson | Where-Object { $_.pageId -eq $mod.Id }
-            $desc = ''
-            if ($regEntry -and $regEntry.sections) {
-                $primarySection = $regEntry.sections | Where-Object { $_.sectionOrder -eq 1 } | Select-Object -First 1
-                if ($primarySection -and $primarySection.description) {
-                    $desc = $primarySection.description
+        if ($null -eq $storageBody) {
+            Write-Error "Extraction failed for $($hubPage.HtmlFile): doc-body-inner wrapper not found; page skipped."
+            $pagesFailed++
+        } else {
+            # Build Cast of Characters table from registry data
+            $castTable = '<table><tbody><tr><th>Module</th><th>Description</th></tr>'
+            foreach ($mod in ($activePages | Where-Object { -not $_.IsHub })) {
+                # Find description from the registry JSON sections
+                $regEntry = $registryJson | Where-Object { $_.pageId -eq $mod.Id }
+                $desc = ''
+                if ($regEntry -and $regEntry.sections) {
+                    $primarySection = $regEntry.sections | Where-Object { $_.sectionOrder -eq 1 } | Select-Object -First 1
+                    if ($primarySection -and $primarySection.description) {
+                        $desc = $primarySection.description
+                    }
                 }
+                $linkTitle = $mod.Title
+                $castTable += "<tr><td><ac:link><ri:page ri:content-title=`"$TitlePrefix$linkTitle`" /><ac:plain-text-link-body><![CDATA[$linkTitle]]></ac:plain-text-link-body></ac:link></td><td>$desc</td></tr>"
             }
-            $linkTitle = $mod.Title
-            $castTable += "<tr><td><ac:link><ri:page ri:content-title=`"$TitlePrefix$linkTitle`" /><ac:plain-text-link-body><![CDATA[$linkTitle]]></ac:plain-text-link-body></ac:link></td><td>$desc</td></tr>"
+            $castTable += '</tbody></table>'
+
+            # Inject the table after the Cast of Characters intro paragraph
+            if ($storageBody -match '(?s)(<h2>The Cast of Characters</h2>.*?</p>)') {
+                $storageBody = $storageBody -replace [regex]::Escape($Matches[1]), "$($Matches[1])`n$castTable"
+            }
+
+            Write-Console "  Converted: $($storageBody.Length) chars" 'Gray'
+
+            $result = Publish-ConfluencePage -BaseUrl $BaseUrl -Session $session -SpaceKey $SpaceKey -Title "$TitlePrefix$($hubPage.Title)" -StorageBody $storageBody -ParentPageId $rootParentId -Execute $Execute -Editors $Editors
+            $pageIds[$hubPage.Id] = $result.PageId
+            if ($result.Ok) { $pagesSucceeded++ } else { $pagesFailed++ }
         }
-        $castTable += '</tbody></table>'
-
-        # Inject the table after the Cast of Characters intro paragraph
-        if ($storageBody -match '(?s)(<h2>The Cast of Characters</h2>.*?</p>)') {
-            $storageBody = $storageBody -replace [regex]::Escape($Matches[1]), "$($Matches[1])`n$castTable"
-        }
-
-        Write-Console "  Converted: $($storageBody.Length) chars" 'Gray'
-
-        $pageId = Publish-ConfluencePage -BaseUrl $BaseUrl -Session $session -SpaceKey $SpaceKey -Title "$TitlePrefix$($hubPage.Title)" -StorageBody $storageBody -ParentPageId $rootParentId -Execute $Execute -Editors $Editors
-        $pageIds[$hubPage.Id] = $pageId
     } else {
         Write-Warning "HTML file not found: $htmlPath"
+        $pagesAttempted++
+        $pagesFailed++
     }
     Write-Console ""
 }
@@ -2789,15 +2884,27 @@ foreach ($page in $modulePages) {
     $htmlPath = Join-Path $PagesPath $page.HtmlFile
     if (Test-Path $htmlPath) {
         Write-Console "[$($page.Title)]" 'White'
+        $pagesAttempted++
         $htmlContent = Get-Content -Path $htmlPath -Raw -Encoding UTF8
         $storageBody = Convert-HtmlToStorageFormat -HtmlContent $htmlContent -PageTitle $page.Title
+
+        if ($null -eq $storageBody) {
+            Write-Error "Extraction failed for $($page.HtmlFile): doc-body-inner wrapper not found; page skipped."
+            $pagesFailed++
+            Write-Console ""
+            continue
+        }
+
         Write-Console "  Converted: $($storageBody.Length) chars" 'Gray'
 
         $parentId = $pageIds[$page.ParentId]
-        $pageId = Publish-ConfluencePage -BaseUrl $BaseUrl -Session $session -SpaceKey $SpaceKey -Title "$TitlePrefix$($page.Title)" -StorageBody $storageBody -ParentPageId $parentId -Execute $Execute -Editors $Editors
-        $pageIds[$page.Id] = $pageId
+        $result = Publish-ConfluencePage -BaseUrl $BaseUrl -Session $session -SpaceKey $SpaceKey -Title "$TitlePrefix$($page.Title)" -StorageBody $storageBody -ParentPageId $parentId -Execute $Execute -Editors $Editors
+        $pageIds[$page.Id] = $result.PageId
+        if ($result.Ok) { $pagesSucceeded++ } else { $pagesFailed++ }
     } else {
         Write-Warning "HTML file not found: $htmlPath"
+        $pagesAttempted++
+        $pagesFailed++
     }
     Write-Console ""
 }
@@ -2817,12 +2924,22 @@ foreach ($page in $modulePages) {
     }
 
     Write-Console "[$($page.ArchTitle)]" 'White'
+    $pagesAttempted++
     $htmlContent = Get-Content -Path $archHtmlPath -Raw -Encoding UTF8
     $storageBody = Convert-ArchHtmlToStorageFormat -HtmlContent $htmlContent -PageTitle $page.ArchTitle -JsonDataCache $JsonDataCache
+
+    if ($null -eq $storageBody) {
+        Write-Error "Extraction failed for $($page.ArchHtmlFile): doc-body-inner wrapper not found; page skipped."
+        $pagesFailed++
+        Write-Console ""
+        continue
+    }
+
     Write-Console "  Converted: $($storageBody.Length) chars" 'Gray'
 
     $parentId = $pageIds[$page.Id]
-    $null = Publish-ConfluencePage -BaseUrl $BaseUrl -Session $session -SpaceKey $SpaceKey -Title "$TitlePrefix$($page.ArchTitle)" -StorageBody $storageBody -ParentPageId $parentId -Execute $Execute -Editors $Editors
+    $result = Publish-ConfluencePage -BaseUrl $BaseUrl -Session $session -SpaceKey $SpaceKey -Title "$TitlePrefix$($page.ArchTitle)" -StorageBody $storageBody -ParentPageId $parentId -Execute $Execute -Editors $Editors
+    if ($result.Ok) { $pagesSucceeded++ } else { $pagesFailed++ }
 
     Write-Console ""
 }
@@ -2843,13 +2960,15 @@ foreach ($page in $modulePages) {
         }
 
         Write-Console "[$($cc.Title)]" 'White'
+        $pagesAttempted++
         $htmlContent = Get-Content -Path $ccHtmlPath -Raw -Encoding UTF8
 
         $storageBody = Convert-CcGuideToStorageFormat -HtmlContent $htmlContent -PageTitle $cc.Title
         Write-Console "  Converted: $($storageBody.Length) chars" 'Gray'
 
         $parentId = $pageIds[$page.Id]
-        $null = Publish-ConfluencePage -BaseUrl $BaseUrl -Session $session -SpaceKey $SpaceKey -Title "$TitlePrefix$($cc.Title)" -StorageBody $storageBody -ParentPageId $parentId -Execute $Execute -Editors $Editors
+        $result = Publish-ConfluencePage -BaseUrl $BaseUrl -Session $session -SpaceKey $SpaceKey -Title "$TitlePrefix$($cc.Title)" -StorageBody $storageBody -ParentPageId $parentId -Execute $Execute -Editors $Editors
+        if ($result.Ok) { $pagesSucceeded++ } else { $pagesFailed++ }
 
         Write-Console ""
     }
@@ -2861,12 +2980,22 @@ Write-Console ""
 
 foreach ($guide in $GuideRegistry) {
     Write-Console "[$($guide.Title)]" 'White'
+    $pagesAttempted++
     $htmlContent = Get-Content -Path $guide.FullPath -Raw -Encoding UTF8
     $storageBody = Convert-GuideToStorageFormat -HtmlContent $htmlContent -PageTitle $guide.Title
+
+    if ($null -eq $storageBody) {
+        Write-Error "Extraction failed for $($guide.File): doc-body-inner wrapper not found; page skipped."
+        $pagesFailed++
+        Write-Console ""
+        continue
+    }
+
     Write-Console "  Converted: $($storageBody.Length) chars" 'Gray'
 
     $parentId = $pageIds[$guide.ParentPageId]
-    $null = Publish-ConfluencePage -BaseUrl $BaseUrl -Session $session -SpaceKey $SpaceKey -Title "$TitlePrefix$($guide.Title)" -StorageBody $storageBody -ParentPageId $parentId -Execute $Execute -Editors $Editors
+    $result = Publish-ConfluencePage -BaseUrl $BaseUrl -Session $session -SpaceKey $SpaceKey -Title "$TitlePrefix$($guide.Title)" -StorageBody $storageBody -ParentPageId $parentId -Execute $Execute -Editors $Editors
+    if ($result.Ok) { $pagesSucceeded++ } else { $pagesFailed++ }
     Write-Console ""
 }
 
@@ -2946,9 +3075,11 @@ foreach ($page in $modulePages) {
 
     Write-Console "[$($page.RefTitle)]" 'White'
     Write-Console "  Converted: $($combinedBody.Length) chars ($($schemaLabels -join ' + '))" 'Gray'
+    $pagesAttempted++
 
     $parentId = $pageIds[$page.Id]
-    $null = Publish-ConfluencePage -BaseUrl $BaseUrl -Session $session -SpaceKey $SpaceKey -Title "$TitlePrefix$($page.RefTitle)" -StorageBody $combinedBody -ParentPageId $parentId -Execute $Execute -Editors $Editors
+    $result = Publish-ConfluencePage -BaseUrl $BaseUrl -Session $session -SpaceKey $SpaceKey -Title "$TitlePrefix$($page.RefTitle)" -StorageBody $combinedBody -ParentPageId $parentId -Execute $Execute -Editors $Editors
+    if ($result.Ok) { $pagesSucceeded++ } else { $pagesFailed++ }
 
     Write-Console ""
 }
@@ -3215,4 +3346,17 @@ if (-not $ExportOnly -and -not $Execute) {
 }
 Write-Console "  Markdown exported to: $ExportPath" 'Gray'
 Write-Console "  Ref-only markdown exported to: $RefExportPath" 'Gray'
+Write-Console "  Pages attempted: $pagesAttempted" 'Gray'
+Write-Console "  Pages succeeded: $pagesSucceeded" 'Gray'
+$failColor = if ($pagesFailed -gt 0) { 'Red' } else { 'Gray' }
+Write-Console "  Pages failed:    $pagesFailed" $failColor
+$exclColor = if ($pagesExcludedAtDiscovery -gt 0) { 'Yellow' } else { 'Gray' }
+Write-Console "  Pages excluded at discovery: $pagesExcludedAtDiscovery (see warnings above)" $exclColor
 Write-Console "============================================" 'Cyan'
+
+if ($pagesFailed -gt 0) {
+    Write-Console "Completed with $pagesFailed failed page(s). See errors above." 'Red'
+    exit 2
+}
+
+exit 0
