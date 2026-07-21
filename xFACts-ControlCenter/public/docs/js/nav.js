@@ -59,7 +59,7 @@ const doc_collapseKey = 'docNavCollapsed';
    ----------------------------------------------------------------------------
    Per-page location context derived from the current URL during init: the
    current filename, whether the page lives in a subfolder, and the relative
-   path prefixes used to resolve sibling pages and the registry data directory.
+   path prefix used to resolve sibling pages.
    Prefix: doc
    ============================================================================ */
 
@@ -71,9 +71,6 @@ var doc_isSubfolder = false;
 
 /* Relative path prefix from the current page to the pages root. */
 var doc_prefix = '';
-
-/* Relative path prefix from the current page to the data directory. */
-var doc_dataPrefix = '../';
 
 /* ============================================================================
    FUNCTIONS: INITIALIZATION
@@ -97,12 +94,11 @@ async function doc_init() {
                       path.indexOf('/cc/') !== -1 ||
                       path.indexOf('/guides/') !== -1;
     doc_prefix = doc_isSubfolder ? '../' : '';
-    doc_dataPrefix = doc_isSubfolder ? '../../' : '../';
 
     doc_applyCollapse(doc_readCollapse());
     doc_bindToggle();
 
-    var jsonPath = doc_dataPrefix + 'data/ddl/doc-registry.json';
+    var jsonPath = '/generated/ddl/doc-registry.json';
     try {
         var registry = await doc_fetchRegistry(jsonPath);
         var pages = doc_registryToPages(registry);
