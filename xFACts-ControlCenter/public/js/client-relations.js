@@ -397,7 +397,7 @@ function clr_renderSummaryCards() {
     html += '  <div class="clr-summary-card-label">Accounts</div>';
     html += '</div>';
 
-    /* Reason breakdown cards in canonical order. */
+    /* Reason breakdown cards in defined order. */
     var reasonOrder = [
         'Zero Dollar Original Charges Received',
         'No Reg F Data In DM',
@@ -417,7 +417,7 @@ function clr_renderSummaryCards() {
         html += '</div>';
     }
 
-    /* Any reasons not in the canonical list. */
+    /* Any reasons not in the defined list. */
     var knownReasons = {};
     for (var r2 = 0; r2 < reasonOrder.length; r2++) { knownReasons[reasonOrder[r2]] = true; }
     var otherKeys = Object.keys(reasonCounts);
