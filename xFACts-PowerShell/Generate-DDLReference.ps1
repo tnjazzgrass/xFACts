@@ -22,7 +22,7 @@
     Database name (default: xFACts)
 
 .PARAMETER OutputDirectory
-    Directory to write JSON files (default: E:\xFACts-ControlCenter\public\docs\data\ddl)
+    Directory to write JSON files (default: E:\xFACts-Generated\ddl)
 
 .PARAMETER Execute
     Required to actually write files. Without this flag, runs in preview mode
@@ -55,6 +55,12 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-07-21  Relocated JSON output to E:\xFACts-Generated\ddl, the new live home
+#             for machine-generated content. Changed the $OutputDirectory default
+#             and its help-text path. All downstream writes (doc-registry.json,
+#             _metadata.json, per-schema files) derive from $OutputDirectory and
+#             move with it; the pipeline wrapper passes no -OutputDirectory, so
+#             this default is the controlling value.
 # 2026-03-12  doc-registry.json: Removed doc_is_hub column reference. isHub now
 #             derived from doc_sort_order = 0 convention.
 # 2026-03-11  Consolidated dbo.sp_GenerateDDLReference SQL inline into this script.
@@ -81,7 +87,7 @@
 param(
     [string]$ServerInstance = "AVG-PROD-LSNR",
     [string]$Database = "xFACts",
-    [string]$OutputDirectory = "E:\xFACts-ControlCenter\public\docs\data\ddl",
+    [string]$OutputDirectory = "E:\xFACts-Generated\ddl",
     [switch]$Execute
 )
 
