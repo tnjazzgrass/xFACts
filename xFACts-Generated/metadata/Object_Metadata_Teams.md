@@ -1,6 +1,6 @@
 # Object_Metadata: Teams
 Source: dbo.Object_Metadata
-Generated: 2026-07-22 10:53:24
+Generated: 2026-07-22 16:04:29
 
 ## AlertQueue (Table)
 
@@ -10,7 +10,7 @@ Teams
 
 ### data_flow #0  [metadata_id: 1790]
 
-Alerts enter via Teams.sp_QueueAlert (from T-SQL callers like Monitor-JobFlow or sp_Backup_Monitor) or direct INSERT from PowerShell scripts that build pre-built Adaptive Card JSON (like Send-DiskHealthSummary.ps1). TR_Teams_AlertQueue_QueueDepth fires on INSERT, incrementing running_count in Orchestrator.ProcessRegistry to signal the orchestrator. Process-TeamsAlertQueue.ps1 claims Pending rows, joins through WebhookSubscription and WebhookConfig to find matching webhook URLs, delivers via HTTP POST, then updates status to Success or Failed and sets processed_dttm. Each webhook delivery attempt is also logged to Teams.RequestLog. Failed deliveries are retried inline up to a configurable maximum (teams_retry_max_attempts in GlobalConfig) with 2-second delays between attempts. Failed alerts that exhaust all retries can be manually resent from the Admin page Alert Failures card, which inserts a new Pending row with original_queue_id referencing the original failed alert. The resend follows the normal queue processing path — routing is re-resolved through WebhookSubscription at delivery time.
+PowerShell callers queue alerts through the shared Send-TeamsAlert function, which deduplicates before inserting: it skips the alert when RequestLog already shows a successful delivery for the same trigger_type/trigger_value, and its guarded insert also collapses a same-run burst of the same trigger to a single Pending row. T-SQL callers use Teams.sp_QueueAlert. Rich layouts are queued by passing pre-built Adaptive Card JSON in card_json (Send-TeamsAlert -CardJson). TR_Teams_AlertQueue_QueueDepth fires on INSERT, incrementing running_count in Orchestrator.ProcessRegistry to signal the orchestrator. Process-TeamsAlertQueue.ps1 claims Pending rows, joins through WebhookSubscription and WebhookConfig to find matching webhook URLs, delivers via HTTP POST, then updates status to Success or Failed and sets processed_dttm. Each webhook delivery attempt is also logged to Teams.RequestLog. Failed deliveries are retried inline up to a configurable maximum (teams_retry_max_attempts in GlobalConfig) with 2-second delays between attempts. Failed alerts that exhaust all retries can be manually resent from the Admin page Alert Failures card, which inserts a new Pending row with original_queue_id referencing the original failed alert. The resend follows the normal queue processing path - routing is re-resolved through WebhookSubscription at delivery time.
 
 ### description #0  [metadata_id: 83]
 
@@ -131,17 +131,17 @@ Category: CRITICAL, WARNING, or INFO
 ### status_value / alert_category #1  [metadata_id: 1798]
 Title: CRITICAL
 
-System failures, stalls, and urgent issues requiring immediate attention. Auto-colored "attention" (red) by sp_QueueAlert when no explicit color is provided.
+System failures, stalls, and urgent issues requiring immediate attention. On the T-SQL path sp_QueueAlert auto-colors this attention (red) when no explicit color is given; Send-TeamsAlert defaults every category to attention unless the caller passes a color.
 
 ### status_value / alert_category #2  [metadata_id: 1799]
 Title: WARNING
 
-Potential issues, thresholds approaching, and items needing review. Auto-colored "warning" (yellow) by sp_QueueAlert when no explicit color is provided.
+Potential issues, thresholds approaching, and items needing review. On the T-SQL path sp_QueueAlert auto-colors this warning (yellow) when no explicit color is given; Send-TeamsAlert defaults to attention unless the caller passes a color.
 
 ### status_value / alert_category #3  [metadata_id: 1800]
 Title: INFO
 
-Informational messages, successful completions, and status updates. Auto-colored "good" (green) by sp_QueueAlert when no explicit color is provided.
+Informational messages, successful completions, and status updates. On the T-SQL path sp_QueueAlert auto-colors this good (green) when no explicit color is given; Send-TeamsAlert defaults to attention unless the caller passes a color.
 
 ### description / card_json #7  [metadata_id: 886]
 
@@ -149,7 +149,7 @@ Pre-built Adaptive Card JSON payload. When populated, the processor sends this d
 
 ### description / color #6  [metadata_id: 885]
 
-Adaptive Card accent color. Auto-set by sp_QueueAlert if NULL
+Adaptive Card accent color. On the T-SQL path sp_QueueAlert sets it from the alert category when not supplied; Send-TeamsAlert defaults it to attention unless the caller passes a color.
 
 ### description / created_dttm #12  [metadata_id: 891]
 
@@ -177,7 +177,7 @@ Unique identifier for this queue entry
 
 ### description / retry_count #11  [metadata_id: 890]
 
-Number of times an alert was retried (increments on new row inserts from prior failed attempts)
+Number of retry attempts beyond the first delivery, set in place on the original row by Process-TeamsAlertQueue.ps1; 0 when the first attempt succeeds.
 
 ### description / source_module #2  [metadata_id: 881]
 
@@ -285,7 +285,7 @@ Teams
 
 ### data_flow #0  [metadata_id: 1822]
 
-Process-TeamsAlertQueue.ps1 inserts one row per webhook delivery attempt, including retries. Each row captures the HTTP status_code and response_text from the webhook call. Calling modules query this table for deduplication before queuing new alerts, checking trigger_type and trigger_value with status_code = 200 to avoid sending duplicate notifications for the same condition across orchestrator cycles.
+Process-TeamsAlertQueue.ps1 inserts one row per webhook delivery attempt, including retries. Each row captures the HTTP status_code and response_text from the webhook call. This table is the cross-run deduplication source: Send-TeamsAlert checks it (trigger_type and trigger_value with status_code = 200) before queuing a PowerShell-originated alert, and T-SQL callers perform the same check before sp_QueueAlert, so a condition already delivered is not re-sent across orchestrator cycles.
 
 ### description #0  [metadata_id: 124]
 
@@ -304,7 +304,7 @@ If an alert routes to multiple webhooks via subscription matching, each webhook 
 ### design_note #3  [metadata_id: 1825]
 Title: Deduplication Source
 
-Calling modules query RequestLog before queuing alerts to check if a successful delivery (status_code = 200) already exists for the same trigger_type and trigger_value combination. This prevents duplicate notifications when the same condition is detected across multiple orchestrator cycles.
+Before an alert is queued, RequestLog is checked for an existing successful delivery (status_code = 200) with the same trigger_type and trigger_value. Send-TeamsAlert performs this check centrally for PowerShell callers; T-SQL callers perform it before sp_QueueAlert. This prevents duplicate notifications when the same condition is detected across multiple orchestrator cycles.
 
 ### module #0  [metadata_id: 1660]
 
@@ -357,7 +357,7 @@ ORDER BY total_alerts DESC;
 
 ### query #10  [metadata_id: 1874]
 Title: Standard deduplication pattern
-Description: Calling modules should check this table before queuing to prevent duplicate alerts
+Description: Cross-run dedup check used on the T-SQL path before sp_QueueAlert; the PowerShell path performs this check inside Send-TeamsAlert.
 
 IF NOT EXISTS (
     SELECT 1 FROM Teams.RequestLog
@@ -456,7 +456,7 @@ Teams
 
 ### data_flow #0  [metadata_id: 1830]
 
-Called by T-SQL modules (Monitor-JobFlow stall detection, sp_Backup_Monitor, Scan-SFTPFiles alert logic, etc.) to queue Teams notifications. Inserts one row into Teams.AlertQueue with Pending status. The INSERT triggers TR_Teams_AlertQueue_QueueDepth which signals the orchestrator to launch the processor.
+The T-SQL entry point for queuing a Teams alert, available to external or in-database callers: it inserts one row into Teams.AlertQueue with Pending status, applying default category-based coloring when no color is supplied. The INSERT fires TR_Teams_AlertQueue_QueueDepth, which signals the orchestrator to launch the processor. xFACts PowerShell scripts do not use this proc - they queue through the shared Send-TeamsAlert function - so it is an available entry surface rather than a deprecated one.
 
 ### description #0  [metadata_id: 126]
 
@@ -510,7 +510,7 @@ EXEC Teams.sp_QueueAlert
 ### relationship_note #1  [metadata_id: 1832]
 Title: Teams.AlertQueue
 
-Inserts directly into AlertQueue. This is the primary T-SQL entry point for queuing Teams alerts. PowerShell scripts that need rich Adaptive Card layouts bypass this proc and INSERT directly with card_json populated.
+Inserts directly into AlertQueue. This is the T-SQL entry point for queuing Teams alerts, available to external or in-database callers. xFACts PowerShell scripts queue through the shared Send-TeamsAlert function instead, including rich Adaptive Card layouts via its -CardJson parameter.
 
 ## TR_Teams_AlertQueue_QueueDepth (Trigger)
 
