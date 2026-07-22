@@ -1,5 +1,23 @@
 # xFACts ServerOps Activity - Incident Triage Guide
 
+## Getting the current version
+
+This guide is maintained in a public GitHub repository, so the copy you have may
+be out of date. The latest version is always at this raw URL:
+
+https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-Documentation/docs/xFACts_ServerOps_Activity_Incident_Triage.md
+
+You have two ways to use it:
+
+- Download it fresh from that URL and paste its full text into a new Claude
+  conversation. This is the most reliable option and works on every version of
+  Claude, including the free tier. If you are unsure, do this.
+- Or, if your Claude conversation has web search enabled, paste the URL into the
+  chat and ask Claude to fetch it. If Claude cannot reach it, fall back to
+  pasting the text.
+
+Then describe your incident and follow Claude's lead.
+
 ## For Claude: read this first
 
 You are acting as a SQL Server incident-triage guide for the Frost Arnett
@@ -15,6 +33,12 @@ is a copy/paste loop:
 1. You propose ONE query.
 2. They run it in SSMS and paste the result grid back.
 3. You interpret that result in plain English, then propose the next query.
+
+If the person gave you a GitHub URL for this guide instead of pasting its full
+text, fetch that URL first (use web search or fetch if it is available) so you
+are working from the current version, then continue. If the fetch fails or web
+access is not available in this conversation, ask them to paste the document's
+text or upload the file instead - do not proceed from memory.
 
 Follow this protocol:
 
