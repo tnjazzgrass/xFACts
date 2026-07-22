@@ -174,7 +174,7 @@ If no row exists for today, the script queries `msdb.dbo.sysjobhistory` on the t
 
 Step 3: Capture Steps
 
-On each subsequent cycle, the script queries `msdb` again for any step completions newer than the last captured step. New steps get INSERTed into `StepExecution` with their step name, duration, and completion time. The `BuildExecution` row gets updated with the latest step count.
+On each subsequent cycle, the script queries `msdb` again for any step completions newer than the last captured step. New steps get INSERTed into `StepExecution` with their step name, duration, and run status. The `BuildExecution` row gets updated with the latest step count.
 
 Step 4: Detect Completion
 
@@ -191,7 +191,7 @@ Remote query, local storage. The BIDATA job runs on the reporting server, not on
 
 The Status Machine
 
-`BuildExecution.build_status` has four valid values. The transitions tell the full story of a build's lifecycle.
+`BuildExecution.status` has five valid values. The transitions tell the full story of a build's lifecycle.
 
 
 
@@ -227,6 +227,7 @@ NOT_STARTED transitions to SUPERSEDED if the build eventually starts. COMPLETED 
 | **IN_PROGRESS** | Build running, steps being captured | COMPLETED *or* FAILED |
 | **COMPLETED** | Build finished successfully | Terminal for the day |
 | **FAILED** | Build encountered an error | Terminal for the day |
+| **SUPERSEDED** | NOT_STARTED record replaced after the build eventually started | Terminal (historical marker) |
 
 
 The NOT_STARTED Edge Case
@@ -236,7 +237,7 @@ The build is scheduled to start overnight. A configurable grace period (from Glo
 If the build later starts (maybe it was delayed, not missing), the NOT_STARTED record gets marked **SUPERSEDED** and a new IN_PROGRESS record takes over tracking. This prevents false alarms from blocking real monitoring.
 
 
-SUPERSEDED vs. overwritten. The NOT_STARTED row isn't deleted or updated to IN_PROGRESS. It stays as a historical record that the build started late, with its own `superseded_dttm` timestamp. A new row handles the actual build tracking. This preserves the timeline: "At 4:00 AM we noticed the build hadn't started. At 4:15 AM it started. It completed at 9:30 AM."
+SUPERSEDED vs. overwritten. The NOT_STARTED row isn't deleted or updated to IN_PROGRESS. It stays as a historical record that the build started late. A new row handles the actual build tracking. This preserves the timeline: "At 4:00 AM we noticed the build hadn't started. At 4:15 AM it started. It completed at 9:30 AM."
 
 
 
@@ -267,7 +268,7 @@ Step timing comes from msdb, not from xFACts. The script reads `run_duration` fr
 
 Notification
 
-One build, one notification. When the build completes, the script builds an Adaptive Card with the completion time, total duration, and a step-by-step breakdown. It queues this through `Teams.sp_QueueAlert` and updates `BuildExecution.notified_dttm` to record that notification was sent.
+One build, one notification. When the build completes, the script assembles a summary with the completion time, total duration, and a step-by-step breakdown. It queues this through the shared `Send-TeamsAlert` function and updates `BuildExecution.notified_dttm` to record that the notification was queued.
 
 The `notified_dttm` field serves double duty: it prevents duplicate notifications (if the next monitoring cycle runs before the Teams queue processes), and it provides an audit trail of exactly when the team was informed.
 
@@ -300,7 +301,7 @@ External Dependencies
 | --- | --- | --- |
 | `Orchestrator.ProcessRegistry` | Orchestrator | Schedules Monitor-BIDATABuild.ps1 on a configurable interval |
 | `dbo.GlobalConfig` | Shared Infrastructure | Scheduled start time, grace period, notification settings |
-| `Teams.sp_QueueAlert` | Teams Integration | Completion and NOT_STARTED notifications |
+| `Send-TeamsAlert` | Teams Integration | Completion, failure, and NOT_STARTED notifications |
 | `msdb.dbo.sysjobhistory` | Reporting Server | Source of job step data (read-only, remote query) |
 
 ---
@@ -309,9 +310,9 @@ External Dependencies
 
 ### BuildExecution
 
-Primary tracking table for BIDATA Daily Build job executions with timing, status, and notification tracking.
+Primary tracking table for BIDATA Daily Build executions, holding per-attempt timing, status, and notification state.
 
-**Data Flow:** Monitor-BIDATABuild.ps1 polls DM-PROD-REP.msdb.dbo.sysjobhistory every 5 minutes via direct PowerShell connection and creates one row per execution attempt, identified by instance_id. The script sets status to IN_PROGRESS on first detection, updates to COMPLETED or FAILED when the job outcome row appears, and creates NOT_STARTED records when the build fails to start within the configured grace period. The notified_dttm column is set after Teams.sp_QueueAlert delivers the completion or failure notification. The Control Center BIDATA Monitoring page reads this table for build status display and duration metrics.
+**Data Flow:** Monitor-BIDATABuild.ps1 polls the configured source server's msdb.dbo.sysjobhistory over a direct PowerShell connection and writes one row per execution attempt, keyed by instance_id. Status is set to IN_PROGRESS on first detection and updated to COMPLETED or FAILED when the job outcome row appears; a NOT_STARTED row is created when the build has not started within the configured grace period. notified_dttm is stamped after the Teams notification is queued via Send-TeamsAlert. The Control Center BIDATA Monitoring page reads this table for build status and duration display.
 
 **One Row Per Execution Attempt:** [sort:1] Each SQL Agent execution attempt gets its own row identified by instance_id. Multiple attempts on the same day (due to failures and restarts) result in multiple rows, preserving full attempt history.
 
@@ -319,7 +320,7 @@ Primary tracking table for BIDATA Daily Build job executions with timing, status
 
 **Instance-Based Deduplication:** [sort:3] Notification TriggerValue includes the instance_id (e.g., COMPLETED-12345) so each execution attempt can only trigger one alert regardless of how many monitoring cycles observe the completed state.
 
-**Historical Backfill Flag:** [sort:4] The is_backfill flag distinguishes between real-time captured builds and historically backfilled data from sysjobhistory, allowing queries to filter for live-captured data only.
+**Job Name Stored as Free Text:** [sort:5] job_name is stored as free text because the SQL Agent job name has changed across design generations; Control Center history reflects all variants.
 
 **Columns:**
 
@@ -327,7 +328,7 @@ Primary tracking table for BIDATA Daily Build job executions with timing, status
 | --- | --- | --- | --- | --- |
 | build_id (IDENTITY) | int | No | IDENTITY | Unique identifier for this build execution |
 | build_date | date | No | — | Date of the build |
-| job_name | varchar(128) | Yes | — | SQL Agent job name (supports multiple job name versions) |
+| job_name | varchar(128) | Yes | — | SQL Agent job name. |
 | instance_id | int | Yes | — | SQL Agent instance_id from sysjobhistory. NULL for NOT_STARTED records |
 | start_dttm | datetime | Yes | — | When the build started |
 | end_dttm | datetime | Yes | — | When the build completed |
@@ -338,8 +339,8 @@ Primary tracking table for BIDATA Daily Build job executions with timing, status
 | run_status | int | Yes | — | SQL Agent run_status code (1=Success, 0=Failed) |
 | failed_step_id | int | Yes | — | Step ID that failed (if status = FAILED) |
 | failed_step_name | varchar(128) | Yes | — | Name of the failed step |
-| notified_dttm | datetime | Yes | — | When Teams notification was sent. NULL = not yet notified |
-| is_backfill | bit | No | 0 | 1 = Historically backfilled, 0 = Real-time captured |
+| notified_dttm | datetime | Yes | — | When the Teams build notification was queued; NULL until notified. |
+| is_backfill | bit | No | 0 | Reserved and currently unused; always 0, with no code path that sets or reads it. |
 | created_dttm | datetime | No | getdate() | When this record was created |
 
   - **PK_BIDATA_BuildExecution** (CLUSTERED): build_id -- PRIMARY KEY
@@ -421,9 +422,9 @@ ORDER BY month;
 
 ### StepExecution
 
-Step-level execution details for each BIDATA Daily Build, enabling performance analysis and bottleneck identification.
+Step-level execution detail for the BIDATA Daily Build, one row per SQL Agent job step per build attempt.
 
-**Data Flow:** Monitor-BIDATABuild.ps1 captures step completions incrementally from DM-PROD-REP.msdb.dbo.sysjobhistory as each step finishes during the build. Each row records the step name, duration, and run_status for one step of one build attempt. The Control Center BIDATA Monitoring page joins this table to BuildExecution for step-level progress display and historical step duration analysis.
+**Data Flow:** Monitor-BIDATABuild.ps1 captures step completions incrementally from the source server's msdb.dbo.sysjobhistory as each step finishes. Each row records the step name, duration, and run_status for one step of one build attempt. The Control Center BIDATA Monitoring page joins this table to BuildExecution for step-level progress and historical duration analysis.
 
 **Complete Step Capture:** [sort:1] All SQL Agent job steps are captured including infrastructure steps (disable users, enable replication) and legacy notification steps, even though some are excluded from the Teams notification message. This preserves full execution history for analysis.
 
@@ -538,9 +539,9 @@ ORDER BY b.build_date;
 
 ### Monitor-BIDATABuild.ps1
 
-Monitors the BIDATA Daily Build SQL Agent job via direct PowerShell connection to the source server. Captures build start, step completions incrementally, and final status. Creates NOT_STARTED records when the build fails to start within the configured grace period. Sends Teams notifications on completion, failure, or not-started conditions.
+Monitors the BIDATA Daily Build SQL Agent job over a direct connection to the source server, capturing build start, incremental step completions, and final status. Creates NOT_STARTED records when the build has not started within the configured grace period. Queues Teams notifications on completion, failure, and not-started conditions.
 
-**Data Flow:** Runs as a queue-driven process in the orchestrator, executing every 5 minutes. Reads configuration from dbo.GlobalConfig (job name, source server, grace period). Queries DM-PROD-REP.msdb.dbo.sysjobhistory and related system tables via direct PowerShell connection for job execution data and schedule information. Creates and updates rows in BIDATA.BuildExecution for build-level tracking, inserts rows into BIDATA.StepExecution as steps complete incrementally. Calls Teams.sp_QueueAlert to send completion, failure, or NOT_STARTED notifications. Uses instance_id-based TriggerValue for notification deduplication.
+**Data Flow:** Runs as a queue-driven orchestrator process. Reads configuration from dbo.GlobalConfig (job name, source server, grace period), then queries the configured source server's msdb (sysjobhistory and schedule tables) over a direct PowerShell connection for job execution and schedule data. Creates and updates BIDATA.BuildExecution rows for build-level tracking and inserts BIDATA.StepExecution rows as steps complete. Calls the shared Send-TeamsAlert function to queue completion, failure, and NOT_STARTED notifications, using an instance_id-based TriggerValue for deduplication.
 
 **Direct Connection vs Linked Server:** [sort:1] Uses direct PowerShell connection to the source server via Invoke-Sqlcmd instead of linked server queries. This eliminates the linked server dependency, enables real-time step capture during build execution, and aligns with the platform direction of unified PowerShell orchestration.
 
@@ -555,6 +556,6 @@ Monitors the BIDATA Daily Build SQL Agent job via direct PowerShell connection t
   - **BIDATA.BuildExecution**: [sort:1] Primary write target. Creates new rows on first detection of a build attempt, updates status and timing as the build progresses, and sets notified_dttm after Teams notification is sent.
   - **BIDATA.StepExecution**: [sort:2] Write target for step-level data. Inserts rows incrementally as each step completes during the build, capturing step name, duration, and run_status.
   - **dbo.GlobalConfig**: [sort:3] Read source for configuration. Retrieves bidata_build_job_name, bidata_build_source_server, and bidata_build_start_grace_minutes at script startup.
-  - **Teams.sp_QueueAlert**: [sort:4] Called to send notifications on build completion (INFO), failure (ERROR), and not-started conditions (ERROR). Uses BuildStatus as TriggerType with instance_id or date in TriggerValue for deduplication.
+  - **Send-TeamsAlert**: [sort:4] Called through the local Send-bid_BuildNotification wrapper to queue notifications on build completion (INFO), failure (CRITICAL), and not-started conditions (WARNING). Passes BuildStatus as TriggerType with the instance_id or date in TriggerValue for deduplication.
 
 
