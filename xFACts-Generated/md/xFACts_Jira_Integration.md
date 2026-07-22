@@ -57,13 +57,7 @@ Who Uses It
 
 Like Teams, the Jira service is an open door. Any process that can execute a stored procedure can create a ticket. The common thread: automation can’t fix it, someone needs to own it, and there needs to be proof that someone did.
 
-| Source | What Gets Ticketed |
-| --- | --- |
-| **JobFlow** | Persistent stalls that need investigation, certain job failures requiring manual intervention |
-| **FileOps** | File delivery issues that need follow-up, escalation scenarios |
-| **BatchOps** | Upload failures that need investigation |
-| **Notice Recon** | New notice templates detected that need configuration — an external process using the same service |
-
+The conditions that earn a ticket share a shape: persistent stalls that need investigation, file delivery or escalation issues that need a human to chase them, batch upload failures, and newly detected configuration that needs setting up. Some callers live outside xFACts entirely — the service doesn’t care who is knocking, only that the caller can execute the stored procedure.
 
 
 
@@ -189,9 +183,9 @@ Queue-driven execution. On failure, retries span subsequent processor cycles. Af
 
 Step 1: Ticket Enters the Queue
 
-A module calls `Jira.sp_QueueTicket` with the project key, issue type, priority, summary, description, and optional fields like assignee and custom field values. The procedure INSERTs into `TicketQueue` with status **Pending** and returns immediately.
+A caller invokes `Jira.sp_QueueTicket` with the project key, issue type, priority, summary, description, and optional fields like assignee and custom field values. The procedure INSERTs into `TicketQueue` with status **Pending** and returns immediately.
 
-The stored procedure handles field validation and default population. If no project is specified, it defaults to the configured project in GlobalConfig. If no priority is specified, it uses the module's default. The calling code provides the minimum required — the proc fills in the rest.
+The stored procedure inserts the request with defaults for any optional fields left unspecified — issue type defaults to Task and priority to High. The project key, summary, and description are required; the caller provides those and the proc fills in the rest.
 
 Step 2: The Trigger Signals Demand
 
@@ -201,12 +195,12 @@ Step 3: Build, Send, Record
 
 `Process-JiraTicketQueue.ps1` picks up Pending rows and constructs a Jira-compliant JSON payload for each one. This is where most of the complexity lives — Jira's REST API has specific expectations about field formats, custom field IDs, and cascading select values.
 
-The script POSTs to the Jira issue creation endpoint. On success, the response includes the new ticket key (e.g., SD-12345), which is written back to the `jira_ticket_key` column in TicketQueue. The row status updates to **Success**.
+The script POSTs to the Jira issue creation endpoint. On success, the response includes the new ticket key, which is written back to the `TicketKey` column in TicketQueue. The row status updates to **Success**.
 
 Every API call — successful or not — is logged to `RequestLog` with the full request payload, response payload, HTTP status code, and timing.
 
 
-The ticket key is the receipt. Once `jira_ticket_key` is populated, there's a traceable link from the monitoring event through the queue to a real Jira ticket. Other modules can check this field to know whether a ticket was actually created, not just requested.
+The ticket key is the receipt. Once `TicketKey` is populated, there's a traceable link from the monitoring event through the queue to a real Jira ticket. Other modules can check this field to know whether a ticket was actually created, not just requested.
 
 
 
@@ -220,18 +214,18 @@ Jira's API is particular about its JSON format. The PowerShell script translates
 
 | Queue Field | Jira JSON Path | Notes |
 | --- | --- | --- |
-| `project_key` | `fields.project.key` | e.g., "SD" |
-| `issue_type` | `fields.issuetype.name` | e.g., "Issue", "Task" |
-| `ticket_priority` | `fields.priority.name` | e.g., "High", "Medium" |
-| `summary` | `fields.summary` | Ticket title |
-| `ticket_description` | `fields.description` | Body text |
-| `cascading_field_*` | `fields.customfield_*` | Cascading select: parent + child values |
+| `ProjectKey` | `fields.project.key` | Jira project key |
+| `IssueType` | `fields.issuetype.name` | Issue type name |
+| `TicketPriority` | `fields.priority.name` | Priority name |
+| `Summary` | `fields.summary` | Ticket title |
+| `TicketDescription` | `fields.description` | Body text |
+| `CascadingField_*` | `fields.customfield_*` | Cascading select: parent + child values |
 
 
 The cascading select field is the most complex piece. Jira requires a specific nested structure with `value` and `child.value` properties. The queue stores parent and child values separately; the script assembles the correct nesting at build time.
 
 
-Custom field IDs are environment-specific. The custom field ID for the cascading select (e.g., `customfield_10500`) is stored in `dbo.GlobalConfig`, not hardcoded in the script. If Jira's field configuration changes — which happens during upgrades or project reconfigurations — you update one config row instead of editing code.
+Custom field IDs are environment-specific. The custom field ID for the cascading select is supplied by the caller as a parameter to `sp_QueueTicket` and stored on the queue row, not hardcoded in the script. If Jira's field configuration changes — which happens during upgrades or project reconfigurations — the caller passes the new field ID, with no code change.
 
 
 
@@ -243,16 +237,16 @@ Retry & Fallback
 
 A missed Teams alert is annoying. A missed Jira ticket means work doesn't get tracked, which means it might not get done. The retry logic reflects this difference.
 
-When the API call fails, the script increments `retry_count` and updates `last_error` with the failure details. The row stays in **Pending** status for the next processor run. This is different from Teams (which retries inline) — Jira retries span multiple processor executions, giving the Jira server time to recover from transient issues.
+When the API call fails, the script increments `RetryCount` and records the failure details in `ResponseMessage`. The row stays in **Pending** status for the next processor run. This is different from Teams (which retries inline) — Jira retries span multiple processor executions, giving the Jira server time to recover from transient issues.
 
-After the configured maximum retries (`jira_retry_max_attempts` in GlobalConfig) are exhausted, the row is marked **Failed**. But that's not the end of the safety net.
+After the configured maximum number of attempts (the processor's `MaxRetries` setting) is exhausted, the row is marked **Failed**. But that's not the end of the safety net.
 
 Email Fallback
 
 When all retries fail and email recipients are configured, the script sends a fallback email with the ticket details. The ticket doesn't exist in Jira, but someone knows about the underlying problem. The work doesn't vanish just because an API had a bad day.
 
 
-Retry across cycles, not inline. Teams alerts retry immediately within one execution (seconds between attempts). Jira retries wait for the next orchestrator cycle (minutes between attempts). The reasoning: Teams failures are usually transient network blips that resolve in seconds. Jira failures are often service-level issues (maintenance, restarts) that need minutes to resolve. The retry cadence matches the failure pattern.
+Retry across cycles, not inline. Teams alerts retry immediately within one execution. Jira retries wait for the next processor cycle. The reasoning: Teams failures are usually transient network blips that resolve quickly. Jira failures are often service-level issues like maintenance or restarts that need longer to resolve. The retry cadence matches the failure pattern.
 
 
 
@@ -341,8 +335,8 @@ Internal Flow
 
 | From | To | Relationship |
 | --- | --- | --- |
-| `TicketQueue` | `RequestLog` | One ticket request → one or more API attempts (FK on `queue_id`) |
-| `sp_QueueTicket` | `TicketQueue` | Stored procedure validates and INSERTs requests |
+| `TicketQueue` | `RequestLog` | One ticket request → one or more API attempts; `QueueID` is stored for tracing (no FK constraint) |
+| `sp_QueueTicket` | `TicketQueue` | Stored procedure INSERTs requests as Pending |
 | `TR_Jira_TicketQueue_QueueDepth` | `Orchestrator.ProcessRegistry` | Trigger signals the orchestrator on INSERT |
 
 
@@ -351,18 +345,14 @@ External Dependencies
 | Dependency | Module | Purpose |
 | --- | --- | --- |
 | `Orchestrator.ProcessRegistry` | Orchestrator | Schedules Process-JiraTicketQueue.ps1 (run_mode = 2, queue-driven) |
-| `dbo.GlobalConfig` | Shared Infrastructure | Retry settings, custom field IDs, project defaults |
+| `dbo.GlobalConfig` | Shared Infrastructure | Master passphrase for credential decryption |
 | `dbo.Credentials` | Shared Infrastructure | Encrypted Jira API credentials |
 | Jira Server | External | REST API ticket creation target |
 
 
 Who Calls Jira Integration
 
-| Caller | What Gets Ticketed |
-| --- | --- |
-| FileOps (Scan-SFTPFiles.ps1) | File escalations when `create_jira_on_escalation = 1` |
-| BatchOps | Upload failures needing investigation |
-| JobFlow | Persistent stalls, missing flows |
+Jira Integration is an open service. Any process with EXECUTE permission on `sp_QueueTicket` can queue a ticket — xFACts modules and external, non-xFACts processes alike. The triggers share a shape: a condition automation can’t resolve that needs tracked ownership — persistent stalls needing investigation, file delivery or escalation follow-ups, batch upload failures, and newly detected configuration that needs setting up.
 
 ---
 
