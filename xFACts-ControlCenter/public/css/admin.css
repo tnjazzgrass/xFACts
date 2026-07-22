@@ -2740,6 +2740,16 @@
     gap: var(--size-spacing-xs);
 }
 
+/* Prominent restart-required warning callout above the pipeline results. */
+.adm-doc-restart-callout {
+    padding: var(--size-spacing-md) var(--size-spacing-lg);
+    margin-bottom: var(--size-spacing-md);
+    border: var(--size-border-thin) solid var(--color-status-overdue);
+    border-radius: var(--size-radius-lg);
+    color: var(--color-status-overdue);
+    font-size: var(--font-size-content);
+}
+
 /* A divider/label between result groups. */
 .adm-doc-results-divider {
     border-top: var(--size-border-thin) solid var(--color-border-divider);

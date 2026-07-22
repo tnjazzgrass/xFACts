@@ -5,20 +5,35 @@
 .DESCRIPTION
     The deploy half of the inverted sync: GitHub is the source of truth for
     authored content, and this script pulls it into a server-side staging clone
-    and copies the changed authored files to their live locations. It verifies the
-    staging clone (E:\xFACts-Staging by default) exists, is a git working tree, and
-    points at the tnjazzgrass/xFACts remote - any verification failure aborts; the
-    clone is never created or repaired here. It pulls from GitHub using the
-    GitHub_xFACts credential, injecting the token per git invocation so it is never
-    persisted to disk, determines which files the pull changed, maps authored
-    repository paths to live paths via $AuthoredDeployMap (the inverse of the
-    generated map in Publish-GitHubRepository.ps1), and copies the changed authored
-    files. Generated repository paths (xFACts-Generated/*, the manifests) are never
-    copied. Files deleted in the repository are reported, not deleted live. If
-    either orchestrator file changed, those two are held back with a warning that
-    they need a manual service-stop deployment, and the run exits 2 while every
-    other changed file still deploys. Preview by default; -Execute performs the
-    pull merge and the copies.
+    and reconciles the changed authored files into their live locations. It
+    verifies the staging clone (E:\xFACts-Staging by default) exists, is a git
+    working tree, and points at the tnjazzgrass/xFACts remote - any verification
+    failure aborts; the clone is never created or repaired here. It pulls from
+    GitHub using the GitHub_xFACts credential, injecting the token per git
+    invocation so it is never persisted to disk, determines which files the pull
+    changed, and maps authored repository paths to live paths via
+    $AuthoredDeployMap (the inverse of the generated map in
+    Publish-GitHubRepository.ps1). Generated repository paths (xFACts-Generated/*,
+    the manifests) and repository-root files are never touched.
+
+    On -Execute the script copies changed authored files to live and DELETES from
+    live both the authored files removed upstream in the repository and the files
+    retired in dbo.Object_Registry (is_active = 0) that still exist under a mapped
+    authored tree; a retired file is never re-copied even if the repository edited
+    it (catalog retirement wins). Deletions outside the mapped authored trees are
+    never applied. Every deployed code/asset file is audited against
+    dbo.Object_Registry and an unregistered file is warned about, not blocked.
+
+    Deploying or deleting either orchestrator file (the running engine holds them)
+    or any Control Center script file (Pode dot-sources routes/APIs and imports the
+    shared module at startup) emits a prominent restart-required warning naming the
+    service, and the run exits 2; every other file still deploys. Static assets
+    (css/js/html/docs) never need a restart. Preview by default; -Execute performs
+    the pull merge, the copies, and the deletions.
+
+    Exit codes: 0 deployed cleanly; 2 deployed with warnings (a service restart is
+    required - named in the summary - and/or registration/mapping warnings); 1 on
+    a verification, pull, or file-operation failure.
 
 .PARAMETER Owner
     GitHub repository owner. Default: tnjazzgrass
@@ -44,8 +59,9 @@
     Database name. Default: xFACts
 
 .PARAMETER Execute
-    Required to fast-forward the staging clone and copy files to live. Without it,
-    the run fetches and reports what would deploy, changing nothing live.
+    Required to fast-forward the staging clone and copy and delete files on live.
+    Without it, the run fetches and reports what would deploy and delete, changing
+    nothing live.
 
 .COMPONENT
     Documentation.Pipeline
@@ -63,6 +79,7 @@
     CONSTANTS: PATHS AND MAPPINGS
     FUNCTIONS: GIT OPERATIONS
     FUNCTIONS: DEPLOY MAPPING
+    FUNCTIONS: OBJECT REGISTRY
     EXECUTION: SCRIPT EXECUTION
 #>
 
@@ -75,6 +92,17 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-07-21  Self-sufficient deploy. Deletions are now applied on -Execute:
+#             authored files removed upstream and files retired in Object_Registry
+#             (is_active = 0) under a mapped authored tree are deleted from live
+#             (previewed as DELETE lines, counted in the summary); a retired file is
+#             never re-copied (catalog retirement wins). Deployed code/asset files
+#             are audited against Object_Registry and unregistered files warned.
+#             The orchestrator hold-back is retired: the two orchestrator files
+#             deploy like any other, and deploying/deleting them or any Control
+#             Center script file emits a restart-required warning naming the service
+#             and exits 2 (structured [RESTART-REQUIRED:...] markers the pipeline and
+#             Admin modal surface). Exit codes: 0 clean, 2 warnings/restart, 1 fail.
 # 2026-07-21  Initial implementation. Pipeline flip (Task 1): the deploy half of
 #             the inverted sync. Verifies the staging clone, pulls authored content
 #             from GitHub with a per-invocation (never persisted) token, maps
@@ -130,8 +158,9 @@ Initialize-XFActsScript -ScriptName 'Deploy-xFACts' -ServerInstance $xFACtsServe
    CONSTANTS: PATHS AND MAPPINGS
    ----------------------------------------------------------------------------
    The live server roots, the authored repository-to-live deploy map, and the two
-   orchestrator files guarded from automatic deployment. $AuthoredDeployMap is the
-   inverse of the generated $FileSources map in Publish-GitHubRepository.ps1: the
+   orchestrator files that trigger a restart-required warning when deployed.
+   $AuthoredDeployMap is the inverse of the generated $FileSources map in
+   Publish-GitHubRepository.ps1: the
    two tables partition the repository, authored paths here and generated paths
    there, and every managed repo path belongs to exactly one. Keep them in
    agreement - a path must never appear in both, nor in neither.
@@ -212,11 +241,12 @@ $AuthoredDeployMap = @(
     }
 )
 
-# The two orchestrator files that must never auto-deploy; they require a manual
-# service-stop deployment because the running orchestrator holds them.
-$OrchestratorGuardPaths = @(
-    "xFACts-PowerShell/xFACts-OrchestratorFunctions.ps1",
-    "xFACts-PowerShell/Start-xFACtsOrchestrator.ps1"
+# The two orchestrator engine files (live paths). The running engine holds these,
+# so deploying or deleting either requires an Orchestrator service restart; they
+# deploy like any other file but raise the restart-required warning.
+$OrchestratorFiles = @(
+    (Join-Path $ScriptsRoot "xFACts-OrchestratorFunctions.ps1"),
+    (Join-Path $ScriptsRoot "Start-xFACtsOrchestrator.ps1")
 )
 
 <# ============================================================================
@@ -311,15 +341,84 @@ function Resolve-AuthoredMapping {
 }
 
 <# ============================================================================
+   FUNCTIONS: OBJECT REGISTRY
+   ----------------------------------------------------------------------------
+   Object_Registry access for the two catalog-driven behaviors: the deploy-set
+   registration audit (Get-ActiveRegisteredNames) and the retirement
+   reconciliation (Get-RetiredLivePaths). Test-PathManagedAuthored gates a
+   retirement deletion to files under a mapped authored tree, so a retired row can
+   never remove anything outside the surface deploy manages.
+   Prefix: (none)
+   ============================================================================ #>
+
+# Returns a lookup of active Object_Registry file names (is_active = 1) for the deploy-set registration audit.
+function Get-ActiveRegisteredNames {
+    param()
+
+    $query = @"
+SELECT DISTINCT object_name
+FROM dbo.Object_Registry
+WHERE is_active = 1
+  AND object_category IN ('PowerShell', 'WebAsset', 'Documentation')
+"@
+    $rows = Get-SqlData -Query $query -Timeout 60
+
+    $set = @{}
+    if ($rows) {
+        foreach ($row in @($rows)) { $set[[string]$row.object_name] = $true }
+    }
+    return $set
+}
+
+# Returns the live paths of retired Object_Registry file rows (is_active = 0) for retirement reconciliation.
+function Get-RetiredLivePaths {
+    param()
+
+    $query = @"
+SELECT object_path
+FROM dbo.Object_Registry
+WHERE is_active = 0
+  AND object_path IS NOT NULL
+  AND object_category IN ('PowerShell', 'WebAsset', 'Documentation')
+"@
+    $rows = Get-SqlData -Query $query -Timeout 60
+
+    $paths = @()
+    if ($rows) {
+        foreach ($row in @($rows)) {
+            if ($row.object_path -isnot [DBNull] -and $row.object_path) { $paths += [string]$row.object_path }
+        }
+    }
+    return $paths
+}
+
+# Returns true when a live path falls under one of the authored deploy map's live roots.
+function Test-PathManagedAuthored {
+    param(
+        [Parameter(Mandatory)][string]$LivePath,
+        [Parameter(Mandatory)][array]$Map
+    )
+
+    foreach ($entry in $Map) {
+        $root = $entry.LivePath.TrimEnd('\') + '\'
+        if ($LivePath.StartsWith($root, [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
+    }
+    return $false
+}
+
+<# ============================================================================
    EXECUTION: SCRIPT EXECUTION
    ----------------------------------------------------------------------------
    Verifies git and the staging clone, retrieves the token, fetches from GitHub,
-   computes the changed files against the fetched branch, classifies each into
-   deploy / ignore / orphan-guard / repository-deletion, fast-forwards and copies
-   on -Execute, and reports the pulled commit range, files deployed by folder,
-   deletions reported, and guard hits. Exit codes: 0 clean, 2 warnings (guard
-   hits, reported deletions, or unmapped authored changes), 1 verification or pull
-   failure.
+   loads the Object_Registry catalog, computes the changed files against the
+   fetched branch, classifies each into deploy / delete / ignore / unmapped
+   (retired files are skipped from the copy and deleted instead), audits the
+   deploy set against the registry, fast-forwards and applies the copies and
+   deletions on -Execute, determines whether an Orchestrator or Control Center
+   restart is required, and reports the commit range, files deployed by folder,
+   deletion count, warnings, and restart markers. Exit codes: 0 clean, 2 warnings
+   (restart required, unregistered, retired-skip, or unmapped), 1 verification,
+   pull, or file-operation failure.
    Prefix: (none)
    ============================================================================ #>
 
@@ -437,22 +536,50 @@ foreach ($line in ($diffResult.Output -split "\r?\n")) {
     }
 }
 
+# -- Load the Object_Registry catalog (registration audit + retirement) --
+
+Write-Log ""
+Write-Log "Loading Object_Registry catalog..."
+$activeNames  = Get-ActiveRegisteredNames
+$retiredPaths = Get-RetiredLivePaths
+Write-Log "  Active file rows: $($activeNames.Count)   Retired file rows: $($retiredPaths.Count)"
+if ($activeNames.Count -eq 0) {
+    Write-Log "  WARN  Object_Registry returned no active file rows; the registration audit will flag every deployed file." "WARN"
+}
+
+# Retired live paths as a lookup for the copy-skip check. Catalog retirement wins
+# over a repository edit: a retired file is never re-copied, only deleted.
+$retiredLiveSet = @{}
+foreach ($rp in $retiredPaths) { $retiredLiveSet[$rp.ToLower()] = $true }
+
+# Deployed code/asset file types audited against Object_Registry. Documentation
+# markdown and working files are not catalog objects and are not audited.
+$auditExtensions = @('.ps1', '.psm1', '.psd1', '.css', '.js', '.html')
+
 # -- Classify the changed paths --
 
-$toDeploy = @()
-$guardHits = @()
-$unmapped = @()
-$ignoredCount = 0
+$toDeploy       = @()
+$unmapped       = @()
+$unregistered   = @()
+$retiredSkipped = @()
+$ignoredCount   = 0
 
 foreach ($path in $changedPaths) {
-    if ($OrchestratorGuardPaths -contains $path) {
-        $guardHits += $path
-        continue
-    }
-
     $resolved = Resolve-AuthoredMapping -RepoPath $path -Map $AuthoredDeployMap
     if ($resolved) {
+        if ($retiredLiveSet.ContainsKey($resolved.LiveTarget.ToLower())) {
+            # Retired in the catalog: skip the copy; the retirement pass deletes it.
+            $retiredSkipped += $resolved.RepoPath
+            continue
+        }
         $toDeploy += $resolved
+
+        # Registration audit: a deployed code/asset file must have an active row.
+        $leaf = Split-Path $resolved.LiveTarget -Leaf
+        $ext  = [System.IO.Path]::GetExtension($leaf).ToLower()
+        if (($auditExtensions -contains $ext) -and -not $activeNames.ContainsKey($leaf)) {
+            $unregistered += $path
+        }
     }
     elseif (Test-DeployIgnored -RepoPath $path) {
         $ignoredCount++
@@ -462,41 +589,81 @@ foreach ($path in $changedPaths) {
     }
 }
 
-# Repository deletions: report authored paths that were removed upstream but are
-# still present live. Never delete a live file.
-$deletionsReported = @()
+# -- Build the deletion set (repository removals + catalog retirements) --
+
+# Live paths to delete, deduped case-insensitively. Only files under a mapped
+# authored tree are ever eligible; generated, root, and unmapped paths never
+# reach live disk.
+$deleteSet = @{}
+
+# Repository deletions: authored paths removed upstream, mapped and present live.
 foreach ($path in $deletedPaths) {
     $resolved = Resolve-AuthoredMapping -RepoPath $path -Map $AuthoredDeployMap
     if ($resolved -and (Test-Path $resolved.LiveTarget)) {
-        $deletionsReported += $resolved.LiveTarget
+        $deleteSet[$resolved.LiveTarget.ToLower()] = $resolved.LiveTarget
     }
 }
+
+# Catalog retirements: is_active = 0 rows whose live file is present and sits
+# under a mapped authored tree.
+foreach ($rp in $retiredPaths) {
+    if ((Test-Path $rp) -and (Test-PathManagedAuthored -LivePath $rp -Map $AuthoredDeployMap)) {
+        $deleteSet[$rp.ToLower()] = $rp
+    }
+}
+
+$toDelete = @($deleteSet.Values)
+
+# -- Determine restart scope from the applied change set --
+
+# The two orchestrator engine files and any Control Center script file
+# (routes/APIs/modules/config Pode loads at startup) require a service restart
+# when deployed or deleted; static assets do not.
+$appliedLivePaths = @()
+foreach ($item in $toDeploy) { $appliedLivePaths += $item.LiveTarget }
+$appliedLivePaths += $toDelete
+
+$ccScriptsRoot = "$CCRoot\scripts\"
+$orchestratorRestart = $false
+$ccRestart = $false
+foreach ($lp in $appliedLivePaths) {
+    if ($OrchestratorFiles -contains $lp) { $orchestratorRestart = $true }
+    if ($lp.StartsWith($ccScriptsRoot, [System.StringComparison]::OrdinalIgnoreCase)) { $ccRestart = $true }
+}
+
+# -- Report what will happen --
 
 Write-Log ""
 Write-Log "Pulled commit range: $($beforeSha.Substring(0,7))..$($afterSha.Substring(0,7))"
 Write-Log "  Changed authored files to deploy: $($toDeploy.Count)"
+Write-Log "  Files to delete (repo removals + retirements): $($toDelete.Count)"
 Write-Log "  Generated/root paths ignored:     $ignoredCount"
+if ($retiredSkipped.Count -gt 0) {
+    Write-Log "  Retired in catalog, not deployed: $($retiredSkipped.Count)" "WARN"
+    foreach ($r in $retiredSkipped) { Write-Log "    RETIRED  $r" "WARN" }
+}
 if ($unmapped.Count -gt 0) {
     Write-Log "  Changed paths under an authored prefix but excluded by recurse/filter: $($unmapped.Count)" "WARN"
     foreach ($u in $unmapped) { Write-Log "    UNMAPPED  $u" "WARN" }
 }
-
-# -- Orchestrator guard --
-
-if ($guardHits.Count -gt 0) {
-    Write-Log ""
-    Write-Log "  ORCHESTRATOR GUARD - the following changed but were NOT deployed:" "WARN"
-    foreach ($g in $guardHits) { Write-Log "    HELD  $g" "WARN" }
-    Write-Log "  These require a manual service-stop deployment. All other changed files still deploy." "WARN"
+if ($unregistered.Count -gt 0) {
+    Write-Log "  Deployed files not registered in Object_Registry: $($unregistered.Count)" "WARN"
+    foreach ($u in $unregistered) { Write-Log "    UNREGISTERED  $u" "WARN" }
 }
 
-# -- Fast-forward and copy (execute) or list (preview) --
+# -- Apply (execute) or list (preview) --
+
+$deployErrors = 0
+$deleteErrors = 0
 
 if (-not $Execute) {
     Write-Log ""
-    Write-Log "  PREVIEW - Files that would be deployed:" "WARN"
+    Write-Log "  PREVIEW - changes that would be applied:" "WARN"
     foreach ($item in $toDeploy) {
         Write-Log "    DEPLOY  $($item.RepoPath) -> $($item.LiveTarget)"
+    }
+    foreach ($d in $toDelete) {
+        Write-Log "    DELETE  $d"
     }
 }
 else {
@@ -510,7 +677,6 @@ else {
 
     Write-Log ""
     Write-Log "Deploying changed authored files..."
-    $deployErrors = 0
     foreach ($item in $toDeploy) {
         $source = Join-Path $StagingRoot ($item.RepoPath -replace '/', '\')
         $targetDir = Split-Path $item.LiveTarget -Parent
@@ -528,19 +694,38 @@ else {
         }
     }
     Write-Log "  Deployed: $($toDeploy.Count - $deployErrors) of $($toDeploy.Count)"
-    if ($deployErrors -gt 0) {
-        Write-Log "  $deployErrors file(s) failed to copy. See errors above." "ERROR"
+
+    # Delete files removed upstream and files retired in the catalog.
+    if ($toDelete.Count -gt 0) {
+        Write-Log ""
+        Write-Log "Deleting removed and retired files..."
+        foreach ($d in $toDelete) {
+            try {
+                Remove-Item -Path $d -Force -ErrorAction Stop
+                Write-Log "  DELETE  $d" "SUCCESS"
+            }
+            catch {
+                Write-Log "  FAILED  $d : $($_.Exception.Message)" "ERROR"
+                $deleteErrors++
+            }
+        }
+        Write-Log "  Deleted: $($toDelete.Count - $deleteErrors) of $($toDelete.Count)"
+    }
+
+    if (($deployErrors + $deleteErrors) -gt 0) {
+        Write-Log "  $($deployErrors + $deleteErrors) file operation(s) failed. See errors above." "ERROR"
     }
 }
 
-# -- Deletions report --
+# -- Restart warnings (structured markers the wrapper and Admin modal surface) --
 
-if ($deletionsReported.Count -gt 0) {
+if ($orchestratorRestart) {
     Write-Log ""
-    Write-Log "  Deleted in repo, still present live (not removed automatically):" "WARN"
-    foreach ($d in $deletionsReported) {
-        Write-Log "    DELETED-IN-REPO  $d" "WARN"
-    }
+    Write-Log "  RESTART REQUIRED: Orchestrator - drain in-flight processes and restart the Orchestrator service for changes to take effect. [RESTART-REQUIRED:Orchestrator]" "WARN"
+}
+if ($ccRestart) {
+    Write-Log ""
+    Write-Log "  RESTART REQUIRED: Control Center - restart Control Center (Pode) for changes to take effect. [RESTART-REQUIRED:ControlCenter]" "WARN"
 }
 
 # -- Summary --
@@ -557,15 +742,26 @@ foreach ($group in $byFolder) {
     Write-Log "  $($group.Name): $($group.Count) file(s)"
 }
 
-Write-Log "  Deletions reported: $($deletionsReported.Count)"
-Write-Log "  Orchestrator guard hits: $($guardHits.Count)"
-Write-Log "  Unmapped authored changes: $($unmapped.Count)"
+Write-Log "  Files deployed:    $($toDeploy.Count)"
+Write-Log "  Files deleted:     $($toDelete.Count)"
+Write-Log "  Retired (skipped): $($retiredSkipped.Count)"
+Write-Log "  Unregistered:      $($unregistered.Count)"
+Write-Log "  Unmapped changes:  $($unmapped.Count)"
+if ($orchestratorRestart) { Write-Log "  Restart required: Orchestrator service" "WARN" }
+if ($ccRestart)           { Write-Log "  Restart required: Control Center (Pode)" "WARN" }
 
-$hasWarnings = ($guardHits.Count -gt 0) -or ($deletionsReported.Count -gt 0) -or ($unmapped.Count -gt 0)
+$hasFailures = ($deployErrors -gt 0) -or ($deleteErrors -gt 0)
+$hasWarnings = $orchestratorRestart -or $ccRestart -or ($unregistered.Count -gt 0) -or ($unmapped.Count -gt 0) -or ($retiredSkipped.Count -gt 0)
+
+if ($hasFailures) {
+    Write-Log ""
+    Write-Log "Deploy completed with FAILURES - see errors above." "ERROR"
+    exit 1
+}
 
 if (-not $Execute) {
     Write-Log ""
-    Write-Log "PREVIEW MODE - No changes were made. Run with -Execute to deploy." "WARN"
+    Write-Log "PREVIEW MODE - No changes were made. Run with -Execute to apply." "WARN"
     if ($hasWarnings) { exit 2 }
     exit 0
 }

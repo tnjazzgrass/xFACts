@@ -3525,6 +3525,28 @@ function adm_runDocPipeline() {
     });
 }
 
+/* Normalizes a step's restart_required field (the status JSON may deliver a
+   string, an array, or nothing) into an array of service tokens. */
+function adm_docRestartTokens(r) {
+    var v = r ? r.restart_required : null;
+    if (!v) {
+        return [];
+    }
+    if (typeof v === 'string') {
+        return v ? [v] : [];
+    }
+    if (Object.prototype.toString.call(v) === '[object Array]') {
+        return v;
+    }
+    return [];
+}
+
+/* Builds a prominent restart-required warning callout for the results view. */
+function adm_docRestartCallout(title, message) {
+    return '<div class="adm-doc-restart-callout">\u26A0 <strong>' +
+        cc_escapeHtml(title) + '</strong> ' + cc_escapeHtml(message) + '</div>';
+}
+
 /* Polls pipeline status and renders results on completion. */
 function adm_pollDocStatus() {
     cc_engineFetch('/api/admin/doc-pipeline/status').then(function(data) {
@@ -3583,8 +3605,23 @@ function adm_pollDocStatus() {
                 st.textContent = 'Pipeline completed with errors';
                 st.className = 'adm-doc-run-status adm-error';
             }
+            var restartSet = {};
+            results.forEach(function(r) {
+                adm_docRestartTokens(r).forEach(function(svc) {
+                    restartSet[svc] = true;
+                });
+            });
+            var calloutHtml = '';
+            if (restartSet['Orchestrator']) {
+                calloutHtml += adm_docRestartCallout('Orchestrator restart required',
+                    'Drain in-flight processes, then restart the Orchestrator service for these changes to take effect.');
+            }
+            if (restartSet['ControlCenter']) {
+                calloutHtml += adm_docRestartCallout('Control Center restart required',
+                    'Restart Control Center (Pode) for these changes to take effect.');
+            }
             var res = document.getElementById('adm-doc-results');
-            var html = '<div class="adm-doc-results-divider">Results</div>';
+            var html = calloutHtml + '<div class="adm-doc-results-divider">Results</div>';
             results.forEach(function(r) {
                 var ok = (r.status === 'success' || r.status === 'warning');
                 var cls = r.status === 'warning' ? 'adm-warn' : (ok ? 'adm-ok' : 'adm-fail');

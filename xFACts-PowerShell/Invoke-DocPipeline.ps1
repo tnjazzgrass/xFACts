@@ -81,6 +81,11 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-07-21  Restart signal pass-through. Each step's captured output is scanned
+#             for [RESTART-REQUIRED:<service>] markers (emitted by the deploy step);
+#             the matched services are written to the step's restart_required field
+#             in the status JSON so the Admin modal renders distinct restart
+#             callouts. Additive to the status contract.
 # 2026-07-21  Pipeline flip (Task 2). Removed the StepsJson-implies-Execute bridge:
 #             the Admin doc-pipeline API now passes -Execute explicitly, so the run
 #             mode comes only from -Execute. Removed the retired -PublishToConfluence,
@@ -375,13 +380,14 @@ foreach ($step in $pipeline) {
 
     # Mark step as running
     $status.results += @{
-        step      = $step.Key
-        label     = $step.Label
-        status    = 'running'
-        exit_code = $null
-        message   = ''
-        output    = ''
-        error     = ''
+        step             = $step.Key
+        label            = $step.Label
+        status           = 'running'
+        exit_code        = $null
+        message          = ''
+        output           = ''
+        error            = ''
+        restart_required = @()
     }
     Write-Status
 
@@ -473,6 +479,16 @@ foreach ($step in $pipeline) {
         }
         $status.results[$stepIndex].output = $outputSummary
         $status.results[$stepIndex].error  = $errorSummary
+
+        # Structured restart markers a step can emit (the deploy step signals which
+        # service must restart) - detected in the child output and passed through the
+        # status JSON so the Admin modal renders distinct restart callouts.
+        $restartRequired = @()
+        foreach ($match in [regex]::Matches($stdout, '\[RESTART-REQUIRED:(\w+)\]')) {
+            $svc = $match.Groups[1].Value
+            if ($restartRequired -notcontains $svc) { $restartRequired += $svc }
+        }
+        $status.results[$stepIndex].restart_required = $restartRequired
 
         Write-Status
 
