@@ -4,12 +4,13 @@
 
 .DESCRIPTION
     Publishes the platform's generated content to a GitHub repository via the REST
-    API: the SQL object definitions, the DDL JSON, the module markdown, and the
-    Platform Registry snapshot. Authored content is no longer published here - it
-    now flows GitHub -> live via Deploy-xFACts.ps1, so this script owns only the
-    generated tree under xFACts-Generated/. The run collects the generated disk
-    sources, extracts SQL object definitions, generates the Platform Registry
-    markdown, audits the collected files against Object_Registry, fetches the
+    API: the SQL object definitions, the DDL JSON, the module markdown, the
+    per-table registry exports, and the per-schema Object_Metadata exports.
+    Authored content is no longer published here - it now flows GitHub -> live via
+    Deploy-xFACts.ps1, so this script owns only the generated tree under
+    xFACts-Generated/. The run collects the generated disk sources, extracts SQL
+    object definitions, generates the registry and metadata exports, audits the
+    collected files against Object_Registry, fetches the
     current repo state, computes the create/update/delete diff, and pushes the
     changes via the Contents API. Two safety guards protect the orphan-deletion
     path: a floor guard that aborts when a source directory is missing or
@@ -86,6 +87,16 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-07-22  Registry/metadata export rework. Phase 4 now generates one markdown
+#             file per registry table (Get-RegistryExports) into
+#             xFACts-Generated/registry/ instead of the single consolidated
+#             xFACts_Platform_Registry.md, and adds per-schema Object_Metadata
+#             exports (Get-ObjectMetadataExports) under xFACts-Generated/metadata/.
+#             All land in the generated publish set and manifest-generated.json via
+#             the xFACts-Generated/ prefix, and are audit-excluded by their
+#             Generated: source. The retired consolidated file is removed by orphan
+#             handling on the first run (no longer in the collected set, under the
+#             managed prefix). Summary reports registry file and metadata file counts.
 # 2026-07-21  Pipeline flip (Task 1). Sync inverted: authored content now flows
 #             GitHub -> live via Deploy-xFACts.ps1, so this script publishes only
 #             the generated tree. Removed every authored source from $FileSources
@@ -176,8 +187,8 @@ param(
    ----------------------------------------------------------------------------
    Dot-sourced shared infrastructure: orchestrator helpers (initialization,
    logging, SQL data access, credential retrieval) and the documentation-pipeline
-   helpers (SQL object extraction, Platform Registry markdown, the GitHub REST
-   layer, the Object_Registry lookup, and the manifest builder).
+   helpers (SQL object extraction, the registry and metadata exports, the GitHub
+   REST layer, the Object_Registry lookup, and the manifest builder).
    Prefix: (none)
    ============================================================================ #>
 
@@ -212,8 +223,8 @@ $GeneratedRoot = "E:\xFACts-Generated"
 
 # Server-to-repository file-source map for the generated tree only. Each entry
 # maps a server directory to a repository path, with a filename filter set and a
-# recurse flag. The SQL object definitions and the Platform Registry snapshot are
-# not disk sources; they are generated into the collected file set during
+# recurse flag. The SQL object definitions and the registry and metadata exports
+# are not disk sources; they are generated into the collected file set during
 # EXECUTION. AUTHORED content is NOT published here - it is deployed GitHub -> live
 # by Deploy-xFACts.ps1, whose $AuthoredDeployMap is the inverse authored mapping.
 # The two tables partition the repository: authored paths belong to Deploy's map,
@@ -247,7 +258,7 @@ $ManagedPrefixes = @("xFACts-Generated/")
    Runs the publish pipeline: retrieve credentials, and then either rebuild the
    manifests only (-ManifestsOnly), or collect the generated files (with the floor
    guard on missing or unreadable sources), extract SQL object definitions,
-   generate the Platform Registry markdown, audit against Object_Registry, compute
+   generate the registry and metadata exports, audit against Object_Registry, compute
    the repository diff, apply the floor and deletion-threshold guards, push the
    create/update/delete changes, and (unless -SkipManifests) rebuild the manifests
    via the shared builder. Reports a summary at the end.
@@ -435,25 +446,35 @@ else {
     Write-Log "  WARN  No SQL objects extracted" "WARN"
 }
 
-# -- Phase 4: Generate Platform Registry --
+# -- Phase 4: Generate registry and metadata exports --
 
 Write-Log ""
-Write-Log "Phase 4: Generating Platform Registry"
-Write-Log "--------------------------------------"
+Write-Log "Phase 4: Generating registry and metadata exports"
+Write-Log "-------------------------------------------------"
 
-$registryExport = Get-RegistryExportMarkdown
-$exportedTables = $registryExport.TableCount
-
-if ($exportedTables -gt 0) {
-    $registryBytes = [System.Text.Encoding]::UTF8.GetBytes($registryExport.Markdown)
-    $registryRepoPath = "xFACts-Generated/registry/xFACts_Platform_Registry.md"
-
-    $localFiles[$registryRepoPath] = @{
-        ContentBytes = $registryBytes
-        Source       = "Generated:PlatformRegistry"
+# Per-table registry exports (one file per registry table under registry/).
+$registryExports = Get-RegistryExports
+foreach ($export in $registryExports) {
+    $repoPath = "xFACts-Generated/registry/$($export.Filename)"
+    $localFiles[$repoPath] = @{
+        ContentBytes = [System.Text.Encoding]::UTF8.GetBytes($export.Markdown)
+        Source       = "Generated:Registry:$($export.Title)"
     }
-    Write-Log "  OK    Platform Registry - $exportedTables tables exported" "SUCCESS"
 }
+$registryFileCount = @($registryExports).Count
+Write-Log "  OK    Registry - $registryFileCount table file(s) exported" "SUCCESS"
+
+# Per-schema Object_Metadata exports (one file per schema under metadata/).
+$metadataExports = Get-ObjectMetadataExports
+foreach ($export in $metadataExports) {
+    $repoPath = "xFACts-Generated/metadata/$($export.Filename)"
+    $localFiles[$repoPath] = @{
+        ContentBytes = [System.Text.Encoding]::UTF8.GetBytes($export.Markdown)
+        Source       = "Generated:Metadata:$($export.Schema)"
+    }
+}
+$metadataFileCount = @($metadataExports).Count
+Write-Log "  OK    Object_Metadata - $metadataFileCount schema file(s) exported" "SUCCESS"
 
 # -- Phase 5: Object_Registry audit --
 
@@ -471,8 +492,9 @@ else {
 }
 
 # Audit each collected file against the registry. The generated DDL JSON, module
-# markdown, and Platform Registry snapshot are pipeline output, not catalog
-# objects, so they are excluded; the SQL object dump is matched by schema.object.
+# markdown, and registry/metadata exports are pipeline output, not catalog
+# objects, so they are excluded (by their Generated: source); the SQL object dump
+# is matched by schema.object.
 $auditMatched = 0
 $auditUnregistered = 0
 $unregisteredFiles = @()
@@ -739,7 +761,8 @@ Write-Log "Summary"
 Write-Log "=========================================="
 Write-Log "  Files scanned:  $($localFiles.Count)"
 Write-Log "  SQL objects:    $sqlCount"
-Write-Log "  Registry:       $exportedTables tables"
+Write-Log "  Registry:       $registryFileCount table file(s)"
+Write-Log "  Metadata:       $metadataFileCount schema file(s)"
 Write-Log "  Audit:          $auditMatched matched, $auditUnregistered unregistered"
 Write-Log "  To create:      $($toCreate.Count)"
 Write-Log "  To update:      $($toUpdate.Count)"

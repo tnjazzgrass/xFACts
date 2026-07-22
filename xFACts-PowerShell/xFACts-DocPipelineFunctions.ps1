@@ -5,10 +5,11 @@
 .DESCRIPTION
     Functions common to the documentation-pipeline scripts (Publish-GitHubRepository
     and the pipeline wrapper): extraction of user SQL object definitions from the
-    catalog, generation of the Platform Registry markdown snapshot from the registry
-    tables, the GitHub REST layer (headers, repository tree retrieval, single-file
-    create/update/delete, and local git blob SHA computation), the Object_Registry
-    enrichment lookup, and the shared manifest builder that rebuilds the segmented
+    catalog, generation of the per-table registry exports and the per-schema
+    Object_Metadata exports, the GitHub REST layer (headers, repository tree
+    retrieval, single-file create/update/delete, and local git blob SHA
+    computation), the Object_Registry enrichment lookup, and the shared manifest
+    builder that rebuilds the segmented
     manifest set from the live GitHub repository tree and pushes the changed
     manifests. Dot-source this file after xFACts-OrchestratorFunctions.ps1 and after
     Initialize-XFActsScript, since the functions here call Get-SqlData and Write-Log
@@ -28,6 +29,7 @@
     CONSTANTS: MANIFEST SEGMENTS
     FUNCTIONS: SQL OBJECT EXTRACTION
     FUNCTIONS: REGISTRY EXPORT
+    FUNCTIONS: METADATA EXPORT
     FUNCTIONS: GITHUB REST API
     FUNCTIONS: OBJECT REGISTRY LOOKUP
     FUNCTIONS: MANIFEST GENERATION
@@ -42,6 +44,16 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-07-22  Registry/metadata export rework. $script:RegistryExports gained a
+#             Filename and Source per table, and Get-RegistryExportMarkdown became
+#             Get-RegistryExports, emitting one markdown file per registry table
+#             (each with a source-table + timestamp header) instead of one
+#             consolidated snapshot. The Object Registry export added module_name,
+#             zone, scope, and scope_tier; Global Configuration added is_ui_editable.
+#             Added Get-ObjectMetadataExports (new FUNCTIONS: METADATA EXPORT
+#             section): one markdown file per schema in dbo.Object_Metadata, a
+#             faithful per-object dump of every active row (property_type, column,
+#             sort order, title, description, content) with no truncation.
 # 2026-07-21  Pipeline flip (Task 1). Absorbed the GitHub REST layer from
 #             Publish-GitHubRepository.ps1 (Get-GitHubHeaders, Get-RepoTree,
 #             Push-GitHubFile, Remove-GitHubFile, Get-GitBlobSha) so both the
@@ -75,38 +87,50 @@
 <# ============================================================================
    CONSTANTS: REGISTRY EXPORT DEFINITIONS
    ----------------------------------------------------------------------------
-   The registry tables included in the Platform Registry markdown snapshot. Each
-   entry is a Title and the Query whose result set renders as one markdown table
-   in the generated document. This list is the single source of which registry
-   tables the snapshot covers.
+   The registry tables exported to xFACts-Generated/registry/, one markdown file
+   per table. Each entry is a Title, the Filename it writes, the Source table it
+   reflects, and the Query whose result set renders as the file's markdown table.
+   This list is the single source of which registry tables are exported.
    Prefix: (none)
    ============================================================================ #>
 
-# Registry tables exported to the Platform Registry markdown snapshot, in order.
+# Registry tables exported to xFACts-Generated/registry/, one file per table.
 $script:RegistryExports = @(
     @{
-        Title = "Module Registry"
-        Query = "SELECT module_name, description FROM dbo.Module_Registry WHERE is_active = 1 ORDER BY module_name"
+        Title    = "Module Registry"
+        Filename = "Module_Registry.md"
+        Source   = "dbo.Module_Registry"
+        Query    = "SELECT module_name, description FROM dbo.Module_Registry WHERE is_active = 1 ORDER BY module_name"
     },
     @{
-        Title = "Component Registry"
-        Query = "SELECT module_name, component_name, description, cc_prefix, doc_page_id, doc_title, doc_json_schema, doc_json_categories, doc_cc_slug, doc_sort_order, doc_section_order FROM dbo.Component_Registry WHERE is_active = 1 ORDER BY module_name, component_name"
+        Title    = "Component Registry"
+        Filename = "Component_Registry.md"
+        Source   = "dbo.Component_Registry"
+        Query    = "SELECT module_name, component_name, description, cc_prefix, doc_page_id, doc_title, doc_json_schema, doc_json_categories, doc_cc_slug, doc_sort_order, doc_section_order FROM dbo.Component_Registry WHERE is_active = 1 ORDER BY module_name, component_name"
     },
     @{
-        Title = "Object Registry"
-        Query = "SELECT component_name, object_name, object_category, object_type, object_path, description FROM dbo.Object_Registry WHERE is_active = 1 ORDER BY component_name, object_category, object_type, object_name"
+        Title    = "Object Registry"
+        Filename = "Object_Registry.md"
+        Source   = "dbo.Object_Registry"
+        Query    = "SELECT module_name, component_name, object_name, object_category, object_type, object_path, zone, scope, scope_tier, description FROM dbo.Object_Registry WHERE is_active = 1 ORDER BY module_name, component_name, object_category, object_type, object_name"
     },
     @{
-        Title = "Nav Registry"
-        Query = "SELECT page_route, nav_label, display_title, description, section_key, sort_order, doc_page_id, show_in_nav, show_on_home FROM dbo.RBAC_NavRegistry WHERE is_active = 1 ORDER BY section_key, sort_order, page_route"
+        Title    = "Nav Registry"
+        Filename = "Nav_Registry.md"
+        Source   = "dbo.RBAC_NavRegistry"
+        Query    = "SELECT page_route, nav_label, display_title, description, section_key, sort_order, doc_page_id, show_in_nav, show_on_home FROM dbo.RBAC_NavRegistry WHERE is_active = 1 ORDER BY section_key, sort_order, page_route"
     },
     @{
-        Title = "Process Registry"
-        Query = "SELECT module_name, process_name, description, script_path, procedure_name, execution_mode, dependency_group, interval_seconds, scheduled_time, timeout_seconds, run_mode, allow_concurrent, cc_engine_slug, cc_engine_label, cc_page_route, cc_sort_order FROM Orchestrator.ProcessRegistry ORDER BY dependency_group, module_name, process_name"
+        Title    = "Process Registry"
+        Filename = "Process_Registry.md"
+        Source   = "Orchestrator.ProcessRegistry"
+        Query    = "SELECT module_name, process_name, description, script_path, procedure_name, execution_mode, dependency_group, interval_seconds, scheduled_time, timeout_seconds, run_mode, allow_concurrent, cc_engine_slug, cc_engine_label, cc_page_route, cc_sort_order FROM Orchestrator.ProcessRegistry ORDER BY dependency_group, module_name, process_name"
     },
     @{
-        Title = "Global Configuration"
-        Query = "SELECT module_name, category, setting_name, setting_value, data_type, description FROM dbo.GlobalConfig WHERE is_active = 1 ORDER BY module_name, category, setting_name"
+        Title    = "Global Configuration"
+        Filename = "GlobalConfig.md"
+        Source   = "dbo.GlobalConfig"
+        Query    = "SELECT module_name, category, setting_name, setting_value, data_type, is_ui_editable, description FROM dbo.GlobalConfig WHERE is_active = 1 ORDER BY module_name, category, setting_name"
     }
 )
 
@@ -175,27 +199,22 @@ ORDER BY s.name, o.type_desc, o.name
 <# ============================================================================
    FUNCTIONS: REGISTRY EXPORT
    ----------------------------------------------------------------------------
-   Generation of the Platform Registry markdown snapshot. Runs each registry
-   query in $script:RegistryExports, renders each result set as a markdown
-   table, and returns the assembled document plus the count of tables that
-   rendered, so the caller can both write the snapshot and report how many
-   tables it covered.
+   Generation of the per-table registry exports. Runs each registry query in
+   $script:RegistryExports, renders each result set as its own markdown file (a
+   source-table and timestamp header over the table), and returns the list of
+   exports so the caller can write one file per registry table.
    Prefix: (none)
    ============================================================================ #>
 
-# Builds the Platform Registry markdown snapshot and returns a hashtable with the Markdown string and the TableCount of tables rendered.
-function Get-RegistryExportMarkdown {
+# Renders each registry table in $script:RegistryExports to its own markdown file; returns a list of exports, each a hashtable with Filename, Title, Markdown, and RowCount.
+function Get-RegistryExports {
     param(
         [string]$Instance = $script:XFActsServerInstance,
         [string]$DatabaseName = $script:XFActsDatabase
     )
 
-    $lines = @()
-    $lines += "# xFACts Platform Registry"
-    $lines += "Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-    $lines += ""
-
-    $tableCount = 0
+    $timestamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+    $exports = @()
 
     foreach ($export in $script:RegistryExports) {
         try {
@@ -207,7 +226,10 @@ function Get-RegistryExportMarkdown {
                 continue
             }
 
-            $lines += "## $($export.Title)"
+            $lines = @()
+            $lines += "# $($export.Title)"
+            $lines += "Source: $($export.Source)"
+            $lines += "Generated: $timestamp"
             $lines += ""
 
             # Column names from the first row, excluding DataRow system properties.
@@ -228,7 +250,13 @@ function Get-RegistryExportMarkdown {
             }
 
             $lines += ""
-            $tableCount++
+
+            $exports += @{
+                Filename = $export.Filename
+                Title    = $export.Title
+                Markdown = ($lines -join "`n")
+                RowCount = $rowCount
+            }
             Write-Log "  OK    $($export.Title) - $rowCount rows" "SUCCESS"
         }
         catch {
@@ -236,10 +264,103 @@ function Get-RegistryExportMarkdown {
         }
     }
 
-    return @{
-        Markdown   = ($lines -join "`n")
-        TableCount = $tableCount
+    return $exports
+}
+
+<# ============================================================================
+   FUNCTIONS: METADATA EXPORT
+   ----------------------------------------------------------------------------
+   Generation of the per-schema Object_Metadata exports. Reads every active
+   dbo.Object_Metadata row, groups by schema, and renders one markdown file per
+   schema with the rows laid out per documented object - a faithful raw dump of
+   property_type, column, sort order, title, description, and content, with no
+   truncation. Returns the list of exports so the caller can write one file per
+   schema.
+   Prefix: (none)
+   ============================================================================ #>
+
+# Renders dbo.Object_Metadata to one markdown file per schema; returns a list of exports, each a hashtable with Filename, Schema, Markdown, and RowCount.
+function Get-ObjectMetadataExports {
+    param(
+        [string]$Instance = $script:XFActsServerInstance,
+        [string]$DatabaseName = $script:XFActsDatabase
+    )
+
+    $query = @"
+SELECT
+    schema_name,
+    object_name,
+    object_type,
+    column_name,
+    property_type,
+    sort_order,
+    title,
+    description,
+    content
+FROM dbo.Object_Metadata
+WHERE is_active = 1
+ORDER BY schema_name, object_name, object_type, ISNULL(column_name, ''), property_type, sort_order
+"@
+
+    $rows = Get-SqlData -Query $query -Instance $Instance -DatabaseName $DatabaseName -Timeout 120 -MaxCharLength 1000000
+    if (-not $rows) {
+        Write-Log "  WARN  Object_Metadata returned no rows" "WARN"
+        return @()
     }
+
+    $timestamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+    $exports = @()
+
+    foreach ($schemaGroup in (@($rows) | Group-Object -Property schema_name)) {
+        $schema = $schemaGroup.Name
+
+        $lines = @()
+        $lines += "# Object_Metadata: $schema"
+        $lines += "Source: dbo.Object_Metadata"
+        $lines += "Generated: $timestamp"
+        $lines += ""
+
+        # Group the schema's rows by documented object (name + type), preserving
+        # the SQL ordering within and across objects.
+        $byObject = $schemaGroup.Group | Group-Object -Property { "$($_.object_name)|$($_.object_type)" }
+
+        foreach ($objectGroup in $byObject) {
+            $first = $objectGroup.Group[0]
+            $lines += "## $($first.object_name) ($($first.object_type))"
+            $lines += ""
+
+            foreach ($row in $objectGroup.Group) {
+                $heading = "### $($row.property_type)"
+                if ($row.column_name -and $row.column_name -isnot [DBNull]) {
+                    $heading += " / $($row.column_name)"
+                }
+                $heading += " #$($row.sort_order)"
+                $lines += $heading
+
+                if ($row.title -and $row.title -isnot [DBNull]) {
+                    $lines += "Title: $($row.title)"
+                }
+                if ($row.description -and $row.description -isnot [DBNull]) {
+                    $lines += "Description: $($row.description)"
+                }
+                $lines += ""
+
+                $contentVal = if ($null -eq $row.content -or $row.content -is [DBNull]) { "" } else { [string]$row.content }
+                $lines += $contentVal
+                $lines += ""
+            }
+        }
+
+        $exports += @{
+            Filename = "Object_Metadata_$schema.md"
+            Schema   = $schema
+            Markdown = ($lines -join "`n")
+            RowCount = @($schemaGroup.Group).Count
+        }
+        Write-Log "  OK    Object_Metadata: $schema - $(@($schemaGroup.Group).Count) rows" "SUCCESS"
+    }
+
+    return $exports
 }
 
 <# ============================================================================
