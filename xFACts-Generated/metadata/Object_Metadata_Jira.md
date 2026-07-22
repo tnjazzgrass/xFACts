@@ -1,6 +1,6 @@
 # Object_Metadata: Jira
 Source: dbo.Object_Metadata
-Generated: 2026-07-22 16:14:17
+Generated: 2026-07-22 18:59:13
 
 ## Process-JiraTicketQueue.ps1 (Script)
 
@@ -63,7 +63,7 @@ Reads encrypted Jira API credentials (URL, username, password) using two-tier pa
 ### relationship_note #4  [metadata_id: 1854]
 Title: dbo.GlobalConfig
 
-Reads master passphrase for credential decryption. Also used for retry configuration.
+Reads the master passphrase used for credential decryption.
 
 ## RequestLog (Table)
 
@@ -279,7 +279,7 @@ Jira
 
 ### data_flow #0  [metadata_id: 1835]
 
-Called by T-SQL modules to queue Jira ticket requests. Inserts one row into Jira.TicketQueue with Pending status. The INSERT triggers TR_Jira_TicketQueue_QueueDepth which signals the orchestrator to launch the processor. On INSERT failure, catches the error and logs directly to Jira.RequestLog with StatusCode = -99 and RequestType = 'QueueInsertFailed'.
+Open entry point that any process with EXECUTE permission can call to queue a Jira ticket request, including external, non-xFACts callers. Inserts one row into Jira.TicketQueue with Pending status. The INSERT fires TR_Jira_TicketQueue_QueueDepth, which signals the orchestrator to launch the processor. On INSERT failure, catches the error and logs directly to Jira.RequestLog with StatusCode = -99 and RequestType = 'QueueInsertFailed'.
 
 ### description #0  [metadata_id: 64]
 
