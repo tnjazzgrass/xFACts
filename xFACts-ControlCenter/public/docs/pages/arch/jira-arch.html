@@ -103,9 +103,9 @@
 
         <h3 class="doc-section-subtitle">Step 1: Ticket Enters the Queue</h3>
 
-        <p>A module calls <code>Jira.sp_QueueTicket</code> with the project key, issue type, priority, summary, description, and optional fields like assignee and custom field values. The procedure INSERTs into <code>TicketQueue</code> with status <strong>Pending</strong> and returns immediately.</p>
+        <p>A caller invokes <code>Jira.sp_QueueTicket</code> with the project key, issue type, priority, summary, description, and optional fields like assignee and custom field values. The procedure INSERTs into <code>TicketQueue</code> with status <strong>Pending</strong> and returns immediately.</p>
 
-        <p>The stored procedure handles field validation and default population. If no project is specified, it defaults to the configured project in GlobalConfig. If no priority is specified, it uses the module's default. The calling code provides the minimum required &mdash; the proc fills in the rest.</p>
+        <p>The stored procedure inserts the request with defaults for any optional fields left unspecified &mdash; issue type defaults to Task and priority to High. The project key, summary, and description are required; the caller provides those and the proc fills in the rest.</p>
 
         <h3 class="doc-section-subtitle">Step 2: The Trigger Signals Demand</h3>
 
@@ -115,12 +115,12 @@
 
         <p><code>Process-JiraTicketQueue.ps1</code> picks up Pending rows and constructs a Jira-compliant JSON payload for each one. This is where most of the complexity lives &mdash; Jira's REST API has specific expectations about field formats, custom field IDs, and cascading select values.</p>
 
-        <p>The script POSTs to the Jira issue creation endpoint. On success, the response includes the new ticket key (e.g., SD-12345), which is written back to the <code>jira_ticket_key</code> column in TicketQueue. The row status updates to <strong>Success</strong>.</p>
+        <p>The script POSTs to the Jira issue creation endpoint. On success, the response includes the new ticket key, which is written back to the <code>TicketKey</code> column in TicketQueue. The row status updates to <strong>Success</strong>.</p>
 
         <p>Every API call &mdash; successful or not &mdash; is logged to <code>RequestLog</code> with the full request payload, response payload, HTTP status code, and timing.</p>
 
         <div class="doc-tech-tip">
-            <strong class="doc-tech-tip-label">The ticket key is the receipt.</strong> Once <code>jira_ticket_key</code> is populated, there's a traceable link from the monitoring event through the queue to a real Jira ticket. Other modules can check this field to know whether a ticket was actually created, not just requested.
+            <strong class="doc-tech-tip-label">The ticket key is the receipt.</strong> Once <code>TicketKey</code> is populated, there's a traceable link from the monitoring event through the queue to a real Jira ticket. Other modules can check this field to know whether a ticket was actually created, not just requested.
         </div>
     </div>
 
@@ -135,19 +135,19 @@
         <table class="doc-info-table">
             <thead><tr><th class="doc-info-table-th">Queue Field</th><th class="doc-info-table-th">Jira JSON Path</th><th class="doc-info-table-th">Notes</th></tr></thead>
             <tbody>
-                <tr><td class="doc-info-table-td"><code>project_key</code></td><td class="doc-info-table-td"><code>fields.project.key</code></td><td class="doc-info-table-td">e.g., "SD"</td></tr>
-                <tr><td class="doc-info-table-td"><code>issue_type</code></td><td class="doc-info-table-td"><code>fields.issuetype.name</code></td><td class="doc-info-table-td">e.g., "Issue", "Task"</td></tr>
-                <tr><td class="doc-info-table-td"><code>ticket_priority</code></td><td class="doc-info-table-td"><code>fields.priority.name</code></td><td class="doc-info-table-td">e.g., "High", "Medium"</td></tr>
-                <tr><td class="doc-info-table-td"><code>summary</code></td><td class="doc-info-table-td"><code>fields.summary</code></td><td class="doc-info-table-td">Ticket title</td></tr>
-                <tr><td class="doc-info-table-td"><code>ticket_description</code></td><td class="doc-info-table-td"><code>fields.description</code></td><td class="doc-info-table-td">Body text</td></tr>
-                <tr><td class="doc-info-table-td doc-info-table-td-last"><code>cascading_field_*</code></td><td class="doc-info-table-td doc-info-table-td-last"><code>fields.customfield_*</code></td><td class="doc-info-table-td doc-info-table-td-last">Cascading select: parent + child values</td></tr>
+                <tr><td class="doc-info-table-td"><code>ProjectKey</code></td><td class="doc-info-table-td"><code>fields.project.key</code></td><td class="doc-info-table-td">Jira project key</td></tr>
+                <tr><td class="doc-info-table-td"><code>IssueType</code></td><td class="doc-info-table-td"><code>fields.issuetype.name</code></td><td class="doc-info-table-td">Issue type name</td></tr>
+                <tr><td class="doc-info-table-td"><code>TicketPriority</code></td><td class="doc-info-table-td"><code>fields.priority.name</code></td><td class="doc-info-table-td">Priority name</td></tr>
+                <tr><td class="doc-info-table-td"><code>Summary</code></td><td class="doc-info-table-td"><code>fields.summary</code></td><td class="doc-info-table-td">Ticket title</td></tr>
+                <tr><td class="doc-info-table-td"><code>TicketDescription</code></td><td class="doc-info-table-td"><code>fields.description</code></td><td class="doc-info-table-td">Body text</td></tr>
+                <tr><td class="doc-info-table-td doc-info-table-td-last"><code>CascadingField_*</code></td><td class="doc-info-table-td doc-info-table-td-last"><code>fields.customfield_*</code></td><td class="doc-info-table-td doc-info-table-td-last">Cascading select: parent + child values</td></tr>
             </tbody>
         </table>
 
         <p>The cascading select field is the most complex piece. Jira requires a specific nested structure with <code>value</code> and <code>child.value</code> properties. The queue stores parent and child values separately; the script assembles the correct nesting at build time.</p>
 
         <div class="doc-tech-tip">
-            <strong class="doc-tech-tip-label">Custom field IDs are environment-specific.</strong> The custom field ID for the cascading select (e.g., <code>customfield_10500</code>) is stored in <code>dbo.GlobalConfig</code>, not hardcoded in the script. If Jira's field configuration changes &mdash; which happens during upgrades or project reconfigurations &mdash; you update one config row instead of editing code.
+            <strong class="doc-tech-tip-label">Custom field IDs are environment-specific.</strong> The custom field ID for the cascading select is supplied by the caller as a parameter to <code>sp_QueueTicket</code> and stored on the queue row, not hardcoded in the script. If Jira's field configuration changes &mdash; which happens during upgrades or project reconfigurations &mdash; the caller passes the new field ID, with no code change.
         </div>
     </div>
 
@@ -159,16 +159,16 @@
 
         <p>A missed Teams alert is annoying. A missed Jira ticket means work doesn't get tracked, which means it might not get done. The retry logic reflects this difference.</p>
 
-        <p>When the API call fails, the script increments <code>retry_count</code> and updates <code>last_error</code> with the failure details. The row stays in <strong>Pending</strong> status for the next processor run. This is different from Teams (which retries inline) &mdash; Jira retries span multiple processor executions, giving the Jira server time to recover from transient issues.</p>
+        <p>When the API call fails, the script increments <code>RetryCount</code> and records the failure details in <code>ResponseMessage</code>. The row stays in <strong>Pending</strong> status for the next processor run. This is different from Teams (which retries inline) &mdash; Jira retries span multiple processor executions, giving the Jira server time to recover from transient issues.</p>
 
-        <p>After the configured maximum retries (<code>jira_retry_max_attempts</code> in GlobalConfig) are exhausted, the row is marked <strong>Failed</strong>. But that's not the end of the safety net.</p>
+        <p>After the configured maximum number of attempts (the processor's <code>MaxRetries</code> setting) is exhausted, the row is marked <strong>Failed</strong>. But that's not the end of the safety net.</p>
 
         <h3 class="doc-section-subtitle">Email Fallback</h3>
 
         <p>When all retries fail and email recipients are configured, the script sends a fallback email with the ticket details. The ticket doesn't exist in Jira, but someone knows about the underlying problem. The work doesn't vanish just because an API had a bad day.</p>
 
         <div class="doc-tech-tip">
-            <strong class="doc-tech-tip-label">Retry across cycles, not inline.</strong> Teams alerts retry immediately within one execution (seconds between attempts). Jira retries wait for the next orchestrator cycle (minutes between attempts). The reasoning: Teams failures are usually transient network blips that resolve in seconds. Jira failures are often service-level issues (maintenance, restarts) that need minutes to resolve. The retry cadence matches the failure pattern.
+            <strong class="doc-tech-tip-label">Retry across cycles, not inline.</strong> Teams alerts retry immediately within one execution. Jira retries wait for the next processor cycle. The reasoning: Teams failures are usually transient network blips that resolve quickly. Jira failures are often service-level issues like maintenance or restarts that need longer to resolve. The retry cadence matches the failure pattern.
         </div>
     </div>
 
@@ -253,8 +253,8 @@
         <table class="doc-info-table">
             <thead><tr><th class="doc-info-table-th">From</th><th class="doc-info-table-th">To</th><th class="doc-info-table-th">Relationship</th></tr></thead>
             <tbody>
-                <tr><td class="doc-info-table-td"><code>TicketQueue</code></td><td class="doc-info-table-td"><code>RequestLog</code></td><td class="doc-info-table-td">One ticket request &rarr; one or more API attempts (FK on <code>queue_id</code>)</td></tr>
-                <tr><td class="doc-info-table-td"><code>sp_QueueTicket</code></td><td class="doc-info-table-td"><code>TicketQueue</code></td><td class="doc-info-table-td">Stored procedure validates and INSERTs requests</td></tr>
+                <tr><td class="doc-info-table-td"><code>TicketQueue</code></td><td class="doc-info-table-td"><code>RequestLog</code></td><td class="doc-info-table-td">One ticket request &rarr; one or more API attempts; <code>QueueID</code> is stored for tracing (no FK constraint)</td></tr>
+                <tr><td class="doc-info-table-td"><code>sp_QueueTicket</code></td><td class="doc-info-table-td"><code>TicketQueue</code></td><td class="doc-info-table-td">Stored procedure INSERTs requests as Pending</td></tr>
                 <tr><td class="doc-info-table-td doc-info-table-td-last"><code>TR_Jira_TicketQueue_QueueDepth</code></td><td class="doc-info-table-td doc-info-table-td-last"><code>Orchestrator.ProcessRegistry</code></td><td class="doc-info-table-td doc-info-table-td-last">Trigger signals the orchestrator on INSERT</td></tr>
             </tbody>
         </table>
@@ -265,7 +265,7 @@
             <thead><tr><th class="doc-info-table-th">Dependency</th><th class="doc-info-table-th">Module</th><th class="doc-info-table-th">Purpose</th></tr></thead>
             <tbody>
                 <tr><td class="doc-info-table-td"><code>Orchestrator.ProcessRegistry</code></td><td class="doc-info-table-td">Orchestrator</td><td class="doc-info-table-td">Schedules Process-JiraTicketQueue.ps1 (run_mode = 2, queue-driven)</td></tr>
-                <tr><td class="doc-info-table-td"><code>dbo.GlobalConfig</code></td><td class="doc-info-table-td">Shared Infrastructure</td><td class="doc-info-table-td">Retry settings, custom field IDs, project defaults</td></tr>
+                <tr><td class="doc-info-table-td"><code>dbo.GlobalConfig</code></td><td class="doc-info-table-td">Shared Infrastructure</td><td class="doc-info-table-td">Master passphrase for credential decryption</td></tr>
                 <tr><td class="doc-info-table-td"><code>dbo.Credentials</code></td><td class="doc-info-table-td">Shared Infrastructure</td><td class="doc-info-table-td">Encrypted Jira API credentials</td></tr>
                 <tr><td class="doc-info-table-td doc-info-table-td-last">Jira Server</td><td class="doc-info-table-td doc-info-table-td-last">External</td><td class="doc-info-table-td doc-info-table-td-last">REST API ticket creation target</td></tr>
             </tbody>
@@ -273,14 +273,7 @@
 
         <h3 class="doc-section-subtitle">Who Calls Jira Integration</h3>
 
-        <table class="doc-info-table">
-            <thead><tr><th class="doc-info-table-th">Caller</th><th class="doc-info-table-th">What Gets Ticketed</th></tr></thead>
-            <tbody>
-                <tr><td class="doc-info-table-td">FileOps (Scan-SFTPFiles.ps1)</td><td class="doc-info-table-td">File escalations when <code>create_jira_on_escalation = 1</code></td></tr>
-                <tr><td class="doc-info-table-td">BatchOps</td><td class="doc-info-table-td">Upload failures needing investigation</td></tr>
-                <tr><td class="doc-info-table-td doc-info-table-td-last">JobFlow</td><td class="doc-info-table-td doc-info-table-td-last">Persistent stalls, missing flows</td></tr>
-            </tbody>
-        </table>
+        <p>Jira Integration is an open service. Any process with EXECUTE permission on <code>sp_QueueTicket</code> can queue a ticket &mdash; xFACts modules and external, non-xFACts processes alike. The triggers share a shape: a condition automation can&rsquo;t resolve that needs tracked ownership &mdash; persistent stalls needing investigation, file delivery or escalation follow-ups, batch upload failures, and newly detected configuration that needs setting up.</p>
     </div>
 
                 <div class="doc-footer"></div>

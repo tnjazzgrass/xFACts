@@ -76,29 +76,7 @@
 
         <p>Like Teams, the Jira service is an open door. Any process that can execute a stored procedure can create a ticket. The common thread: automation can&rsquo;t fix it, someone needs to own it, and there needs to be proof that someone did.</p>
 
-        <table class="doc-info-table">
-            <thead>
-                <tr><th class="doc-info-table-th">Source</th><th class="doc-info-table-th">What Gets Ticketed</th></tr>
-            </thead>
-            <tbody>
-                <tr>
-                    <td class="doc-info-table-td"><strong>JobFlow</strong></td>
-                    <td class="doc-info-table-td">Persistent stalls that need investigation, certain job failures requiring manual intervention</td>
-                </tr>
-                <tr>
-                    <td class="doc-info-table-td"><strong>FileOps</strong></td>
-                    <td class="doc-info-table-td">File delivery issues that need follow-up, escalation scenarios</td>
-                </tr>
-                <tr>
-                    <td class="doc-info-table-td"><strong>BatchOps</strong></td>
-                    <td class="doc-info-table-td">Upload failures that need investigation</td>
-                </tr>
-                <tr>
-                    <td class="doc-info-table-td doc-info-table-td-last"><strong>Notice Recon</strong></td>
-                    <td class="doc-info-table-td doc-info-table-td-last">New notice templates detected that need configuration &mdash; an external process using the same service</td>
-                </tr>
-            </tbody>
-        </table>
+        <p>The conditions that earn a ticket share a shape: persistent stalls that need investigation, file delivery or escalation issues that need a human to chase them, batch upload failures, and newly detected configuration that needs setting up. Some callers live outside xFACts entirely &mdash; the service doesn&rsquo;t care who is knocking, only that the caller can execute the stored procedure.</p>
     </div>
 
     <!-- ============================================ -->
