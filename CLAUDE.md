@@ -97,6 +97,15 @@ mistake in a diff, so your own verification carries the full weight.
   a staging clone on FA-SQLDBB and copies the changed authored files to
   their live locations. Generated content flows the other way,
   live -> GitHub, via the publisher. Dirk runs the pipeline.
+- Before any commit/push sequence, first pull (this clone is configured for
+  rebase - pull.rebase true) to absorb the pipeline's generated-content
+  commits, then commit and push. The publisher/manifest steps create commits
+  on GitHub after every run, so this clone is perpetually behind at push time;
+  the API commits touch only generated paths and ours touch authored paths, so
+  the rebase is always trivial. With a fresh pull first, the push should
+  succeed on the first try - the old push-fail-then-rebase-retry cycle should
+  no longer occur. If a push still fails after a fresh pull, STOP and report;
+  never force-push or otherwise force history.
 - Never edit the live production folders directly. The live folders on
   FA-SQLDBB (any path under \\FA-SQLDBB\E$, such as xFACts-PowerShell and
   xFACts-ControlCenter) are populated by the deploy pipeline, not by hand.
