@@ -2,10 +2,10 @@
     "tables":  [
                    {
                        "name":  "BuildExecution",
-                       "description":  "Primary tracking table for BIDATA Daily Build job executions with timing, status, and notification tracking.",
+                       "description":  "Primary tracking table for BIDATA Daily Build executions, holding per-attempt timing, status, and notification state.",
                        "module":  "BIDATA",
                        "category":  "BIDATA",
-                       "dataFlow":  "Monitor-BIDATABuild.ps1 polls DM-PROD-REP.msdb.dbo.sysjobhistory every 5 minutes via direct PowerShell connection and creates one row per execution attempt, identified by instance_id. The script sets status to IN_PROGRESS on first detection, updates to COMPLETED or FAILED when the job outcome row appears, and creates NOT_STARTED records when the build fails to start within the configured grace period. The notified_dttm column is set after Teams.sp_QueueAlert delivers the completion or failure notification. The Control Center BIDATA Monitoring page reads this table for build status display and duration metrics.",
+                       "dataFlow":  "Monitor-BIDATABuild.ps1 polls the configured source server\u0027s msdb.dbo.sysjobhistory over a direct PowerShell connection and writes one row per execution attempt, keyed by instance_id. Status is set to IN_PROGRESS on first detection and updated to COMPLETED or FAILED when the job outcome row appears; a NOT_STARTED row is created when the build has not started within the configured grace period. notified_dttm is stamped after the Teams notification is queued via Send-TeamsAlert. The Control Center BIDATA Monitoring page reads this table for build status and duration display.",
                        "columns":  [
                                        {
                                            "ordinal":  1,
@@ -30,7 +30,7 @@
                                            "length":  "128",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "SQL Agent job name (supports multiple job name versions)"
+                                           "description":  "SQL Agent job name."
                                        },
                                        {
                                            "ordinal":  4,
@@ -121,7 +121,7 @@
                                            "dataType":  "datetime",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "When Teams notification was sent. NULL = not yet notified"
+                                           "description":  "When the Teams build notification was queued; NULL until notified."
                                        },
                                        {
                                            "ordinal":  15,
@@ -130,7 +130,7 @@
                                            "nullable":  false,
                                            "identity":  false,
                                            "default":  "((0))",
-                                           "description":  "1 = Historically backfilled, 0 = Real-time captured"
+                                           "description":  "Reserved and currently unused; always 0, with no code path that sets or reads it."
                                        },
                                        {
                                            "ordinal":  16,
@@ -169,9 +169,9 @@
                                                "sortOrder":  3
                                            },
                                            {
-                                               "topic":  "Historical Backfill Flag",
-                                               "note":  "The is_backfill flag distinguishes between real-time captured builds and historically backfilled data from sysjobhistory, allowing queries to filter for live-captured data only.",
-                                               "sortOrder":  4
+                                               "topic":  "Job Name Stored as Free Text",
+                                               "note":  "job_name is stored as free text because the SQL Agent job name has changed across design generations; Control Center history reflects all variants.",
+                                               "sortOrder":  5
                                            }
                                        ],
                        "statusValues":  [
@@ -272,10 +272,10 @@
                    },
                    {
                        "name":  "StepExecution",
-                       "description":  "Step-level execution details for each BIDATA Daily Build, enabling performance analysis and bottleneck identification.",
+                       "description":  "Step-level execution detail for the BIDATA Daily Build, one row per SQL Agent job step per build attempt.",
                        "module":  "BIDATA",
                        "category":  "BIDATA",
-                       "dataFlow":  "Monitor-BIDATABuild.ps1 captures step completions incrementally from DM-PROD-REP.msdb.dbo.sysjobhistory as each step finishes during the build. Each row records the step name, duration, and run_status for one step of one build attempt. The Control Center BIDATA Monitoring page joins this table to BuildExecution for step-level progress display and historical step duration analysis.",
+                       "dataFlow":  "Monitor-BIDATABuild.ps1 captures step completions incrementally from the source server\u0027s msdb.dbo.sysjobhistory as each step finishes. Each row records the step name, duration, and run_status for one step of one build attempt. The Control Center BIDATA Monitoring page joins this table to BuildExecution for step-level progress and historical duration analysis.",
                        "columns":  [
                                        {
                                            "ordinal":  1,
@@ -465,10 +465,10 @@
     "scripts":  [
                     {
                         "name":  "Monitor-BIDATABuild.ps1",
-                        "description":  "Monitors the BIDATA Daily Build SQL Agent job via direct PowerShell connection to the source server. Captures build start, step completions incrementally, and final status. Creates NOT_STARTED records when the build fails to start within the configured grace period. Sends Teams notifications on completion, failure, or not-started conditions.",
+                        "description":  "Monitors the BIDATA Daily Build SQL Agent job over a direct connection to the source server, capturing build start, incremental step completions, and final status. Creates NOT_STARTED records when the build has not started within the configured grace period. Queues Teams notifications on completion, failure, and not-started conditions.",
                         "module":  "BIDATA",
                         "category":  "BIDATA",
-                        "dataFlow":  "Runs as a queue-driven process in the orchestrator, executing every 5 minutes. Reads configuration from dbo.GlobalConfig (job name, source server, grace period). Queries DM-PROD-REP.msdb.dbo.sysjobhistory and related system tables via direct PowerShell connection for job execution data and schedule information. Creates and updates rows in BIDATA.BuildExecution for build-level tracking, inserts rows into BIDATA.StepExecution as steps complete incrementally. Calls Teams.sp_QueueAlert to send completion, failure, or NOT_STARTED notifications. Uses instance_id-based TriggerValue for notification deduplication.",
+                        "dataFlow":  "Runs as a queue-driven orchestrator process. Reads configuration from dbo.GlobalConfig (job name, source server, grace period), then queries the configured source server\u0027s msdb (sysjobhistory and schedule tables) over a direct PowerShell connection for job execution and schedule data. Creates and updates BIDATA.BuildExecution rows for build-level tracking and inserts BIDATA.StepExecution rows as steps complete. Calls the shared Send-TeamsAlert function to queue completion, failure, and NOT_STARTED notifications, using an instance_id-based TriggerValue for deduplication.",
                         "designNotes":  [
                                             {
                                                 "topic":  "Direct Connection vs Linked Server",
@@ -513,8 +513,8 @@
                                                       "sortOrder":  3
                                                   },
                                                   {
-                                                      "relatedObject":  "Teams.sp_QueueAlert",
-                                                      "note":  "Called to send notifications on build completion (INFO), failure (ERROR), and not-started conditions (ERROR). Uses BuildStatus as TriggerType with instance_id or date in TriggerValue for deduplication.",
+                                                      "relatedObject":  "Send-TeamsAlert",
+                                                      "note":  "Called through the local Send-bid_BuildNotification wrapper to queue notifications on build completion (INFO), failure (CRITICAL), and not-started conditions (WARNING). Passes BuildStatus as TriggerType with the instance_id or date in TriggerValue for deduplication.",
                                                       "sortOrder":  4
                                                   }
                                               ]
