@@ -1,8 +1,8 @@
 # B2B Module Roadmap
 
-**Status:** Active — **collection layer AND Control Center page LIVE**. Collection went live 2026-07-12; the B2B Pipeline page went live 2026-07-13. Sessions on 2026-07-16/17 closed major threads: Step 07 **closed the dispatcher problem** (~84% coverage; residual tabled), Step 08 **closed fault-report content completeness** (full-fidelity parser, formatted modal, escalated-fault recovery, and a third report-less shape captured from ADV_STATUS — §4.2b), and **enrichment Phases 1-2 shipped**: per-run files and Jira tickets now surface on the run-detail slideout, which was refactored to a hero + card layout (§4.2c). Next: Control Center documentation pages.
-**Version:** 3.3
-**Last updated:** 2026-07-16
+**Status:** Active — **collection layer AND Control Center page LIVE**. Collection went live 2026-07-12; the B2B Pipeline page went live 2026-07-13. Sessions on 2026-07-16/17 closed major threads: Step 07 **closed the dispatcher problem** (~84% coverage; residual tabled), Step 08 **closed fault-report content completeness** (full-fidelity parser, formatted modal, escalated-fault recovery, and a third report-less shape captured from ADV_STATUS — §4.2b), and **enrichment Phases 1-2 shipped**: per-run files and Jira tickets now surface on the run-detail slideout, which was refactored to a hero + card layout (§4.2c). Session 2026-07-22 documented a years-standing silent child-fault coverage gap (Step 09, §4.2d), closed residual R12, and recorded the execution-census decision (§7.10). Next: Control Center documentation pages; execution-census design (§7.10).
+**Version:** 3.4
+**Last updated:** 2026-07-22
 
 ---
 
@@ -18,6 +18,8 @@
 2. **Fault-report shape monitoring (Melissa + devs, week of 2026-07-21).** The fault-capture model now handles three shapes plus escalation: error-step report, escalated recovery (map succeeds / BPML raises → recovered from the successful Translation step, TRANSLATION_ESCALATED), and ADV_STATUS text captured as MESSAGE for report-less failures (§4.2b). Melissa is watching for any failed run still missing extended info; new shapes become either a new resolution rung or a new report shape, remediated by re-opening recent NONE rows.
 3. **Page/docs iteration** — parent/child hierarchical run view in the history tree (now on firm ground — parent linkage proven; note ~13K childless-dispatcher leaves would need filtering); the classification-model verification for NO_HANDOFF/DUPLICATE/CASCADE_SKIP (held in sterling_status UNDEFINED pending source-verified meaning — one-line CASE edit each once confirmed).
 4. **WORKFLOW_CONTEXT live-step verification** — the remaining path to "step X of Y" live display (WF_INST_S confirmed write-at-termination, §4.2a). Needs column/timestamp verification then business-hours sampling.
+
+**Decided 2026-07-22 (design not started):** build a b2bi-native execution census as the primary tracking surface (§7.10) — the SI_ExecutionTracking successor — prompted by Step 09's finding that invoked child-workflow faults fail silently (no Integration row, no mirror row, green parent; ~4/day). Until the census is designed and built, the interim manual check is the Step 09 WORKFLOW_CONTEXT sweep (BASIC_STATUS = 1 over the last few days); run it at least every couple of days because b2bi's live primary tables hold only ~48 hours (the history/_RESTORE equivalents were not queried here and may extend that). R12 (child-onFault propagation) is closed: child faults do not propagate to the parent's Integration status (§4.2d, §5.15).
 
 ### Required context
 
@@ -291,6 +293,20 @@ Run History gained a Run ID exact-match search; the summary-list modals widened
 to a new `cc-xxwide` tier (1300px) and show a Jira status badge per row.
 `cc-shared` gained a fifth width tier for both slide and modal dialogs.
 
+### 4.2d Child-fault silent coverage gap (Step 09)
+
+**2026-07-22 — Invoked child-workflow faults can fail silently: no Integration row, no mirror row, green parent** — source: Step 09 (anchor incident 8651070)
+FA_CLIENTS_ENCOUNTER_LOAD instance 8651070 — an invoked subprocess of tracked MAIN run 8651060 — faulted at its Translation step at 12:15:27 on 2026-07-22 and terminated with Sterling Status Error / State Completed (Sterling BPD ERROR_SERVICE naming Translation step 2). The child wrote no row to Integration.ETL.tbl_B2B_CLIENTS_BATCH_STATUS and none to B2B.INT_PipelineTracking; the parent MAIN run closed batch_status 3 (COMPLETE). The failure is invisible to every current tracking surface.
+
+**2026-07-22 — The sweep/discriminator split is clean: self-reporting workflows are tracked, separate-instance children are not** — source: Step 09
+A WORKFLOW_CONTEXT sweep (BASIC_STATUS = 1; a five-day lookback, comfortably covering b2bi's ~48-hour live primary-table retention) found 23 distinct failed instances. A discriminator query against the tracker split them: the 9 inline-in-MAIN failures (FA_CLIENTS_TRANS / POST_TRANSLATION steps sharing MAIN's WORKFLOW_ID) and the 1 GET_LIST dispatcher failure are all recorded -1 / STERLING_FAULT (the self-report path works); the 13 separate-instance invoked children (11 FA_CLIENTS_VITAL + 2 FA_CLIENTS_ENCOUNTER_LOAD, all Translation faults) are absent from both the Integration table and the mirror, with green parents — roughly 4 silent failures per day. The true discriminator is whether the faulting instance's workflow self-reports to BATCH_STATUS: MAIN does (covering its inline sub-steps) and GET_LIST does; VITAL and ENCOUNTER_LOAD, when invoked as their own instances, do not.
+
+**2026-07-22 — Root cause is a source-instrumentation coverage boundary, not a data-quality or collector defect** — source: Step 09
+The child workflows' BPMLs contain no status-write steps, so tracking rows exist only for workflows that self-report. This is consistent with the Step 6G section 6 known-blind-spots list (inline invisibility; VITAL/ENCOUNTER writes that hide in translation maps and never reach Integration) — not an Integration data-quality failure and not a collector bug. It is the direct evidence behind the execution-census decision (§7.10).
+
+**2026-07-22 — R12 (child-onFault propagation) CLOSED: it does not propagate** — source: Step 09
+The long-parked opportunistic inspection item R12 (parked in Step 6G section 6; raised in Step 6D 6.10 / Step 6E) is resolved by the anchor incident: a child workflow's fault does not propagate to its parent's Integration status, and the parent completes green. Instance 8651070 is the anchor evidence.
+
 ### 4.3 Retention and archive
 
 **2026-04-24 — Data horizon is ~30 days, not ~48 hours** — source: Step 2
@@ -450,7 +466,7 @@ Sub-step sequence:
 
 ### 5.15 Open questions
 
-**Closed as of Step 6G.** All investigation questions resolved (see Step_06E_Findings §4-5 and Step_06D_Claim_Checklist §14). Residual non-blocking notes: R9 (TRANS FILELIST/SIZE quirk) and R12 (child-onFault propagation) remain opportunistic inspection items. The reconciliation job's schedule, previously parked here, was resolved 2026-07-12 (§4.2a).
+**Closed as of Step 6G.** All investigation questions resolved (see Step_06E_Findings §4-5 and Step_06D_Claim_Checklist §14). Residual non-blocking note: R9 (TRANS FILELIST/SIZE quirk) remains an opportunistic inspection item. **R12 (child-onFault propagation) is CLOSED 2026-07-22 (Step 09, §4.2d): a child workflow's fault does not propagate to its parent's Integration status — the parent completes green and the faulting child leaves no tracking row; anchor evidence is instance 8651070.** R12 was parked in Step 6G section 6 as a natural-anchor inspection; the anchor appeared. The reconciliation job's schedule, previously parked here, was resolved 2026-07-12 (§4.2a).
 
 ---
 
@@ -528,6 +544,17 @@ Rationale: the module shows **end-to-end Sterling**, so the primary axis is the 
 
 Note on labels: sterling_status carries the clean UI wording ("Failed"); the classification layer keeps its own vocabulary ("Sterling Fault", "Fault Post-Handoff"). Adjacent on the slideout this reads as a genuine coarse/detail distinction rather than an inconsistency — no rename needed.
 
+### 7.10 Execution census (SI_ExecutionTracking successor) — DECIDED 2026-07-22
+
+Revisits 7.1 (rebuild-vs-evolve) and 7.3 (sub-workflow tracking depth) in light of Step 09, which proved that invoked child-workflow faults can fail entirely silently — no row in Integration.ETL.tbl_B2B_CLIENTS_BATCH_STATUS, no row in INT_PipelineTracking, and a green parent (§4.2d, anchor incident 8651070). The BATCH_STATUS-mirror grain (7.5) only ever sees workflows that self-report; separate-instance children that fault before writing a status row are structurally invisible to it.
+
+**Decision:** build a b2bi-native execution census as the primary tracking surface — one row per workflow instance, sourced from b2bi existence (WF_INST_S and its restore sibling), enriched with Integration/DM lifecycle content for the subset of runs that have it. This is Dirk's original unified-table formulation and the SI_ExecutionTracking successor. Completeness is by construction: a row exists because the instance existed in Sterling, not because a workflow chose to write one. Rationale: today's evidence of a years-standing silent gap (~4 untracked failures/day), which the census closes at the grain where it originates.
+
+**Scope guards (design not started):**
+- INT_PipelineTracking's disposition — absorbed into the census vs. retained as an enrichment source — is explicitly the FIRST design-phase question, not settled here.
+- The mirror remains correct and necessary for DM reconciliation; its role changes, it is NOT deprecated.
+- No implementation details are recorded beyond this decision. Design follows standing rules (investigation-first, Guidelines validation before any DDL, one object at a time). Tracked as backlog B-109.
+
 ---
 
 ## 8. Reference Material
@@ -551,6 +578,7 @@ All under `xFACts-Documentation/WorkingFiles/B2B_Investigation/` (flat sub-step 
    - `Step_06G_Consolidation/Step_06G_Summary.md` ✅ Complete — **read this first in any future session**
 7. `Step_07_Dispatcher_Resolution/Step_07_Findings.md` ✅ Complete — dispatcher reframe (run→definition), verified child = parent rule, sibling false-positive correction, schedule-timing adjudication, residual characterization
 8. `Step_08_FaultReport_Content/Step_08_Findings.md` ✅ Complete — parser fidelity gap, escalated-fault recovery (map succeeds/BPML raises), probe findings (no pagination/truncation, retention wall), schema widen + escalation_message
+9. `Step_09_Child_Fault_Coverage_Gap/Step_09_Findings.md` ✅ Complete — the silent child-fault coverage gap: anchor incident 8651070, the 3-day WORKFLOW_CONTEXT sweep and the tracker discriminator split, root cause (child BPMLs carry no status-write steps), R12 closed, and the execution-census decision (§7.10)
 
 Each findings doc includes: purpose, summary of change, detailed findings, implications for the collector, resolved questions, new questions, and document status.
 
@@ -591,10 +619,13 @@ Under `WorkingFiles/B2B_Investigation/Legacy/`:
 
 **Done this session (2026-07-17):** enrichment Phases 1-2 and fault-report follow-ups (§4.2c) — new B2B.INT_RunFiles (per-run file mirror) and B2B.INT_RunTickets (per-run Jira tickets, GENERATED/PENDING/AGED_OUT status) with collector steps, backfills, Object_Registry + Object_Metadata; a third report-less fault shape captured from ADV_STATUS as MESSAGE; run-detail slideout refactored to hero + cards with files and ticket surfacing; Live Activity Seq ID; Run History Run ID search; cc-shared fifth width tier; summary-list modals widened with a per-row Jira badge. Extra per-file/per-client record-count enrichment demoted to a low-priority backlog option (§9 item 4). **B2B System_Metadata bump taken this session** covering all 2026-07-16/17 structural work.
 
+**Done this session (2026-07-22):** documentation-only pass — no schema, collector, BPML, or CC change. Step 09 formalized under WorkingFiles/B2B_Investigation/Step_09_Child_Fault_Coverage_Gap: the silent child-fault coverage gap (anchor incident 8651070, a subprocess of tracked MAIN run 8651060, faulted at Translation and left no Integration or mirror row while the parent closed COMPLETE; a 3-day WORKFLOW_CONTEXT sweep and a tracker discriminator query split the failures into a tracked class (inline-in-MAIN + GET_LIST dispatcher, -1 / STERLING_FAULT) and an untracked class of separate-instance invoked children, absent from both tables with green parents, ~4/day; root cause is a source-instrumentation coverage boundary — child BPMLs carry no status-write steps — consistent with the Step 6G section 6 blind spots). R12 closed (child faults do not propagate; §4.2d, §5.15). §7.10 records the DECIDED execution census (SI_ExecutionTracking successor; design not started). Backlog B-109 opened for the census; the GET_LIST v20 fault-ticket fix raised to High (B-110). Interim mitigation: the Step 09 sweep documented as a recurring manual check (run at least every couple of days given b2bi's ~48-hour live primary-table retention).
+
 ## Document History
 
 | Version | Date | Change |
 |---|---|---|
+| 3.4 | 2026-07-22 | **Child-fault silent gap documented; execution-census decision recorded; R12 closed.** New §4.2d (Step 09): invoked child-workflow faults can fail silently — anchor incident FA_CLIENTS_ENCOUNTER_LOAD 8651070 (subprocess of tracked MAIN 8651060) faulted at Translation, wrote no Integration/mirror row, parent closed COMPLETE; a 3-day WORKFLOW_CONTEXT sweep (BASIC_STATUS = 1) and a tracker discriminator query split the failures into a tracked class (inline-in-MAIN + GET_LIST dispatcher, -1 / STERLING_FAULT) and an untracked class (separate-instance FA_CLIENTS_VITAL and FA_CLIENTS_ENCOUNTER_LOAD Translation children, absent from both tables, green parents, ~4/day); root cause is a source-instrumentation coverage boundary (child BPMLs carry no status-write steps), consistent with the Step 6G section 6 blind spots. §5.15 R12 (child-onFault propagation) closed — faults do not propagate. New §7.10 records the DECIDED execution census (b2bi-native, one row per instance from b2bi existence, enriched from Integration/DM; SI_ExecutionTracking successor; INT_PipelineTracking disposition is the first design question; mirror not deprecated; design not started). §8 adds Step 09; status line, Next Session, and §9 updated. Backlog B-109 (census) opened and B-110 (GET_LIST v20 fault-ticket fix) raised to High. Documentation-only; no schema/collector/BPML/CC change. |
 | 3.3 | 2026-07-17 | **Enrichment Phases 1-2 shipped; third fault-report shape; slideout refactor.** New §4.2c (four entries): run files mirrored into B2B.INT_RunFiles (one row per file-per-run, idempotent on source ID, all statuses); run tickets captured into B2B.INT_RunTickets at (run_id, ticket_reason) grain with ticket_status GENERATED/PENDING/AGED_OUT (multi-ticket runs real, ~12% never assigned, status-independent display); a third report-less fault shape captured from the failing step's ADV_STATUS as MESSAGE with numeric-code lifting and a three-rung resolve order; and the slideout refactor (hero with labeled Run Status groups, two-column cards, dedicated Client ID, files + ticket surfacing, Live Activity Seq ID, Run History Run ID search, cc-shared fifth width tier, summary-list modals widened with per-row Jira badge). Status line, Next Session, and §9 re-pointed so Control Center documentation pages now lead and enrichment/fault-report are marked done; extra per-file/per-client record-count enrichment demoted to a low-priority backlog option (§9 item 4). B2B System_Metadata bump taken this session for all 2026-07-16/17 structural work. |
 | 3.2 | 2026-07-16 | **Step 08 — fault-report content completeness closed.** New §4.2b (four Known True entries): the parser was lossy not the capture (fixable by re-parse; parser now full-fidelity), escalated faults (map succeeds / BPML raises — report recovered from the successful Translation step as TRANSLATION_ESCALATED, one-liner preserved in escalation_message, CONTENT scraping evaluated and rejected), probe findings (no pagination, no binary truncation at these sizes, retention wall 07-14/07-15), and the schema changes (fault_report_type widened VARCHAR(20)→(30), CHECK amended, escalation_message added; width-vs-CHECK lesson). §3.1 collector line, §8 findings list, and §9 updated; Next Session and §9 re-pointed so the enrichment survey (per-run summary) now leads and fault-report is marked done with the re-parse-preservation rule. System_Metadata bump for all 2026-07-16 structural work deferred to next session. |
 | 3.1 | 2026-07-16 | **Step 07 — dispatcher problem closed.** §4.2a adds six Known True entries: the reframe (live resolution is run→definition via WF_INST_S+WFD; SCHEDULE never consulted; scheduled parents self-name; registry service_name coverage complete), the verified child = parent rule (6,201 live pairs, zero mismatches), the sibling-backfill false-positive mechanism (sibling-schedule conflict families; 806 rows corrected; 13 of 13,988 exposed unanimities overruled), the schedule-timing adjudication method (92% of live runs within 1 min of declared fire times; blind validation 147/4/0; adopted at lag ≤ 2 min with no ties; inference accepted into dispatcher_name without a marker — informational field, go-forward exact), the Step 07 backfill results (104,022 parents / 38,005 children / 249 sibling rows; A-STRUCTURAL 89,310, B-TIMING 14,507, B-FALLBACK-UNANIMOUS 205, UNRESOLVED-CONFLICT 824; ~76% → ~84%), and the 2023-12-01 parent-row boundary (88,752 pre-boundary children structurally unrecoverable). Prior backfill entry annotated (canaries fired). §3.1 and §5.8 updated; §8 adds Step 07 findings; §9 item 1 replaced by fault-report content completeness and item 8 added (dispatcher residual tabled, CLIENTS_PARAM fuzzy experiment noted against its prior rejection); Next Session rewritten to lead with fault-report content completeness (time-sensitive) and the enrichment survey's per-run summary target. |
