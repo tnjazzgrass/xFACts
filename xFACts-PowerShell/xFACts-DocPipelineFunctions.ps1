@@ -44,6 +44,9 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-07-22  Object_Metadata export now tags each row heading with its metadata_id
+#             primary key ([metadata_id: N]), so targeted UPDATE scripts can address
+#             a specific row for functional updates or content-cleanup passes.
 # 2026-07-22  Registry/metadata export rework. $script:RegistryExports gained a
 #             Filename and Source per table, and Get-RegistryExportMarkdown became
 #             Get-RegistryExports, emitting one markdown file per registry table
@@ -273,9 +276,10 @@ function Get-RegistryExports {
    Generation of the per-schema Object_Metadata exports. Reads every active
    dbo.Object_Metadata row, groups by schema, and renders one markdown file per
    schema with the rows laid out per documented object - a faithful raw dump of
-   property_type, column, sort order, title, description, and content, with no
-   truncation. Returns the list of exports so the caller can write one file per
-   schema.
+   property_type, column, sort order, title, description, and content, each row
+   tagged with its metadata_id primary key so targeted UPDATE scripts can address
+   a specific row. No truncation. Returns the list of exports so the caller can
+   write one file per schema.
    Prefix: (none)
    ============================================================================ #>
 
@@ -288,6 +292,7 @@ function Get-ObjectMetadataExports {
 
     $query = @"
 SELECT
+    metadata_id,
     schema_name,
     object_name,
     object_type,
@@ -334,7 +339,7 @@ ORDER BY schema_name, object_name, object_type, ISNULL(column_name, ''), propert
                 if ($row.column_name -and $row.column_name -isnot [DBNull]) {
                     $heading += " / $($row.column_name)"
                 }
-                $heading += " #$($row.sort_order)"
+                $heading += " #$($row.sort_order)  [metadata_id: $($row.metadata_id)]"
                 $lines += $heading
 
                 if ($row.title -and $row.title -isnot [DBNull]) {
