@@ -76,8 +76,8 @@
         <div class="doc-arch-flow">
             <div class="doc-arch-flow-steps">
                 <div class="doc-arch-flow-step doc-flow-blue">
-                    <div class="doc-arch-flow-step-title">sp_QueueAlert</div>
-                    <div class="doc-arch-flow-step-detail">INSERT into<br>AlertQueue (Pending)</div>
+                    <div class="doc-arch-flow-step-title">Queue Alert</div>
+                    <div class="doc-arch-flow-step-detail">Send-TeamsAlert or<br>sp_QueueAlert &rarr; Pending</div>
                 </div>
                 <span class="doc-arch-flow-arrow">&rarr;</span>
                 <div class="doc-arch-flow-step doc-flow-green">
@@ -105,9 +105,9 @@
 
         <h3 class="doc-section-subtitle">Step 1: Alert Enters the Queue</h3>
 
-        <p>A module calls <code>Teams.sp_QueueAlert</code> with a source module, alert category (CRITICAL/WARNING/INFO), title, message body, and optional deduplication trigger. The stored procedure INSERTs a row into <code>AlertQueue</code> with status <strong>Pending</strong> and returns immediately. The calling module never waits for delivery.</p>
+        <p>Most alerts originate in PowerShell, which queues them through the shared <code>Send-TeamsAlert</code> function; T-SQL callers use <code>Teams.sp_QueueAlert</code>. Either way a row lands in <code>AlertQueue</code> with status <strong>Pending</strong> and the caller returns immediately &mdash; it never waits for delivery. Both paths carry a source module, alert category (CRITICAL/WARNING/INFO), title, message body, and an optional deduplication trigger.</p>
 
-        <p>Some scripts bypass the stored procedure and INSERT directly into AlertQueue, providing pre-built Adaptive Card JSON in the <code>card_json</code> column. <code>Send-DiskHealthSummary.ps1</code> does this because its card layout is too complex for the standard template. The queue doesn't care how the row got there.</p>
+        <p>Some alerts need richer layouts than the standard template &mdash; <code>Send-DiskHealthSummary.ps1</code> is one. Those callers pass a pre-built Adaptive Card in the <code>card_json</code> column via <code>Send-TeamsAlert -CardJson</code>. The queue doesn&rsquo;t care how the row got there.</p>
 
         <h3 class="doc-section-subtitle">Step 2: The Trigger Signals Demand</h3>
 
@@ -121,7 +121,7 @@
 
         <p><code>Process-TeamsAlertQueue.ps1</code> picks up all Pending rows and processes them in order. For each alert:</p>
 
-        <p>The script joins through <code>WebhookSubscription</code> to find which webhooks should receive this alert, matching on <code>source_module</code> and <code>alert_category</code>. An alert can match multiple subscriptions &mdash; one alert, many channels.</p>
+        <p>The script joins through <code>WebhookSubscription</code> to find which webhooks should receive this alert, matching on <code>source_module</code>, <code>alert_category</code>, and <code>trigger_type</code> (NULL fields act as wildcards). An alert can match multiple subscriptions &mdash; one alert, many channels.</p>
 
         <p>For each matched webhook, the script either uses the pre-built <code>card_json</code> (if provided) or constructs a standard Adaptive Card with the alert's title, message, category color coding, and timestamp. The card is POSTed to the webhook URL from <code>WebhookConfig</code>.</p>
 
@@ -160,10 +160,10 @@
 
         <p>Without deduplication, a persistent problem generates a new alert every monitoring cycle. A stalled job detected on every cycle means hundreds of alerts per day. That&rsquo;s not alerting, that&rsquo;s harassment.</p>
 
-        <p>The deduplication mechanism uses two fields: <code>dedup_type</code> and <code>dedup_value</code>. Together they form a composite key that uniquely identifies a condition. Before queueing a new alert, the calling module (or <code>sp_QueueAlert</code>) checks: has an alert with this exact type+value combination already been successfully delivered?</p>
+        <p>Deduplication keys on two fields, <code>trigger_type</code> and <code>trigger_value</code>, which together identify a condition, and it works on two levels. <strong>Cross-run:</strong> before an alert is queued, <code>RequestLog</code> is checked for an already-successful delivery (status_code 200) of the same trigger &mdash; <code>Send-TeamsAlert</code> does this for PowerShell callers, and T-SQL callers do it before <code>sp_QueueAlert</code> &mdash; so a condition already reported is not re-sent on the next cycle. <strong>Same-run:</strong> the <code>Send-TeamsAlert</code> insert is itself guarded, so a burst of the same trigger within one run (a failover flapping hundreds of times, or two collectors racing the same trigger) collapses to a single queued alert.</p>
 
         <table class="doc-info-table">
-            <thead><tr><th class="doc-info-table-th">Example</th><th class="doc-info-table-th">dedup_type</th><th class="doc-info-table-th">dedup_value</th></tr></thead>
+            <thead><tr><th class="doc-info-table-th">Example</th><th class="doc-info-table-th">trigger_type</th><th class="doc-info-table-th">trigger_value</th></tr></thead>
             <tbody>
                 <tr><td class="doc-info-table-td">JobFlow stall on Jan 18</td><td class="doc-info-table-td">JOBFLOW_STALL</td><td class="doc-info-table-td">2026-01-18</td></tr>
                 <tr><td class="doc-info-table-td">Disk D low space</td><td class="doc-info-table-td">DISK_LOW</td><td class="doc-info-table-td">DM-PROD-DB_D</td></tr>
@@ -171,10 +171,10 @@
             </tbody>
         </table>
 
-        <p>The date component in most dedup values means the alert resets daily. Monday's stall alert won't suppress Tuesday's. This is the right behavior &mdash; a recurring problem deserves a daily notification, not just the first one.</p>
+        <p>By convention, most callers put the date in the <code>trigger_value</code>, so a new day yields a new key and the alert fires again &mdash; Monday&rsquo;s stall alert won&rsquo;t suppress Tuesday&rsquo;s. The dedup check itself has no time window; the daily cadence comes entirely from that caller convention, which is the right behavior &mdash; a recurring problem deserves a daily notification, not just the first one.</p>
 
         <div class="doc-tech-tip">
-            <strong class="doc-tech-tip-label">Deduplication is optional.</strong> Not all alerts need it. A build completion notification is a one-time event &mdash; there's no risk of it repeating. INFO-level alerts often skip deduplication entirely. The calling module decides whether to provide dedup fields based on the nature of the alert.
+            <strong class="doc-tech-tip-label">Deduplication isn&rsquo;t optional.</strong> On the PowerShell path, <code>Send-TeamsAlert</code> requires a trigger type and value on every call &mdash; there is no opt-out. For a genuinely one-off notification (a build completion, say), the caller simply passes a value that will not recur, such as the date or a run id, so each event keys uniquely.
         </div>
     </div>
 
@@ -186,7 +186,7 @@
 
         <p>Teams webhooks are generally reliable, but they're an external dependency. Network blips, service outages, and webhook URL rotations all happen. The retry logic is simple and inline.</p>
 
-        <p>When a POST fails, the script retries immediately with a short delay between attempts. The maximum retry count is configured in <code>dbo.GlobalConfig</code>. Each attempt is logged to <code>RequestLog</code> with its status code and response.</p>
+        <p>When a POST fails, the script retries immediately, with a fixed 2-second delay between attempts. The maximum number of attempts is configured in <code>dbo.GlobalConfig</code> (<code>teams_retry_max_attempts</code>). Each attempt is logged to <code>RequestLog</code> with its status code and response.</p>
 
         <p>If all retries are exhausted, the AlertQueue row is marked <strong>Failed</strong>. Failed alerts remain in the queue for troubleshooting but are not automatically retried on subsequent processor runs. The assumption is that if it failed after multiple retries, the problem is structural (expired webhook, wrong URL) and needs human attention.</p>
 
@@ -214,7 +214,7 @@
         <p>The script is probably putting emoji directly in the hashtable before ConvertTo-Json. Use the placeholder pattern (<code>{{FIRE}}</code>, <code>{{CHECK}}</code>, <code>{{WARN}}</code>) instead. The processor resolves them at send time.</p>
 
         <p><strong>&ldquo;I need to retry a failed alert.&rdquo;</strong></p>
-        <p>Reset the queue row&rsquo;s status to Pending, clear the error_message and processed_dttm, then bump the processor&rsquo;s <code>running_count</code> in ProcessRegistry. The processor will pick it up on the next heartbeat.</p>
+        <p>The simplest path is the Admin page Alert Failures card, which resends a failed alert in one click (it queues a fresh Pending copy linked by <code>original_queue_id</code>). To do it by hand: reset the queue row&rsquo;s status to Pending, clear the error_message and processed_dttm, then bump the processor&rsquo;s <code>running_count</code> in ProcessRegistry. The processor will pick it up on the next heartbeat.</p>
     </div>
 
     <!-- ============================================ -->
@@ -230,8 +230,8 @@
         <table class="doc-info-table">
             <thead><tr><th class="doc-info-table-th">From</th><th class="doc-info-table-th">To</th><th class="doc-info-table-th">Relationship</th></tr></thead>
             <tbody>
-                <tr><td class="doc-info-table-td"><code>WebhookConfig</code></td><td class="doc-info-table-td"><code>WebhookSubscription</code></td><td class="doc-info-table-td">One webhook &rarr; many subscriptions (FK on <code>webhook_id</code>)</td></tr>
-                <tr><td class="doc-info-table-td"><code>WebhookSubscription</code></td><td class="doc-info-table-td"><code>AlertQueue</code></td><td class="doc-info-table-td">Subscription matches alerts at delivery time (joined by module + category)</td></tr>
+                <tr><td class="doc-info-table-td"><code>WebhookConfig</code></td><td class="doc-info-table-td"><code>WebhookSubscription</code></td><td class="doc-info-table-td">One webhook &rarr; many subscriptions (FK on <code>config_id</code>)</td></tr>
+                <tr><td class="doc-info-table-td"><code>WebhookSubscription</code></td><td class="doc-info-table-td"><code>AlertQueue</code></td><td class="doc-info-table-td">Subscription matches alerts at delivery time (joined by module, category, and trigger type, NULL as wildcard)</td></tr>
                 <tr><td class="doc-info-table-td doc-info-table-td-last"><code>AlertQueue</code></td><td class="doc-info-table-td doc-info-table-td-last"><code>RequestLog</code></td><td class="doc-info-table-td doc-info-table-td-last">One alert &rarr; one or more delivery attempts (FK on <code>queue_id</code>)</td></tr>
             </tbody>
         </table>
@@ -252,11 +252,11 @@
         <table class="doc-info-table">
             <thead><tr><th class="doc-info-table-th">Caller</th><th class="doc-info-table-th">Method</th><th class="doc-info-table-th">Alert Types</th></tr></thead>
             <tbody>
-                <tr><td class="doc-info-table-td">JobFlow (Monitor-JobFlow.ps1)</td><td class="doc-info-table-td"><code>sp_QueueAlert</code></td><td class="doc-info-table-td">Stalls, failures, recoveries</td></tr>
+                <tr><td class="doc-info-table-td">JobFlow (Monitor-JobFlow.ps1)</td><td class="doc-info-table-td"><code>Send-TeamsAlert</code></td><td class="doc-info-table-td">Stalls, failures, recoveries</td></tr>
                 <tr><td class="doc-info-table-td">ServerOps (Process-BackupNetworkCopy.ps1 / Process-BackupAWSUpload.ps1)</td><td class="doc-info-table-td"><code>Send-TeamsAlert</code></td><td class="doc-info-table-td">Retry exhaustion alerts for failed copies/uploads</td></tr>
-                <tr><td class="doc-info-table-td">FileOps (Scan-SFTPFiles.ps1)</td><td class="doc-info-table-td"><code>sp_QueueAlert</code></td><td class="doc-info-table-td">File detected, escalation</td></tr>
-                <tr><td class="doc-info-table-td">BIDATA (Monitor-BIDATABuild.ps1)</td><td class="doc-info-table-td"><code>sp_QueueAlert</code></td><td class="doc-info-table-td">Build complete, not started</td></tr>
-                <tr><td class="doc-info-table-td doc-info-table-td-last">ServerOps (Send-DiskHealthSummary.ps1)</td><td class="doc-info-table-td doc-info-table-td-last">Direct INSERT</td><td class="doc-info-table-td doc-info-table-td-last">Pre-built disk summary card</td></tr>
+                <tr><td class="doc-info-table-td">FileOps (Scan-SFTPFiles.ps1)</td><td class="doc-info-table-td"><code>Send-TeamsAlert</code></td><td class="doc-info-table-td">File detected, escalation</td></tr>
+                <tr><td class="doc-info-table-td">BIDATA (Monitor-BIDATABuild.ps1)</td><td class="doc-info-table-td"><code>Send-TeamsAlert</code></td><td class="doc-info-table-td">Build complete, not started</td></tr>
+                <tr><td class="doc-info-table-td doc-info-table-td-last">ServerOps (Send-DiskHealthSummary.ps1)</td><td class="doc-info-table-td doc-info-table-td-last"><code>Send-TeamsAlert -CardJson</code></td><td class="doc-info-table-td doc-info-table-td-last">Pre-built disk summary card</td></tr>
             </tbody>
         </table>
     </div>

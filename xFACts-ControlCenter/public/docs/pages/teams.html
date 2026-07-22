@@ -67,7 +67,7 @@
 
         <p>A dedicated processor picks up the queued alert, figures out which Teams channels should receive it based on subscription rules, formats it as a color-coded card, and delivers it. The whole thing is queue-driven &mdash; if nothing is queued, nothing runs. If ten alerts arrive at once, they&rsquo;re all handled in a single batch.</p>
 
-        <p>And it&rsquo;s not exclusive to xFACts modules. Any process that can call a stored procedure can queue an alert. We don&rsquo;t discriminate against outsiders.</p>
+        <p>And it&rsquo;s not exclusive to xFACts modules. Any process that can queue a row &mdash; a PowerShell script through the shared alert function, or T-SQL through the queue procedure &mdash; can raise an alert. We don&rsquo;t discriminate against outsiders.</p>
     </div>
 
     <!-- ============================================ -->
@@ -114,7 +114,7 @@
 
         <p><strong>Routing</strong> controls which alerts end up in which channels. You can send all alerts from one module to one team&rsquo;s channel, only critical alerts to another channel, or mix and match however you need. A single alert can go to multiple channels. Which is how Matt ends up getting 25 notifications at 1:45 AM. The system is working exactly as designed. Muting your general IT channel at bedtime is a life skill.</p>
 
-        <p><strong>Deduplication</strong> prevents alert storms. When a condition persists across multiple monitoring cycles, only the first alert gets delivered. The problem was reported. Once is enough. The dedup resets daily, so a recurring issue still gets flagged each day &mdash; just not each cycle.</p>
+        <p><strong>Deduplication</strong> prevents alert storms. When a condition persists across multiple monitoring cycles, only the first alert gets delivered. The problem was reported. Once is enough. Most alerts carry the date in their dedup key, so a recurring issue still gets flagged the next day &mdash; just not every cycle.</p>
 
         <p><strong>Retry logic</strong> handles the inevitable. When Teams has a moment, the processor retries delivery automatically. If it still can&rsquo;t get through, the alert is marked as failed for investigation rather than silently lost.</p>
     </div>
