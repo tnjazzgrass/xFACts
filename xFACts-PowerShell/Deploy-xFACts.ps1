@@ -92,6 +92,13 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-07-22  Robust git resolution. git is resolved once at startup - PATH first,
+#             then the standard Git for Windows install locations ($GitProbePaths) -
+#             and every git call runs through the resolved executable
+#             (Invoke-GitStaging -GitExe). Fixes "git was not found on PATH" when the
+#             pipeline runs in the Pode service context, which does not reliably carry
+#             Git's PATH entry. Aborts only when neither PATH nor the probed locations
+#             resolve, naming the probed paths.
 # 2026-07-21  Self-sufficient deploy. Deletions are now applied on -Execute:
 #             authored files removed upstream and files retired in Object_Registry
 #             (is_active = 0) under a mapped authored tree are deleted from live
@@ -157,10 +164,10 @@ Initialize-XFActsScript -ScriptName 'Deploy-xFACts' -ServerInstance $xFACtsServe
 <# ============================================================================
    CONSTANTS: PATHS AND MAPPINGS
    ----------------------------------------------------------------------------
-   The live server roots, the authored repository-to-live deploy map, and the two
-   orchestrator files that trigger a restart-required warning when deployed.
-   $AuthoredDeployMap is the inverse of the generated $FileSources map in
-   Publish-GitHubRepository.ps1: the
+   The live server roots, the authored repository-to-live deploy map, the two
+   orchestrator files that trigger a restart-required warning when deployed, and
+   the Git executable probe locations. $AuthoredDeployMap is the inverse of the
+   generated $FileSources map in Publish-GitHubRepository.ps1: the
    two tables partition the repository, authored paths here and generated paths
    there, and every managed repo path belongs to exactly one. Keep them in
    agreement - a path must never appear in both, nor in neither.
@@ -249,19 +256,29 @@ $OrchestratorFiles = @(
     (Join-Path $ScriptsRoot "Start-xFACtsOrchestrator.ps1")
 )
 
+# Standard Git for Windows install locations, probed in order when git is not on
+# PATH. The Pode service context that runs the pipeline does not reliably carry
+# Git's PATH entry, so resolution falls back to these before aborting.
+$GitProbePaths = @(
+    "C:\Program Files\Git\cmd\git.exe",
+    "C:\Program Files (x86)\Git\cmd\git.exe"
+)
+
 <# ============================================================================
    FUNCTIONS: GIT OPERATIONS
    ----------------------------------------------------------------------------
    Git command execution against the staging clone. Invoke-GitStaging runs one
-   git command with -C targeting the clone, optionally injecting the GitHub token
-   as a per-invocation HTTP auth header so it is never written to git config or
-   the remote URL, and returns the exit code and combined output.
+   command through the resolved git executable with -C targeting the clone,
+   optionally injecting the GitHub token as a per-invocation HTTP auth header so it
+   is never written to git config or the remote URL, and returns the exit code and
+   combined output.
    Prefix: (none)
    ============================================================================ #>
 
-# Runs one git command against the staging clone, injecting the token as a per-invocation auth header when supplied; returns exit code and output.
+# Runs one command through the resolved git executable against the staging clone, injecting the token as a per-invocation auth header when supplied; returns exit code and output.
 function Invoke-GitStaging {
     param(
+        [Parameter(Mandatory)][string]$GitExe,
         [Parameter(Mandatory)][string]$RepoDir,
         [Parameter(Mandatory)][string[]]$Arguments,
         [string]$Token
@@ -278,7 +295,7 @@ function Invoke-GitStaging {
 
     $gitArgs += $Arguments
 
-    $output = & git @gitArgs 2>&1
+    $output = & $GitExe @gitArgs 2>&1
     return [pscustomobject]@{
         ExitCode = $LASTEXITCODE
         Output   = ($output | Out-String)
@@ -430,12 +447,21 @@ Write-Log "Staging:    $StagingRoot"
 Write-Log "Mode: $(if ($Execute) { 'EXECUTE' } else { 'PREVIEW' })"
 Write-Log "------------------------------------------"
 
-# -- Verify git availability and the staging clone --
+# -- Resolve git and verify the staging clone --
 
-if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
-    Write-Log "ABORT  git was not found on PATH. Install Git for Windows on the server." "ERROR"
+# Prefer git on PATH; fall back to the standard install locations when the service
+# context does not carry Git's PATH entry. Every git call uses the resolved path.
+$gitExe = (Get-Command git -ErrorAction SilentlyContinue).Source
+if (-not $gitExe) {
+    $gitExe = $GitProbePaths | Where-Object { Test-Path $_ } | Select-Object -First 1
+}
+if (-not $gitExe) {
+    Write-Log "ABORT  git was not found on PATH or at the standard install locations." "ERROR"
+    Write-Log "       Probed: $($GitProbePaths -join ', ')" "ERROR"
+    Write-Log "       Install Git for Windows on the server, or add git to the service PATH." "ERROR"
     exit 1
 }
+Write-Log "git resolved: $gitExe" "SUCCESS"
 
 if (-not (Test-Path $StagingRoot)) {
     Write-Log "ABORT  Staging clone not found: $StagingRoot" "ERROR"
@@ -443,13 +469,13 @@ if (-not (Test-Path $StagingRoot)) {
     exit 1
 }
 
-$workTreeCheck = Invoke-GitStaging -RepoDir $StagingRoot -Arguments @('rev-parse', '--is-inside-work-tree')
+$workTreeCheck = Invoke-GitStaging -GitExe $gitExe -RepoDir $StagingRoot -Arguments @('rev-parse', '--is-inside-work-tree')
 if ($workTreeCheck.ExitCode -ne 0 -or $workTreeCheck.Output.Trim() -ne 'true') {
     Write-Log "ABORT  $StagingRoot is not a git working tree." "ERROR"
     exit 1
 }
 
-$remoteCheck = Invoke-GitStaging -RepoDir $StagingRoot -Arguments @('remote', 'get-url', 'origin')
+$remoteCheck = Invoke-GitStaging -GitExe $gitExe -RepoDir $StagingRoot -Arguments @('remote', 'get-url', 'origin')
 if ($remoteCheck.ExitCode -ne 0) {
     Write-Log "ABORT  Could not read the 'origin' remote of $StagingRoot." "ERROR"
     exit 1
@@ -476,7 +502,7 @@ $token = $creds.PersonalAccessToken
 
 # -- Fetch and compute the changed files --
 
-$beforeResult = Invoke-GitStaging -RepoDir $StagingRoot -Arguments @('rev-parse', 'HEAD')
+$beforeResult = Invoke-GitStaging -GitExe $gitExe -RepoDir $StagingRoot -Arguments @('rev-parse', 'HEAD')
 if ($beforeResult.ExitCode -ne 0) {
     Write-Log "ABORT  Could not read the current HEAD of the staging clone." "ERROR"
     exit 1
@@ -484,14 +510,14 @@ if ($beforeResult.ExitCode -ne 0) {
 $beforeSha = $beforeResult.Output.Trim()
 
 Write-Log "Fetching $Owner/$Repo ($Branch) into staging..."
-$fetchResult = Invoke-GitStaging -RepoDir $StagingRoot -Arguments @('fetch', 'origin', $Branch) -Token $token
+$fetchResult = Invoke-GitStaging -GitExe $gitExe -RepoDir $StagingRoot -Arguments @('fetch', 'origin', $Branch) -Token $token
 if ($fetchResult.ExitCode -ne 0) {
     Write-Log "ABORT  git fetch failed:" "ERROR"
     Write-Log "       $($fetchResult.Output.Trim())" "ERROR"
     exit 1
 }
 
-$afterResult = Invoke-GitStaging -RepoDir $StagingRoot -Arguments @('rev-parse', "origin/$Branch")
+$afterResult = Invoke-GitStaging -GitExe $gitExe -RepoDir $StagingRoot -Arguments @('rev-parse', "origin/$Branch")
 if ($afterResult.ExitCode -ne 0) {
     Write-Log "ABORT  Could not resolve origin/$Branch after fetch." "ERROR"
     exit 1
@@ -504,7 +530,7 @@ if ($beforeSha -eq $afterSha) {
     exit 0
 }
 
-$diffResult = Invoke-GitStaging -RepoDir $StagingRoot -Arguments @('diff', '--name-status', $beforeSha, $afterSha)
+$diffResult = Invoke-GitStaging -GitExe $gitExe -RepoDir $StagingRoot -Arguments @('diff', '--name-status', $beforeSha, $afterSha)
 if ($diffResult.ExitCode -ne 0) {
     Write-Log "ABORT  git diff failed:" "ERROR"
     Write-Log "       $($diffResult.Output.Trim())" "ERROR"
@@ -668,7 +694,7 @@ if (-not $Execute) {
 }
 else {
     # Fast-forward the working tree so the copy sources hold the pulled content.
-    $mergeResult = Invoke-GitStaging -RepoDir $StagingRoot -Arguments @('merge', '--ff-only', "origin/$Branch")
+    $mergeResult = Invoke-GitStaging -GitExe $gitExe -RepoDir $StagingRoot -Arguments @('merge', '--ff-only', "origin/$Branch")
     if ($mergeResult.ExitCode -ne 0) {
         Write-Log "ABORT  Could not fast-forward the staging clone (it may have diverged):" "ERROR"
         Write-Log "       $($mergeResult.Output.Trim())" "ERROR"
