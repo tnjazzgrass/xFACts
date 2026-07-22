@@ -127,7 +127,7 @@
     <div class="doc-section" id="status-machine">
         <h2 class="doc-section-title">The Status Machine</h2>
 
-        <p><code>BuildExecution.status</code> has four valid values. The transitions tell the full story of a build's lifecycle.</p>
+        <p><code>BuildExecution.status</code> has five valid values. The transitions tell the full story of a build's lifecycle.</p>
 
         <!-- Status state machine -->
         <div class="doc-arch-flow">
@@ -162,7 +162,8 @@
                 <tr><td class="doc-info-table-td"><strong>NOT_STARTED</strong></td><td class="doc-info-table-td">Grace period passed without build activity</td><td class="doc-info-table-td">SUPERSEDED (if build eventually starts)</td></tr>
                 <tr><td class="doc-info-table-td"><strong>IN_PROGRESS</strong></td><td class="doc-info-table-td">Build running, steps being captured</td><td class="doc-info-table-td">COMPLETED <em>or</em> FAILED</td></tr>
                 <tr><td class="doc-info-table-td"><strong>COMPLETED</strong></td><td class="doc-info-table-td">Build finished successfully</td><td class="doc-info-table-td">Terminal for the day</td></tr>
-                <tr><td class="doc-info-table-td doc-info-table-td-last"><strong>FAILED</strong></td><td class="doc-info-table-td doc-info-table-td-last">Build encountered an error</td><td class="doc-info-table-td doc-info-table-td-last">Terminal for the day</td></tr>
+                <tr><td class="doc-info-table-td"><strong>FAILED</strong></td><td class="doc-info-table-td">Build encountered an error</td><td class="doc-info-table-td">Terminal for the day</td></tr>
+                <tr><td class="doc-info-table-td doc-info-table-td-last"><strong>SUPERSEDED</strong></td><td class="doc-info-table-td doc-info-table-td-last">NOT_STARTED record replaced after the build eventually started</td><td class="doc-info-table-td doc-info-table-td-last">Terminal (historical marker)</td></tr>
             </tbody>
         </table>
 
