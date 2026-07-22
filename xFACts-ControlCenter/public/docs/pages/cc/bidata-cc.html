@@ -285,7 +285,7 @@
     <div class="doc-cc-guide-content">
         <div class="doc-guide-section" id="doc-section-1"><div class="doc-guide-section-inner">
             <h2 class="doc-guide-section-title"><span class="doc-section-number">1</span>Engine Indicator</h2>
-            <p>The single engine card in the upper right represents <code>Monitor-BIDATABuild.ps1</code> &mdash; the orchestrator process that queries SQL Server Agent job history for the BIDATA build job. It runs on a fixed interval, checking for new step completions and build status changes.</p>
+            <p>The single engine card in the upper right represents <code>Monitor-BIDATABuild.ps1</code> &mdash; the orchestrator process that queries SQL Server Agent job history for the BIDATA build job. It runs on a scheduled interval, checking for new step completions and build status changes.</p>
             <p>The colored bar and countdown show the health and timing of the monitor. Green means the last run succeeded. Red means it failed. A frozen countdown with no color means the orchestrator hasn&rsquo;t reported in.</p>
             <p>All sections except Duration Trend refresh when this process completes (lightning bolt badges). The Duration Trend refreshes when you change the date range (action badge).</p>
         </div></div>

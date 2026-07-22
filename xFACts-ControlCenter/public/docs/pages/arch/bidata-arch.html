@@ -110,7 +110,7 @@
 
         <h3 class="doc-section-subtitle">Step 3: Capture Steps</h3>
 
-        <p>On each subsequent cycle, the script queries <code>msdb</code> again for any step completions newer than the last captured step. New steps get INSERTed into <code>StepExecution</code> with their step name, duration, and completion time. The <code>BuildExecution</code> row gets updated with the latest step count.</p>
+        <p>On each subsequent cycle, the script queries <code>msdb</code> again for any step completions newer than the last captured step. New steps get INSERTed into <code>StepExecution</code> with their step name, duration, and run status. The <code>BuildExecution</code> row gets updated with the latest step count.</p>
 
         <h3 class="doc-section-subtitle">Step 4: Detect Completion</h3>
 
@@ -127,7 +127,7 @@
     <div class="doc-section" id="status-machine">
         <h2 class="doc-section-title">The Status Machine</h2>
 
-        <p><code>BuildExecution.build_status</code> has four valid values. The transitions tell the full story of a build's lifecycle.</p>
+        <p><code>BuildExecution.status</code> has four valid values. The transitions tell the full story of a build's lifecycle.</p>
 
         <!-- Status state machine -->
         <div class="doc-arch-flow">
@@ -173,7 +173,7 @@
         <p>If the build later starts (maybe it was delayed, not missing), the NOT_STARTED record gets marked <strong>SUPERSEDED</strong> and a new IN_PROGRESS record takes over tracking. This prevents false alarms from blocking real monitoring.</p>
 
         <div class="doc-tech-tip">
-            <strong class="doc-tech-tip-label">SUPERSEDED vs. overwritten.</strong> The NOT_STARTED row isn't deleted or updated to IN_PROGRESS. It stays as a historical record that the build started late, with its own <code>superseded_dttm</code> timestamp. A new row handles the actual build tracking. This preserves the timeline: "At 4:00 AM we noticed the build hadn't started. At 4:15 AM it started. It completed at 9:30 AM."
+            <strong class="doc-tech-tip-label">SUPERSEDED vs. overwritten.</strong> The NOT_STARTED row isn't deleted or updated to IN_PROGRESS. It stays as a historical record that the build started late. A new row handles the actual build tracking. This preserves the timeline: "At 4:00 AM we noticed the build hadn't started. At 4:15 AM it started. It completed at 9:30 AM."
         </div>
     </div>
 
@@ -206,7 +206,7 @@
     <div class="doc-section" id="notification">
         <h2 class="doc-section-title">Notification</h2>
 
-        <p>One build, one notification. When the build completes, the script builds an Adaptive Card with the completion time, total duration, and a step-by-step breakdown. It queues this through <code>Teams.sp_QueueAlert</code> and updates <code>BuildExecution.notified_dttm</code> to record that notification was sent.</p>
+        <p>One build, one notification. When the build completes, the script assembles a summary with the completion time, total duration, and a step-by-step breakdown. It queues this through the shared <code>Send-TeamsAlert</code> function and updates <code>BuildExecution.notified_dttm</code> to record that the notification was queued.</p>
 
         <p>The <code>notified_dttm</code> field serves double duty: it prevents duplicate notifications (if the next monitoring cycle runs before the Teams queue processes), and it provides an audit trail of exactly when the team was informed.</p>
 
@@ -242,7 +242,7 @@
             <tbody>
                 <tr><td class="doc-info-table-td"><code>Orchestrator.ProcessRegistry</code></td><td class="doc-info-table-td">Orchestrator</td><td class="doc-info-table-td">Schedules Monitor-BIDATABuild.ps1 on a configurable interval</td></tr>
                 <tr><td class="doc-info-table-td"><code>dbo.GlobalConfig</code></td><td class="doc-info-table-td">Shared Infrastructure</td><td class="doc-info-table-td">Scheduled start time, grace period, notification settings</td></tr>
-                <tr><td class="doc-info-table-td"><code>Teams.sp_QueueAlert</code></td><td class="doc-info-table-td">Teams Integration</td><td class="doc-info-table-td">Completion and NOT_STARTED notifications</td></tr>
+                <tr><td class="doc-info-table-td"><code>Send-TeamsAlert</code></td><td class="doc-info-table-td">Teams Integration</td><td class="doc-info-table-td">Completion, failure, and NOT_STARTED notifications</td></tr>
                 <tr><td class="doc-info-table-td doc-info-table-td-last"><code>msdb.dbo.sysjobhistory</code></td><td class="doc-info-table-td doc-info-table-td-last">Reporting Server</td><td class="doc-info-table-td doc-info-table-td-last">Source of job step data (read-only, remote query)</td></tr>
             </tbody>
         </table>
