@@ -11564,6 +11564,14 @@
                                                 "sortOrder":  3
                                             }
                                         ],
+                        "queries":  [
+                                        {
+                                            "name":  "Check All XE Sessions on a Server",
+                                            "description":  "Run on a monitored server to verify all xFACts XE sessions are running",
+                                            "sql":  "SELECT \r\n    es.name AS session_name,\r\n    CASE WHEN dxs.name IS NOT NULL THEN \u0027RUNNING\u0027 ELSE \u0027STOPPED\u0027 END AS status,\r\n    es.startup_state\r\nFROM sys.server_event_sessions es\r\nLEFT JOIN sys.dm_xe_sessions dxs ON es.name = dxs.name\r\nWHERE es.name LIKE \u0027xFACts_%\u0027\r\n   OR es.name IN (\u0027system_health\u0027, \u0027AlwaysOn_health\u0027)\r\nORDER BY es.name;",
+                                            "sortOrder":  1
+                                        }
+                                    ],
                         "relationshipNotes":  [
                                                   {
                                                       "relatedObject":  "Orchestrator ProcessRegistry",
