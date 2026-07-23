@@ -1008,9 +1008,9 @@ ORDER BY module_name;
 
 ### Object_Metadata
 
-Single source of truth for all documentation metadata about database objects across the xFACts platform. Replaces extended properties as the documentation content source. Fed into the DDL JSON export by sp_GenerateDDLReference, rendered automatically on reference and troubleshooting pages.
+Single source of truth for all documentation metadata about database objects across the xFACts platform. Replaces extended properties as the documentation content source. Fed into the DDL JSON export by the DDL reference generator, rendered automatically on reference and troubleshooting pages.
 
-**Data Flow:** Populated manually via INSERT/UPDATE during object creation and documentation maintenance. Read by sp_GenerateDDLReference during JSON export to produce schema-level DDL JSON files. Those JSON files are consumed by ddl-loader.js on reference pages and the troubleshooting page in the Control Center documentation site.
+**Data Flow:** Populated manually via INSERT/UPDATE during object creation and documentation maintenance. Read by the DDL reference generator during JSON export to produce schema-level DDL JSON files. Those JSON files are consumed by the reference and troubleshooting pages in the Control Center documentation site.
 
 **Single Source for All Documentation Content:** [sort:1] All documentation metadata lives in this table — object descriptions, column descriptions, design rationale, operational queries, status definitions, and relationship context. Extended properties (MS_Description) are no longer used. One system, one place to look, one way to update.
 
@@ -1027,7 +1027,7 @@ Single source of truth for all documentation metadata about database objects acr
 | metadata_id (IDENTITY) | int | No | IDENTITY | Unique identifier for each metadata row |
 | schema_name | varchar(128) | No | — | Schema the documented object belongs to: dbo, ServerOps, JobFlow, BatchOps, etc. |
 | object_name | varchar(128) | No | — | Name of the documented object: table name, procedure name, script filename, etc. |
-| object_type | varchar(50) | No | — | Kind of object: Table, Procedure, Trigger, Function, View, Script |
+| object_type | varchar(50) | No | — | Kind of object: Table, Procedure, Trigger, DDL Trigger, XE Session, Script |
 | column_name | varchar(128) | Yes | — | NULL for object-level properties. Populated for column-level descriptions and status values scoped to specific columns. For status values applying to multiple columns, use comma-separated column names. |
 | property_type | varchar(50) | No | — | What kind of documentation content this row holds. Controls how the export proc and loader handle the row. |
 | sort_order | int | No | 0 | Display ordering within a property type for a given object. 0-based. Column descriptions use ordinal position. Design notes, queries, and status values use logical sequence. |
@@ -1128,7 +1128,7 @@ Complete asset inventory of every object in the xFACts platform. Each row repres
 | registry_id (IDENTITY) | int | No | IDENTITY | Auto-incrementing primary key. |
 | module_name | varchar(50) | No | — | Functional module this object belongs to: dbo, ServerOps, JobFlow, BatchOps, BIDATA, FileOps, Teams, Jira, Orchestrator, ControlCenter, DeptOps. |
 | component_name | varchar(128) | No | — | Parent component this object belongs to. FK to Component_Registry.component_name. |
-| object_name | varchar(256) | No | — | Name of the individual object. Database objects use their SQL name (e.g., GlobalConfig, sp_GenerateDDLReference). Files use their filename with extension (e.g., Collect-DMVMetrics.ps1, admin.css). |
+| object_name | varchar(256) | No | — | Name of the individual object. Database objects use their bare SQL name without schema prefix; file components use their filename with extension. |
 | object_category | varchar(50) | No | — | Broad classification: Database, PowerShell, WebAsset, Documentation. |
 | object_type | varchar(50) | No | — | Specific object type within its category: Table, Procedure, Trigger, View, Function, Script, Route, API, Module, JavaScript, CSS, HTML. |
 | object_path | varchar(500) | Yes | — | Where to find this object. Schema name for database objects (e.g., dbo, ServerOps). Full filesystem path for files (e.g., E:\xFACts\scripts\collectors\Collect-DMVMetrics.ps1). |
