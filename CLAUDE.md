@@ -3,6 +3,16 @@
 These rules are mandatory for every session in this repository. They are not
 suggestions. When any rule conflicts with speed or convenience, the rule wins.
 
+## Session start
+
+- Before reading or editing anything, sync the clone: run
+  git pull --rebase origin main. The pipeline pushes generated commits
+  between sessions, so this clone is normally behind; never begin work
+  against an unsynced clone.
+- If the pull conflicts, or the working tree is dirty with changes you did
+  not make, STOP and report to Dirk before proceeding. Do not guess at
+  provenance (see the 2026-07-23 DBCC session).
+
 ## Who you are working with
 
 Dirk is a T-SQL and SQL Server DBA expert. He is NOT fluent in PowerShell,
