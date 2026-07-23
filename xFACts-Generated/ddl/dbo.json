@@ -1880,10 +1880,10 @@
                    },
                    {
                        "name":  "Object_Metadata",
-                       "description":  "Single source of truth for all documentation metadata about database objects across the xFACts platform. Replaces extended properties as the documentation content source. Fed into the DDL JSON export by sp_GenerateDDLReference, rendered automatically on reference and troubleshooting pages.",
+                       "description":  "Single source of truth for all documentation metadata about database objects across the xFACts platform. Replaces extended properties as the documentation content source. Fed into the DDL JSON export by the DDL reference generator, rendered automatically on reference and troubleshooting pages.",
                        "module":  "dbo",
                        "category":  "Shared Infrastructure",
-                       "dataFlow":  "Populated manually via INSERT/UPDATE during object creation and documentation maintenance. Read by sp_GenerateDDLReference during JSON export to produce schema-level DDL JSON files. Those JSON files are consumed by ddl-loader.js on reference pages and the troubleshooting page in the Control Center documentation site.",
+                       "dataFlow":  "Populated manually via INSERT/UPDATE during object creation and documentation maintenance. Read by the DDL reference generator during JSON export to produce schema-level DDL JSON files. Those JSON files are consumed by the reference and troubleshooting pages in the Control Center documentation site.",
                        "columns":  [
                                        {
                                            "ordinal":  1,
@@ -1918,7 +1918,7 @@
                                            "length":  "50",
                                            "nullable":  false,
                                            "identity":  false,
-                                           "description":  "Kind of object: Table, Procedure, Trigger, Function, View, Script"
+                                           "description":  "Kind of object: Table, Procedure, Trigger, DDL Trigger, XE Session, Script"
                                        },
                                        {
                                            "ordinal":  5,
@@ -2210,7 +2210,7 @@
                                            "length":  "256",
                                            "nullable":  false,
                                            "identity":  false,
-                                           "description":  "Name of the individual object. Database objects use their SQL name (e.g., GlobalConfig, sp_GenerateDDLReference). Files use their filename with extension (e.g., Collect-DMVMetrics.ps1, admin.css)."
+                                           "description":  "Name of the individual object. Database objects use their bare SQL name without schema prefix; file components use their filename with extension."
                                        },
                                        {
                                            "ordinal":  5,
