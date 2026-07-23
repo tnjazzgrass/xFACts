@@ -92,7 +92,7 @@ Because a missed ticket means work that doesn’t get tracked, which means work 
 
 **Deduplication** prevents the same issue from creating five tickets across five monitoring cycles. The condition was reported. One ticket is enough.
 
-**Retry logic** handles transient API failures. If Jira is briefly unreachable, the ticket request stays in the queue and gets tried again on subsequent cycles.
+**Retry logic** handles transient API failures. If Jira is briefly unreachable, the request is retried right away in a short burst, and if it still won’t go through it stays in the queue and is tried again on later cycles. Failures that retrying can’t fix — bad credentials, a missing project, a malformed field — skip the retries and go straight to the email fallback.
 
 **Email fallback** is the backup parachute. If all retry attempts are exhausted and the ticket still can’t be created, an email goes out with the full ticket details. The ticket might not exist in Jira, but someone knows about the underlying problem. Work doesn’t vanish just because an API had a bad day.
 
@@ -237,16 +237,16 @@ Retry & Fallback
 
 A missed Teams alert is annoying. A missed Jira ticket means work doesn't get tracked, which means it might not get done. The retry logic reflects this difference.
 
-When the API call fails, the script increments `RetryCount` and records the failure details in `ResponseMessage`. The row stays in **Pending** status for the next processor run. This is different from Teams (which retries inline) — Jira retries span multiple processor executions, giving the Jira server time to recover from transient issues.
+When the API call fails, the script increments `RetryCount` and records the failure details in `ResponseMessage`. Each turn first makes a short in-cycle burst — a configurable number of attempts a configurable delay apart; if the whole turn still fails on a transient error, the row stays in **Pending** status for the next processor run. So Jira retries at two levels: a quick burst within one run, then again across processor runs, giving the Jira server time to recover from transient issues.
 
-After the configured maximum number of attempts (the processor's `MaxRetries` setting) is exhausted, the row is marked **Failed**. But that's not the end of the safety net.
+After the configured number of retry turns (the processor's `MaxRetries` setting) is exhausted — or immediately, when the failure is deterministic, like bad credentials or an invalid field — the row becomes terminal. But that's not the end of the safety net.
 
 Email Fallback
 
 When all retries fail and email recipients are configured, the script sends a fallback email with the ticket details. The ticket doesn't exist in Jira, but someone knows about the underlying problem. The work doesn't vanish just because an API had a bad day.
 
 
-Retry across cycles, not inline. Teams alerts retry immediately within one execution. Jira retries wait for the next processor cycle. The reasoning: Teams failures are usually transient network blips that resolve quickly. Jira failures are often service-level issues like maintenance or restarts that need longer to resolve. The retry cadence matches the failure pattern.
+Two levels of retry. Within a single run, Jira retries a transient failure in a quick burst — the same inline pattern Teams uses. Unlike Teams, Jira then also carries an unresolved ticket across processor runs, because Jira failures are often service-level issues like maintenance or restarts that need longer to clear than a burst allows. Deterministic failures — bad credentials, a missing project, a malformed field — skip retries entirely and go straight to the email fallback, since retrying an identical bad request only delays the alert.
 
 
 
@@ -477,7 +477,7 @@ END
 
 Queue table for pending ticket requests awaiting PowerShell processing. Records remain after processing for audit and troubleshooting.
 
-**Data Flow:** Tickets enter via Jira.sp_QueueTicket or by direct INSERT. TR_Jira_TicketQueue_QueueDepth fires on INSERT, incrementing running_count in Orchestrator.ProcessRegistry to signal the orchestrator. Process-JiraTicketQueue.ps1 claims Pending rows (TicketStatus = 'Pending' AND RetryCount < MaxRetries), retrieves Jira credentials from dbo.Credentials via two-tier passphrase decryption (master passphrase from GlobalConfig), creates tickets via Jira REST API, and updates TicketStatus to Success or Failed with the returned TicketKey. On success the script performs a GET to retrieve the assigned user. Each API interaction is logged to Jira.RequestLog. When max retries are exhausted and EmailRecipients is populated, the script sends a fallback email via Database Mail and sets TicketStatus to EmailSent.
+**Data Flow:** Tickets enter via Jira.sp_QueueTicket or by direct INSERT. TR_Jira_TicketQueue_QueueDepth fires on INSERT, incrementing running_count in Orchestrator.ProcessRegistry to signal the orchestrator. Process-JiraTicketQueue.ps1 claims Pending rows (TicketStatus = 'Pending' AND RetryCount < MaxRetries), retrieves Jira credentials from dbo.Credentials via two-tier passphrase decryption (master passphrase from GlobalConfig), creates tickets via Jira REST API, and sets TicketStatus to Success with the returned TicketKey, leaves it Pending for a later cycle on a transient failure, or sets a terminal status once retries are exhausted or a deterministic failure occurs. On success the script performs a GET to retrieve the assigned user. Each API interaction is logged to Jira.RequestLog. When retries are exhausted or a deterministic failure occurs and EmailRecipients is populated, the script sends a fallback email via Database Mail and sets TicketStatus to EmailSent.
 
 **Queue-Based Decoupling:** [sort:1] Same pattern as Teams: calling modules insert and continue without waiting for Jira API responses. Ticket creation latency does not affect the calling process execution time.
 
@@ -651,7 +651,7 @@ INSERT trigger on Jira.TicketQueue that signals the Orchestrator v2 engine when 
 
 Queue processor that creates Jira tickets via REST API. Claims Pending tickets from TicketQueue, authenticates using encrypted credentials from dbo.Credentials, creates tickets in Jira, retrieves assignee information, updates queue status, and logs results to RequestLog. Sends email fallback via Database Mail when API calls fail after all retry attempts.
 
-**Data Flow:** Launched by the orchestrator when TR_Jira_TicketQueue_QueueDepth signals queue depth > 0. Retrieves master passphrase from dbo.GlobalConfig, uses two-tier decryption against dbo.Credentials to obtain Jira URL, username, and password. Reads Pending tickets from Jira.TicketQueue (TicketStatus = 'Pending' AND RetryCount < MaxRetries), builds JSON payload mapping queue columns to Jira REST API fields (including custom fields and cascading selects), and creates tickets via POST to /rest/api/2/issue. On success, performs a GET to retrieve the actual assignee, updates TicketQueue with TicketKey and Success status, and logs to Jira.RequestLog. On failure, increments RetryCount and sets TicketStatus to Failed. When max retries are exhausted and EmailRecipients is populated, sends a fallback email via Database Mail and sets TicketStatus to EmailSent.
+**Data Flow:** Launched by the orchestrator when TR_Jira_TicketQueue_QueueDepth signals queue depth > 0. Retrieves master passphrase from dbo.GlobalConfig, uses two-tier decryption against dbo.Credentials to obtain Jira URL, username, and password. Reads Pending tickets from Jira.TicketQueue (TicketStatus = 'Pending' AND RetryCount < MaxRetries), builds JSON payload mapping queue columns to Jira REST API fields (including custom fields and cascading selects), and creates tickets via POST to /rest/api/2/issue. On success, performs a GET to retrieve the actual assignee, updates TicketQueue with TicketKey and Success status, and logs to Jira.RequestLog. Each transient failure is retried in-cycle up to BurstAttempts times; if the whole turn still fails, RetryCount is incremented and the row is left Pending for a later cycle, up to MaxRetries turns. Deterministic failures (auth, not-found, bad-request) skip retries. When retries are exhausted or a deterministic failure occurs, and EmailRecipients is populated, sends a fallback email via Database Mail and sets TicketStatus to EmailSent (or Failed when no recipients).
 
 **Queue-Driven Execution:** [sort:1] Runs as a queue-driven process (run_mode = 2) in the orchestrator. Only launched when tickets are waiting, not on a fixed polling schedule.
 
@@ -659,7 +659,7 @@ Queue processor that creates Jira tickets via REST API. Claims Pending tickets f
 
 **Two-Tier Credential Decryption:** [sort:3] Credentials are stored encrypted in dbo.Credentials. The master passphrase (from GlobalConfig) decrypts a service-specific passphrase, which in turn decrypts the actual Jira URL, username, and password. No secrets are stored in the script or on disk.
 
-**Email Fallback on API Failure:** [sort:4] When Jira API calls fail after all retry attempts, the script can send a fallback email via Database Mail containing the ticket summary, description, and error details. This ensures the request is not silently lost even when the Jira API is unreachable. Requires EmailRecipients to be populated on the queue row.
+**Email Fallback on API Failure:** [sort:4] When Jira API calls fail after all retry attempts, or immediately on a deterministic failure such as bad credentials or an invalid field, the script can send a fallback email via Database Mail containing the ticket summary, description, and error details. This ensures the request is not silently lost even when the ticket cannot be created. Requires EmailRecipients to be populated on the queue row.
 
 **Orchestrator v2 Integration:** [sort:5] Accepts TaskId and ProcessId parameters from the orchestrator engine. Calls Complete-OrchestratorTask on completion with status, duration, and a summary of processed/created/failed/email counts. Supports -Execute safeguard (preview mode by default).
 
