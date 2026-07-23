@@ -881,6 +881,20 @@
                                                    "sortOrder":  2
                                                }
                                            ],
+                           "queries":  [
+                                           {
+                                               "name":  "Basic ticket",
+                                               "description":  "Minimal required parameters",
+                                               "sql":  "EXEC Jira.sp_QueueTicket\r\n    @SourceModule = \u0027\u003csource module\u003e\u0027,\r\n    @ProjectKey   = \u0027\u003cproject key\u003e\u0027,\r\n    @Summary      = \u0027\u003cticket summary\u003e\u0027,\r\n    @Description  = \u0027\u003cticket description\u003e\u0027;",
+                                               "sortOrder":  1
+                                           },
+                                           {
+                                               "name":  "Full example with custom fields",
+                                               "description":  "All parameters including cascading select and custom fields",
+                                               "sql":  "EXEC Jira.sp_QueueTicket\r\n    @SourceModule              = \u0027BatchOps\u0027,\r\n    @ProjectKey                = \u0027SD\u0027,\r\n    @Summary                   = \u0027New Business Batch Upload Failed: ABC123\u0027,\r\n    @Description               = @ticket_description,\r\n    @IssueType                 = \u0027Issue\u0027,\r\n    @Priority                  = \u0027Highest\u0027,\r\n    @EmailRecipients           = \u0027ops-team@example.com\u0027,\r\n    @CascadingField_ID         = \u0027customfield_18401\u0027,\r\n    @CascadingField_ParentValue = \u0027File Processing\u0027,\r\n    @CascadingField_ChildValue = \u0027Upload Failure\u0027,\r\n    @CustomField_ID            = \u0027customfield_10305\u0027,\r\n    @CustomField_Value         = \u0027FAC INFORMATION TECHNOLOGY\u0027,\r\n    @CustomField2_ID           = \u0027customfield_10009\u0027,\r\n    @CustomField2_Value        = \u0027sd/1b77b626-3ad4-4bee-8727-abc18b68c5fa\u0027,\r\n    @DueDate                   = @DueDate,\r\n    @TriggerType               = \u0027NB_UploadFailed\u0027,\r\n    @TriggerValue              = \u002745678\u0027;",
+                                               "sortOrder":  2
+                                           }
+                                       ],
                            "relationshipNotes":  [
                                                      {
                                                          "relatedObject":  "Jira.TicketQueue",
@@ -913,6 +927,26 @@
                                                  "sortOrder":  1
                                              }
                                          ],
+                         "queries":  [
+                                         {
+                                             "name":  "Verify trigger is enabled",
+                                             "description":  "Check if the trigger is active",
+                                             "sql":  "SELECT name, is_disabled\r\nFROM sys.triggers\r\nWHERE name = \u0027TR_Jira_TicketQueue_QueueDepth\u0027;",
+                                             "sortOrder":  1
+                                         },
+                                         {
+                                             "name":  "Verify ProcessRegistry entry",
+                                             "description":  "Confirm the orchestrator entry exists and check run mode",
+                                             "sql":  "SELECT process_name, run_mode, running_count\r\nFROM Orchestrator.ProcessRegistry\r\nWHERE process_name = \u0027Process-JiraTicketQueue\u0027;",
+                                             "sortOrder":  2
+                                         },
+                                         {
+                                             "name":  "Re-sync running_count",
+                                             "description":  "After re-enabling a disabled trigger, manually set running_count for any pending items",
+                                             "sql":  "UPDATE Orchestrator.ProcessRegistry\r\nSET running_count = (SELECT COUNT(*) FROM Jira.TicketQueue WHERE TicketStatus = \u0027Pending\u0027)\r\nWHERE process_name = \u0027Process-JiraTicketQueue\u0027;",
+                                             "sortOrder":  3
+                                         }
+                                     ],
                          "relationshipNotes":  [
                                                    {
                                                        "relatedObject":  "Orchestrator.ProcessRegistry",
