@@ -106,7 +106,7 @@
 
         <p>The claim-first approach means multiple runs can overlap safely. If one run is still grinding through a nine-hour integrity check when the next cycle fires, the new run sees the work is already claimed and moves on. No duplicates, no conflicts, no wasted effort.</p>
 
-        <p>For databases in an Always On Availability Group, the checks run on the secondary replica rather than the primary. Same data, zero production impact. The system figures out which server is the secondary automatically &mdash; no manual reconfiguration needed when a failover happens.</p>
+        <p>For databases in an Always On Availability Group, the checks run on the secondary replica rather than the primary, with one operation routed to the primary. Same data, zero production impact. The system figures out which server is the secondary automatically &mdash; no manual reconfiguration needed when a failover happens.</p>
     </div>
 
     <!-- ============================================ -->

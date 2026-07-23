@@ -234,7 +234,7 @@
 
         <h3 class="doc-section-subtitle">CHECKDB</h3>
 
-        <p>Full database integrity check. Verifies physical page structure, allocation consistency, and logical relationships between all objects. Supports two modes configured via GlobalConfig: <code>PHYSICAL_ONLY</code> (storage corruption, significantly faster) and <code>FULL</code> (complete logical and physical). MAXDOP is configurable. Extended logical checks for indexed views, XML indexes, and spatial indexes are available in FULL mode.</p>
+        <p>Full database integrity check. Verifies physical page structure, allocation consistency, and logical relationships between all objects. Supports two modes, set per database in <code>DBCC_ScheduleConfig</code>: <code>PHYSICAL_ONLY</code> (storage corruption, significantly faster) and <code>FULL</code> (complete logical and physical). MAXDOP and extended logical checks come from GlobalConfig; extended logical checks for indexed views, XML indexes, and spatial indexes apply in FULL mode.</p>
 
         <p>Output parsing looks for the standard error count pattern in the DBCC message stream. A clean check with <code>NO_INFOMSGS</code> produces no output. Any output indicates errors.</p>
 
@@ -252,13 +252,9 @@
 
         <p>The script aggregates violations by table and constraint name, storing a summary in <code>error_details</code> with violation counts per constraint. <code>error_count</code> reflects distinct constraints with violations, not total violating rows. Detailed row-level investigation is handled by live queries from the Control Center page.</p>
 
-        <h3 class="doc-section-subtitle">CHECKTABLE</h3>
+        <h3 class="doc-section-subtitle">Reserved: CHECKTABLE &amp; CHECKFILEGROUP</h3>
 
-        <p>Single-table integrity check. Unlike the four operations above, CHECKTABLE is not part of the schedule &mdash; it targets one table rather than a whole database, so it isn't enrolled in <code>DBCC_ScheduleConfig</code>. It runs only through Manual Override Mode (described above), by invoking the script with an explicit server, database, and table. Results log to <code>DBCC_ExecutionLog</code> like any other operation.</p>
-
-        <div class="doc-tech-tip">
-            <strong class="doc-tech-tip-label">About <code>target_object</code>.</strong> <code>DBCC_ExecutionLog</code> carries a <code>target_object</code> column intended to hold the specific object a check targeted &mdash; the natural home for a CHECKTABLE table name. In current operation no code path populates it, so the column is present but NULL on every row. Database-wide operations have no single target object to record there.
-        </div>
+        <p>The operation domain and the <code>DBCC_ExecutionLog</code> CHECK constraint also permit <code>CHECKTABLE</code> (single-table) and <code>CHECKFILEGROUP</code> (filegroup-scoped) checks, but neither is implemented &mdash; no code path runs them today, and the <code>target_object</code> column reserved for their scope is unused (NULL on every row).</p>
     </div>
 
     <!-- ============================================ -->
@@ -267,7 +263,7 @@
     <div class="doc-section" id="ag-execution">
         <h2 class="doc-section-title">AG Secondary Execution</h2>
 
-        <p>For servers registered as AG listeners in <code>ServerRegistry</code>, the script resolves the appropriate physical replica through <code>sys.dm_hadr_availability_replica_states</code> and runs DBCC operations via a direct connection to it. Running on a secondary eliminates production I/O impact entirely &mdash; the secondary has identical data (minus redo lag, typically seconds) and supports all DBCC operations.</p>
+        <p>For servers registered as AG listeners in <code>ServerRegistry</code>, the script resolves the appropriate physical replica through <code>sys.dm_hadr_availability_replica_states</code> and runs DBCC operations via a direct connection to it. Running on a secondary eliminates production I/O impact entirely &mdash; the secondary has identical data (minus redo lag, typically seconds). Most operations run there directly; <code>CHECKCATALOG</code> is the exception &mdash; a read-only secondary cannot service it, so it is always routed to the primary replica.</p>
 
         <p>Where a check runs is decided <em>per database</em>, not globally. Each AG-listener database in <code>DBCC_ScheduleConfig</code> carries a <code>replica_override</code> setting with three values:</p>
 
@@ -280,7 +276,7 @@
             </tbody>
         </table>
 
-        <p>So the GlobalConfig preferred replica is the default that applies to every AG database, and <code>replica_override</code> lets an individual database opt out of that default when it needs to run somewhere specific. This override is what the warning marker on the Schedule Overview flags. It applies only to AG-listener servers &mdash; on a standalone server there is no replica choice to make. The setting is editable per database from the schedule editor on the Control Center page.</p>
+        <p>So the GlobalConfig preferred replica is the default that applies to every AG database, and <code>replica_override</code> lets an individual database opt out of that default when it needs to run somewhere specific. <code>CHECKCATALOG</code> is the one exception the override does not change &mdash; it always runs on the primary regardless of the setting. This override is what the warning marker on the Schedule Overview flags. It applies only to AG-listener servers &mdash; on a standalone server there is no replica choice to make. The setting is editable per database from the schedule editor on the Control Center page.</p>
 
         <p>Connection resolution results are cached per server within an invocation to avoid repeated AG topology queries. The physical server name actually used is recorded in <code>executed_on_server</code> on the ExecutionLog row, preserving accurate history even if the AG topology changes between runs.</p>
 
@@ -322,13 +318,13 @@
         <p>Verify all three enable tiers: <code>serverops_dbcc_enabled</code> on <code>ServerRegistry</code>, <code>is_enabled</code> on <code>DBCC_ScheduleConfig</code>, and the specific operation's <code>_enabled</code> flag. Check that <code>run_day</code> matches today's day of week (1=Sunday through 7=Saturday) and <code>run_time</code> hour has passed.</p>
 
         <p><strong>"CHECKDB is taking longer than expected."</strong></p>
-        <p>Query the execution history for duration trending. Significant increases usually indicate database growth, increased fragmentation, or I/O contention on the secondary. Consider adjusting MAXDOP via GlobalConfig. For the main production database, durations of 8&ndash;10 hours are expected at current data volumes.</p>
+        <p>Query the execution history for duration trending. Significant increases usually indicate database growth, increased fragmentation, or I/O contention on the secondary. Consider adjusting MAXDOP via GlobalConfig. On a large production database a full check can run for several hours; compare against that database's own history rather than a fixed expectation.</p>
 
         <p><strong>"CHECKCONSTRAINTS found violations &mdash; now what?"</strong></p>
         <p>The <code>error_details</code> field contains an aggregated summary listing each violated constraint and the violation count. Use the Control Center page to run a live diagnostic query that shows sample violating rows. The remedy depends on the constraint type: orphaned FK references may need data cleanup, and CHECK violations may need application-level investigation.</p>
 
-        <p><strong>"The script exited NO_WORK but operations should be due."</strong></p>
-        <p>Check the script log for the reported day and hour values. Verify the schedule config has matching <code>run_day</code> and <code>run_time</code> values. The hour comparison uses less-than-or-equal, so a <code>run_time</code> of <code>20:00</code> won't trigger during hour 19. Also confirm the <code>ProcessRegistry</code> entry has <code>run_mode = 1</code> (enabled) and verify <code>allow_concurrent = 1</code>.</p>
+        <p><strong>"No operations ran, but some should be due."</strong></p>
+        <p>The script reports a no-work result (success) when nothing matches. Check the script log for the reported day and hour values. Verify the schedule config has matching <code>run_day</code> and <code>run_time</code> values. The hour comparison uses less-than-or-equal, so a <code>run_time</code> of <code>20:00</code> won't trigger during hour 19. Also confirm the <code>ProcessRegistry</code> entry has <code>run_mode = 1</code> (enabled) and verify <code>allow_concurrent = 1</code>.</p>
     </div>
 
     <!-- ============================================ -->
@@ -355,7 +351,7 @@
             <tbody>
                 <tr><td class="doc-info-table-td"><code>dbo.ServerRegistry</code></td><td class="doc-info-table-td">Engine Room</td><td class="doc-info-table-td">Server-level enable flag (<code>serverops_dbcc_enabled</code>), server type, AG cluster name, instance name</td></tr>
                 <tr><td class="doc-info-table-td"><code>dbo.DatabaseRegistry</code></td><td class="doc-info-table-td">Engine Room</td><td class="doc-info-table-td">Database enrollment &mdash; <code>DBCC_ScheduleConfig</code> has a FK to <code>DatabaseRegistry</code></td></tr>
-                <tr><td class="doc-info-table-td"><code>dbo.GlobalConfig</code></td><td class="doc-info-table-td">Engine Room</td><td class="doc-info-table-td">CHECKDB mode, MAXDOP, extended logical checks, alerting enabled, AG name, platform-wide preferred replica (the default a per-database <code>replica_override</code> can supersede)</td></tr>
+                <tr><td class="doc-info-table-td"><code>dbo.GlobalConfig</code></td><td class="doc-info-table-td">Engine Room</td><td class="doc-info-table-td">MAXDOP, extended logical checks, alerting enabled, AG name, platform-wide preferred replica (the default a per-database <code>replica_override</code> can supersede). CHECKDB mode is set per database in <code>DBCC_ScheduleConfig</code>, not here</td></tr>
                 <tr><td class="doc-info-table-td"><code>Orchestrator.ProcessRegistry</code></td><td class="doc-info-table-td">Orchestrator</td><td class="doc-info-table-td">Interval-based scheduling with concurrent execution enabled; <code>TaskLog</code> provides task-level tracking</td></tr>
                 <tr><td class="doc-info-table-td"><code>sys.dm_hadr_availability_replica_states</code></td><td class="doc-info-table-td">SQL Server</td><td class="doc-info-table-td">AG topology resolution for secondary replica targeting</td></tr>
                 <tr><td class="doc-info-table-td"><code>sys.databases</code></td><td class="doc-info-table-td">SQL Server</td><td class="doc-info-table-td">Online state verification before executing DBCC on target server</td></tr>
