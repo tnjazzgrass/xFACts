@@ -513,6 +513,22 @@ function doc_objectDataFlow(dataFlow) {
            '</div>';
 }
 
+/* Builds the muted module-and-category line shown under an object heading,
+   emitting whichever of the two values is present and nothing when neither is. */
+function doc_objectMeta(module, category) {
+    var parts = [];
+    if (module) {
+        parts.push('Module: ' + doc_esc(module));
+    }
+    if (category) {
+        parts.push('Category: ' + doc_esc(category));
+    }
+    if (parts.length === 0) {
+        return '';
+    }
+    return '<p class="doc-muted">' + parts.join(' | ') + '</p>';
+}
+
 /* Appends an editorial fragment for the given slot when one exists. */
 function doc_editorialSlot(editorial, slot) {
     if (editorial && editorial[slot]) {
@@ -521,8 +537,8 @@ function doc_editorialSlot(editorial, slot) {
     return '';
 }
 
-/* Renders a table object: description, data flow, then cards for fields,
-   indexes, check constraints, foreign keys, design notes, status values,
+/* Renders a table object: module line, description, data flow, then cards for
+   fields, indexes, check constraints, foreign keys, design notes, status values,
    relationships, and queries, honoring editorial insertion slots throughout. */
 function doc_renderTable(table, editorial, schemaName) {
     editorial = editorial || {};
@@ -530,6 +546,7 @@ function doc_renderTable(table, editorial, schemaName) {
 
     var html = doc_openObjectSection(anchor);
     html += doc_objectHeading(table.name, 'doc-badge-table', 'Table');
+    html += doc_objectMeta(table.module, table.category);
     html += doc_objectDescription(table.description);
     html += doc_objectDataFlow(table.dataFlow);
     html += doc_editorialSlot(editorial, 'after-description');
@@ -564,29 +581,7 @@ function doc_renderTable(table, editorial, schemaName) {
 
     html += doc_editorialSlot(editorial, 'after-constraints');
 
-    var designNotes = table.designNotes || [];
-    if (designNotes.length > 0) {
-        html += doc_buildCard('Design Notes', designNotes.length,
-            doc_designNotesHtml(designNotes), anchor);
-    }
-
-    var statusValues = table.statusValues || [];
-    if (statusValues.length > 0) {
-        html += doc_buildCard('Status Values', statusValues.length,
-            doc_statusValuesHtml(statusValues), anchor);
-    }
-
-    var relNotes = table.relationshipNotes || [];
-    if (relNotes.length > 0) {
-        html += doc_buildCard('Relationships', relNotes.length,
-            doc_relationshipNotesHtml(relNotes), anchor);
-    }
-
-    var queries = table.queries || [];
-    if (queries.length > 0) {
-        html += doc_buildCard('Common Queries', queries.length,
-            doc_queriesHtml(queries, anchor), anchor);
-    }
+    html += doc_enrichmentCards(table, anchor);
 
     html += doc_editorialSlot(editorial, 'after-enrichment');
     html += '</div>';
@@ -595,14 +590,16 @@ function doc_renderTable(table, editorial, schemaName) {
     return html;
 }
 
-/* Renders a procedure object: description, data flow, a parameters card or a
-   no-parameters note, then design-note and relationship cards. */
+/* Renders a procedure object: module line, description, data flow, a parameters
+   card or a no-parameters note, then the shared enrichment cards (design notes,
+   status values, relationships, and common queries). */
 function doc_renderProcedure(proc, editorial, schemaName) {
     editorial = editorial || {};
     var anchor = doc_toAnchor(proc.name);
 
     var html = doc_openObjectSection(anchor);
     html += doc_objectHeading(proc.name, 'doc-badge-proc', 'Procedure');
+    html += doc_objectMeta(proc.module, proc.category);
     html += doc_objectDescription(proc.description);
     html += doc_objectDataFlow(proc.dataFlow);
     html += doc_editorialSlot(editorial, 'after-description');
@@ -619,17 +616,7 @@ function doc_renderProcedure(proc, editorial, schemaName) {
 
     html += doc_editorialSlot(editorial, 'after-fields');
 
-    var designNotes = proc.designNotes || [];
-    if (designNotes.length > 0) {
-        html += doc_buildCard('Design Notes', designNotes.length,
-            doc_designNotesHtml(designNotes), anchor);
-    }
-
-    var relNotes = proc.relationshipNotes || [];
-    if (relNotes.length > 0) {
-        html += doc_buildCard('Relationships', relNotes.length,
-            doc_relationshipNotesHtml(relNotes), anchor);
-    }
+    html += doc_enrichmentCards(proc, anchor);
 
     html += '</div>';
     html += doc_editorialSlot(editorial, 'after-all');
@@ -637,33 +624,26 @@ function doc_renderProcedure(proc, editorial, schemaName) {
     return html;
 }
 
-/* Renders a trigger object: description, then a behavior card describing its
-   parent table, firing events, and enabled state, plus design-note and
-   relationship cards. */
+/* Renders a trigger object: module line, description, data flow, then a behavior
+   card describing its parent table, firing events, and enabled state, plus the
+   shared enrichment cards (design notes, status values, relationships, and
+   common queries). */
 function doc_renderTrigger(trigger, editorial, schemaName) {
     editorial = editorial || {};
     var anchor = doc_toAnchor(trigger.name);
 
     var html = doc_openObjectSection(anchor);
     html += doc_objectHeading(trigger.name, 'doc-badge-trigger', 'Trigger');
+    html += doc_objectMeta(trigger.module, trigger.category);
     html += doc_objectDescription(trigger.description);
+    html += doc_objectDataFlow(trigger.dataFlow);
     html += doc_editorialSlot(editorial, 'after-description');
 
     html += '<div class="doc-card-stack">';
     html += doc_buildCard('Behavior', null, doc_triggerBehaviorTable(trigger), anchor);
     html += doc_editorialSlot(editorial, 'after-fields');
 
-    var designNotes = trigger.designNotes || [];
-    if (designNotes.length > 0) {
-        html += doc_buildCard('Design Notes', designNotes.length,
-            doc_designNotesHtml(designNotes), anchor);
-    }
-
-    var relNotes = trigger.relationshipNotes || [];
-    if (relNotes.length > 0) {
-        html += doc_buildCard('Relationships', relNotes.length,
-            doc_relationshipNotesHtml(relNotes), anchor);
-    }
+    html += doc_enrichmentCards(trigger, anchor);
 
     html += '</div>';
     html += doc_editorialSlot(editorial, 'after-all');
@@ -671,80 +651,89 @@ function doc_renderTrigger(trigger, editorial, schemaName) {
     return html;
 }
 
-/* Renders a function object: description, function-type note, and a parameters
-   card when the function declares parameters. */
+/* Renders a function object: module line, description, data flow, function-type
+   note, a parameters card when the function declares parameters, then the shared
+   enrichment cards (design notes, status values, relationships, and common
+   queries). */
 function doc_renderFunction(func, editorial, schemaName) {
     editorial = editorial || {};
     var anchor = doc_toAnchor(func.name);
 
     var html = doc_openObjectSection(anchor);
     html += doc_objectHeading(func.name, 'doc-badge-proc', 'Function');
+    html += doc_objectMeta(func.module, func.category);
     html += doc_objectDescription(func.description);
+    html += doc_objectDataFlow(func.dataFlow);
     html += '<p class="doc-muted">Type: ' + doc_esc(func.functionType) + '</p>';
     html += doc_editorialSlot(editorial, 'after-description');
 
+    html += '<div class="doc-card-stack">';
+
     var params = func.parameters || [];
     if (params.length > 0) {
-        html += '<div class="doc-card-stack">';
         html += doc_buildCard('Parameters', params.length,
             doc_parametersTable(params), anchor);
-        html += '</div>';
     }
 
     html += doc_editorialSlot(editorial, 'after-fields');
+
+    html += doc_enrichmentCards(func, anchor);
+
+    html += '</div>';
     html += doc_editorialSlot(editorial, 'after-all');
     html += '</div></div>';
     return html;
 }
 
-/* Renders a view object: a columns card when the view declares columns. */
+/* Renders a view object: module line, description, data flow, a columns card
+   when the view declares columns, then the shared enrichment cards (design
+   notes, status values, relationships, and common queries). */
 function doc_renderView(view, editorial, schemaName) {
     editorial = editorial || {};
     var anchor = doc_toAnchor(view.name);
 
     var html = doc_openObjectSection(anchor);
     html += doc_objectHeading(view.name, 'doc-badge-table', 'View');
+    html += doc_objectMeta(view.module, view.category);
+    html += doc_objectDescription(view.description);
+    html += doc_objectDataFlow(view.dataFlow);
     html += doc_editorialSlot(editorial, 'after-description');
+
+    html += '<div class="doc-card-stack">';
 
     var columns = view.columns || [];
     if (columns.length > 0) {
-        html += '<div class="doc-card-stack">';
         html += doc_buildCard('Columns', columns.length,
             doc_viewColumnsTable(columns), anchor);
-        html += '</div>';
     }
 
     html += doc_editorialSlot(editorial, 'after-fields');
+
+    html += doc_enrichmentCards(view, anchor);
+
+    html += '</div>';
     html += doc_editorialSlot(editorial, 'after-all');
     html += '</div></div>';
     return html;
 }
 
-/* Renders a script object: description, data flow, then design-note and
-   relationship cards. */
+/* Renders a script object: module line, description, data flow, then the shared
+   enrichment cards (design notes, status values, relationships, and common
+   queries). */
 function doc_renderScript(script, editorial, schemaName) {
     editorial = editorial || {};
     var anchor = doc_toAnchor(script.name);
 
     var html = doc_openObjectSection(anchor);
     html += doc_objectHeading(script.name, 'doc-badge-script', 'Script');
+    html += doc_objectMeta(script.module, script.category);
     html += doc_objectDescription(script.description);
     html += doc_objectDataFlow(script.dataFlow);
     html += doc_editorialSlot(editorial, 'after-description');
 
     html += '<div class="doc-card-stack">';
 
-    var designNotes = script.designNotes || [];
-    if (designNotes.length > 0) {
-        html += doc_buildCard('Design Notes', designNotes.length,
-            doc_designNotesHtml(designNotes), anchor);
-    }
-
-    var relNotes = script.relationshipNotes || [];
-    if (relNotes.length > 0) {
-        html += doc_buildCard('Relationships', relNotes.length,
-            doc_relationshipNotesHtml(relNotes), anchor);
-    }
+    html += doc_enrichmentCards(script, anchor);
 
     html += '</div>';
     html += doc_editorialSlot(editorial, 'after-fields');
@@ -753,37 +742,23 @@ function doc_renderScript(script, editorial, schemaName) {
     return html;
 }
 
-/* Renders an extended-events session object: description, data flow, then
-   design-note, query, and relationship cards. */
+/* Renders an extended-events session object: module line, description, data
+   flow, then the shared enrichment cards (design notes, status values,
+   relationships, and common queries). */
 function doc_renderXESession(xe, editorial, schemaName) {
     editorial = editorial || {};
     var anchor = doc_toAnchor(xe.name);
 
     var html = doc_openObjectSection(anchor);
     html += doc_objectHeading(xe.name, 'doc-badge-xe', 'XE Session');
+    html += doc_objectMeta(xe.module, xe.category);
     html += doc_objectDescription(xe.description);
     html += doc_objectDataFlow(xe.dataFlow);
     html += doc_editorialSlot(editorial, 'after-description');
 
     html += '<div class="doc-card-stack">';
 
-    var designNotes = xe.designNotes || [];
-    if (designNotes.length > 0) {
-        html += doc_buildCard('Design Notes', designNotes.length,
-            doc_designNotesHtml(designNotes), anchor);
-    }
-
-    var queries = xe.queries || [];
-    if (queries.length > 0) {
-        html += doc_buildCard('Common Queries', queries.length,
-            doc_queriesHtml(queries, anchor), anchor);
-    }
-
-    var relNotes = xe.relationshipNotes || [];
-    if (relNotes.length > 0) {
-        html += doc_buildCard('Relationships', relNotes.length,
-            doc_relationshipNotesHtml(relNotes), anchor);
-    }
+    html += doc_enrichmentCards(xe, anchor);
 
     html += '</div>';
     html += doc_editorialSlot(editorial, 'after-fields');
@@ -792,31 +767,23 @@ function doc_renderXESession(xe, editorial, schemaName) {
     return html;
 }
 
-/* Renders a DDL trigger object: description, data flow, then design-note and
-   relationship cards. */
+/* Renders a DDL trigger object: module line, description, data flow, then the
+   shared enrichment cards (design notes, status values, relationships, and
+   common queries). */
 function doc_renderDDLTrigger(ddl, editorial, schemaName) {
     editorial = editorial || {};
     var anchor = doc_toAnchor(ddl.name);
 
     var html = doc_openObjectSection(anchor);
     html += doc_objectHeading(ddl.name, 'doc-badge-ddltrigger', 'DDL Trigger');
+    html += doc_objectMeta(ddl.module, ddl.category);
     html += doc_objectDescription(ddl.description);
     html += doc_objectDataFlow(ddl.dataFlow);
     html += doc_editorialSlot(editorial, 'after-description');
 
     html += '<div class="doc-card-stack">';
 
-    var designNotes = ddl.designNotes || [];
-    if (designNotes.length > 0) {
-        html += doc_buildCard('Design Notes', designNotes.length,
-            doc_designNotesHtml(designNotes), anchor);
-    }
-
-    var relNotes = ddl.relationshipNotes || [];
-    if (relNotes.length > 0) {
-        html += doc_buildCard('Relationships', relNotes.length,
-            doc_relationshipNotesHtml(relNotes), anchor);
-    }
+    html += doc_enrichmentCards(ddl, anchor);
 
     html += '</div>';
     html += doc_editorialSlot(editorial, 'after-fields');
@@ -878,6 +845,39 @@ function doc_buildCard(label, count, contentHtml, anchor) {
     html += '<div class="doc-card-content' + openClass + '" id="' + cardId +
         '">' + contentHtml + '</div>';
     html += '</div>';
+    return html;
+}
+
+/* Builds the shared enrichment card set (design notes, status values,
+   relationships, and common queries) for any object that carries them, in a
+   fixed order, emitting only the cards whose data is present. */
+function doc_enrichmentCards(obj, anchor) {
+    var html = '';
+
+    var designNotes = obj.designNotes || [];
+    if (designNotes.length > 0) {
+        html += doc_buildCard('Design Notes', designNotes.length,
+            doc_designNotesHtml(designNotes), anchor);
+    }
+
+    var statusValues = obj.statusValues || [];
+    if (statusValues.length > 0) {
+        html += doc_buildCard('Status Values', statusValues.length,
+            doc_statusValuesHtml(statusValues), anchor);
+    }
+
+    var relNotes = obj.relationshipNotes || [];
+    if (relNotes.length > 0) {
+        html += doc_buildCard('Relationships', relNotes.length,
+            doc_relationshipNotesHtml(relNotes), anchor);
+    }
+
+    var queries = obj.queries || [];
+    if (queries.length > 0) {
+        html += doc_buildCard('Common Queries', queries.length,
+            doc_queriesHtml(queries, anchor), anchor);
+    }
+
     return html;
 }
 

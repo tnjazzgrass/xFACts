@@ -90,6 +90,14 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-07-23  Rendered the full enrichment set for every object type on both
+#             publish surfaces. The Storage Format reference now emits XE session
+#             and DDL trigger sections, which it previously dropped entirely. The
+#             markdown export now emits status values, common queries, data flow,
+#             and design notes for the object types that were missing them, via a
+#             shared Convert-EnrichmentTailToMarkdown helper so no attached
+#             metadata is silently omitted. Category filters now include DDL
+#             triggers alongside the other object types.
 # 2026-07-21  Retired the -ExportOnly standalone export mode. The markdown export
 #             is now part of every publish, gated on -Execute like every other
 #             write: a bare preview writes nothing (prints [PREVIEW] Would export
@@ -1127,6 +1135,14 @@ function Convert-JsonToRefStorageFormat {
         if (-not $s) { continue }
         $objects += Convert-JsonObjectToStorageFormat -Obj $s -TypeLabel 'Script'
     }
+    foreach ($x in @($JsonData.xeSessions)) {
+        if (-not $x) { continue }
+        $objects += Convert-JsonObjectToStorageFormat -Obj $x -TypeLabel 'XE Session'
+    }
+    foreach ($d in @($JsonData.ddlTriggers)) {
+        if (-not $d) { continue }
+        $objects += Convert-JsonObjectToStorageFormat -Obj $d -TypeLabel 'DDL Trigger'
+    }
 
     $page += ($objects -join '<hr/>') + '<hr/>'
 
@@ -2024,6 +2040,48 @@ function Convert-ArchHtmlToMarkdown {
     return $body
 }
 
+# Emits the status-values, common-queries, and relationship-notes markdown tail shared by every object type.
+function Convert-EnrichmentTailToMarkdown {
+    param($Obj)
+
+    $out = ''
+
+    $svs = @($Obj.statusValues)
+    if ($svs -and $svs[0]) {
+        $out += "**Status Values:**`n`n"
+        $out += "| Column | Value | Meaning | Sort |`n"
+        $out += "| --- | --- | --- | --- |`n"
+        foreach ($sv in $svs) {
+            if (-not $sv) { continue }
+            $val = "$($sv.value)" -replace '\|', '\|'
+            $meaning = "$($sv.meaning)" -replace '\|', '\|'
+            $so = if ($sv.sortOrder) { $sv.sortOrder } else { '' }
+            $out += "| $($sv.column) | $val | $meaning | $so |`n"
+        }
+        $out += "`n"
+    }
+
+    foreach ($q in @($Obj.queries)) {
+        if (-not $q) { continue }
+        $so = if ($q.sortOrder) { " [sort:$($q.sortOrder)]" } else { '' }
+        $out += "**$($q.name)**$so"
+        if ($q.description) { $out += " -- $($q.description)" }
+        $out += "`n`n``````sql`n$($q.sql)`n```````n`n"
+    }
+
+    $rels = @($Obj.relationshipNotes)
+    if ($rels -and $rels[0]) {
+        foreach ($rel in $rels) {
+            if (-not $rel) { continue }
+            $so = if ($rel.sortOrder) { " [sort:$($rel.sortOrder)]" } else { '' }
+            $out += "  - **$($rel.relatedObject)**:$so $($rel.note)`n"
+        }
+        $out += "`n"
+    }
+
+    return $out
+}
+
 # Renders a schema JSON reference into markdown tables and sections.
 function Convert-JsonToMarkdown {
     param($JsonData)
@@ -2104,41 +2162,7 @@ function Convert-JsonToMarkdown {
             $md += "`n"
         }
 
-        # Status values
-        $svs = @($t.statusValues)
-        if ($svs -and $svs[0]) {
-            $md += "**Status Values:**`n`n"
-            $md += "| Column | Value | Meaning | Sort |`n"
-            $md += "| --- | --- | --- | --- |`n"
-            foreach ($sv in $svs) {
-                if (-not $sv) { continue }
-                $val = "$($sv.value)" -replace '\|', '\|'
-                $meaning = "$($sv.meaning)" -replace '\|', '\|'
-                $so = if ($sv.sortOrder) { $sv.sortOrder } else { '' }
-                $md += "| $($sv.column) | $val | $meaning | $so |`n"
-            }
-            $md += "`n"
-        }
-
-        # Queries
-        foreach ($q in @($t.queries)) {
-            if (-not $q) { continue }
-            $so = if ($q.sortOrder) { " [sort:$($q.sortOrder)]" } else { '' }
-            $md += "**$($q.name)**$so"
-            if ($q.description) { $md += " -- $($q.description)" }
-            $md += "`n`n``````sql`n$($q.sql)`n```````n`n"
-        }
-
-        # Relationships
-        $rels = @($t.relationshipNotes)
-        if ($rels -and $rels[0]) {
-            foreach ($rel in $rels) {
-                if (-not $rel) { continue }
-                $so = if ($rel.sortOrder) { " [sort:$($rel.sortOrder)]" } else { '' }
-                $md += "  - **$($rel.relatedObject)**:$so $($rel.note)`n"
-            }
-            $md += "`n"
-        }
+        $md += Convert-EnrichmentTailToMarkdown -Obj $t
     }
 
     # Procedures
@@ -2173,20 +2197,7 @@ function Convert-JsonToMarkdown {
             $md += "`n"
         }
 
-        foreach ($q in @($p.queries)) {
-            if (-not $q) { continue }
-            $so = if ($q.sortOrder) { " [sort:$($q.sortOrder)]" } else { '' }
-            $md += "**$($q.name)**$so"
-            if ($q.description) { $md += " -- $($q.description)" }
-            $md += "`n`n``````sql`n$($q.sql)`n```````n`n"
-        }
-
-        foreach ($rel in @($p.relationshipNotes)) {
-            if (-not $rel) { continue }
-            $so = if ($rel.sortOrder) { " [sort:$($rel.sortOrder)]" } else { '' }
-            $md += "  - **$($rel.relatedObject)**:$so $($rel.note)`n"
-        }
-        if ($p.relationshipNotes) { $md += "`n" }
+        $md += Convert-EnrichmentTailToMarkdown -Obj $p
     }
 
     # Triggers (DML - from sys.triggers/sys.tables)
@@ -2201,12 +2212,7 @@ function Convert-JsonToMarkdown {
             $so = if ($dn.sortOrder) { " [sort:$($dn.sortOrder)]" } else { '' }
             $md += "**$topic`:**$so $($dn.note)`n`n"
         }
-        foreach ($rel in @($tr.relationshipNotes)) {
-            if (-not $rel) { continue }
-            $so = if ($rel.sortOrder) { " [sort:$($rel.sortOrder)]" } else { '' }
-            $md += "  - **$($rel.relatedObject)**:$so $($rel.note)`n"
-        }
-        if ($tr.relationshipNotes) { $md += "`n" }
+        $md += Convert-EnrichmentTailToMarkdown -Obj $tr
     }
 
     # Functions
@@ -2214,7 +2220,16 @@ function Convert-JsonToMarkdown {
         if (-not $f) { continue }
         $md += "`n### $($f.name)`n`n"
         if ($f.description) { $md += "$($f.description)`n`n" }
+        if ($f.dataFlow) { $md += "**Data Flow:** $($f.dataFlow)`n`n" }
         if ($f.functionType) { $md += "**Type:** $($f.functionType)`n`n" }
+
+        foreach ($dn in @($f.designNotes)) {
+            if (-not $dn) { continue }
+            $topic = if ($dn.topic) { $dn.topic } else { 'Design Note' }
+            $so = if ($dn.sortOrder) { " [sort:$($dn.sortOrder)]" } else { '' }
+            $md += "**$topic`:**$so $($dn.note)`n`n"
+        }
+
         $params = @($f.parameters)
         if ($params -and $params[0]) {
             $md += "**Parameters:**`n`n"
@@ -2230,6 +2245,8 @@ function Convert-JsonToMarkdown {
             }
             $md += "`n"
         }
+
+        $md += Convert-EnrichmentTailToMarkdown -Obj $f
     }
 
     # Views
@@ -2237,6 +2254,15 @@ function Convert-JsonToMarkdown {
         if (-not $v) { continue }
         $md += "`n### $($v.name)`n`n"
         if ($v.description) { $md += "$($v.description)`n`n" }
+        if ($v.dataFlow) { $md += "**Data Flow:** $($v.dataFlow)`n`n" }
+
+        foreach ($dn in @($v.designNotes)) {
+            if (-not $dn) { continue }
+            $topic = if ($dn.topic) { $dn.topic } else { 'Design Note' }
+            $so = if ($dn.sortOrder) { " [sort:$($dn.sortOrder)]" } else { '' }
+            $md += "**$topic`:**$so $($dn.note)`n`n"
+        }
+
         $cols = @($v.columns)
         if ($cols -and $cols[0]) {
             $md += "**Columns:**`n`n"
@@ -2251,6 +2277,8 @@ function Convert-JsonToMarkdown {
             }
             $md += "`n"
         }
+
+        $md += Convert-EnrichmentTailToMarkdown -Obj $v
     }
 
     # Scripts
@@ -2265,19 +2293,7 @@ function Convert-JsonToMarkdown {
             $so = if ($dn.sortOrder) { " [sort:$($dn.sortOrder)]" } else { '' }
             $md += "**$topic`:**$so $($dn.note)`n`n"
         }
-        foreach ($q in @($s.queries)) {
-            if (-not $q) { continue }
-            $so = if ($q.sortOrder) { " [sort:$($q.sortOrder)]" } else { '' }
-            $md += "**$($q.name)**$so"
-            if ($q.description) { $md += " -- $($q.description)" }
-            $md += "`n`n``````sql`n$($q.sql)`n```````n`n"
-        }
-        foreach ($rel in @($s.relationshipNotes)) {
-            if (-not $rel) { continue }
-            $so = if ($rel.sortOrder) { " [sort:$($rel.sortOrder)]" } else { '' }
-            $md += "  - **$($rel.relatedObject)**:$so $($rel.note)`n"
-        }
-        if ($s.relationshipNotes) { $md += "`n" }
+        $md += Convert-EnrichmentTailToMarkdown -Obj $s
     }
 
     # XE Sessions
@@ -2292,19 +2308,7 @@ function Convert-JsonToMarkdown {
             $so = if ($dn.sortOrder) { " [sort:$($dn.sortOrder)]" } else { '' }
             $md += "**$topic`:**$so $($dn.note)`n`n"
         }
-        foreach ($q in @($x.queries)) {
-            if (-not $q) { continue }
-            $so = if ($q.sortOrder) { " [sort:$($q.sortOrder)]" } else { '' }
-            $md += "**$($q.name)**$so"
-            if ($q.description) { $md += " -- $($q.description)" }
-            $md += "`n`n``````sql`n$($q.sql)`n```````n`n"
-        }
-        foreach ($rel in @($x.relationshipNotes)) {
-            if (-not $rel) { continue }
-            $so = if ($rel.sortOrder) { " [sort:$($rel.sortOrder)]" } else { '' }
-            $md += "  - **$($rel.relatedObject)**:$so $($rel.note)`n"
-        }
-        if ($x.relationshipNotes) { $md += "`n" }
+        $md += Convert-EnrichmentTailToMarkdown -Obj $x
     }
 
     # DDL Triggers
@@ -2319,12 +2323,7 @@ function Convert-JsonToMarkdown {
             $so = if ($dn.sortOrder) { " [sort:$($dn.sortOrder)]" } else { '' }
             $md += "**$topic`:**$so $($dn.note)`n`n"
         }
-        foreach ($rel in @($d.relationshipNotes)) {
-            if (-not $rel) { continue }
-            $so = if ($rel.sortOrder) { " [sort:$($rel.sortOrder)]" } else { '' }
-            $md += "  - **$($rel.relatedObject)**:$so $($rel.note)`n"
-        }
-        if ($d.relationshipNotes) { $md += "`n" }
+        $md += Convert-EnrichmentTailToMarkdown -Obj $d
     }
 
     return $md
@@ -3054,6 +3053,7 @@ foreach ($page in $modulePages) {
             if ($filtered.views)      { $filtered.views      = @($filtered.views      | Where-Object { $_.category -in $cats }) }
             if ($filtered.scripts)    { $filtered.scripts    = @($filtered.scripts    | Where-Object { $_.category -in $cats }) }
             if ($filtered.xeSessions) { $filtered.xeSessions = @($filtered.xeSessions | Where-Object { $_.category -in $cats }) }
+            if ($filtered.ddlTriggers) { $filtered.ddlTriggers = @($filtered.ddlTriggers | Where-Object { $_.category -in $cats }) }
             $jsonData = $filtered
         }
         elseif ($refSection.ExcludeCategories) {
@@ -3067,6 +3067,7 @@ foreach ($page in $modulePages) {
             if ($filtered.views)      { $filtered.views      = @($filtered.views      | Where-Object { $_.category -notin $excl }) }
             if ($filtered.scripts)    { $filtered.scripts    = @($filtered.scripts    | Where-Object { $_.category -notin $excl }) }
             if ($filtered.xeSessions) { $filtered.xeSessions = @($filtered.xeSessions | Where-Object { $_.category -notin $excl }) }
+            if ($filtered.ddlTriggers) { $filtered.ddlTriggers = @($filtered.ddlTriggers | Where-Object { $_.category -notin $excl }) }
             $jsonData = $filtered
         }
 
@@ -3229,6 +3230,7 @@ foreach ($page in $modulePages) {
                 if ($filtered.views)      { $filtered.views      = @($filtered.views      | Where-Object { $_.category -in $cats }) }
                 if ($filtered.scripts)    { $filtered.scripts    = @($filtered.scripts    | Where-Object { $_.category -in $cats }) }
                 if ($filtered.xeSessions) { $filtered.xeSessions = @($filtered.xeSessions | Where-Object { $_.category -in $cats }) }
+                if ($filtered.ddlTriggers) { $filtered.ddlTriggers = @($filtered.ddlTriggers | Where-Object { $_.category -in $cats }) }
                 $jsonData = $filtered
             }
             elseif ($jsonData -and $refSection.ExcludeCategories) {
@@ -3242,6 +3244,7 @@ foreach ($page in $modulePages) {
                 if ($filtered.views)      { $filtered.views      = @($filtered.views      | Where-Object { $_.category -notin $excl }) }
                 if ($filtered.scripts)    { $filtered.scripts    = @($filtered.scripts    | Where-Object { $_.category -notin $excl }) }
                 if ($filtered.xeSessions) { $filtered.xeSessions = @($filtered.xeSessions | Where-Object { $_.category -notin $excl }) }
+                if ($filtered.ddlTriggers) { $filtered.ddlTriggers = @($filtered.ddlTriggers | Where-Object { $_.category -notin $excl }) }
                 $jsonData = $filtered
             }
 

@@ -55,6 +55,14 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-07-23  Emitted the full enrichment set (data flow, design notes, status
+#             values, common queries, relationship notes) uniformly for every
+#             object type the JSON carries, not just tables. Procedures,
+#             triggers, functions, views, scripts, XE sessions, and DDL triggers
+#             previously dropped their common-query rows (and triggers, functions,
+#             and views additionally dropped data flow and other enrichment);
+#             the per-object subqueries are now identical across all eight object
+#             types so no attached metadata is silently omitted from the export.
 # 2026-07-21  Counted scripts, XE sessions, and DDL triggers in the per-schema
 #             object summary. Schemas whose JSON held only these types (for
 #             example ControlCenter, which has scripts and no tables) logged an
@@ -471,6 +479,36 @@ $sqlQuery = @"
                     ORDER BY om.sort_order
                     FOR JSON PATH
                 ) AS [designNotes],
+                -- Status Values (enrichment)
+                (
+                    SELECT
+                        om.column_name      AS [column],
+                        om.title            AS [value],
+                        om.content          AS [meaning],
+                        om.sort_order       AS [sortOrder]
+                    FROM dbo.Object_Metadata om
+                    WHERE om.schema_name = @schemaName
+                      AND om.object_name = p.name
+                      AND om.property_type = 'status_value'
+                      AND om.is_active = 1
+                    ORDER BY om.sort_order
+                    FOR JSON PATH
+                ) AS [statusValues],
+                -- Common Queries (enrichment)
+                (
+                    SELECT
+                        om.title            AS [name],
+                        om.description      AS [description],
+                        om.content          AS [sql],
+                        om.sort_order       AS [sortOrder]
+                    FROM dbo.Object_Metadata om
+                    WHERE om.schema_name = @schemaName
+                      AND om.object_name = p.name
+                      AND om.property_type = 'query'
+                      AND om.is_active = 1
+                    ORDER BY om.sort_order
+                    FOR JSON PATH
+                ) AS [queries],
                 -- Relationship Notes (enrichment)
                 (
                     SELECT
@@ -529,6 +567,15 @@ $sqlQuery = @"
                       AND om.property_type = 'category'
                       AND om.is_active = 1
                 ) AS [category],
+                -- Data Flow (enrichment)
+                (
+                    SELECT TOP 1 om.content
+                    FROM dbo.Object_Metadata om
+                    WHERE om.schema_name = @schemaName
+                      AND om.object_name = tr.name
+                      AND om.property_type = 'data_flow'
+                      AND om.is_active = 1
+                ) AS [dataFlow],
                 CASE WHEN OBJECTPROPERTY(tr.object_id, 'ExecIsInsertTrigger') = 1 THEN 1 ELSE 0 END AS [firesOnInsert],
                 CASE WHEN OBJECTPROPERTY(tr.object_id, 'ExecIsUpdateTrigger') = 1 THEN 1 ELSE 0 END AS [firesOnUpdate],
                 CASE WHEN OBJECTPROPERTY(tr.object_id, 'ExecIsDeleteTrigger') = 1 THEN 1 ELSE 0 END AS [firesOnDelete],
@@ -548,6 +595,36 @@ $sqlQuery = @"
                     ORDER BY om.sort_order
                     FOR JSON PATH
                 ) AS [designNotes],
+                -- Status Values (enrichment)
+                (
+                    SELECT
+                        om.column_name      AS [column],
+                        om.title            AS [value],
+                        om.content          AS [meaning],
+                        om.sort_order       AS [sortOrder]
+                    FROM dbo.Object_Metadata om
+                    WHERE om.schema_name = @schemaName
+                      AND om.object_name = tr.name
+                      AND om.property_type = 'status_value'
+                      AND om.is_active = 1
+                    ORDER BY om.sort_order
+                    FOR JSON PATH
+                ) AS [statusValues],
+                -- Common Queries (enrichment)
+                (
+                    SELECT
+                        om.title            AS [name],
+                        om.description      AS [description],
+                        om.content          AS [sql],
+                        om.sort_order       AS [sortOrder]
+                    FROM dbo.Object_Metadata om
+                    WHERE om.schema_name = @schemaName
+                      AND om.object_name = tr.name
+                      AND om.property_type = 'query'
+                      AND om.is_active = 1
+                    ORDER BY om.sort_order
+                    FOR JSON PATH
+                ) AS [queries],
                 -- Relationship Notes (enrichment)
                 (
                     SELECT
@@ -630,7 +707,75 @@ $sqlQuery = @"
                       AND pm.parameter_id > 0
                     ORDER BY pm.parameter_id
                     FOR JSON PATH
-                ) AS [parameters]
+                ) AS [parameters],
+                -- Data Flow (enrichment)
+                (
+                    SELECT TOP 1 om.content
+                    FROM dbo.Object_Metadata om
+                    WHERE om.schema_name = @schemaName
+                      AND om.object_name = o.name
+                      AND om.property_type = 'data_flow'
+                      AND om.is_active = 1
+                ) AS [dataFlow],
+                -- Design Notes (enrichment)
+                (
+                    SELECT
+                        om.title            AS [topic],
+                        om.description      AS [summary],
+                        om.content          AS [note],
+                        om.sort_order       AS [sortOrder]
+                    FROM dbo.Object_Metadata om
+                    WHERE om.schema_name = @schemaName
+                      AND om.object_name = o.name
+                      AND om.property_type = 'design_note'
+                      AND om.is_active = 1
+                    ORDER BY om.sort_order
+                    FOR JSON PATH
+                ) AS [designNotes],
+                -- Status Values (enrichment)
+                (
+                    SELECT
+                        om.column_name      AS [column],
+                        om.title            AS [value],
+                        om.content          AS [meaning],
+                        om.sort_order       AS [sortOrder]
+                    FROM dbo.Object_Metadata om
+                    WHERE om.schema_name = @schemaName
+                      AND om.object_name = o.name
+                      AND om.property_type = 'status_value'
+                      AND om.is_active = 1
+                    ORDER BY om.sort_order
+                    FOR JSON PATH
+                ) AS [statusValues],
+                -- Common Queries (enrichment)
+                (
+                    SELECT
+                        om.title            AS [name],
+                        om.description      AS [description],
+                        om.content          AS [sql],
+                        om.sort_order       AS [sortOrder]
+                    FROM dbo.Object_Metadata om
+                    WHERE om.schema_name = @schemaName
+                      AND om.object_name = o.name
+                      AND om.property_type = 'query'
+                      AND om.is_active = 1
+                    ORDER BY om.sort_order
+                    FOR JSON PATH
+                ) AS [queries],
+                -- Relationship Notes (enrichment)
+                (
+                    SELECT
+                        om.title            AS [relatedObject],
+                        om.content          AS [note],
+                        om.sort_order       AS [sortOrder]
+                    FROM dbo.Object_Metadata om
+                    WHERE om.schema_name = @schemaName
+                      AND om.object_name = o.name
+                      AND om.property_type = 'relationship_note'
+                      AND om.is_active = 1
+                    ORDER BY om.sort_order
+                    FOR JSON PATH
+                ) AS [relationshipNotes]
             FROM sys.objects o
             WHERE SCHEMA_NAME(o.schema_id) = @schemaName
               AND o.type IN ('FN', 'IF', 'TF')
@@ -695,7 +840,75 @@ $sqlQuery = @"
                     WHERE c.object_id = v.object_id
                     ORDER BY c.column_id
                     FOR JSON PATH
-                ) AS [columns]
+                ) AS [columns],
+                -- Data Flow (enrichment)
+                (
+                    SELECT TOP 1 om.content
+                    FROM dbo.Object_Metadata om
+                    WHERE om.schema_name = @schemaName
+                      AND om.object_name = v.name
+                      AND om.property_type = 'data_flow'
+                      AND om.is_active = 1
+                ) AS [dataFlow],
+                -- Design Notes (enrichment)
+                (
+                    SELECT
+                        om.title            AS [topic],
+                        om.description      AS [summary],
+                        om.content          AS [note],
+                        om.sort_order       AS [sortOrder]
+                    FROM dbo.Object_Metadata om
+                    WHERE om.schema_name = @schemaName
+                      AND om.object_name = v.name
+                      AND om.property_type = 'design_note'
+                      AND om.is_active = 1
+                    ORDER BY om.sort_order
+                    FOR JSON PATH
+                ) AS [designNotes],
+                -- Status Values (enrichment)
+                (
+                    SELECT
+                        om.column_name      AS [column],
+                        om.title            AS [value],
+                        om.content          AS [meaning],
+                        om.sort_order       AS [sortOrder]
+                    FROM dbo.Object_Metadata om
+                    WHERE om.schema_name = @schemaName
+                      AND om.object_name = v.name
+                      AND om.property_type = 'status_value'
+                      AND om.is_active = 1
+                    ORDER BY om.sort_order
+                    FOR JSON PATH
+                ) AS [statusValues],
+                -- Common Queries (enrichment)
+                (
+                    SELECT
+                        om.title            AS [name],
+                        om.description      AS [description],
+                        om.content          AS [sql],
+                        om.sort_order       AS [sortOrder]
+                    FROM dbo.Object_Metadata om
+                    WHERE om.schema_name = @schemaName
+                      AND om.object_name = v.name
+                      AND om.property_type = 'query'
+                      AND om.is_active = 1
+                    ORDER BY om.sort_order
+                    FOR JSON PATH
+                ) AS [queries],
+                -- Relationship Notes (enrichment)
+                (
+                    SELECT
+                        om.title            AS [relatedObject],
+                        om.content          AS [note],
+                        om.sort_order       AS [sortOrder]
+                    FROM dbo.Object_Metadata om
+                    WHERE om.schema_name = @schemaName
+                      AND om.object_name = v.name
+                      AND om.property_type = 'relationship_note'
+                      AND om.is_active = 1
+                    ORDER BY om.sort_order
+                    FOR JSON PATH
+                ) AS [relationshipNotes]
             FROM sys.views v
             WHERE SCHEMA_NAME(v.schema_id) = @schemaName
             ORDER BY v.name
@@ -762,6 +975,36 @@ $sqlQuery = @"
                     ORDER BY om.sort_order
                     FOR JSON PATH
                 ) AS [designNotes],
+                -- Status Values
+                (
+                    SELECT
+                        om.column_name      AS [column],
+                        om.title            AS [value],
+                        om.content          AS [meaning],
+                        om.sort_order       AS [sortOrder]
+                    FROM dbo.Object_Metadata om
+                    WHERE om.schema_name = @schemaName
+                      AND om.object_name = s.object_name
+                      AND om.property_type = 'status_value'
+                      AND om.is_active = 1
+                    ORDER BY om.sort_order
+                    FOR JSON PATH
+                ) AS [statusValues],
+                -- Common Queries
+                (
+                    SELECT
+                        om.title            AS [name],
+                        om.description      AS [description],
+                        om.content          AS [sql],
+                        om.sort_order       AS [sortOrder]
+                    FROM dbo.Object_Metadata om
+                    WHERE om.schema_name = @schemaName
+                      AND om.object_name = s.object_name
+                      AND om.property_type = 'query'
+                      AND om.is_active = 1
+                    ORDER BY om.sort_order
+                    FOR JSON PATH
+                ) AS [queries],
                 -- Relationship Notes
                 (
                     SELECT
@@ -848,6 +1091,21 @@ $sqlQuery = @"
                     ORDER BY om.sort_order
                     FOR JSON PATH
                 ) AS [designNotes],
+                -- Status Values
+                (
+                    SELECT
+                        om.column_name      AS [column],
+                        om.title            AS [value],
+                        om.content          AS [meaning],
+                        om.sort_order       AS [sortOrder]
+                    FROM dbo.Object_Metadata om
+                    WHERE om.schema_name = @schemaName
+                      AND om.object_name = x.object_name
+                      AND om.property_type = 'status_value'
+                      AND om.is_active = 1
+                    ORDER BY om.sort_order
+                    FOR JSON PATH
+                ) AS [statusValues],
                 -- Common Queries
                 (
                     SELECT
@@ -889,7 +1147,7 @@ $sqlQuery = @"
             FOR JSON PATH
         );
 
-       -- -----------------------------------------------------------------
+        -- -----------------------------------------------------------------
         -- DDL TRIGGERS (from Object_Metadata only - database-level triggers
         -- not captured by the sys.triggers / sys.tables join above)
         -- -----------------------------------------------------------------
@@ -950,6 +1208,36 @@ $sqlQuery = @"
                     ORDER BY om.sort_order
                     FOR JSON PATH
                 ) AS [designNotes],
+                -- Status Values
+                (
+                    SELECT
+                        om.column_name      AS [column],
+                        om.title            AS [value],
+                        om.content          AS [meaning],
+                        om.sort_order       AS [sortOrder]
+                    FROM dbo.Object_Metadata om
+                    WHERE om.schema_name = @schemaName
+                      AND om.object_name = d.object_name
+                      AND om.property_type = 'status_value'
+                      AND om.is_active = 1
+                    ORDER BY om.sort_order
+                    FOR JSON PATH
+                ) AS [statusValues],
+                -- Common Queries
+                (
+                    SELECT
+                        om.title            AS [name],
+                        om.description      AS [description],
+                        om.content          AS [sql],
+                        om.sort_order       AS [sortOrder]
+                    FROM dbo.Object_Metadata om
+                    WHERE om.schema_name = @schemaName
+                      AND om.object_name = d.object_name
+                      AND om.property_type = 'query'
+                      AND om.is_active = 1
+                    ORDER BY om.sort_order
+                    FOR JSON PATH
+                ) AS [queries],
                 -- Relationship Notes
                 (
                     SELECT
