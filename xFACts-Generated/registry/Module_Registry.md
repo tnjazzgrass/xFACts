@@ -1,6 +1,6 @@
 # Module Registry
 Source: dbo.Module_Registry
-Generated: 2026-07-23 12:57:33
+Generated: 2026-07-23 13:22:41
 
 | module_name | description |
 | --- | --- |
