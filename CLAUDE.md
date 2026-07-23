@@ -11,7 +11,7 @@ suggestions. When any rule conflicts with speed or convenience, the rule wins.
   against an unsynced clone.
 - If the pull conflicts, or the working tree is dirty with changes you did
   not make, STOP and report to Dirk before proceeding. Do not guess at
-  provenance (see the 2026-07-23 DBCC session).
+  provenance.
 
 ## Who you are working with
 
