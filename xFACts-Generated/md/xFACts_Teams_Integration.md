@@ -682,6 +682,42 @@ Queue procedure that inserts Teams notification requests into AlertQueue for asy
 | @TriggerType | varchar(50) | IN |  |  |
 | @TriggerValue | varchar(100) | IN |  |  |
 
+**Basic info alert** [sort:1] -- Simple informational notification
+
+```sql
+EXEC Teams.sp_QueueAlert
+    @SourceModule  = 'BIDATA',
+    @AlertCategory = 'INFO',
+    @Title         = 'BIDATA Daily Build Complete',
+    @Message       = 'Completed: 6:45 AM | Total Duration: 01:15:07',
+    @TriggerType   = 'DailyCompletion',
+    @TriggerValue  = '2025-12-20';
+```
+
+**Warning alert** [sort:2] -- Warning with deduplication context
+
+```sql
+EXEC Teams.sp_QueueAlert
+    @SourceModule  = 'BatchOps',
+    @AlertCategory = 'WARNING',
+    @Title         = '3 Batch(es) In Progress - Review Before Restart',
+    @Message       = @batch_details,
+    @TriggerType   = 'DM_OpenBatchCheck',
+    @TriggerValue  = '2025-12-20';
+```
+
+**Critical alert** [sort:3] -- High-priority alert for system issues
+
+```sql
+EXEC Teams.sp_QueueAlert
+    @SourceModule  = 'JobFlow',
+    @AlertCategory = 'CRITICAL',
+    @Title         = 'System Stall Detected',
+    @Message       = 'No job progress detected for 30+ minutes.',
+    @TriggerType   = 'SystemStall',
+    @TriggerValue  = '2025-12-20';
+```
+
   - **Teams.AlertQueue**: [sort:1] Inserts directly into AlertQueue. This is the T-SQL entry point for queuing Teams alerts, available to external or in-database callers. xFACts PowerShell scripts queue through the shared Send-TeamsAlert function instead, including rich Adaptive Card layouts via its -CardJson parameter.
 
 
@@ -690,6 +726,30 @@ Queue procedure that inserts Teams notification requests into AlertQueue for asy
 INSERT trigger on Teams.AlertQueue that signals the Orchestrator v2 engine when alerts are ready for processing. Enables queue-driven execution of Process-TeamsAlertQueue.
 
 **Queue-Driven Orchestrator Signal:** [sort:1] INSERT trigger that increments running_count in Orchestrator.ProcessRegistry for Process-TeamsAlertQueue. Only updates rows where run_mode = 2 (queue-driven), enabling the orchestrator to launch the processor on-demand rather than on a fixed polling schedule. Counts the number of inserted rows to accurately track queue depth across multi-row inserts.
+
+**Verify trigger is enabled** [sort:1] -- Check if the trigger is active
+
+```sql
+SELECT name, is_disabled
+FROM sys.triggers
+WHERE name = 'TR_Teams_AlertQueue_QueueDepth';
+```
+
+**Verify ProcessRegistry entry** [sort:2] -- Confirm the orchestrator entry exists and check run mode
+
+```sql
+SELECT process_name, run_mode, running_count
+FROM Orchestrator.ProcessRegistry
+WHERE process_name = 'Process-TeamsAlertQueue';
+```
+
+**Re-sync running_count** [sort:3] -- After re-enabling a disabled trigger, manually set running_count for any pending items
+
+```sql
+UPDATE Orchestrator.ProcessRegistry
+SET running_count = (SELECT COUNT(*) FROM Teams.AlertQueue WHERE status = 'Pending')
+WHERE process_name = 'Process-TeamsAlertQueue';
+```
 
   - **Orchestrator.ProcessRegistry**: [sort:1] Directly updates ProcessRegistry.running_count to signal queue depth. The orchestrator engine checks running_count on each heartbeat and launches the processor when count > 0.
 
