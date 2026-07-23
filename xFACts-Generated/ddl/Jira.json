@@ -22,7 +22,7 @@
                                            "length":  "50",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "Module that originated the request (e.g., JobFlow, NoticeRecon)"
+                                           "description":  "Module that originated the request."
                                        },
                                        {
                                            "ordinal":  3,
@@ -31,7 +31,7 @@
                                            "length":  "50",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "Service name (typically \u0027Jira\u0027)"
+                                           "description":  "Service name; always \u0027Jira\u0027 for this module."
                                        },
                                        {
                                            "ordinal":  4,
@@ -40,7 +40,7 @@
                                            "length":  "50",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "Type of request: CreateTicket, QueueInsertFailed, etc"
+                                           "description":  "Request category. Mirrors the caller-supplied trigger type on a logged API interaction, or QueueInsertFailed when the queue insert fails."
                                        },
                                        {
                                            "ordinal":  5,
@@ -49,7 +49,7 @@
                                            "length":  "20",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "Jira project key (e.g., SD)"
+                                           "description":  "Jira project key."
                                        },
                                        {
                                            "ordinal":  6,
@@ -67,7 +67,7 @@
                                            "length":  "50",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "Created ticket key (e.g., SD-12345). NULL if failed. \u0027Email\u0027 if fallback used"
+                                           "description":  "Jira ticket key returned when the ticket is created; NULL when no ticket was created."
                                        },
                                        {
                                            "ordinal":  8,
@@ -111,7 +111,7 @@
                                            "length":  "50",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "Category for deduplication lookup (e.g., JobFlow_Stall, DM_Template)"
+                                           "description":  "Category used for deduplication lookups; typically a \u003cModule\u003e_\u003cCondition\u003e pattern."
                                        },
                                        {
                                            "ordinal":  13,
@@ -120,7 +120,7 @@
                                            "length":  "200",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "Specific identifier (e.g., 2025-12-19, BNEW001)"
+                                           "description":  "Specific instance value that pairs with the trigger category to form the deduplication key."
                                        },
                                        {
                                            "ordinal":  14,
@@ -231,15 +231,9 @@
                                             },
                                             {
                                                 "column":  "TicketKey",
-                                                "value":  "SD-12345 (example)",
-                                                "meaning":  "Ticket created successfully in Jira — value is the actual Jira ticket key",
+                                                "value":  "Actual Jira ticket key",
+                                                "meaning":  "Ticket created successfully in Jira; the column holds the returned Jira ticket key.",
                                                 "sortOrder":  20
-                                            },
-                                            {
-                                                "column":  "TicketKey",
-                                                "value":  "Email",
-                                                "meaning":  "Fallback email sent instead of ticket — max retries exhausted",
-                                                "sortOrder":  21
                                             },
                                             {
                                                 "column":  "TicketKey",
@@ -287,7 +281,7 @@
                        "description":  "Queue table for pending ticket requests awaiting PowerShell processing. Records remain after processing for audit and troubleshooting.",
                        "module":  "Jira",
                        "category":  "Jira",
-                       "dataFlow":  "Tickets enter via Jira.sp_QueueTicket (from T-SQL callers) or direct INSERT. TR_Jira_TicketQueue_QueueDepth fires on INSERT, incrementing running_count in Orchestrator.ProcessRegistry to signal the orchestrator. Process-JiraTicketQueue.ps1 claims Pending rows (TicketStatus = \u0027Pending\u0027 AND RetryCount \u003c MaxRetries), retrieves Jira credentials from dbo.Credentials via two-tier passphrase decryption (master passphrase from GlobalConfig), creates tickets via Jira REST API, and updates TicketStatus to Success or Failed with the returned TicketKey. On success the script performs a GET to retrieve the assigned user. Each API interaction is logged to Jira.RequestLog. When max retries are exhausted and EmailRecipients is populated, the script sends a fallback email via Database Mail and sets TicketStatus to EmailSent.",
+                       "dataFlow":  "Tickets enter via Jira.sp_QueueTicket or by direct INSERT. TR_Jira_TicketQueue_QueueDepth fires on INSERT, incrementing running_count in Orchestrator.ProcessRegistry to signal the orchestrator. Process-JiraTicketQueue.ps1 claims Pending rows (TicketStatus = \u0027Pending\u0027 AND RetryCount \u003c MaxRetries), retrieves Jira credentials from dbo.Credentials via two-tier passphrase decryption (master passphrase from GlobalConfig), creates tickets via Jira REST API, and updates TicketStatus to Success or Failed with the returned TicketKey. On success the script performs a GET to retrieve the assigned user. Each API interaction is logged to Jira.RequestLog. When max retries are exhausted and EmailRecipients is populated, the script sends a fallback email via Database Mail and sets TicketStatus to EmailSent.",
                        "columns":  [
                                        {
                                            "ordinal":  1,
@@ -304,7 +298,7 @@
                                            "length":  "50",
                                            "nullable":  false,
                                            "identity":  false,
-                                           "description":  "Module that queued the ticket (e.g., JobFlow, NoticeRecon)"
+                                           "description":  "Module that queued the ticket."
                                        },
                                        {
                                            "ordinal":  3,
@@ -313,7 +307,7 @@
                                            "length":  "20",
                                            "nullable":  false,
                                            "identity":  false,
-                                           "description":  "Jira project key (e.g., SD, DEV)"
+                                           "description":  "Jira project key."
                                        },
                                        {
                                            "ordinal":  4,
@@ -341,7 +335,7 @@
                                            "nullable":  true,
                                            "identity":  false,
                                            "default":  "(\u0027Task\u0027)",
-                                           "description":  "Jira issue type: Task, Issue, Bug, etc"
+                                           "description":  "Jira issue type."
                                        },
                                        {
                                            "ordinal":  7,
@@ -369,7 +363,7 @@
                                            "length":  "50",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "Field ID for cascading select (e.g., customfield_18401)"
+                                           "description":  "Field ID for the cascading select."
                                        },
                                        {
                                            "ordinal":  10,
@@ -458,7 +452,7 @@
                                            "length":  "50",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "Category for deduplication (e.g., JobFlow_Stall, DM_Template)"
+                                           "description":  "Category used for deduplication; typically a \u003cModule\u003e_\u003cCondition\u003e pattern."
                                        },
                                        {
                                            "ordinal":  20,
@@ -467,7 +461,7 @@
                                            "length":  "200",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "Specific value for deduplication (e.g., date, template code)"
+                                           "description":  "Specific instance value that pairs with the trigger category to form the deduplication key."
                                        },
                                        {
                                            "ordinal":  21,
@@ -502,7 +496,7 @@
                                            "length":  "50",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "Jira ticket key if created (e.g., SD-12345)"
+                                           "description":  "Jira ticket key assigned when the ticket is created."
                                        },
                                        {
                                            "ordinal":  25,
@@ -510,7 +504,7 @@
                                            "dataType":  "int",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "HTTP status code from Jira API (201 = success)"
+                                           "description":  "HTTP status code returned by the Jira API."
                                        },
                                        {
                                            "ordinal":  26,
@@ -529,7 +523,7 @@
                                            "nullable":  true,
                                            "identity":  false,
                                            "default":  "(\u0027Pending\u0027)",
-                                           "description":  "Current status: Pending, Success, Failed"
+                                           "description":  "Current status: Pending, Success, Failed, EmailSent."
                                        },
                                        {
                                            "ordinal":  28,
@@ -598,7 +592,7 @@
                                            },
                                            {
                                                "topic":  "Generic Custom Field Support",
-                                               "note":  "Up to three arbitrary Jira custom fields plus one cascading select field can be specified per ticket. Field IDs (e.g., customfield_18401) and values are stored in the queue and mapped into the Jira API payload at creation time. This avoids hardcoding Jira field schemas into the table structure.",
+                                               "note":  "Up to three arbitrary Jira custom fields plus one cascading select field can be specified per ticket. Field IDs and values are stored in the queue and mapped into the Jira API payload at creation time. This avoids hardcoding Jira field schemas into the table structure.",
                                                "sortOrder":  3
                                            },
                                            {
@@ -616,7 +610,7 @@
                                             {
                                                 "column":  "TicketStatus",
                                                 "value":  "Pending",
-                                                "meaning":  "Waiting for processor pickup. Set on INSERT as the default value.",
+                                                "meaning":  "Waiting for processor pickup. Set on INSERT as the default value, and a retryable failure returns the row to this status for the next processor cycle.",
                                                 "sortOrder":  1
                                             },
                                             {
@@ -634,13 +628,13 @@
                                             {
                                                 "column":  "TicketStatus",
                                                 "value":  "Success",
-                                                "meaning":  "Jira ticket created successfully. TicketKey populated with the Jira issue key (e.g., SD-12345).",
+                                                "meaning":  "Jira ticket created successfully; TicketKey is populated with the returned Jira issue key.",
                                                 "sortOrder":  2
                                             },
                                             {
                                                 "column":  "TicketStatus",
                                                 "value":  "Failed",
-                                                "meaning":  "Jira API call failed. RetryCount incremented, ResponseMessage contains error details. Failed rows are not automatically re-picked up since the pending query filters on TicketStatus = \u0027Pending\u0027.",
+                                                "meaning":  "Jira API call failed and all retry attempts have been exhausted with no fallback email sent (EmailRecipients not populated). RetryCount has reached MaxRetries and ResponseMessage holds the last error. Terminal status.",
                                                 "sortOrder":  3
                                             },
                                             {
@@ -713,7 +707,7 @@
                            "description":  "Queue procedure that inserts Jira ticket requests into TicketQueue for asynchronous processing by the PowerShell processor.",
                            "module":  "Jira",
                            "category":  "Jira",
-                           "dataFlow":  "Called by T-SQL modules to queue Jira ticket requests. Inserts one row into Jira.TicketQueue with Pending status. The INSERT triggers TR_Jira_TicketQueue_QueueDepth which signals the orchestrator to launch the processor. On INSERT failure, catches the error and logs directly to Jira.RequestLog with StatusCode = -99 and RequestType = \u0027QueueInsertFailed\u0027.",
+                           "dataFlow":  "Open entry point that any process with EXECUTE permission can call to queue a Jira ticket request, including external, non-xFACts callers. Inserts one row into Jira.TicketQueue with Pending status. The INSERT fires TR_Jira_TicketQueue_QueueDepth, which signals the orchestrator to launch the processor. On INSERT failure, catches the error and logs directly to Jira.RequestLog with StatusCode = -99 and RequestType = \u0027QueueInsertFailed\u0027.",
                            "parameters":  [
                                               {
                                                   "ordinal":  1,
@@ -890,7 +884,7 @@
                            "relationshipNotes":  [
                                                      {
                                                          "relatedObject":  "Jira.TicketQueue",
-                                                         "note":  "Primary INSERT target. This is the main T-SQL entry point for queuing Jira tickets.",
+                                                         "note":  "Primary INSERT target. This is the main entry point for queuing Jira ticket requests, open to any process with EXECUTE permission, including external, non-xFACts callers.",
                                                          "sortOrder":  1
                                                      },
                                                      {
@@ -986,7 +980,7 @@
                                                   },
                                                   {
                                                       "relatedObject":  "dbo.GlobalConfig",
-                                                      "note":  "Reads master passphrase for credential decryption. Also used for retry configuration.",
+                                                      "note":  "Reads the master passphrase used for credential decryption.",
                                                       "sortOrder":  4
                                                   }
                                               ]
