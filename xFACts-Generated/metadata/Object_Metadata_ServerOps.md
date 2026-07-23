@@ -1,6 +1,6 @@
 # Object_Metadata: ServerOps
 Source: dbo.Object_Metadata
-Generated: 2026-07-23 05:52:54
+Generated: 2026-07-23 07:43:43
 
 ## Activity_DMV_ConnectionHealth (Table)
 
@@ -4006,21 +4006,21 @@ DBCC
 
 ### data_flow #0  [metadata_id: 3543]
 
-Execute-DBCC.ps1 inserts a PENDING row at claim time, transitions to IN_PROGRESS with the resolved physical server at execution start, and updates with final status, duration, error details, and DBCC output metrics on completion. One row per database per operation per run, grouped by run_id. CHECKDB and CHECKALLOC populate allocation_errors, consistency_errors, repaired_errors, dbcc_elapsed_seconds, LSN values, and buffer pool scan metrics from the DBCC summary output. CHECKCONSTRAINTS stores an aggregated violation summary in error_details. The Control Center DBCC Operations page reads this table for live progress, execution history, and duration trending. Teams alerts and Jira tickets are queued by the script on non-SUCCESS results.
+Execute-DBCC.ps1 inserts a PENDING row at claim time, transitions to IN_PROGRESS with the resolved physical server at execution start, and updates with final status, duration, error details, and DBCC output metrics on completion. One row per database per operation per run, grouped by run_id. CHECKDB and CHECKALLOC populate allocation_errors, consistency_errors, repaired_errors, dbcc_elapsed_seconds, LSN values, and buffer pool scan metrics from the DBCC summary output. CHECKCONSTRAINTS stores an aggregated violation summary in error_details. The Control Center DBCC Operations page reads this table for live progress, execution history, and duration trending. A Teams alert is queued on any non-SUCCESS result; a Jira ticket is queued on CHECKDB corruption (ERRORS_FOUND).
 
 ### description #0  [metadata_id: 3524]
 
-Execution history for DBCC integrity operations. One row per database per operation per execution. The script processes databases sequentially, so a single script invocation produces multiple rows grouped by run_id. Supports CHECKDB, CHECKALLOC, CHECKCATALOG, CHECKCONSTRAINTS, CHECKTABLE, and CHECKFILEGROUP.
+Execution history for DBCC integrity operations. One row per database per operation per execution; a single script invocation processes databases sequentially and produces multiple rows grouped by run_id.
 
 ### design_note #1  [metadata_id: 3586]
 Title: Self-Documenting Options
 
-operation, check_mode, max_dop, and extended_logical_checks are stored on every row even though they come from GlobalConfig. If GlobalConfig settings change between runs, the log still shows exactly what options were used for each execution. This eliminates the need to cross-reference GlobalConfig history.
+operation, check_mode, max_dop, and extended_logical_checks are captured on every row. operation and check_mode come from the per-database schedule (DBCC_ScheduleConfig); max_dop and extended_logical_checks come from GlobalConfig. Capturing them per row records exactly what options each execution used, even if the configuration changes between runs.
 
 ### design_note #2  [metadata_id: 3587]
 Title: AG Listener vs Physical Server
 
-server_name and server_id capture the ServerRegistry entry that triggered the run (e.g., AVG-PROD-LSNR for AG databases). executed_on_server captures the physical server where DBCC actually ran (e.g., DM-PROD-REP as the resolved secondary). For non-AG servers both values are identical. This distinction matters for I/O contention analysis and troubleshooting.
+server_name and server_id capture the ServerRegistry entry that triggered the run - the AG listener for AG databases. executed_on_server captures the physical server where DBCC actually ran - the resolved replica for AG databases. For non-AG servers both values are identical. The distinction matters for I/O contention analysis and troubleshooting.
 
 ### design_note #3  [metadata_id: 3588]
 Title: CHECKCONSTRAINTS Output Handling
@@ -4030,7 +4030,7 @@ CHECKCONSTRAINTS returns a result set of constraint violations rather than a mes
 ### design_note #4  [metadata_id: 3643]
 Title: DBCC Output Metric Capture
 
-Every metric that DBCC reports in its summary output is captured per-row for historical trending and diagnostic analysis. CHECKDB and CHECKALLOC populate all metric columns; CHECKCATALOG and CHECKCONSTRAINTS leave them NULL since those operations produce different output formats. The metric columns are nullable specifically to accommodate this — NULL means the metric does not apply to that operation type, not that it was missed. The NO_INFOMSGS option remains enabled to suppress per-object informational messages (thousands of lines on large databases) while still capturing the summary output that contains all valuable metrics.
+DBCC summary-output metrics are captured per row for historical trending. CHECKDB and CHECKALLOC populate the metric columns; CHECKCATALOG and CHECKCONSTRAINTS leave them NULL, since those operations produce different output. NULL means the metric does not apply to that operation type, not that it was missed. NO_INFOMSGS stays enabled to suppress per-object informational messages while still capturing the summary line the metrics are parsed from.
 
 ### module #0  [metadata_id: 3525]
 
@@ -4067,7 +4067,7 @@ ORDER BY el.server_name, el.database_name, el.operation;
 
 ### query #3  [metadata_id: 3585]
 Title: CHECKDB duration trending
-Description: Shows CHECKDB execution durations over time for a specific database. Useful for detecting drift in crs5_oltp execution times.
+Description: Shows CHECKDB execution durations over time for a specific database. Useful for detecting drift in execution times.
 
 SELECT
     started_dttm, duration_seconds,
@@ -4075,7 +4075,7 @@ SELECT
     check_mode, executed_on_server, status
 FROM ServerOps.DBCC_ExecutionLog
 WHERE operation = 'CHECKDB'
-  AND database_name = 'crs5_oltp'
+  AND database_name = '<database_name>'
 ORDER BY started_dttm DESC;
 
 ### relationship_note #1  [metadata_id: 3580]
@@ -4091,19 +4091,19 @@ In scheduled mode, operations are driven by DBCC_ScheduleConfig entries matching
 ### relationship_note #3  [metadata_id: 3582]
 Title: GlobalConfig
 
-Execution options (checkdb_mode, max_dop, extended_logical_checks, alerting_enabled) are read from dbo.GlobalConfig at script startup under module ServerOps, category DBCC. Values are captured per-row in the log for historical accuracy.
+Execution options (max_dop, extended_logical_checks, alerting_enabled) are read from dbo.GlobalConfig at script startup under module ServerOps, category DBCC. check_mode is read per database from DBCC_ScheduleConfig. Captured options are stored per row in the log for historical accuracy.
 
 ### description / allocation_errors #19  [metadata_id: 3634]
 
-Number of allocation errors reported by DBCC. Parsed separately from the DBCC summary output line. NULL for operations that do not report allocation errors (CHECKCATALOG, CHECKCONSTRAINTS). Combined with consistency_errors to produce error_count.
+Number of allocation errors reported by DBCC; NULL when the operation does not report allocation errors.
 
 ### description / buffer_pool_scan_seconds #26  [metadata_id: 3640]
 
-Duration in seconds of the buffer pool scan performed at the start of DBCC execution. Parsed from the "Buffer Pool scan took N seconds" output. A long buffer pool scan indicates memory pressure or a very large buffer pool. NULL for operations that do not perform buffer pool scans.
+Duration in seconds of the buffer pool scan at the start of DBCC execution; NULL when the operation performs no buffer pool scan.
 
 ### description / check_mode #8  [metadata_id: 3568]
 
-DBCC check mode for operations that support it: PHYSICAL_ONLY or FULL. NULL for operations without modes (CHECKALLOC, CHECKCATALOG, CHECKCONSTRAINTS). Only meaningful for CHECKDB and CHECKTABLE.
+DBCC check mode used by CHECKDB; NULL for operations that have no check mode.
 
 ### status_value / check_mode #1  [metadata_id: 3578]
 Title: PHYSICAL_ONLY
@@ -4117,11 +4117,11 @@ Complete logical and physical integrity check. Includes all PHYSICAL_ONLY checks
 
 ### description / completed_dttm #14  [metadata_id: 3537]
 
-When DBCC CHECKDB completed. NULL while still running.
+When the DBCC operation completed. NULL while still running.
 
 ### description / consistency_errors #20  [metadata_id: 3635]
 
-Number of consistency errors reported by DBCC. Parsed separately from the DBCC summary output line. NULL for operations that do not report consistency errors (CHECKCATALOG, CHECKCONSTRAINTS). Combined with allocation_errors to produce error_count.
+Number of consistency errors reported by DBCC; NULL when the operation does not report consistency errors.
 
 ### description / database_name #6  [metadata_id: 3532]
 
@@ -4129,19 +4129,19 @@ Database name as enrolled in DatabaseRegistry.
 
 ### description / dbcc_elapsed_seconds #16  [metadata_id: 3637]
 
-Elapsed time as reported by DBCC itself in its summary output. Independent of the PowerShell-level duration_seconds which includes connection setup and overhead. Useful for comparing DBCC internal performance across runs without external timing variance. NULL for operations that do not report elapsed time.
+DBCC's own reported elapsed time, distinct from duration_seconds; NULL when the operation does not report it.
 
 ### description / dbcc_summary_output #17  [metadata_id: 3664]
 
-Raw DBCC summary text captured from the SQL Server error log after execution completes. Contains the full informational message including error counts, elapsed time, LSN values, and buffer pool scan metrics. Preserved as a permanent record since error logs cycle nightly. The parsed metric columns (allocation_errors, dbcc_elapsed_seconds, etc.) are derived from this text. NULL for operations that do not produce error log summary entries or when the error log query fails.
+Raw DBCC summary text captured from the SQL Server error log; the source the parsed metric columns are derived from. NULL when the operation produces no error-log summary or the error-log query fails.
 
 ### description / duration_seconds #15  [metadata_id: 3538]
 
-Total elapsed seconds. Measured at the PowerShell level around the DBCC command invocation.
+Total elapsed seconds, measured around the DBCC command invocation.
 
 ### description / error_count #22  [metadata_id: 3540]
 
-Number of errors reported by DBCC. Sum of allocation_errors and consistency_errors parsed from the DBCC output summary line. 0 for SUCCESS, 0 for FAILED (script-level errors do not produce DBCC error counts). Pre-calculated for convenience — avoids query math when you just need a total.
+Number of errors reported by DBCC - the sum of allocation_errors and consistency_errors. 0 for SUCCESS, and 0 for FAILED (script-level errors produce no DBCC error count).
 
 ### description / error_details #23  [metadata_id: 3541]
 
@@ -4149,19 +4149,19 @@ Full DBCC error output text when errors are found, or exception message when the
 
 ### description / executed_by #29  [metadata_id: 3542]
 
-Windows account that ran the script. Defaults to SUSER_SNAME() — typically the orchestrator service account.
+Windows account that ran the script; defaults to SUSER_SNAME().
 
 ### description / executed_on_server #5  [metadata_id: 3531]
 
-Physical server where DBCC actually ran. For AG databases, this is the dynamically resolved secondary replica. For non-AG servers, matches server_name.
+Physical server where DBCC actually ran. For AG databases, the resolved replica; for non-AG servers, matches server_name.
 
 ### description / extended_logical_checks #11  [metadata_id: 3535]
 
-Whether EXTENDED_LOGICAL_CHECKS was enabled for this execution. Only meaningful when check_type is FULL.
+Whether EXTENDED_LOGICAL_CHECKS was enabled for this execution. Only meaningful when check_mode is FULL.
 
 ### description / first_lsn #25  [metadata_id: 3639]
 
-First LSN of the internal database snapshot used by DBCC. Parsed from the DBCC summary output alongside split_point_lsn. NULL for operations that do not create internal snapshots.
+First LSN of the internal database snapshot DBCC used; NULL when the operation creates no internal snapshot.
 
 ### description / log_id #1  [metadata_id: 3527]
 
@@ -4169,11 +4169,11 @@ Unique identifier for the log entry.
 
 ### description / max_dop #10  [metadata_id: 3534]
 
-MAXDOP value used for this execution. Captured per-row for historical accuracy.
+MAXDOP value used for this execution.
 
 ### description / operation #7  [metadata_id: 3567]
 
-Which DBCC command was executed: CHECKDB, CHECKALLOC, CHECKCATALOG, CHECKCONSTRAINTS, CHECKTABLE, or CHECKFILEGROUP.
+Which DBCC command was executed.
 
 ### status_value / operation #1  [metadata_id: 3572]
 Title: CHECKDB
@@ -4195,35 +4195,25 @@ Title: CHECKCONSTRAINTS
 
 FK and CHECK constraint data validation. Identifies rows that violate constraint rules. Duration varies — minutes to hours depending on table sizes and constraint count. Not included in CHECKDB.
 
-### status_value / operation #5  [metadata_id: 3576]
-Title: CHECKTABLE
-
-Single-table integrity check. On-demand only via Control Center modal. Not scheduled.
-
-### status_value / operation #6  [metadata_id: 3577]
-Title: CHECKFILEGROUP
-
-Filegroup-scoped integrity check. Future use — reserved in constraints but no execution logic implemented.
-
 ### description / pages_iterated #28  [metadata_id: 3642]
 
-Total number of buffers iterated during the buffer pool scan phase. Parsed from "total iterated buffers N" in the DBCC output. Typically larger than pages_scanned as it includes pages examined but not belonging to the target database. NULL for operations that do not report page counts.
+Total buffers iterated during the buffer pool scan phase; NULL when the operation reports no page count.
 
 ### description / pages_scanned #27  [metadata_id: 3641]
 
-Number of database pages (buffers) scanned by DBCC during the buffer pool scan phase. Parsed from "scanned buffers N" in the DBCC output. Useful for trending database growth — if this count increases significantly between runs, the database is growing and future CHECKDB durations will increase. NULL for operations that do not report page counts.
+Number of database pages (buffers) DBCC scanned during the buffer pool scan phase; NULL when the operation reports no page count.
 
 ### description / queued_dttm #12  [metadata_id: 3632]
 
-When this operation was claimed by the batch claim step. Set at claim time when the row is inserted as PENDING. The difference between queued_dttm and started_dttm represents time spent waiting in queue behind other operations.
+When the operation was claimed and inserted as PENDING; its gap from started_dttm is time spent waiting in queue.
 
 ### description / repaired_errors #21  [metadata_id: 3636]
 
-Number of errors repaired by DBCC during execution. Parsed from the "repaired N errors" output. Typically 0 — DBCC does not repair unless explicitly run with REPAIR options. NULL for operations that do not report repair counts.
+Number of errors DBCC repaired during execution; typically 0, NULL when the operation does not report a repair count.
 
 ### description / run_id #2  [metadata_id: 3528]
 
-Groups all databases from one script invocation. Generated as MAX(run_id) + 1 at script start.
+Groups all rows produced by one script invocation.
 
 ### description / server_id #3  [metadata_id: 3529]
 
@@ -4231,19 +4221,19 @@ FK to ServerRegistry. The enabled entry that triggered the run — for AG databa
 
 ### description / server_name #4  [metadata_id: 3530]
 
-Denormalized from ServerRegistry. Matches the server_name of the enabled entry (e.g., AVG-PROD-LSNR for AG databases).
+Denormalized from ServerRegistry; the server_name of the entry that triggered the run (the listener for AG databases).
 
 ### description / split_point_lsn #24  [metadata_id: 3638]
 
-Internal database snapshot split point LSN used by DBCC during execution. Parsed from the DBCC summary output. Useful for correlating DBCC operations with backup and replication LSN chains. NULL for operations that do not create internal snapshots.
+Internal database snapshot split-point LSN used by DBCC; NULL when the operation creates no internal snapshot.
 
 ### description / started_dttm #13  [metadata_id: 3536]
 
-When the DBCC operation actually began executing. NULL while status is PENDING (claimed but waiting in queue). Set when the operation transitions to IN_PROGRESS. Duration is measured from this timestamp, not from queued_dttm.
+When the DBCC operation began executing; NULL while PENDING. Duration is measured from this timestamp, not queued_dttm.
 
 ### description / status #18  [metadata_id: 3539]
 
-Execution result. IN_PROGRESS while running, SUCCESS for clean check, FAILED for script/connection errors, ERRORS_FOUND when DBCC reports corruption.
+Execution result.
 
 ### status_value / status #0  [metadata_id: 3633]
 Title: PENDING
@@ -4258,7 +4248,7 @@ DBCC operation is actively executing. Transitioned from PENDING when the script 
 ### status_value / status #2  [metadata_id: 3547]
 Title: SUCCESS
 
-DBCC CHECKDB completed with zero allocation errors and zero consistency errors. Database integrity verified.
+The DBCC operation completed with no errors reported. Integrity verified for the checked scope.
 
 ### status_value / status #3  [metadata_id: 3548]
 Title: FAILED
@@ -4268,11 +4258,11 @@ Script or connection error prevented DBCC from completing. Typical causes: datab
 ### status_value / status #4  [metadata_id: 3549]
 Title: ERRORS_FOUND
 
-DBCC CHECKDB completed but reported allocation and/or consistency errors — corruption detected. error_count has the total, error_details has the full DBCC output. Teams alert and Jira ticket are sent.
+The DBCC operation completed but reported problems - corruption for the integrity checks, or constraint violations for CHECKCONSTRAINTS. error_count has the total and error_details has the full output. A Teams alert is sent; CHECKDB corruption also queues a Jira ticket.
 
 ### description / target_object #9  [metadata_id: 3569]
 
-Schema-qualified object name for scoped operations. Populated with the table name for CHECKTABLE and filegroup name for CHECKFILEGROUP. NULL for database-level operations (CHECKDB, CHECKALLOC, CHECKCATALOG, CHECKCONSTRAINTS).
+Reserved for object-scoped operations; unused today - no current operation populates it, so it is NULL on every row.
 
 ## DBCC_ScheduleConfig (Table)
 
@@ -4286,12 +4276,12 @@ Rows are manually inserted when enrolling databases for DBCC operations, typical
 
 ### description #0  [metadata_id: 3590]
 
-Per-database scheduling configuration for DBCC integrity operations. One row per database with independent enabled/day/time settings per operation type (CHECKDB, CHECKALLOC, CHECKCATALOG, CHECKCONSTRAINTS). The row-level is_enabled flag combines with serverops_dbcc_enabled on ServerRegistry for two-tier control. CHECKTABLE and CHECKFILEGROUP are on-demand only and do not appear in this table.
+Per-database scheduling configuration for DBCC integrity operations. One row per database with independent enabled/day/time settings per operation type. The row-level is_enabled flag combines with serverops_dbcc_enabled on ServerRegistry for two-tier control.
 
 ### design_note #1  [metadata_id: 3616]
 Title: Per-Database Granularity
 
-Each database gets its own schedule row with independent settings per operation. This allows staggering heavy operations like CHECKDB across different days while running lightweight operations (CHECKALLOC, CHECKCATALOG) together. A 10TB database can run CHECKDB on Saturday morning while smaller databases on the same server run Sunday.
+Each database gets its own schedule row with independent settings per operation. This allows staggering heavy operations like CHECKDB across different days while running lightweight operations together, so a large database's full check and smaller databases' checks need not share a window.
 
 ### design_note #2  [metadata_id: 3617]
 Title: Two-Tier Enable Control
@@ -4301,7 +4291,7 @@ Three levels of control exist: serverops_dbcc_enabled on ServerRegistry (server-
 ### design_note #3  [metadata_id: 3618]
 Title: Hour-Based Schedule Matching
 
-The script matches the hour component of run_time against the current hour. A run_time of 20:00 triggers when the script fires during the 8 PM hour (20:00-20:59). Combined with the already-executed-today check on DBCC_ExecutionLog, this prevents duplicate execution if the script fires multiple times within the same hour.
+The script matches the hour component of run_time against the current hour, so an operation becomes due once the script fires during its scheduled hour. Combined with the already-executed-today check on DBCC_ExecutionLog, this prevents duplicate execution when the script fires multiple times within the same hour.
 
 ### module #0  [metadata_id: 3591]
 
@@ -4353,7 +4343,22 @@ The script checks ExecutionLog for existing rows today before executing a schedu
 
 ### description / check_mode #18  [metadata_id: 3665]
 
-DBCC check mode for operations that support it. PHYSICAL_ONLY checks storage corruption only — significantly faster. FULL performs complete logical and physical integrity validation. NONE indicates no check mode configured — CHECKDB cannot be enabled while check_mode is NONE. Applies to CHECKDB and on-demand CHECKTABLE. Other operations ignore this setting.
+DBCC check mode used by CHECKDB scheduling; other operations ignore it. Defaults to NONE.
+
+### status_value / check_mode #1  [metadata_id: 5309]
+Title: NONE
+
+No check mode configured. CHECKDB cannot be enabled while check_mode is NONE, and check_mode cannot be set to NONE while CHECKDB is enabled.
+
+### status_value / check_mode #2  [metadata_id: 5310]
+Title: PHYSICAL_ONLY
+
+Physical structure checks only - page checksums, torn pages, physical page integrity. Significantly faster than FULL.
+
+### status_value / check_mode #3  [metadata_id: 5311]
+Title: FULL
+
+Complete logical and physical integrity check. Includes all PHYSICAL_ONLY checks plus cross-object logical consistency validation.
 
 ### description / checkalloc_enabled #9  [metadata_id: 3601]
 
@@ -4393,15 +4398,15 @@ Time of day for CHECKCONSTRAINTS execution.
 
 ### description / checkdb_enabled #6  [metadata_id: 3598]
 
-Whether CHECKDB is scheduled for this database. 0 = disabled, 1 = enabled. When enabled, checkdb_run_day and checkdb_run_time control when it executes.
+Whether CHECKDB is scheduled for this database.
 
 ### description / checkdb_run_day #7  [metadata_id: 3599]
 
-Day of week for CHECKDB execution. 1=Sunday through 7=Saturday, matching DATEPART(dw,...) convention. NULL when checkdb_enabled = 0.
+Day of week for CHECKDB execution (1=Sunday through 7=Saturday). NULL when disabled.
 
 ### description / checkdb_run_time #8  [metadata_id: 3600]
 
-Time of day for CHECKDB execution. The script matches on the hour component. NULL when checkdb_enabled = 0.
+Time of day for CHECKDB execution. NULL when disabled.
 
 ### description / created_by #22  [metadata_id: 3612]
 
@@ -4421,7 +4426,7 @@ Denormalized database name from DatabaseRegistry.
 
 ### description / is_enabled #20  [metadata_id: 3610]
 
-Row-level master switch. When 0, no operations run for this database regardless of individual operation settings. Combines with serverops_dbcc_enabled on ServerRegistry for two-tier control.
+Row-level master switch; when 0, no operations run for this database regardless of per-operation settings.
 
 ### description / modified_by #24  [metadata_id: 3614]
 
@@ -4433,7 +4438,17 @@ When this schedule row was last modified.
 
 ### description / replica_override #19  [metadata_id: 3663]
 
-Replica routing override for AG listener databases. NULL uses the default routing (SECONDARY for all operations except CHECKCATALOG, which always routes to PRIMARY). PRIMARY forces all operations to the primary replica — used when primary-side integrity verification is needed after hardware events, bulk operations, or as periodic validation. SECONDARY explicitly targets the secondary. Persists until manually cleared. Non-AG servers ignore this column.
+Per-database replica routing override for AG listener databases. NULL uses the default routing: the configured source replica (typically SECONDARY) for all operations except CHECKCATALOG, which always routes to PRIMARY. A non-null value pins this database's operations to the chosen replica. Persists until manually cleared. Non-AG servers ignore this column.
+
+### status_value / replica_override #1  [metadata_id: 5312]
+Title: PRIMARY
+
+Pins this database's DBCC operations to the primary replica, overriding the default routing.
+
+### status_value / replica_override #2  [metadata_id: 5313]
+Title: SECONDARY
+
+Pins this database's DBCC operations to the secondary replica, overriding the default routing.
 
 ### description / schedule_id #1  [metadata_id: 3593]
 
@@ -4441,11 +4456,11 @@ Auto-incrementing primary key.
 
 ### description / server_id #2  [metadata_id: 3594]
 
-FK to ServerRegistry. Denormalized from DatabaseRegistry for direct server-level queries and joins.
+FK to ServerRegistry, denormalized from DatabaseRegistry.
 
 ### description / server_name #3  [metadata_id: 3595]
 
-Denormalized server name from ServerRegistry. Avoids joins for display and logging.
+Denormalized server name from ServerRegistry.
 
 ## Disk_AlertHistory (Table)
 
@@ -4995,7 +5010,7 @@ Executes scheduled DBCC integrity operations against databases per DBCC_Schedule
 ### design_note #1  [metadata_id: 3625]
 Title: Schedule-Driven Execution
 
-The script runs on a configurable interval via ProcessRegistry. Each invocation queries DBCC_ScheduleConfig for operations where the run_day matches today and the run_time hour matches the current hour. If no operations are due, exits NO_WORK immediately. The ExecutionLog is checked before each operation to prevent duplicate execution within the same day.
+The script runs on a configurable interval via ProcessRegistry. Each invocation queries DBCC_ScheduleConfig for operations whose run_day matches today and whose run_time hour has arrived. If nothing is due, it reports success with a no-work result and exits. The ExecutionLog is checked before each operation to prevent duplicate execution within the same day.
 
 ### design_note #2  [metadata_id: 3626]
 Title: Operation Priority Order
@@ -5029,7 +5044,7 @@ Primary output. One row inserted per database per operation at start (IN_PROGRES
 ### relationship_note #3  [metadata_id: 3631]
 Title: GlobalConfig
 
-Reads DBCC execution options at startup: checkdb_mode, max_dop, extended_logical_checks, alerting_enabled. AG topology settings (AGName, SourceReplica) are also loaded from GlobalConfig.
+Reads DBCC execution options at startup: max_dop, extended_logical_checks, alerting_enabled. AG topology settings (AGName, SourceReplica) are also loaded from GlobalConfig. check_mode is read per database from DBCC_ScheduleConfig, not GlobalConfig.
 
 ## Execute-IndexMaintenance.ps1 (Script)
 
