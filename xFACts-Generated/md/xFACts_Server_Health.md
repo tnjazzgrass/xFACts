@@ -2812,6 +2812,20 @@ Collects Extended Events from all monitored SQL Server instances using increment
 
 **Separate AG Health Collection:** [sort:3] AlwaysOn_health is collected in Step 4, separate from the Step 3 loop that processes custom sessions. Step 3 iterates all activity-enabled servers and all sessions in $XESessions. Step 4 queries only AG servers (currently DM-PROD-DB and DM-PROD-REP) and processes only the AlwaysOn_health session. This separation exists because AlwaysOn_health is a Microsoft built-in session only present on AG-participating servers.
 
+**Check All XE Sessions on a Server** [sort:1] -- Run on a monitored server to verify all xFACts XE sessions are running
+
+```sql
+SELECT 
+    es.name AS session_name,
+    CASE WHEN dxs.name IS NOT NULL THEN 'RUNNING' ELSE 'STOPPED' END AS status,
+    es.startup_state
+FROM sys.server_event_sessions es
+LEFT JOIN sys.dm_xe_sessions dxs ON es.name = dxs.name
+WHERE es.name LIKE 'xFACts_%'
+   OR es.name IN ('system_health', 'AlwaysOn_health')
+ORDER BY es.name;
+```
+
   - **Orchestrator ProcessRegistry**: [sort:1] Registered in Orchestrator.ProcessRegistry with standard parameters (-Execute, -TaskId, -ProcessId). Task completion callback reports server success/total count and total events collected. Supports preview mode (without -Execute flag) for testing.
 
 
