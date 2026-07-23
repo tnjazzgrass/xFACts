@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Backlog &mdash; xFACts Secrets Revealed</title>
+    <link rel="stylesheet" href="../css/docs-base.css">
+    <link rel="stylesheet" href="../css/docs-meta.css">
+</head>
+<body>
+<div class="doc-layout">
+
+    <nav class="doc-nav"></nav>
+
+    <div class="doc-content">
+
+        <div class="doc-header">
+            <div class="doc-header-inner">
+                <h1 class="doc-page-title">Backlog</h1>
+                <div class="doc-page-subtitle">Open work items across the xFACts platform, grouped by component</div>
+                <div class="doc-subpage-links"></div>
+            </div>
+        </div>
+
+        <div class="doc-body">
+            <div class="doc-body-inner">
+
+<div class="doc-context-bar">
+        A read-only view of the authored backlog file. It holds open items only &mdash; finished work is removed rather than marked done, and items carry no identifier, so history lives in git and the session record. Trivial fixes never appear here; they are done in the moment. Use the filters to narrow by component, priority, type, or initiative, or search across the summary and description text. Select any item&rsquo;s summary to read its full description.
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION: Open Items -->
+    <!-- ============================================ -->
+    <div class="doc-section">
+        <h2 class="doc-section-title">Open Items</h2>
+
+        <div class="doc-meta-controls">
+            <div class="doc-meta-control">
+                <span class="doc-meta-control-label">Component</span>
+                <select class="doc-meta-select" data-doc-filter="component" aria-label="Filter by component"></select>
+            </div>
+            <div class="doc-meta-control">
+                <span class="doc-meta-control-label">Priority</span>
+                <select class="doc-meta-select" data-doc-filter="priority" aria-label="Filter by priority"></select>
+            </div>
+            <div class="doc-meta-control">
+                <span class="doc-meta-control-label">Type</span>
+                <select class="doc-meta-select" data-doc-filter="type" aria-label="Filter by type"></select>
+            </div>
+            <div class="doc-meta-control">
+                <span class="doc-meta-control-label">Initiative</span>
+                <select class="doc-meta-select" data-doc-filter="initiative" aria-label="Filter by initiative"></select>
+            </div>
+            <div class="doc-meta-control">
+                <span class="doc-meta-control-label">Search</span>
+                <input class="doc-meta-search" type="search" placeholder="Summary and description" aria-label="Search summary and description text">
+            </div>
+            <label class="doc-meta-toggle-group">
+                <input class="doc-meta-checkbox" type="checkbox" checked>
+                Group by component
+            </label>
+        </div>
+
+        <div class="doc-meta-status"></div>
+
+        <div class="doc-meta-grid"></div>
+    </div>
+
+                <div class="doc-footer"></div>
+
+            </div>
+        </div>
+
+    </div>
+
+</div>
+<script src="../js/docs-shared.js"></script>
+<script src="../js/nav.js"></script>
+<script src="../js/docs-meta.js"></script>
+</body>
+</html>

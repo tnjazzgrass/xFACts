@@ -92,6 +92,15 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-07-23  Serve authored docs JSON. Authored *.json under xFACts-Documentation/docs
+#             now deploys to $CCRoot\public\docs\data, which the /docs static route
+#             serves, so a doc-site page can fetch it at /docs/data/. Previously it
+#             went to $DocsRoot\docs, which no static route serves, leaving it
+#             unreachable over HTTP. Resolve-AuthoredMapping returns the first
+#             matching entry, so a repository path has exactly one live target: the
+#             new entry takes *.json and the existing entry now takes *.md only,
+#             keeping the two filters disjoint rather than order-dependent. The
+#             target directory is created on first copy.
 # 2026-07-23  Deploy authored docs JSON. The xFACts-Documentation/docs deploy-map
 #             entry now filters *.json alongside *.md, so authored JSON under docs
 #             (backlog.json) deploys GitHub -> live; previously .json fell through
@@ -235,8 +244,14 @@ $AuthoredDeployMap = @(
     }
     @{
         RepoPath = "xFACts-Documentation/docs"
+        LivePath = "$CCRoot\public\docs\data"
+        Filter   = @("*.json")
+        Recurse  = $false
+    }
+    @{
+        RepoPath = "xFACts-Documentation/docs"
         LivePath = "$DocsRoot\docs"
-        Filter   = @("*.md", "*.json")
+        Filter   = @("*.md")
         Recurse  = $false
     }
     @{

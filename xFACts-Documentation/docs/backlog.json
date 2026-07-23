@@ -6,7 +6,8 @@
     "System_Metadata bumps never reference backlog identifiers or items; bump text describes the change standalone.",
     "The Critical priority tier is retired: critical issues are fixed in the moment, not parked here. Allowed priorities are High, Medium, Low.",
     "Platform is for genuinely cross-cutting items only; anything owned by a single module or component uses its registry name.",
-    "component is validated against the components list; priority against High/Medium/Low; type against Build/Enhance/Bug/Design/Investigate."
+    "component is validated against the components list; priority against High/Medium/Low; type against Build/Enhance/Bug/Design/Investigate.",
+    "detail_link is a site-relative URL when the target is site-served, otherwise a plain-text repo reference that renders as text rather than as a link."
   ],
   "priorities": [
     "High",
@@ -188,7 +189,7 @@
       "priority": "Medium",
       "type": "Build",
       "summary": "Persist the matched token name on color/size literal-drift rows so the burn-down can self-classify safe-bulk-repoint vs needs-review without eyeballing each row.",
-      "description": "Make `DRIFT_HEX_LITERAL`/`DRIFT_PX_LITERAL` self-classifying into safe-bulk-repoint vs needs-review, so the B-099 burn-down does not require eyeballing every row. **Verified (Populate-AssetRegistry-CSS.ps1, 2026-06-23):** the matcher (~lines 549-556) does value-AND-purpose matching at property-FAMILY granularity -- fires only when a shared token of the same family/purpose holds the same value (`Test-LiteralTokenFamilyMatch` gates family; role/state tokens match any color property; value via `ConvertTo-ColorKey`). It computes WHICH token matched (`$tokEntry`, line 555) but DISCARDS it -- line 559 writes only the bare code. Token name is available: the map builder (~lines 2105-2114) computes `$varName` to derive Family then drops it (entries store SourceFile/Value/Family, not Name). **Fix (two touch-points):** (1) add `Name = $varName` to the token map entry ~2110; (2) at ~557-560 persist `$tokEntry.Name` on the drifting row as a matched-token field. Transient drift-detail (set only on drifting rows, cleared on truncate-reload) -- NOT a permanent column (would be NULL across the table at steady state). **Enables WHERE-clause sorting:** safe-bulk-repoint = matched-token in canonical allowlist (B-101) AND single match; needs-review = token outside the set OR more than one same-purpose match (the double-match). **Scope pending:** first match only vs ALL same-purpose matches (latter makes double-match self-surfacing; recommended). Ceiling: isolates the residual needing judgment from the safe bulk; does NOT auto-decide selector-semantic cases -- below family granularity, stays human. Same root cause as B-014.",
+      "description": "Make `DRIFT_HEX_LITERAL`/`DRIFT_PX_LITERAL` self-classifying into safe-bulk-repoint vs needs-review, so the B-099 burn-down does not require eyeballing every row. **Verified (Populate-AssetRegistry-CSS.ps1, 2026-06-23):** the matcher (~lines 549-556) does value-AND-purpose matching at property-FAMILY granularity -- fires only when a shared token of the same family/purpose holds the same value (`Test-LiteralTokenFamilyMatch` gates family; role/state tokens match any color property; value via `ConvertTo-ColorKey`). It computes WHICH token matched (`$tokEntry`, line 555) but DISCARDS it -- line 559 writes only the bare code. Token name is available: the map builder (~lines 2105-2114) computes `$varName` to derive Family then drops it (entries store SourceFile/Value/Family, not Name). **Fix (two touch-points):** (1) add `Name = $varName` to the token map entry ~2110; (2) at ~557-560 persist `$tokEntry.Name` on the drifting row as a matched-token field. Transient drift-detail (set only on drifting rows, cleared on truncate-reload) -- NOT a permanent column (would be NULL across the table at steady state). **Enables WHERE-clause sorting:** safe-bulk-repoint = matched-token in anchor allowlist (B-101) AND single match; needs-review = token outside the set OR more than one same-purpose match (the double-match). **Scope pending:** first match only vs ALL same-purpose matches (latter makes double-match self-surfacing; recommended). Ceiling: isolates the residual needing judgment from the safe bulk; does NOT auto-decide selector-semantic cases -- below family granularity, stays human. Same root cause as B-014.",
       "detail_link": null,
       "initiative": "Refactor",
       "added": null
@@ -197,8 +198,8 @@
       "component": "ControlCenter.Shared",
       "priority": "Medium",
       "type": "Design",
-      "summary": "Consolidate the cc-shared.css color token set into a concise anchor palette (dedupe identical-value tokens, decide canonical hues, name un-tokenized purposes) as prerequisite to the cousin half of the burn-down.",
-      "description": "Consolidate the `:root` color token set in cc-shared.css into a concise canonical palette BEFORE the cousin half of B-099 and before B-100's allowlist can be defined. Token set was harvested from existing file values -- incomplete in places, already duplicated. **Known duplication (this session):** `--color-status-idle` and `--color-status-online` both hold `#22c55e` (online added this session at idle's value so nothing repainted) -- identical-value same-purpose tokens make any `#22c55e` literal an ambiguous double-match, unresolvable until settled (decide idle-vs-online distinct, diverge e.g. online -> `#4ade80`). **Tasks:** (1) dedupe identical-value tokens (merge vs diverge per pair); (2) decide canonical red/green/amber/teal/grey and any severity vocabularies (does env test/stage/prod warrant own tokens vs reusing `--color-text-pre` -- the `#ce9178` stage-badge question); (3) name recurring literal purposes with no token yet (promote, don't spoil-to-cousin). Output: finalized anchor set = B-100 allowlist + B-102 proximity targets. Prerequisite to the cousin half of B-099 and to B-102.",
+      "summary": "Consolidate the cc-shared.css color token set into a concise anchor palette (dedupe identical-value tokens, decide anchor hues, name un-tokenized purposes) as prerequisite to the cousin half of the burn-down.",
+      "description": "Consolidate the `:root` color token set in cc-shared.css into a concise anchor palette BEFORE the cousin half of B-099 and before B-100's allowlist can be defined. Token set was harvested from existing file values -- incomplete in places, already duplicated. **Known duplication (this session):** `--color-status-idle` and `--color-status-online` both hold `#22c55e` (online added this session at idle's value so nothing repainted) -- identical-value same-purpose tokens make any `#22c55e` literal an ambiguous double-match, unresolvable until settled (decide idle-vs-online distinct, diverge e.g. online -> `#4ade80`). **Tasks:** (1) dedupe identical-value tokens (merge vs diverge per pair); (2) decide anchor red/green/amber/teal/grey and any severity vocabularies (does env test/stage/prod warrant own tokens vs reusing `--color-text-pre` -- the `#ce9178` stage-badge question); (3) name recurring literal purposes with no token yet (promote, don't spoil-to-cousin). Output: finalized anchor set = B-100 allowlist + B-102 proximity targets. Prerequisite to the cousin half of B-099 and to B-102.",
       "detail_link": null,
       "initiative": "Refactor",
       "added": null
@@ -208,7 +209,7 @@
       "priority": "Medium",
       "type": "Design",
       "summary": "Detect near-match cousin color literals that share a token's semantic purpose but not its exact value, via post-populator RGB-distance analysis grouped by purpose and property.",
-      "description": "Catch literals that do NOT exact-match a token but are the same semantic color as one (cousins: reds `#f44747`/`#dc2626`/`#f14c4c`/`#ff4444`/`#f87171`, greens `#22c55e`/`#16a34a`/`#4caf50`/`#4bac52`... same job, non-identical values). Invisible to the exact-match matcher (clean, not drift) so they never surface for consolidation. Approach: post-populator SQL analysis, NOT a populator change -- all inputs are catalog columns at rest (`component_name` value, `variant_qualifier_1` property, file, selector). Parse each literal's RGB, distance to each canonical anchor (B-101), label nearest-within-threshold as suggested target, NULL if nothing close. Group by (suggested_anchor, property) so the use-case boundary holds -- never merge text-green into background-green. RGB-Euclidean is crude but robust at the coarse level needed; fragile only where anchors sit close (teal-vs-green) -> eyeball. Depends on B-101. Distinct from B-100 (exact-match safety); B-102 is near-match candidates.",
+      "description": "Catch literals that do NOT exact-match a token but are the same semantic color as one (cousins: reds `#f44747`/`#dc2626`/`#f14c4c`/`#ff4444`/`#f87171`, greens `#22c55e`/`#16a34a`/`#4caf50`/`#4bac52`... same job, non-identical values). Invisible to the exact-match matcher (clean, not drift) so they never surface for consolidation. Approach: post-populator SQL analysis, NOT a populator change -- all inputs are catalog columns at rest (`component_name` value, `variant_qualifier_1` property, file, selector). Parse each literal's RGB, distance to each anchor (B-101), label nearest-within-threshold as suggested target, NULL if nothing close. Group by (suggested_anchor, property) so the use-case boundary holds -- never merge text-green into background-green. RGB-Euclidean is crude but robust at the coarse level needed; fragile only where anchors sit close (teal-vs-green) -> eyeball. Depends on B-101. Distinct from B-100 (exact-match safety); B-102 is near-match candidates.",
       "detail_link": null,
       "initiative": "Refactor",
       "added": null
@@ -492,6 +493,16 @@
       "detail_link": null,
       "initiative": null,
       "added": null
+    },
+    {
+      "component": "Documentation.Site",
+      "priority": "Medium",
+      "type": "Design",
+      "summary": "Docs zone spec-era realignment: shell architecture, family files, and conformity pass.",
+      "description": "The docs zone pre-dates the specs and conformity passes; it needs a one-time alignment to the CC zone's reference architecture. Scope: true shell layering and naming (docs-base.css acts as shell; nav.js serves as implicit JS shell and carries the doc_buildHubCards page pocket), family-file realignment, extraction of the BDL Import Guide's embedded style block, and static-page HTML spec/populator coverage. The existing BDL-guide and static-page-investigation backlog items fold into this item's execution when it runs.",
+      "detail_link": null,
+      "initiative": null,
+      "added": "2026-07-23"
     },
     {
       "component": "ControlCenter.Shared",
@@ -902,6 +913,16 @@
       "detail_link": null,
       "initiative": null,
       "added": null
+    },
+    {
+      "component": "Platform",
+      "priority": "Low",
+      "type": "Investigate",
+      "summary": "Feasibility of extending HTML populator coverage to static doc-site pages.",
+      "description": "Static doc-site pages are outside the HTML populator's scan scope (it reads HTML inside .ps1 files only) and have no spec authority. Investigate extending populator coverage to static pages; decide whether that means a static-page section in CC_HTML_Spec or a separate static-page spec. Input: the spec-applicability gap list produced during the backlog doc-site page build. Session findings 2026-07-23: the JS spec's single page-boot constraint (section 11.1 -- one doc_init per file, with the INITIALIZATION banner holding only that function) blocks a single shared one-off JS file from serving several pages unless a page-dispatch pattern is adopted; nav.js already does exactly this for the hub, guarding doc_buildHubCards behind a filename check. Zone one-off census taken the same session: docs-hub.css is the only single-page asset among the twelve docs CSS and JS files (every other file serves 14 or more of the 66 pages, and all twelve are registered SHARED in Object_Registry); zero pages carry an inline script block; and the BDL Import Guide is the only page carrying an embedded style block.",
+      "detail_link": null,
+      "initiative": null,
+      "added": "2026-07-23"
     }
   ]
 }

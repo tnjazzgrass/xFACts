@@ -1,0 +1,457 @@
+/* ============================================================================
+   xFACts Control Center - Documentation Meta Page Styles (docs-meta.css)
+   Location: E:\xFACts-ControlCenter\public\docs\css\docs-meta.css
+   Version: Tracked in dbo.System_Metadata (component: Documentation.Site)
+
+   Content components for the documentation meta pages, the platform
+   introspection pages that render an authored JSON file as a browsable
+   table. Holds the filter control bar, the sortable grouped grid, the
+   per-row expandable detail drawer, and the load-status messaging. Loaded
+   after docs-base.css, which owns the token palette, the page shell, and
+   the section chrome these components sit inside.
+
+   FILE ORGANIZATION
+   -----------------
+   CONTENT: CONTROL BAR
+   CONTENT: RESULT STATUS
+   CONTENT: BACKLOG GRID
+   CONTENT: PRIORITY BADGES
+   CONTENT: ROW DETAIL DRAWER
+   CONTENT: RESPONSIVE ADJUSTMENTS
+   ============================================================================ */
+
+/* ============================================================================
+   CONTENT: CONTROL BAR
+   ----------------------------------------------------------------------------
+   The filter bar above the grid: one dropdown per filtered field, the
+   free-text search box, and the checkbox that switches between the grouped
+   and flat renderings. Options are populated at run time from the loaded
+   data, so the markup carries no fixed option set.
+   Prefix: doc
+   ============================================================================ */
+
+/* Holds the filter, search, and grouping controls above the grid. */
+.doc-meta-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 14px;
+    margin-bottom: 18px;
+    padding: 14px 16px;
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--size-radius-default);
+}
+
+/* Stacks one control above its caption. */
+.doc-meta-control {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+/* Captions a single filter control. */
+.doc-meta-control-label {
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+}
+
+/* Dropdown that filters the grid on one field. */
+.doc-meta-select {
+    min-width: 150px;
+    padding: 6px 9px;
+    font-family: var(--font-main);
+    font-size: 0.85rem;
+    color: var(--color-text-primary);
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border-default);
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.doc-meta-select:hover { /* pointer over the control */
+    border-color: var(--color-accent-blue);
+}
+
+.doc-meta-select:focus { /* keyboard focus */
+    outline: none;
+    border-color: var(--color-accent-blue);
+}
+
+/* Free-text box filtering the summary and description text. */
+.doc-meta-search {
+    min-width: 240px;
+    padding: 6px 9px;
+    font-family: var(--font-main);
+    font-size: 0.85rem;
+    color: var(--color-text-primary);
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border-default);
+    border-radius: 4px;
+}
+
+/* Dims the prompt text shown in the empty search box. */
+.doc-meta-search::placeholder {
+    color: var(--color-text-muted);
+}
+
+.doc-meta-search:focus { /* keyboard focus */
+    outline: none;
+    border-color: var(--color-accent-blue);
+}
+
+/* Pairs the grouping checkbox with its caption on one line. */
+.doc-meta-toggle-group {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding-bottom: 6px;
+    font-size: 0.85rem;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+}
+
+/* Checkbox switching the grid between grouped and flat rendering. */
+.doc-meta-checkbox {
+    width: 14px;
+    height: 14px;
+    accent-color: var(--color-accent-blue);
+    cursor: pointer;
+}
+
+/* ============================================================================
+   CONTENT: RESULT STATUS
+   ----------------------------------------------------------------------------
+   The line reporting how many rows survive the active filters, and the
+   full-width notice that replaces the grid when nothing matches or when the
+   data file cannot be loaded.
+   Prefix: doc
+   ============================================================================ */
+
+/* Reports how many rows are visible against the total loaded. */
+.doc-meta-status {
+    margin-bottom: 10px;
+    font-size: 0.8rem;
+    color: var(--color-text-secondary);
+}
+
+/* Full-width notice shown in place of an empty grid. */
+.doc-meta-message {
+    padding: 18px;
+    font-size: 0.9rem;
+    text-align: center;
+    color: var(--color-text-secondary);
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--size-radius-default);
+}
+
+/* Marks a notice as a load failure; styling lives on the compound. */
+.doc-meta-error {
+}
+
+.doc-meta-message.doc-meta-error { /* the data file failed to load */
+    color: var(--color-status-critical);
+    border-color: var(--color-status-critical);
+}
+
+/* ============================================================================
+   CONTENT: BACKLOG GRID
+   ----------------------------------------------------------------------------
+   The grid itself: the sortable header row, the component group header that
+   opens each run of rows in the grouped rendering, and the item rows whose
+   summary cell doubles as the disclosure control for the detail drawer.
+   Prefix: doc
+   ============================================================================ */
+
+/* Wraps the grid so a wide table scrolls without stretching the page. */
+.doc-meta-grid {
+    overflow-x: auto;
+}
+
+/* Lays out the item grid across the full content width. */
+.doc-meta-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.86rem;
+}
+
+/* Separates the sortable header row from the rows beneath it. */
+.doc-meta-head-row {
+    border-bottom: 2px solid var(--color-border-default);
+}
+
+/* Positions one header cell and its sort control. */
+.doc-meta-th {
+    padding: 0;
+    text-align: left;
+    vertical-align: bottom;
+}
+
+/* Sorts the grid on this column when activated. */
+.doc-meta-sort {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    padding: 9px 10px;
+    font-family: var(--font-main);
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    text-align: left;
+    color: var(--color-text-muted);
+    background: none;
+    border: none;
+    cursor: pointer;
+}
+
+.doc-meta-sort:hover { /* pointer over the sort control */
+    color: var(--color-accent-blue);
+}
+
+/* Shows the active sort direction beside the column caption. */
+.doc-meta-sort-mark {
+    font-size: 0.7rem;
+    color: var(--color-accent-blue);
+}
+
+/* Opens a run of rows sharing one component in the grouped rendering. */
+.doc-meta-group-row {
+    background: var(--color-bg-secondary);
+}
+
+/* Carries the component name across the full width of a group header. */
+.doc-meta-group-cell {
+    padding: 9px 10px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--color-accent-shared);
+    border-top: 1px solid var(--color-border-default);
+    border-bottom: 1px solid var(--color-border-subtle);
+}
+
+/* Counts the rows collected under one component group header. */
+.doc-meta-group-count {
+    margin-left: 8px;
+    font-weight: 400;
+    color: var(--color-text-muted);
+}
+
+/* Carries one item across the grid. */
+.doc-meta-row {
+    border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.doc-meta-row:hover { /* pointer over the item row */
+    background: var(--color-bg-card-hover);
+}
+
+/* Holds one item field in the grid. */
+.doc-meta-cell {
+    padding: 8px 10px;
+    vertical-align: top;
+    color: var(--color-text-primary);
+}
+
+/* Sizes a cell holding a short fixed-vocabulary value. */
+.doc-meta-cell-narrow {
+    width: 1%;
+    white-space: nowrap;
+}
+
+/* Names the component owning the item. */
+.doc-meta-component {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    color: var(--color-text-secondary);
+}
+
+/* Names the item's work type. */
+.doc-meta-type {
+    font-size: 0.8rem;
+    color: var(--color-text-secondary);
+}
+
+/* Reveals the item's detail drawer when activated. */
+.doc-meta-toggle {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    width: 100%;
+    padding: 0;
+    font-family: var(--font-main);
+    font-size: 0.86rem;
+    line-height: 1.45;
+    text-align: left;
+    color: var(--color-text-primary);
+    background: none;
+    border: none;
+    cursor: pointer;
+}
+
+.doc-meta-toggle:hover { /* pointer over the disclosure control */
+    color: var(--color-accent-blue);
+}
+
+/* Points at the collapsed drawer and rotates open when expanded. */
+.doc-meta-caret {
+    flex-shrink: 0;
+    margin-top: 2px;
+    font-size: 0.7rem;
+    color: var(--color-text-muted);
+    transition: transform 0.15s;
+}
+
+/* Marks a disclosure control as expanded; styling lives on the compound. */
+.doc-meta-open {
+}
+
+.doc-meta-caret.doc-meta-open { /* drawer expanded */
+    transform: rotate(90deg);
+}
+
+/* ============================================================================
+   CONTENT: PRIORITY BADGES
+   ----------------------------------------------------------------------------
+   The pill rendering an item priority. The base pill carries the shape and
+   each priority tier carries its own colour through a state compound, so the
+   tier token stays a plain marker the renderer can set from the data.
+   Prefix: doc
+   ============================================================================ */
+
+/* Renders a priority tier as a bordered pill. */
+.doc-meta-badge {
+    display: inline-block;
+    padding: 1px 8px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    border: 1px solid currentColor;
+    border-radius: 3px;
+}
+
+/* Marks a badge as the top tier; styling lives on the compound. */
+.doc-meta-high {
+}
+
+/* Marks a badge as the middle tier; styling lives on the compound. */
+.doc-meta-medium {
+}
+
+/* Marks a badge as the bottom tier; styling lives on the compound. */
+.doc-meta-low {
+}
+
+.doc-meta-badge.doc-meta-high { /* top priority tier */
+    color: var(--color-status-critical);
+}
+
+.doc-meta-badge.doc-meta-medium { /* middle priority tier */
+    color: var(--color-status-warning);
+}
+
+.doc-meta-badge.doc-meta-low { /* bottom priority tier */
+    color: var(--color-text-muted);
+}
+
+/* ============================================================================
+   CONTENT: ROW DETAIL DRAWER
+   ----------------------------------------------------------------------------
+   The drawer revealed beneath an item row: the full description text and the
+   footer carrying the optional detail reference and the optional date the
+   item was recorded. A detail reference is styled as a link only when it
+   points at a site-served target, and as plain text otherwise. The drawer row
+   is hidden until its disclosure control opens.
+   Prefix: doc
+   ============================================================================ */
+
+/* Carries the detail drawer beneath its item row. */
+.doc-meta-detail-row {
+    background: var(--color-bg-code);
+}
+
+/* Spans the drawer across every grid column. */
+.doc-meta-detail-cell {
+    padding: 14px 16px 16px 34px;
+    border-bottom: 1px solid var(--color-border-subtle);
+}
+
+/* Renders the item's full description text. */
+.doc-meta-detail-text {
+    margin: 0;
+    font-size: 0.85rem;
+    line-height: 1.6;
+    color: var(--color-text-primary);
+}
+
+/* Collects the drawer's supporting fields under the description. */
+.doc-meta-detail-foot {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 18px;
+    margin-top: 12px;
+    padding-top: 10px;
+    font-size: 0.78rem;
+    border-top: 1px solid var(--color-border-subtle);
+}
+
+/* Captions one supporting field in the drawer footer. */
+.doc-meta-detail-label {
+    margin-right: 6px;
+    color: var(--color-text-muted);
+}
+
+/* Links out to the item's companion planning document. */
+.doc-meta-detail-link {
+    color: var(--color-accent-blue);
+    text-decoration: none;
+}
+
+.doc-meta-detail-link:hover { /* pointer over the link */
+    text-decoration: underline;
+}
+
+/* Renders a repo reference that is not site-served as plain text. */
+.doc-meta-detail-ref {
+    font-family: var(--font-mono);
+    font-size: 0.76rem;
+    color: var(--color-text-secondary);
+}
+
+/* Withholds an element from the rendered page. */
+.doc-meta-hidden {
+    display: none;
+}
+
+/* ============================================================================
+   CONTENT: RESPONSIVE ADJUSTMENTS
+   ----------------------------------------------------------------------------
+   Narrow-viewport adjustments: the control bar stacks so each control keeps
+   its full width, and the drawer loses the indent that aligns it with the
+   summary column on wider screens.
+   Prefix: doc
+   ============================================================================ */
+
+/* Adjusts the meta page components for narrow viewports. */
+@media (max-width: 700px) {
+    /* Stacks the filter controls into a single column. */
+    .doc-meta-controls {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    /* Lets the search box use the full stacked width. */
+    .doc-meta-search {
+        min-width: 0;
+    }
+
+    /* Drops the drawer indent when horizontal space is scarce. */
+    .doc-meta-detail-cell {
+        padding-left: 16px;
+    }
+}
