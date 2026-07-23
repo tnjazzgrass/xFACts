@@ -1,4 +1,5 @@
 
+
 /*
 ================================================================================
  Jira.sp_QueueTicket
@@ -25,7 +26,7 @@
 ================================================================================
 */
 
-    CREATE       PROCEDURE [Jira].[sp_QueueTicket]
+    CREATE         PROCEDURE [Jira].[sp_QueueTicket]
         @SourceModule VARCHAR(50),
         @ProjectKey VARCHAR(20),
         @Summary NVARCHAR(1000),
@@ -104,7 +105,7 @@
             
             PRINT 'Jira ticket request queued for processing (QueueID: ' + CAST(@QueueID AS VARCHAR) + ')';
             PRINT 'Summary: ' + @Summary;
-            PRINT 'PowerShell processor will create ticket within 5 minutes';
+            PRINT 'PowerShell processor will create ticket on the next execution';
             
             RETURN 0;
             
