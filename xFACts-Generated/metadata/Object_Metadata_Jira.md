@@ -1,6 +1,6 @@
 # Object_Metadata: Jira
 Source: dbo.Object_Metadata
-Generated: 2026-07-22 19:01:32
+Generated: 2026-07-23 04:17:25
 
 ## Process-JiraTicketQueue.ps1 (Script)
 
@@ -10,7 +10,7 @@ Jira
 
 ### data_flow #0  [metadata_id: 1845]
 
-Launched by the orchestrator when TR_Jira_TicketQueue_QueueDepth signals queue depth > 0. Retrieves master passphrase from dbo.GlobalConfig, uses two-tier decryption against dbo.Credentials to obtain Jira URL, username, and password. Reads Pending tickets from Jira.TicketQueue (TicketStatus = 'Pending' AND RetryCount < MaxRetries), builds JSON payload mapping queue columns to Jira REST API fields (including custom fields and cascading selects), and creates tickets via POST to /rest/api/2/issue. On success, performs a GET to retrieve the actual assignee, updates TicketQueue with TicketKey and Success status, and logs to Jira.RequestLog. On failure, increments RetryCount and sets TicketStatus to Failed. When max retries are exhausted and EmailRecipients is populated, sends a fallback email via Database Mail and sets TicketStatus to EmailSent.
+Launched by the orchestrator when TR_Jira_TicketQueue_QueueDepth signals queue depth > 0. Retrieves master passphrase from dbo.GlobalConfig, uses two-tier decryption against dbo.Credentials to obtain Jira URL, username, and password. Reads Pending tickets from Jira.TicketQueue (TicketStatus = 'Pending' AND RetryCount < MaxRetries), builds JSON payload mapping queue columns to Jira REST API fields (including custom fields and cascading selects), and creates tickets via POST to /rest/api/2/issue. On success, performs a GET to retrieve the actual assignee, updates TicketQueue with TicketKey and Success status, and logs to Jira.RequestLog. Each transient failure is retried in-cycle up to BurstAttempts times; if the whole turn still fails, RetryCount is incremented and the row is left Pending for a later cycle, up to MaxRetries turns. Deterministic failures (auth, not-found, bad-request) skip retries. When retries are exhausted or a deterministic failure occurs, and EmailRecipients is populated, sends a fallback email via Database Mail and sets TicketStatus to EmailSent (or Failed when no recipients).
 
 ### description #0  [metadata_id: 1842]
 
@@ -34,7 +34,7 @@ Credentials are stored encrypted in dbo.Credentials. The master passphrase (from
 ### design_note #4  [metadata_id: 1849]
 Title: Email Fallback on API Failure
 
-When Jira API calls fail after all retry attempts, the script can send a fallback email via Database Mail containing the ticket summary, description, and error details. This ensures the request is not silently lost even when the Jira API is unreachable. Requires EmailRecipients to be populated on the queue row.
+When Jira API calls fail after all retry attempts, or immediately on a deterministic failure such as bad credentials or an invalid field, the script can send a fallback email via Database Mail containing the ticket summary, description, and error details. This ensures the request is not silently lost even when the ticket cannot be created. Requires EmailRecipients to be populated on the queue row.
 
 ### design_note #5  [metadata_id: 1850]
 Title: Orchestrator v2 Integration
@@ -345,7 +345,7 @@ Jira
 
 ### data_flow #0  [metadata_id: 1897]
 
-Tickets enter via Jira.sp_QueueTicket or by direct INSERT. TR_Jira_TicketQueue_QueueDepth fires on INSERT, incrementing running_count in Orchestrator.ProcessRegistry to signal the orchestrator. Process-JiraTicketQueue.ps1 claims Pending rows (TicketStatus = 'Pending' AND RetryCount < MaxRetries), retrieves Jira credentials from dbo.Credentials via two-tier passphrase decryption (master passphrase from GlobalConfig), creates tickets via Jira REST API, and updates TicketStatus to Success or Failed with the returned TicketKey. On success the script performs a GET to retrieve the assigned user. Each API interaction is logged to Jira.RequestLog. When max retries are exhausted and EmailRecipients is populated, the script sends a fallback email via Database Mail and sets TicketStatus to EmailSent.
+Tickets enter via Jira.sp_QueueTicket or by direct INSERT. TR_Jira_TicketQueue_QueueDepth fires on INSERT, incrementing running_count in Orchestrator.ProcessRegistry to signal the orchestrator. Process-JiraTicketQueue.ps1 claims Pending rows (TicketStatus = 'Pending' AND RetryCount < MaxRetries), retrieves Jira credentials from dbo.Credentials via two-tier passphrase decryption (master passphrase from GlobalConfig), creates tickets via Jira REST API, and sets TicketStatus to Success with the returned TicketKey, leaves it Pending for a later cycle on a transient failure, or sets a terminal status once retries are exhausted or a deterministic failure occurs. On success the script performs a GET to retrieve the assigned user. Each API interaction is logged to Jira.RequestLog. When retries are exhausted or a deterministic failure occurs and EmailRecipients is populated, the script sends a fallback email via Database Mail and sets TicketStatus to EmailSent.
 
 ### description #0  [metadata_id: 52]
 
