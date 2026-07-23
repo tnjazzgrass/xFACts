@@ -842,6 +842,26 @@
                                                    "sortOrder":  1
                                                }
                                            ],
+                           "queries":  [
+                                           {
+                                               "name":  "Basic info alert",
+                                               "description":  "Simple informational notification",
+                                               "sql":  "EXEC Teams.sp_QueueAlert\r\n    @SourceModule  = \u0027BIDATA\u0027,\r\n    @AlertCategory = \u0027INFO\u0027,\r\n    @Title         = \u0027BIDATA Daily Build Complete\u0027,\r\n    @Message       = \u0027Completed: 6:45 AM | Total Duration: 01:15:07\u0027,\r\n    @TriggerType   = \u0027DailyCompletion\u0027,\r\n    @TriggerValue  = \u00272025-12-20\u0027;",
+                                               "sortOrder":  1
+                                           },
+                                           {
+                                               "name":  "Warning alert",
+                                               "description":  "Warning with deduplication context",
+                                               "sql":  "EXEC Teams.sp_QueueAlert\r\n    @SourceModule  = \u0027BatchOps\u0027,\r\n    @AlertCategory = \u0027WARNING\u0027,\r\n    @Title         = \u00273 Batch(es) In Progress - Review Before Restart\u0027,\r\n    @Message       = @batch_details,\r\n    @TriggerType   = \u0027DM_OpenBatchCheck\u0027,\r\n    @TriggerValue  = \u00272025-12-20\u0027;",
+                                               "sortOrder":  2
+                                           },
+                                           {
+                                               "name":  "Critical alert",
+                                               "description":  "High-priority alert for system issues",
+                                               "sql":  "EXEC Teams.sp_QueueAlert\r\n    @SourceModule  = \u0027JobFlow\u0027,\r\n    @AlertCategory = \u0027CRITICAL\u0027,\r\n    @Title         = \u0027System Stall Detected\u0027,\r\n    @Message       = \u0027No job progress detected for 30+ minutes.\u0027,\r\n    @TriggerType   = \u0027SystemStall\u0027,\r\n    @TriggerValue  = \u00272025-12-20\u0027;",
+                                               "sortOrder":  3
+                                           }
+                                       ],
                            "relationshipNotes":  [
                                                      {
                                                          "relatedObject":  "Teams.AlertQueue",
@@ -869,6 +889,26 @@
                                                  "sortOrder":  1
                                              }
                                          ],
+                         "queries":  [
+                                         {
+                                             "name":  "Verify trigger is enabled",
+                                             "description":  "Check if the trigger is active",
+                                             "sql":  "SELECT name, is_disabled\r\nFROM sys.triggers\r\nWHERE name = \u0027TR_Teams_AlertQueue_QueueDepth\u0027;",
+                                             "sortOrder":  1
+                                         },
+                                         {
+                                             "name":  "Verify ProcessRegistry entry",
+                                             "description":  "Confirm the orchestrator entry exists and check run mode",
+                                             "sql":  "SELECT process_name, run_mode, running_count\r\nFROM Orchestrator.ProcessRegistry\r\nWHERE process_name = \u0027Process-TeamsAlertQueue\u0027;",
+                                             "sortOrder":  2
+                                         },
+                                         {
+                                             "name":  "Re-sync running_count",
+                                             "description":  "After re-enabling a disabled trigger, manually set running_count for any pending items",
+                                             "sql":  "UPDATE Orchestrator.ProcessRegistry\r\nSET running_count = (SELECT COUNT(*) FROM Teams.AlertQueue WHERE status = \u0027Pending\u0027)\r\nWHERE process_name = \u0027Process-TeamsAlertQueue\u0027;",
+                                             "sortOrder":  3
+                                         }
+                                     ],
                          "relationshipNotes":  [
                                                    {
                                                        "relatedObject":  "Orchestrator.ProcessRegistry",
