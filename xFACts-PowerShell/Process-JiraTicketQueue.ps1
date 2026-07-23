@@ -4,8 +4,10 @@
 
 .DESCRIPTION
     Reads pending tickets from xFACts.Jira.TicketQueue, creates them in Jira via the
-    REST API, updates queue status, retrieves the assignee, and handles email fallback
-    on failure.
+    REST API, updates queue status, retrieves the assignee, and handles retries and
+    email fallback on failure. Transient failures are retried in-cycle as a short
+    burst and again across processor cycles; deterministic failures fall back to
+    email immediately.
 
 .PARAMETER ServerInstance
     SQL Server instance name (default: AVG-PROD-LSNR).
@@ -14,10 +16,19 @@
     Database name (default: xFACts).
 
 .PARAMETER MaxRetries
-    Maximum retry attempts for failed tickets (default: 3).
+    Maximum cross-cycle retry turns before a failed ticket becomes terminal and falls
+    back to email (default: 3). Each turn makes up to BurstAttempts in-cycle attempts.
 
 .PARAMETER BatchSize
     Maximum tickets to process per run (default: 50).
+
+.PARAMETER BurstAttempts
+    Maximum in-cycle delivery attempts per ticket before the turn counts as a retry
+    (default: 3).
+
+.PARAMETER BurstDelaySeconds
+    Delay in seconds between in-cycle attempts (default: 2). A 429 response carrying a
+    Retry-After header overrides this for that wait.
 
 .PARAMETER Execute
     Perform actual Jira API calls. Without this flag, runs in preview mode.
@@ -55,6 +66,14 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-07-23  Fixed the retry ladder and added an in-cycle burst. Retryable failures
+#             (status 0/408/429/5xx) now leave the row Pending across processor cycles
+#             instead of stamping Failed on the first miss; each turn makes up to
+#             BurstAttempts attempts BurstDelaySeconds apart, and a 429 honors
+#             Retry-After. Deterministic failures (4xx auth/not-found/bad-request) fall
+#             back to email immediately. Failed and EmailSent are now terminal-only, so
+#             the fallback email is reachable at exhaustion. Added -BurstAttempts and
+#             -BurstDelaySeconds parameters.
 # 2026-03-11  Migrated to Initialize-XFActsScript shared infrastructure.
 #             Removed inline Write-Log, Get-MasterPassphrase, Get-JiraCredentials.
 #             Replaced credential retrieval with Get-ServiceCredentials.
@@ -82,6 +101,8 @@ param(
     [string]$Database = "xFACts",
     [int]$MaxRetries = 3,
     [int]$BatchSize = 50,
+    [int]$BurstAttempts = 3,
+    [int]$BurstDelaySeconds = 2,
     [switch]$Execute,
     [long]$TaskId = 0,
     [int]$ProcessId = 0
@@ -222,12 +243,15 @@ function Invoke-JiraAPI {
         $resp = $_.Exception.Response
         $statusCode = if ($resp) { [int]$resp.StatusCode } else { 0 }
         $content = ""
+        $retryAfter = 0
         if ($resp) {
             try {
                 $reader = New-Object System.IO.StreamReader($resp.GetResponseStream())
                 $content = $reader.ReadToEnd()
                 $reader.Close()
             } catch { }
+            $retryAfterHeader = $resp.Headers["Retry-After"]
+            if ($retryAfterHeader -match '^\d+$') { $retryAfter = [int]$retryAfterHeader }
         }
 
         return @{
@@ -235,6 +259,7 @@ function Invoke-JiraAPI {
             StatusCode = $statusCode
             Content = $content
             ErrorMessage = $_.Exception.Message
+            RetryAfter = $retryAfter
         }
     }
 }
@@ -330,6 +355,7 @@ function New-JiraTicket {
             StatusCode = $createResult.StatusCode
             ResponseBody = $createResult.Content
             Assignee = $null
+            RetryAfter = $createResult.RetryAfter
         }
     }
 }
@@ -577,7 +603,37 @@ try {
         $processedCount++
         Write-Log "Processing QueueID $($ticket.QueueID) [$($ticket.SourceModule)]: $($ticket.Summary)" "INFO"
 
-        $result = New-JiraTicket -Credentials $credentials -Ticket $ticket
+        # In-cycle burst: make up to BurstAttempts attempts this turn, BurstDelaySeconds
+        # apart, retrying only transient failures. A deterministic failure stops the burst.
+        $attempt = 0
+        $result = $null
+        $nonRetryable = $false
+
+        while ($attempt -lt $BurstAttempts) {
+            $attempt++
+
+            if ($attempt -gt 1) {
+                $sleepSeconds = $BurstDelaySeconds
+                if ([int]$result.StatusCode -eq 429 -and $result.RetryAfter -gt 0) {
+                    $sleepSeconds = $result.RetryAfter
+                }
+                Write-Log "  Retry attempt $attempt of $BurstAttempts after $sleepSeconds seconds" "WARN"
+                Start-Sleep -Seconds $sleepSeconds
+            }
+
+            $result = New-JiraTicket -Credentials $credentials -Ticket $ticket
+
+            if ($result.Success) { break }
+
+            $statusCode = [int]$result.StatusCode
+            if (-not ($statusCode -eq 0 -or $statusCode -eq 408 -or $statusCode -eq 429 -or $statusCode -ge 500)) {
+                $nonRetryable = $true
+                Write-Log "  Non-retryable failure (status $statusCode) - stopping attempts" "ERROR"
+                break
+            }
+
+            Write-Log "  Attempt $attempt of $BurstAttempts failed (status $statusCode)" "WARN"
+        }
 
         if ($result.Success) {
             $responseData = $result.ResponseBody | ConvertFrom-Json
@@ -610,9 +666,11 @@ try {
             Write-Log "  Error: $($result.ResponseBody)" "ERROR"
 
             $newRetryCount = $ticket.RetryCount + 1
+            $exhausted = ($newRetryCount -ge $MaxRetries)
 
-            if ($newRetryCount -ge $MaxRetries) {
-                Write-Log "  Max retries reached ($MaxRetries), sending email fallback" "WARN"
+            if ($nonRetryable -or $exhausted) {
+                $reason = if ($nonRetryable) { "Non-retryable failure" } else { "Max retries reached ($MaxRetries)" }
+                Write-Log "  $reason - sending email fallback" "WARN"
 
                 $emailSent = Send-EmailFallback `
                     -Ticket $ticket -ErrorMessage $result.ResponseBody
@@ -627,10 +685,10 @@ try {
                 if ($emailSent) { $emailCount++ }
 
             } else {
-                Write-Log "  Will retry (attempt $newRetryCount of $MaxRetries)" "WARN"
+                Write-Log "  Will retry next cycle (turn $newRetryCount of $MaxRetries)" "WARN"
 
                 Update-QueueStatus `
-                    -QueueID $ticket.QueueID -Status 'Failed' `
+                    -QueueID $ticket.QueueID -Status 'Pending' `
                     -StatusCode $result.StatusCode -ResponseMessage $result.ResponseBody `
                     -RetryCount $newRetryCount
             }

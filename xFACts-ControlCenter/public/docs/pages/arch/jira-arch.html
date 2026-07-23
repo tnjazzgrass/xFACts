@@ -159,16 +159,16 @@
 
         <p>A missed Teams alert is annoying. A missed Jira ticket means work doesn't get tracked, which means it might not get done. The retry logic reflects this difference.</p>
 
-        <p>When the API call fails, the script increments <code>RetryCount</code> and records the failure details in <code>ResponseMessage</code>. The row stays in <strong>Pending</strong> status for the next processor run. This is different from Teams (which retries inline) &mdash; Jira retries span multiple processor executions, giving the Jira server time to recover from transient issues.</p>
+        <p>When the API call fails, the script increments <code>RetryCount</code> and records the failure details in <code>ResponseMessage</code>. Each turn first makes a short in-cycle burst &mdash; a configurable number of attempts a configurable delay apart; if the whole turn still fails on a transient error, the row stays in <strong>Pending</strong> status for the next processor run. So Jira retries at two levels: a quick burst within one run, then again across processor runs, giving the Jira server time to recover from transient issues.</p>
 
-        <p>After the configured maximum number of attempts (the processor's <code>MaxRetries</code> setting) is exhausted, the row is marked <strong>Failed</strong>. But that's not the end of the safety net.</p>
+        <p>After the configured number of retry turns (the processor's <code>MaxRetries</code> setting) is exhausted &mdash; or immediately, when the failure is deterministic, like bad credentials or an invalid field &mdash; the row becomes terminal. But that's not the end of the safety net.</p>
 
         <h3 class="doc-section-subtitle">Email Fallback</h3>
 
         <p>When all retries fail and email recipients are configured, the script sends a fallback email with the ticket details. The ticket doesn't exist in Jira, but someone knows about the underlying problem. The work doesn't vanish just because an API had a bad day.</p>
 
         <div class="doc-tech-tip">
-            <strong class="doc-tech-tip-label">Retry across cycles, not inline.</strong> Teams alerts retry immediately within one execution. Jira retries wait for the next processor cycle. The reasoning: Teams failures are usually transient network blips that resolve quickly. Jira failures are often service-level issues like maintenance or restarts that need longer to resolve. The retry cadence matches the failure pattern.
+            <strong class="doc-tech-tip-label">Two levels of retry.</strong> Within a single run, Jira retries a transient failure in a quick burst &mdash; the same inline pattern Teams uses. Unlike Teams, Jira then also carries an unresolved ticket across processor runs, because Jira failures are often service-level issues like maintenance or restarts that need longer to clear than a burst allows. Deterministic failures &mdash; bad credentials, a missing project, a malformed field &mdash; skip retries entirely and go straight to the email fallback, since retrying an identical bad request only delays the alert.
         </div>
     </div>
 
