@@ -2508,20 +2508,3 @@ ORDER BY rm.department_scope, r.display_order;
   - **RBAC_DepartmentRegistry**: [sort:2] Logical relationship. The department_scope value matches RBAC_DepartmentRegistry.department_key to scope the role to a specific department's pages. No physical foreign key — validated at the application layer.
 
 
-### TR_xFACts_ProtectCriticalObjects
-
-Database-scoped DDL trigger that prevents accidental DROP or ALTER operations on critical xFACts objects. Intercepts DDL commands across all schemas, checks against a hardcoded protected objects list, logs violation attempts via autonomous transaction through the xFACts_Loopback linked server, then rolls back the operation.
-
-**Data Flow:** Fires on DDL events (DROP_TABLE, ALTER_TABLE, DROP_PROCEDURE, ALTER_PROCEDURE, DROP_VIEW, ALTER_VIEW, DROP_FUNCTION, ALTER_FUNCTION, DROP_TRIGGER, ALTER_TRIGGER). Extracts event details from EVENTDATA() XML. Checks the target object against a hardcoded protected list organized by schema. If protected, calls sp_LogProtectionViolation via the xFACts_Loopback linked server (autonomous transaction), then issues ROLLBACK and RAISERROR.
-
-**Hardcoded Protection List:** [sort:1] Protected objects are maintained as string literals within the trigger definition. This was chosen because all xFACts objects should be protected by default, and anyone with permissions to create objects also has access to modify the trigger. A simple list is easy to audit. New modules must add their objects to the list as part of deployment.
-
-**Self-Protecting:** [sort:2] The trigger protects itself. Attempts to DROP or ALTER TR_xFACts_ProtectCriticalObjects are intercepted and blocked. To modify the trigger, it must first be disabled (DISABLE TRIGGER ... ON DATABASE), modified, then re-enabled.
-
-**ORIGINAL_LOGIN() for Identity:** [sort:3] The trigger captures the user identity using ORIGINAL_LOGIN() rather than SUSER_SNAME() or SYSTEM_USER. This returns the original login even when context switching via EXECUTE AS, ensuring the actual person who initiated the DDL is recorded.
-
-  - **Protection_ViolationLog**: [sort:1] Target audit table. Every blocked DDL operation is logged here with full event details including the SQL text of the blocked command.
-  - **sp_LogProtectionViolation**: [sort:2] Called via the xFACts_Loopback linked server to perform the INSERT in a separate transaction. This autonomous transaction pattern ensures the log entry survives the trigger's ROLLBACK.
-  - **TR_System_Metadata_AutoSupersede**: [sort:3] Sibling protected trigger. Both triggers are in each other's protection scope.
-
-
