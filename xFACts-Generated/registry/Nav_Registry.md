@@ -1,6 +1,6 @@
 # Nav Registry
 Source: dbo.RBAC_NavRegistry
-Generated: 2026-07-23 12:55:40
+Generated: 2026-07-23 12:57:33
 
 | page_route | nav_label | display_title | description | section_key | sort_order | doc_page_id | show_in_nav | show_on_home |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
