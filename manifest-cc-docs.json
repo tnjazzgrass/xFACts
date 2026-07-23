@@ -1,5 +1,5 @@
 {
-    "generated":  "2026-07-22T23:59:36Z",
+    "generated":  "2026-07-23T00:01:57Z",
     "category":  "Control Center Documentation Site",
     "segment":  "cc-docs",
     "file_count":  78,
@@ -7,546 +7,546 @@
                   {
                       "path":  "xFACts-ControlCenter/public/docs/css/docs-architecture.css",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/css/docs-architecture.css?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/css/docs-architecture.css?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/css/docs-base.css",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/css/docs-base.css?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/css/docs-base.css?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/css/docs-controlcenter.css",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/css/docs-controlcenter.css?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/css/docs-controlcenter.css?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/css/docs-erd.css",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/css/docs-erd.css?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/css/docs-erd.css?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/css/docs-hub.css",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/css/docs-hub.css?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/css/docs-hub.css?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/css/docs-narrative.css",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/css/docs-narrative.css?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/css/docs-narrative.css?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/css/docs-reference.css",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/css/docs-reference.css?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/css/docs-reference.css?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/js/ddl-erd.js",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/js/ddl-erd.js?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/js/ddl-erd.js?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/js/ddl-loader.js",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/js/ddl-loader.js?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/js/ddl-loader.js?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/js/docs-controlcenter.js",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/js/docs-controlcenter.js?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/js/docs-controlcenter.js?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/js/docs-shared.js",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/js/docs-shared.js?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/js/docs-shared.js?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/js/nav.js",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/js/nav.js?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/js/nav.js?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/arch/b2b-arch.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/arch/b2b-arch.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/arch/b2b-arch.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/arch/backup-arch.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/arch/backup-arch.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/arch/backup-arch.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/arch/batchops-arch.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/arch/batchops-arch.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/arch/batchops-arch.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/arch/bidata-arch.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/arch/bidata-arch.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/arch/bidata-arch.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/arch/controlcenter-arch.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/arch/controlcenter-arch.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/arch/controlcenter-arch.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/arch/dbcc-arch.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/arch/dbcc-arch.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/arch/dbcc-arch.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/arch/dmops-arch.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/arch/dmops-arch.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/arch/dmops-arch.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/arch/engine-room-arch.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/arch/engine-room-arch.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/arch/engine-room-arch.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/arch/fileops-arch.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/arch/fileops-arch.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/arch/fileops-arch.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/arch/indexmaint-arch.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/arch/indexmaint-arch.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/arch/indexmaint-arch.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/arch/jboss-arch.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/arch/jboss-arch.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/arch/jboss-arch.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/arch/jira-arch.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/arch/jira-arch.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/arch/jira-arch.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/arch/jobflow-arch.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/arch/jobflow-arch.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/arch/jobflow-arch.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/arch/replication-arch.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/arch/replication-arch.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/arch/replication-arch.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/arch/serverhealth-arch.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/arch/serverhealth-arch.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/arch/serverhealth-arch.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/arch/teams-arch.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/arch/teams-arch.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/arch/teams-arch.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/b2b.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/b2b.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/b2b.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/backup.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/backup.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/backup.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/batchops.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/batchops.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/batchops.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/bidata.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/bidata.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/bidata.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/cc/b2b-cc.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/cc/b2b-cc.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/cc/b2b-cc.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/cc/backup-cc.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/cc/backup-cc.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/cc/backup-cc.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/cc/batchops-cc.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/cc/batchops-cc.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/cc/batchops-cc.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/cc/bidata-cc.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/cc/bidata-cc.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/cc/bidata-cc.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/cc/controlcenter-cc-admin.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/cc/controlcenter-cc-admin.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/cc/controlcenter-cc-admin.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/cc/controlcenter-cc-platform.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/cc/controlcenter-cc-platform.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/cc/controlcenter-cc-platform.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/cc/dbcc-cc.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/cc/dbcc-cc.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/cc/dbcc-cc.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/cc/dmops-cc.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/cc/dmops-cc.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/cc/dmops-cc.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/cc/fileops-cc.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/cc/fileops-cc.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/cc/fileops-cc.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/cc/indexmaint-cc.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/cc/indexmaint-cc.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/cc/indexmaint-cc.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/cc/jboss-cc.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/cc/jboss-cc.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/cc/jboss-cc.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/cc/jobflow-cc.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/cc/jobflow-cc.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/cc/jobflow-cc.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/cc/replication-cc.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/cc/replication-cc.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/cc/replication-cc.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/cc/serverhealth-cc.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/cc/serverhealth-cc.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/cc/serverhealth-cc.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/controlcenter.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/controlcenter.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/controlcenter.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/dbcc.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/dbcc.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/dbcc.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/dmops.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/dmops.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/dmops.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/engine-room.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/engine-room.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/engine-room.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/fileops.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/fileops.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/fileops.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/guides/bdl-import-guide.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/guides/bdl-import-guide.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/guides/bdl-import-guide.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/index.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/index.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/index.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/indexmaint.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/indexmaint.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/indexmaint.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/jboss.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/jboss.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/jboss.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/jira.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/jira.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/jira.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/jobflow.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/jobflow.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/jobflow.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/ref/b2b-ref.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/ref/b2b-ref.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/ref/b2b-ref.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/ref/backup-ref.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/ref/backup-ref.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/ref/backup-ref.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/ref/batchops-ref.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/ref/batchops-ref.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/ref/batchops-ref.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/ref/bidata-ref.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/ref/bidata-ref.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/ref/bidata-ref.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/ref/controlcenter-ref.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/ref/controlcenter-ref.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/ref/controlcenter-ref.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/ref/dbcc-ref.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/ref/dbcc-ref.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/ref/dbcc-ref.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/ref/dmops-ref.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/ref/dmops-ref.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/ref/dmops-ref.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/ref/engine-room-ref.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/ref/engine-room-ref.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/ref/engine-room-ref.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/ref/fileops-ref.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/ref/fileops-ref.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/ref/fileops-ref.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/ref/indexmaint-ref.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/ref/indexmaint-ref.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/ref/indexmaint-ref.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/ref/jboss-ref.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/ref/jboss-ref.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/ref/jboss-ref.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/ref/jira-ref.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/ref/jira-ref.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/ref/jira-ref.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/ref/jobflow-ref.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/ref/jobflow-ref.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/ref/jobflow-ref.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/ref/replication-ref.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/ref/replication-ref.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/ref/replication-ref.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/ref/serverhealth-ref.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/ref/serverhealth-ref.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/ref/serverhealth-ref.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/ref/teams-ref.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/ref/teams-ref.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/ref/teams-ref.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/ref/tools-ref.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/ref/tools-ref.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/ref/tools-ref.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/replication.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/replication.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/replication.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/serverhealth.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/serverhealth.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/serverhealth.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/teams.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/teams.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/teams.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   },
                   {
                       "path":  "xFACts-ControlCenter/public/docs/pages/tools.html",
                       "class":  "authored",
-                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/tools.html?v=20260722235936",
+                      "raw_url":  "https://raw.githubusercontent.com/tnjazzgrass/xFACts/main/xFACts-ControlCenter/public/docs/pages/tools.html?v=20260723000157",
                       "module":  "ControlCenter",
                       "component":  "Documentation.Site"
                   }
