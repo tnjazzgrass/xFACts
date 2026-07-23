@@ -918,6 +918,7 @@
                          "description":  "AFTER INSERT trigger on FileOps.MonitorLog that disables the IBM/B2B ETL automation for the OneGI client\u0027s process rows when any of its four monitored escalation files logs an escalation.",
                          "module":  "FileOps",
                          "category":  "FileOps",
+                         "dataFlow":  "Fires when File Monitoring writes an escalation row (event_type = \u0027Escalated\u0027) to FileOps.MonitorLog for one of the four OneGI monitored files (config_id 77, 78, 79, 80). When any such row is inserted, the trigger performs a same-instance cross-database update to Integration.etl.tbl_B2B_CLIENTS_FILES, setting ACTIVE_FLAG = 0 for CLIENT_ID 10678, SEQ_ID 1 through 6, which turns off the IBM/B2B scheduler automation for those six process rows.",
                          "firesOnInsert":  1,
                          "firesOnUpdate":  0,
                          "firesOnDelete":  0,
@@ -929,6 +930,14 @@
                                                  "sortOrder":  1
                                              }
                                          ],
+                         "queries":  [
+                                         {
+                                             "name":  "Verify trigger is enabled",
+                                             "description":  "Check if the trigger is active",
+                                             "sql":  "SELECT name, is_disabled\r\nFROM sys.triggers\r\nWHERE name = \u0027TR_FileOps_MonitorLog_DisableETL_OneGI\u0027;",
+                                             "sortOrder":  1
+                                         }
+                                     ],
                          "relationshipNotes":  [
                                                    {
                                                        "relatedObject":  "Integration.etl.tbl_B2B_CLIENTS_FILES",
