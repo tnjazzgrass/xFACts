@@ -1,11 +1,10 @@
 -- ============================================================================
 -- Register the documentation meta page family assets
---   Section 1  Preview - current catalog and version state
+--   Section 1  Preview - current catalog state
 --   Section 2  Object_Registry - INSERT docs-meta.css
 --   Section 3  Object_Registry - INSERT docs-meta.js
---   Section 4  System_Metadata - version bump for Documentation.Site
---   Section 5  Verification
--- Run section by section in SSMS. Sections 2-4 are idempotent (guarded).
+--   Section 4  Verification
+-- Run section by section in SSMS. Sections 2-3 are idempotent (guarded).
 -- Component: Documentation.Site (module ControlCenter).
 --
 -- Both files are page-type family assets in the docs zone, classified exactly
@@ -15,17 +14,22 @@
 -- the Asset Registry CSS and JS populators READ zone and scope from
 -- Object_Registry, and a scanned file with no active row is reported as
 -- FILE_NOT_REGISTERED with its rows carrying a zone and scope of '<undefined>'.
+--
+-- No System_Metadata rows are written here. Per Development Guidelines 2.6.7 the
+-- version bump is entered through the Administration page System Metadata panel,
+-- where the version auto-increments; the SQL form is reserved for scripted
+-- deployments and bulk operations. The two bump requests for this session are
+-- supplied separately in the Section 2.6.7 request format.
 -- ============================================================================
 
 USE xFACts;
 GO
 
 -- ============================================================================
--- SECTION 1: PREVIEW - current catalog and version state
+-- SECTION 1: PREVIEW - current catalog state
 -- ----------------------------------------------------------------------------
--- Run first. Confirms neither asset is registered yet, shows the sibling docs
--- assets the two new rows are modelled on, and shows the current
--- Documentation.Site version that Section 4 bumps.
+-- Run first. Confirms neither asset is registered yet, and shows the sibling
+-- docs assets whose classification the two new rows follow.
 -- ============================================================================
 
 SELECT registry_id, module_name, component_name, object_name,
@@ -40,11 +44,6 @@ WHERE component_name = 'Documentation.Site'
   AND object_category = 'Documentation'
   AND is_active = 1
 ORDER BY object_type, object_name;
-
-SELECT TOP 5 metadata_id, version, description, deployed_date, deployed_by
-FROM dbo.System_Metadata
-WHERE component_name = 'Documentation.Site'
-ORDER BY metadata_id DESC;
 
 -- ============================================================================
 -- SECTION 2: OBJECT_REGISTRY - INSERT docs-meta.css
@@ -96,46 +95,9 @@ END
 GO
 
 -- ============================================================================
--- SECTION 4: SYSTEM_METADATA - version bump for Documentation.Site
+-- SECTION 4: VERIFICATION
 -- ----------------------------------------------------------------------------
--- Derives the next patch version from the current one. To bump the minor or
--- major element instead, set @next to the intended value after the SELECT that
--- derives it. The insert is skipped if that version already exists.
--- ============================================================================
-
-DECLARE @current varchar(20);
-DECLARE @next varchar(20);
-
-SELECT TOP 1 @current = version
-FROM dbo.System_Metadata
-WHERE component_name = 'Documentation.Site'
-ORDER BY metadata_id DESC;
-
-SELECT @next = PARSENAME(@current, 3) + '.' + PARSENAME(@current, 2) + '.'
-             + CAST(CAST(PARSENAME(@current, 1) AS int) + 1 AS varchar(10));
-
-SELECT @current AS current_version, @next AS next_version;
-
-IF @next IS NOT NULL AND NOT EXISTS (
-    SELECT 1 FROM dbo.System_Metadata
-    WHERE component_name = 'Documentation.Site'
-      AND version = @next
-)
-BEGIN
-    INSERT INTO dbo.System_Metadata
-        (module_name, component_name, version, description, deployed_by)
-    VALUES
-        ('ControlCenter', 'Documentation.Site', @next,
-         'Added the documentation meta page family: a backlog page that renders the authored backlog JSON as a filterable, sortable grid grouped by component with a per-row expandable detail drawer. Introduces the docs-meta.css and docs-meta.js family assets and a Tools page tile linking the new page.',
-         SYSTEM_USER);
-END
-GO
-
--- ============================================================================
--- SECTION 5: VERIFICATION
--- ----------------------------------------------------------------------------
--- Both assets registered and active with zone docs and scope SHARED, and the
--- Documentation.Site version bump recorded.
+-- Both assets registered and active with zone docs and scope SHARED.
 -- ============================================================================
 
 SELECT registry_id, object_name, object_category, object_type,
@@ -143,8 +105,3 @@ SELECT registry_id, object_name, object_category, object_type,
 FROM dbo.Object_Registry
 WHERE object_name IN ('docs-meta.css', 'docs-meta.js')
 ORDER BY object_name;
-
-SELECT TOP 3 metadata_id, version, description, deployed_date, deployed_by
-FROM dbo.System_Metadata
-WHERE component_name = 'Documentation.Site'
-ORDER BY metadata_id DESC;
