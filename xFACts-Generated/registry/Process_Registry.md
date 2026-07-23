@@ -1,6 +1,6 @@
 # Process Registry
 Source: Orchestrator.ProcessRegistry
-Generated: 2026-07-22 19:01:32
+Generated: 2026-07-23 04:17:25
 
 | module_name | process_name | description | script_path | procedure_name | execution_mode | dependency_group | interval_seconds | scheduled_time | timeout_seconds | run_mode | allow_concurrent | cc_engine_slug | cc_engine_label | cc_page_route | cc_sort_order |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
