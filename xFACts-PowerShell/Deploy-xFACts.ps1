@@ -92,6 +92,11 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-07-23  Deploy authored docs JSON. The xFACts-Documentation/docs deploy-map
+#             entry now filters *.json alongside *.md, so authored JSON under docs
+#             (backlog.json) deploys GitHub -> live; previously .json fell through
+#             to the UNMAPPED bucket and was never copied. Non-recursive top-level
+#             scope is unchanged, and .json stays out of the Object_Registry audit.
 # 2026-07-22  Robust git resolution. git is resolved once at startup - PATH first,
 #             then the standard Git for Windows install locations ($GitProbePaths) -
 #             and every git call runs through the resolved executable
@@ -231,7 +236,7 @@ $AuthoredDeployMap = @(
     @{
         RepoPath = "xFACts-Documentation/docs"
         LivePath = "$DocsRoot\docs"
-        Filter   = @("*.md")
+        Filter   = @("*.md", "*.json")
         Recurse  = $false
     }
     @{
