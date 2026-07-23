@@ -375,18 +375,18 @@ Permanent audit log of all Jira API interactions including successful ticket cre
 | Column | Type | Nullable | Default | Description |
 | --- | --- | --- | --- | --- |
 | LogID (IDENTITY) | int | No | IDENTITY | Unique identifier for this log entry |
-| SourceModule | varchar(50) | Yes | — | Module that originated the request (e.g., JobFlow, NoticeRecon) |
-| ServiceName | varchar(50) | Yes | — | Service name (typically 'Jira') |
-| RequestType | varchar(50) | Yes | — | Type of request: CreateTicket, QueueInsertFailed, etc |
-| ProjectKey | varchar(20) | Yes | — | Jira project key (e.g., SD) |
+| SourceModule | varchar(50) | Yes | — | Module that originated the request. |
+| ServiceName | varchar(50) | Yes | — | Service name; always 'Jira' for this module. |
+| RequestType | varchar(50) | Yes | — | Request category. Mirrors the caller-supplied trigger type on a logged API interaction, or QueueInsertFailed when the queue insert fails. |
+| ProjectKey | varchar(20) | Yes | — | Jira project key. |
 | Summary | nvarchar(1000) | Yes | — | Ticket summary/title |
-| TicketKey | varchar(50) | Yes | — | Created ticket key (e.g., SD-12345). NULL if failed. 'Email' if fallback used |
+| TicketKey | varchar(50) | Yes | — | Jira ticket key returned when the ticket is created; NULL when no ticket was created. |
 | StatusCode | int | Yes | — | HTTP status code: 201=success, 400/401/500=errors, -99=queue failure |
 | ResponseMessage | nvarchar(MAX) | Yes | — | Full API response or error message |
 | CreatedDate | datetime | Yes | getdate() | When this log entry was created |
 | CreatedBy | varchar(100) | Yes | — | Process or user that created this log entry |
-| Trigger_Type | varchar(50) | Yes | — | Category for deduplication lookup (e.g., JobFlow_Stall, DM_Template) |
-| Trigger_Value | varchar(200) | Yes | — | Specific identifier (e.g., 2025-12-19, BNEW001) |
+| Trigger_Type | varchar(50) | Yes | — | Category used for deduplication lookups; typically a <Module>_<Condition> pattern. |
+| Trigger_Value | varchar(200) | Yes | — | Specific instance value that pairs with the trigger category to form the deduplication key. |
 | Jira_Assignee | varchar(100) | Yes | — | Assigned user if specified |
 
   - **PK_Jira_RequestLog** (CLUSTERED): LogID -- PRIMARY KEY
@@ -405,8 +405,7 @@ Permanent audit log of all Jira API interactions including successful ticket cre
 | StatusCode | 404 | Not Found — verify ProjectKey and IssueType exist in Jira | 14 |
 | StatusCode | 500+ | Server Error — Jira-side issue, retry later | 15 |
 | StatusCode | -99 | Queue insert failed — check sp_QueueTicket error in ResponseMessage | 16 |
-| TicketKey | SD-12345 (example) | Ticket created successfully in Jira — value is the actual Jira ticket key | 20 |
-| TicketKey | Email | Fallback email sent instead of ticket — max retries exhausted | 21 |
+| TicketKey | Actual Jira ticket key | Ticket created successfully in Jira; the column holds the returned Jira ticket key. | 20 |
 | TicketKey | NULL | API call failed — no ticket or email created | 22 |
 
 **Recent activity** [sort:1] -- Last 20 API interactions showing source module, ticket key, status code, and timestamp.
@@ -478,13 +477,13 @@ END
 
 Queue table for pending ticket requests awaiting PowerShell processing. Records remain after processing for audit and troubleshooting.
 
-**Data Flow:** Tickets enter via Jira.sp_QueueTicket (from T-SQL callers) or direct INSERT. TR_Jira_TicketQueue_QueueDepth fires on INSERT, incrementing running_count in Orchestrator.ProcessRegistry to signal the orchestrator. Process-JiraTicketQueue.ps1 claims Pending rows (TicketStatus = 'Pending' AND RetryCount < MaxRetries), retrieves Jira credentials from dbo.Credentials via two-tier passphrase decryption (master passphrase from GlobalConfig), creates tickets via Jira REST API, and updates TicketStatus to Success or Failed with the returned TicketKey. On success the script performs a GET to retrieve the assigned user. Each API interaction is logged to Jira.RequestLog. When max retries are exhausted and EmailRecipients is populated, the script sends a fallback email via Database Mail and sets TicketStatus to EmailSent.
+**Data Flow:** Tickets enter via Jira.sp_QueueTicket or by direct INSERT. TR_Jira_TicketQueue_QueueDepth fires on INSERT, incrementing running_count in Orchestrator.ProcessRegistry to signal the orchestrator. Process-JiraTicketQueue.ps1 claims Pending rows (TicketStatus = 'Pending' AND RetryCount < MaxRetries), retrieves Jira credentials from dbo.Credentials via two-tier passphrase decryption (master passphrase from GlobalConfig), creates tickets via Jira REST API, and updates TicketStatus to Success or Failed with the returned TicketKey. On success the script performs a GET to retrieve the assigned user. Each API interaction is logged to Jira.RequestLog. When max retries are exhausted and EmailRecipients is populated, the script sends a fallback email via Database Mail and sets TicketStatus to EmailSent.
 
 **Queue-Based Decoupling:** [sort:1] Same pattern as Teams: calling modules insert and continue without waiting for Jira API responses. Ticket creation latency does not affect the calling process execution time.
 
 **Email Fallback:** [sort:2] When Jira API calls fail after all retry attempts, the script sends a fallback email via Database Mail containing the ticket details for manual creation. Requires EmailRecipients to be populated on the queue row. TicketStatus is set to EmailSent as a terminal status.
 
-**Generic Custom Field Support:** [sort:3] Up to three arbitrary Jira custom fields plus one cascading select field can be specified per ticket. Field IDs (e.g., customfield_18401) and values are stored in the queue and mapped into the Jira API payload at creation time. This avoids hardcoding Jira field schemas into the table structure.
+**Generic Custom Field Support:** [sort:3] Up to three arbitrary Jira custom fields plus one cascading select field can be specified per ticket. Field IDs and values are stored in the queue and mapped into the Jira API payload at creation time. This avoids hardcoding Jira field schemas into the table structure.
 
 **Assignee Retrieval:** [sort:4] After successful ticket creation, the script performs a separate GET request to retrieve the assignee display name from Jira. This captures the actual assignee (which may differ from the requested assignee due to Jira automation rules) and logs it to RequestLog.
 
@@ -495,14 +494,14 @@ Queue table for pending ticket requests awaiting PowerShell processing. Records 
 | Column | Type | Nullable | Default | Description |
 | --- | --- | --- | --- | --- |
 | QueueID (IDENTITY) | int | No | IDENTITY | Unique identifier for this queue entry |
-| SourceModule | varchar(50) | No | — | Module that queued the ticket (e.g., JobFlow, NoticeRecon) |
-| ProjectKey | varchar(20) | No | — | Jira project key (e.g., SD, DEV) |
+| SourceModule | varchar(50) | No | — | Module that queued the ticket. |
+| ProjectKey | varchar(20) | No | — | Jira project key. |
 | Summary | nvarchar(1000) | No | — | Ticket title/summary |
 | TicketDescription | nvarchar(MAX) | No | — | Full ticket description body |
-| IssueType | varchar(50) | Yes | 'Task' | Jira issue type: Task, Issue, Bug, etc |
+| IssueType | varchar(50) | Yes | 'Task' | Jira issue type. |
 | TicketPriority | varchar(20) | Yes | 'High' | Priority: Highest, High, Medium, Low, Lowest |
 | Assignee | varchar(100) | Yes | — | Jira username to assign ticket to |
-| CascadingField_ID | varchar(50) | Yes | — | Field ID for cascading select (e.g., customfield_18401) |
+| CascadingField_ID | varchar(50) | Yes | — | Field ID for the cascading select. |
 | CascadingField_ParentValue | varchar(500) | Yes | — | Parent value for cascading select |
 | CascadingField_ChildValue | varchar(500) | Yes | — | Child value for cascading select |
 | CustomField_ID | varchar(50) | Yes | — | First generic custom field ID |
@@ -512,15 +511,15 @@ Queue table for pending ticket requests awaiting PowerShell processing. Records 
 | CustomField3_ID | varchar(50) | Yes | — | Third generic custom field ID |
 | CustomField3_Value | varchar(500) | Yes | — | Third generic custom field value |
 | DueDate | date | Yes | — | Ticket due date |
-| TriggerType | varchar(50) | Yes | — | Category for deduplication (e.g., JobFlow_Stall, DM_Template) |
-| TriggerValue | varchar(200) | Yes | — | Specific value for deduplication (e.g., date, template code) |
+| TriggerType | varchar(50) | Yes | — | Category used for deduplication; typically a <Module>_<Condition> pattern. |
+| TriggerValue | varchar(200) | Yes | — | Specific instance value that pairs with the trigger category to form the deduplication key. |
 | EmailRecipients | varchar(4000) | Yes | — | Semicolon-separated email addresses for fallback if API fails |
 | RequestedDate | datetime | Yes | getdate() | When ticket was queued |
 | ProcessedDate | datetime | Yes | — | When PowerShell processed this entry |
-| TicketKey | varchar(50) | Yes | — | Jira ticket key if created (e.g., SD-12345) |
-| StatusCode | int | Yes | — | HTTP status code from Jira API (201 = success) |
+| TicketKey | varchar(50) | Yes | — | Jira ticket key assigned when the ticket is created. |
+| StatusCode | int | Yes | — | HTTP status code returned by the Jira API. |
 | ResponseMessage | nvarchar(MAX) | Yes | — | API response or error message |
-| TicketStatus | varchar(20) | Yes | 'Pending' | Current status: Pending, Success, Failed |
+| TicketStatus | varchar(20) | Yes | 'Pending' | Current status: Pending, Success, Failed, EmailSent. |
 | RetryCount | int | Yes | 0 | Number of retry attempts |
 | LastRetryDate | datetime | Yes | — | When last retry was attempted |
 
@@ -533,11 +532,11 @@ Queue table for pending ticket requests awaiting PowerShell processing. Records 
 
 | Column | Value | Meaning | Sort |
 | --- | --- | --- | --- |
-| TicketStatus | Pending | Waiting for processor pickup. Set on INSERT as the default value. | 1 |
+| TicketStatus | Pending | Waiting for processor pickup. Set on INSERT as the default value, and a retryable failure returns the row to this status for the next processor cycle. | 1 |
 | TicketPriority | Highest | Most urgent tickets requiring immediate attention. | 1 |
 | TicketPriority | High | Default priority set by sp_QueueTicket. Used for most automated ticket creation. | 2 |
-| TicketStatus | Success | Jira ticket created successfully. TicketKey populated with the Jira issue key (e.g., SD-12345). | 2 |
-| TicketStatus | Failed | Jira API call failed. RetryCount incremented, ResponseMessage contains error details. Failed rows are not automatically re-picked up since the pending query filters on TicketStatus = 'Pending'. | 3 |
+| TicketStatus | Success | Jira ticket created successfully; TicketKey is populated with the returned Jira issue key. | 2 |
+| TicketStatus | Failed | Jira API call failed and all retry attempts have been exhausted with no fallback email sent (EmailRecipients not populated). RetryCount has reached MaxRetries and ResponseMessage holds the last error. Terminal status. | 3 |
 | TicketPriority | Medium | Standard priority. | 3 |
 | TicketPriority | Low | Lower priority items. | 4 |
 | TicketStatus | EmailSent | Max retries exhausted and fallback email sent via Database Mail. Terminal status indicating the ticket must be created manually from the email. | 4 |
@@ -604,7 +603,7 @@ ORDER BY ProcessedDate DESC;
 
 Queue procedure that inserts Jira ticket requests into TicketQueue for asynchronous processing by the PowerShell processor.
 
-**Data Flow:** Called by T-SQL modules to queue Jira ticket requests. Inserts one row into Jira.TicketQueue with Pending status. The INSERT triggers TR_Jira_TicketQueue_QueueDepth which signals the orchestrator to launch the processor. On INSERT failure, catches the error and logs directly to Jira.RequestLog with StatusCode = -99 and RequestType = 'QueueInsertFailed'.
+**Data Flow:** Open entry point that any process with EXECUTE permission can call to queue a Jira ticket request, including external, non-xFACts callers. Inserts one row into Jira.TicketQueue with Pending status. The INSERT fires TR_Jira_TicketQueue_QueueDepth, which signals the orchestrator to launch the processor. On INSERT failure, catches the error and logs directly to Jira.RequestLog with StatusCode = -99 and RequestType = 'QueueInsertFailed'.
 
 **Error-Resilient Queuing:** [sort:1] Wraps the queue INSERT in TRY/CATCH. On failure, logs the error to Jira.RequestLog so there is always a trace of the attempt even when the queue INSERT itself fails. The CATCH block has its own nested TRY/CATCH to handle the unlikely case where the RequestLog INSERT also fails.
 
@@ -635,7 +634,7 @@ Queue procedure that inserts Jira ticket requests into TicketQueue for asynchron
 | @TriggerType | varchar(50) | IN |  |  |
 | @TriggerValue | varchar(200) | IN |  |  |
 
-  - **Jira.TicketQueue**: [sort:1] Primary INSERT target. This is the main T-SQL entry point for queuing Jira tickets.
+  - **Jira.TicketQueue**: [sort:1] Primary INSERT target. This is the main entry point for queuing Jira ticket requests, open to any process with EXECUTE permission, including external, non-xFACts callers.
   - **Jira.RequestLog**: [sort:2] Fallback write target on INSERT failure. Logs queue failures directly with StatusCode = -99 so failed attempts are always visible.
 
 
@@ -667,6 +666,6 @@ Queue processor that creates Jira tickets via REST API. Claims Pending tickets f
   - **Jira.TicketQueue**: [sort:1] Primary data source. Reads Pending rows, updates TicketStatus, TicketKey, StatusCode, ResponseMessage, RetryCount, ProcessedDate, and LastRetryDate after each API interaction.
   - **Jira.RequestLog**: [sort:2] Write target. Inserts one row per API interaction (success or failure) for complete audit trail.
   - **dbo.Credentials**: [sort:3] Reads encrypted Jira API credentials (URL, username, password) using two-tier passphrase decryption.
-  - **dbo.GlobalConfig**: [sort:4] Reads master passphrase for credential decryption. Also used for retry configuration.
+  - **dbo.GlobalConfig**: [sort:4] Reads the master passphrase used for credential decryption.
 
 
