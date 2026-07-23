@@ -32,6 +32,24 @@ BDL Import Guide
 Walk through the 5-step import wizard: environment selection, file upload, entity selection, column mapping and validation, and execution with Promote to Production.
 Available
 
+
+
+
+
+
+
+
+
+Platform
+
+Platform-wide views that cut across the modules rather than belonging to any one of them.
+
+
+
+Backlog
+Open work items across the platform, grouped by component and priority-ordered within each group. Filter by component, priority, type, or initiative, search the summary and description text, and expand any item for its full detail.
+Available
+
 ---
 
 # BDL Import — User Guide
