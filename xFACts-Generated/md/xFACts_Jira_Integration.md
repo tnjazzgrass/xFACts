@@ -634,6 +634,39 @@ Queue procedure that inserts Jira ticket requests into TicketQueue for asynchron
 | @TriggerType | varchar(50) | IN |  |  |
 | @TriggerValue | varchar(200) | IN |  |  |
 
+**Basic ticket** [sort:1] -- Minimal required parameters
+
+```sql
+EXEC Jira.sp_QueueTicket
+    @SourceModule = '<source module>',
+    @ProjectKey   = '<project key>',
+    @Summary      = '<ticket summary>',
+    @Description  = '<ticket description>';
+```
+
+**Full example with custom fields** [sort:2] -- All parameters including cascading select and custom fields
+
+```sql
+EXEC Jira.sp_QueueTicket
+    @SourceModule              = 'BatchOps',
+    @ProjectKey                = 'SD',
+    @Summary                   = 'New Business Batch Upload Failed: ABC123',
+    @Description               = @ticket_description,
+    @IssueType                 = 'Issue',
+    @Priority                  = 'Highest',
+    @EmailRecipients           = 'ops-team@example.com',
+    @CascadingField_ID         = 'customfield_18401',
+    @CascadingField_ParentValue = 'File Processing',
+    @CascadingField_ChildValue = 'Upload Failure',
+    @CustomField_ID            = 'customfield_10305',
+    @CustomField_Value         = 'FAC INFORMATION TECHNOLOGY',
+    @CustomField2_ID           = 'customfield_10009',
+    @CustomField2_Value        = 'sd/1b77b626-3ad4-4bee-8727-abc18b68c5fa',
+    @DueDate                   = @DueDate,
+    @TriggerType               = 'NB_UploadFailed',
+    @TriggerValue              = '45678';
+```
+
   - **Jira.TicketQueue**: [sort:1] Primary INSERT target. This is the main entry point for queuing Jira ticket requests, open to any process with EXECUTE permission, including external, non-xFACts callers.
   - **Jira.RequestLog**: [sort:2] Fallback write target on INSERT failure. Logs queue failures directly with StatusCode = -99 so failed attempts are always visible.
 
@@ -643,6 +676,30 @@ Queue procedure that inserts Jira ticket requests into TicketQueue for asynchron
 INSERT trigger on Jira.TicketQueue that signals the Orchestrator v2 engine when tickets are ready for processing. Enables queue-driven execution of Process-JiraTicketQueue.
 
 **Queue-Driven Orchestrator Signal:** [sort:1] INSERT trigger that increments running_count in Orchestrator.ProcessRegistry for Process-JiraTicketQueue. Only updates rows where run_mode = 2 (queue-driven), enabling the orchestrator to launch the processor on-demand rather than on a fixed polling schedule. Counts the number of inserted rows to accurately track queue depth across multi-row inserts.
+
+**Verify trigger is enabled** [sort:1] -- Check if the trigger is active
+
+```sql
+SELECT name, is_disabled
+FROM sys.triggers
+WHERE name = 'TR_Jira_TicketQueue_QueueDepth';
+```
+
+**Verify ProcessRegistry entry** [sort:2] -- Confirm the orchestrator entry exists and check run mode
+
+```sql
+SELECT process_name, run_mode, running_count
+FROM Orchestrator.ProcessRegistry
+WHERE process_name = 'Process-JiraTicketQueue';
+```
+
+**Re-sync running_count** [sort:3] -- After re-enabling a disabled trigger, manually set running_count for any pending items
+
+```sql
+UPDATE Orchestrator.ProcessRegistry
+SET running_count = (SELECT COUNT(*) FROM Jira.TicketQueue WHERE TicketStatus = 'Pending')
+WHERE process_name = 'Process-JiraTicketQueue';
+```
 
   - **Orchestrator.ProcessRegistry**: [sort:1] Directly updates ProcessRegistry.running_count to signal queue depth. The orchestrator engine checks running_count on each heartbeat and launches the processor when count > 0.
 
