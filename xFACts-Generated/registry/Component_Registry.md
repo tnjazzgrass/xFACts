@@ -1,6 +1,6 @@
 # Component Registry
 Source: dbo.Component_Registry
-Generated: 2026-07-23 12:55:40
+Generated: 2026-07-23 12:57:33
 
 | module_name | component_name | description | cc_prefix | doc_page_id | doc_title | doc_json_schema | doc_json_categories | doc_cc_slug | doc_sort_order | doc_section_order |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
