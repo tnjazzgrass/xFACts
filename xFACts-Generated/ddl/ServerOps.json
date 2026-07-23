@@ -5468,10 +5468,10 @@
                    },
                    {
                        "name":  "DBCC_ExecutionLog",
-                       "description":  "Execution history for DBCC integrity operations. One row per database per operation per execution. The script processes databases sequentially, so a single script invocation produces multiple rows grouped by run_id. Supports CHECKDB, CHECKALLOC, CHECKCATALOG, CHECKCONSTRAINTS, CHECKTABLE, and CHECKFILEGROUP.",
+                       "description":  "Execution history for DBCC integrity operations. One row per database per operation per execution; a single script invocation processes databases sequentially and produces multiple rows grouped by run_id.",
                        "module":  "ServerOps",
                        "category":  "DBCC",
-                       "dataFlow":  "Execute-DBCC.ps1 inserts a PENDING row at claim time, transitions to IN_PROGRESS with the resolved physical server at execution start, and updates with final status, duration, error details, and DBCC output metrics on completion. One row per database per operation per run, grouped by run_id. CHECKDB and CHECKALLOC populate allocation_errors, consistency_errors, repaired_errors, dbcc_elapsed_seconds, LSN values, and buffer pool scan metrics from the DBCC summary output. CHECKCONSTRAINTS stores an aggregated violation summary in error_details. The Control Center DBCC Operations page reads this table for live progress, execution history, and duration trending. Teams alerts and Jira tickets are queued by the script on non-SUCCESS results.",
+                       "dataFlow":  "Execute-DBCC.ps1 inserts a PENDING row at claim time, transitions to IN_PROGRESS with the resolved physical server at execution start, and updates with final status, duration, error details, and DBCC output metrics on completion. One row per database per operation per run, grouped by run_id. CHECKDB and CHECKALLOC populate allocation_errors, consistency_errors, repaired_errors, dbcc_elapsed_seconds, LSN values, and buffer pool scan metrics from the DBCC summary output. CHECKCONSTRAINTS stores an aggregated violation summary in error_details. The Control Center DBCC Operations page reads this table for live progress, execution history, and duration trending. A Teams alert is queued on any non-SUCCESS result; a Jira ticket is queued on CHECKDB corruption (ERRORS_FOUND).",
                        "columns":  [
                                        {
                                            "ordinal":  1,
@@ -5487,7 +5487,7 @@
                                            "dataType":  "int",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "Groups all databases from one script invocation. Generated as MAX(run_id) + 1 at script start."
+                                           "description":  "Groups all rows produced by one script invocation."
                                        },
                                        {
                                            "ordinal":  3,
@@ -5504,7 +5504,7 @@
                                            "length":  "128",
                                            "nullable":  false,
                                            "identity":  false,
-                                           "description":  "Denormalized from ServerRegistry. Matches the server_name of the enabled entry (e.g., AVG-PROD-LSNR for AG databases)."
+                                           "description":  "Denormalized from ServerRegistry; the server_name of the entry that triggered the run (the listener for AG databases)."
                                        },
                                        {
                                            "ordinal":  5,
@@ -5513,7 +5513,7 @@
                                            "length":  "128",
                                            "nullable":  false,
                                            "identity":  false,
-                                           "description":  "Physical server where DBCC actually ran. For AG databases, this is the dynamically resolved secondary replica. For non-AG servers, matches server_name."
+                                           "description":  "Physical server where DBCC actually ran. For AG databases, the resolved replica; for non-AG servers, matches server_name."
                                        },
                                        {
                                            "ordinal":  6,
@@ -5531,7 +5531,7 @@
                                            "length":  "30",
                                            "nullable":  false,
                                            "identity":  false,
-                                           "description":  "Which DBCC command was executed: CHECKDB, CHECKALLOC, CHECKCATALOG, CHECKCONSTRAINTS, CHECKTABLE, or CHECKFILEGROUP."
+                                           "description":  "Which DBCC command was executed."
                                        },
                                        {
                                            "ordinal":  8,
@@ -5540,7 +5540,7 @@
                                            "length":  "20",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "DBCC check mode for operations that support it: PHYSICAL_ONLY or FULL. NULL for operations without modes (CHECKALLOC, CHECKCATALOG, CHECKCONSTRAINTS). Only meaningful for CHECKDB and CHECKTABLE."
+                                           "description":  "DBCC check mode used by CHECKDB; NULL for operations that have no check mode."
                                        },
                                        {
                                            "ordinal":  9,
@@ -5549,7 +5549,7 @@
                                            "length":  "256",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "Schema-qualified object name for scoped operations. Populated with the table name for CHECKTABLE and filegroup name for CHECKFILEGROUP. NULL for database-level operations (CHECKDB, CHECKALLOC, CHECKCATALOG, CHECKCONSTRAINTS)."
+                                           "description":  "Reserved for object-scoped operations; unused today - no current operation populates it, so it is NULL on every row."
                                        },
                                        {
                                            "ordinal":  10,
@@ -5557,7 +5557,7 @@
                                            "dataType":  "int",
                                            "nullable":  false,
                                            "identity":  false,
-                                           "description":  "MAXDOP value used for this execution. Captured per-row for historical accuracy."
+                                           "description":  "MAXDOP value used for this execution."
                                        },
                                        {
                                            "ordinal":  11,
@@ -5565,7 +5565,7 @@
                                            "dataType":  "bit",
                                            "nullable":  false,
                                            "identity":  false,
-                                           "description":  "Whether EXTENDED_LOGICAL_CHECKS was enabled for this execution. Only meaningful when check_type is FULL."
+                                           "description":  "Whether EXTENDED_LOGICAL_CHECKS was enabled for this execution. Only meaningful when check_mode is FULL."
                                        },
                                        {
                                            "ordinal":  12,
@@ -5573,7 +5573,7 @@
                                            "dataType":  "datetime",
                                            "nullable":  false,
                                            "identity":  false,
-                                           "description":  "When this operation was claimed by the batch claim step. Set at claim time when the row is inserted as PENDING. The difference between queued_dttm and started_dttm represents time spent waiting in queue behind other operations."
+                                           "description":  "When the operation was claimed and inserted as PENDING; its gap from started_dttm is time spent waiting in queue."
                                        },
                                        {
                                            "ordinal":  13,
@@ -5581,7 +5581,7 @@
                                            "dataType":  "datetime",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "When the DBCC operation actually began executing. NULL while status is PENDING (claimed but waiting in queue). Set when the operation transitions to IN_PROGRESS. Duration is measured from this timestamp, not from queued_dttm."
+                                           "description":  "When the DBCC operation began executing; NULL while PENDING. Duration is measured from this timestamp, not queued_dttm."
                                        },
                                        {
                                            "ordinal":  14,
@@ -5589,7 +5589,7 @@
                                            "dataType":  "datetime",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "When DBCC CHECKDB completed. NULL while still running."
+                                           "description":  "When the DBCC operation completed. NULL while still running."
                                        },
                                        {
                                            "ordinal":  15,
@@ -5597,7 +5597,7 @@
                                            "dataType":  "int",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "Total elapsed seconds. Measured at the PowerShell level around the DBCC command invocation."
+                                           "description":  "Total elapsed seconds, measured around the DBCC command invocation."
                                        },
                                        {
                                            "ordinal":  16,
@@ -5605,7 +5605,7 @@
                                            "dataType":  "int",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "Elapsed time as reported by DBCC itself in its summary output. Independent of the PowerShell-level duration_seconds which includes connection setup and overhead. Useful for comparing DBCC internal performance across runs without external timing variance. NULL for operations that do not report elapsed time."
+                                           "description":  "DBCC\u0027s own reported elapsed time, distinct from duration_seconds; NULL when the operation does not report it."
                                        },
                                        {
                                            "ordinal":  17,
@@ -5614,7 +5614,7 @@
                                            "length":  "2000",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "Raw DBCC summary text captured from the SQL Server error log after execution completes. Contains the full informational message including error counts, elapsed time, LSN values, and buffer pool scan metrics. Preserved as a permanent record since error logs cycle nightly. The parsed metric columns (allocation_errors, dbcc_elapsed_seconds, etc.) are derived from this text. NULL for operations that do not produce error log summary entries or when the error log query fails."
+                                           "description":  "Raw DBCC summary text captured from the SQL Server error log; the source the parsed metric columns are derived from. NULL when the operation produces no error-log summary or the error-log query fails."
                                        },
                                        {
                                            "ordinal":  18,
@@ -5624,7 +5624,7 @@
                                            "nullable":  false,
                                            "identity":  false,
                                            "default":  "(\u0027PENDING\u0027)",
-                                           "description":  "Execution result. IN_PROGRESS while running, SUCCESS for clean check, FAILED for script/connection errors, ERRORS_FOUND when DBCC reports corruption."
+                                           "description":  "Execution result."
                                        },
                                        {
                                            "ordinal":  19,
@@ -5632,7 +5632,7 @@
                                            "dataType":  "int",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "Number of allocation errors reported by DBCC. Parsed separately from the DBCC summary output line. NULL for operations that do not report allocation errors (CHECKCATALOG, CHECKCONSTRAINTS). Combined with consistency_errors to produce error_count."
+                                           "description":  "Number of allocation errors reported by DBCC; NULL when the operation does not report allocation errors."
                                        },
                                        {
                                            "ordinal":  20,
@@ -5640,7 +5640,7 @@
                                            "dataType":  "int",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "Number of consistency errors reported by DBCC. Parsed separately from the DBCC summary output line. NULL for operations that do not report consistency errors (CHECKCATALOG, CHECKCONSTRAINTS). Combined with allocation_errors to produce error_count."
+                                           "description":  "Number of consistency errors reported by DBCC; NULL when the operation does not report consistency errors."
                                        },
                                        {
                                            "ordinal":  21,
@@ -5648,7 +5648,7 @@
                                            "dataType":  "int",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "Number of errors repaired by DBCC during execution. Parsed from the \"repaired N errors\" output. Typically 0 — DBCC does not repair unless explicitly run with REPAIR options. NULL for operations that do not report repair counts."
+                                           "description":  "Number of errors DBCC repaired during execution; typically 0, NULL when the operation does not report a repair count."
                                        },
                                        {
                                            "ordinal":  22,
@@ -5656,7 +5656,7 @@
                                            "dataType":  "int",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "Number of errors reported by DBCC. Sum of allocation_errors and consistency_errors parsed from the DBCC output summary line. 0 for SUCCESS, 0 for FAILED (script-level errors do not produce DBCC error counts). Pre-calculated for convenience — avoids query math when you just need a total."
+                                           "description":  "Number of errors reported by DBCC - the sum of allocation_errors and consistency_errors. 0 for SUCCESS, and 0 for FAILED (script-level errors produce no DBCC error count)."
                                        },
                                        {
                                            "ordinal":  23,
@@ -5674,7 +5674,7 @@
                                            "length":  "50",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "Internal database snapshot split point LSN used by DBCC during execution. Parsed from the DBCC summary output. Useful for correlating DBCC operations with backup and replication LSN chains. NULL for operations that do not create internal snapshots."
+                                           "description":  "Internal database snapshot split-point LSN used by DBCC; NULL when the operation creates no internal snapshot."
                                        },
                                        {
                                            "ordinal":  25,
@@ -5683,7 +5683,7 @@
                                            "length":  "50",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "First LSN of the internal database snapshot used by DBCC. Parsed from the DBCC summary output alongside split_point_lsn. NULL for operations that do not create internal snapshots."
+                                           "description":  "First LSN of the internal database snapshot DBCC used; NULL when the operation creates no internal snapshot."
                                        },
                                        {
                                            "ordinal":  26,
@@ -5691,7 +5691,7 @@
                                            "dataType":  "int",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "Duration in seconds of the buffer pool scan performed at the start of DBCC execution. Parsed from the \"Buffer Pool scan took N seconds\" output. A long buffer pool scan indicates memory pressure or a very large buffer pool. NULL for operations that do not perform buffer pool scans."
+                                           "description":  "Duration in seconds of the buffer pool scan at the start of DBCC execution; NULL when the operation performs no buffer pool scan."
                                        },
                                        {
                                            "ordinal":  27,
@@ -5699,7 +5699,7 @@
                                            "dataType":  "bigint",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "Number of database pages (buffers) scanned by DBCC during the buffer pool scan phase. Parsed from \"scanned buffers N\" in the DBCC output. Useful for trending database growth — if this count increases significantly between runs, the database is growing and future CHECKDB durations will increase. NULL for operations that do not report page counts."
+                                           "description":  "Number of database pages (buffers) DBCC scanned during the buffer pool scan phase; NULL when the operation reports no page count."
                                        },
                                        {
                                            "ordinal":  28,
@@ -5707,7 +5707,7 @@
                                            "dataType":  "bigint",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "Total number of buffers iterated during the buffer pool scan phase. Parsed from \"total iterated buffers N\" in the DBCC output. Typically larger than pages_scanned as it includes pages examined but not belonging to the target database. NULL for operations that do not report page counts."
+                                           "description":  "Total buffers iterated during the buffer pool scan phase; NULL when the operation reports no page count."
                                        },
                                        {
                                            "ordinal":  29,
@@ -5717,7 +5717,7 @@
                                            "nullable":  false,
                                            "identity":  false,
                                            "default":  "(suser_sname())",
-                                           "description":  "Windows account that ran the script. Defaults to SUSER_SNAME() — typically the orchestrator service account."
+                                           "description":  "Windows account that ran the script; defaults to SUSER_SNAME()."
                                        }
                                    ],
                        "indexes":  [
@@ -5782,12 +5782,12 @@
                        "designNotes":  [
                                            {
                                                "topic":  "Self-Documenting Options",
-                                               "note":  "operation, check_mode, max_dop, and extended_logical_checks are stored on every row even though they come from GlobalConfig. If GlobalConfig settings change between runs, the log still shows exactly what options were used for each execution. This eliminates the need to cross-reference GlobalConfig history.",
+                                               "note":  "operation, check_mode, max_dop, and extended_logical_checks are captured on every row. operation and check_mode come from the per-database schedule (DBCC_ScheduleConfig); max_dop and extended_logical_checks come from GlobalConfig. Capturing them per row records exactly what options each execution used, even if the configuration changes between runs.",
                                                "sortOrder":  1
                                            },
                                            {
                                                "topic":  "AG Listener vs Physical Server",
-                                               "note":  "server_name and server_id capture the ServerRegistry entry that triggered the run (e.g., AVG-PROD-LSNR for AG databases). executed_on_server captures the physical server where DBCC actually ran (e.g., DM-PROD-REP as the resolved secondary). For non-AG servers both values are identical. This distinction matters for I/O contention analysis and troubleshooting.",
+                                               "note":  "server_name and server_id capture the ServerRegistry entry that triggered the run - the AG listener for AG databases. executed_on_server captures the physical server where DBCC actually ran - the resolved replica for AG databases. For non-AG servers both values are identical. The distinction matters for I/O contention analysis and troubleshooting.",
                                                "sortOrder":  2
                                            },
                                            {
@@ -5797,7 +5797,7 @@
                                            },
                                            {
                                                "topic":  "DBCC Output Metric Capture",
-                                               "note":  "Every metric that DBCC reports in its summary output is captured per-row for historical trending and diagnostic analysis. CHECKDB and CHECKALLOC populate all metric columns; CHECKCATALOG and CHECKCONSTRAINTS leave them NULL since those operations produce different output formats. The metric columns are nullable specifically to accommodate this — NULL means the metric does not apply to that operation type, not that it was missed. The NO_INFOMSGS option remains enabled to suppress per-object informational messages (thousands of lines on large databases) while still capturing the summary output that contains all valuable metrics.",
+                                               "note":  "DBCC summary-output metrics are captured per row for historical trending. CHECKDB and CHECKALLOC populate the metric columns; CHECKCATALOG and CHECKCONSTRAINTS leave them NULL, since those operations produce different output. NULL means the metric does not apply to that operation type, not that it was missed. NO_INFOMSGS stays enabled to suppress per-object informational messages while still capturing the summary line the metrics are parsed from.",
                                                "sortOrder":  4
                                            }
                                        ],
@@ -5835,7 +5835,7 @@
                                             {
                                                 "column":  "status",
                                                 "value":  "SUCCESS",
-                                                "meaning":  "DBCC CHECKDB completed with zero allocation errors and zero consistency errors. Database integrity verified.",
+                                                "meaning":  "The DBCC operation completed with no errors reported. Integrity verified for the checked scope.",
                                                 "sortOrder":  2
                                             },
                                             {
@@ -5865,20 +5865,8 @@
                                             {
                                                 "column":  "status",
                                                 "value":  "ERRORS_FOUND",
-                                                "meaning":  "DBCC CHECKDB completed but reported allocation and/or consistency errors — corruption detected. error_count has the total, error_details has the full DBCC output. Teams alert and Jira ticket are sent.",
+                                                "meaning":  "The DBCC operation completed but reported problems - corruption for the integrity checks, or constraint violations for CHECKCONSTRAINTS. error_count has the total and error_details has the full output. A Teams alert is sent; CHECKDB corruption also queues a Jira ticket.",
                                                 "sortOrder":  4
-                                            },
-                                            {
-                                                "column":  "operation",
-                                                "value":  "CHECKTABLE",
-                                                "meaning":  "Single-table integrity check. On-demand only via Control Center modal. Not scheduled.",
-                                                "sortOrder":  5
-                                            },
-                                            {
-                                                "column":  "operation",
-                                                "value":  "CHECKFILEGROUP",
-                                                "meaning":  "Filegroup-scoped integrity check. Future use — reserved in constraints but no execution logic implemented.",
-                                                "sortOrder":  6
                                             }
                                         ],
                        "queries":  [
@@ -5896,8 +5884,8 @@
                                        },
                                        {
                                            "name":  "CHECKDB duration trending",
-                                           "description":  "Shows CHECKDB execution durations over time for a specific database. Useful for detecting drift in crs5_oltp execution times.",
-                                           "sql":  "SELECT\r\n    started_dttm, duration_seconds,\r\n    duration_seconds / 3600 AS duration_hours,\r\n    check_mode, executed_on_server, status\r\nFROM ServerOps.DBCC_ExecutionLog\r\nWHERE operation = \u0027CHECKDB\u0027\r\n  AND database_name = \u0027crs5_oltp\u0027\r\nORDER BY started_dttm DESC;",
+                                           "description":  "Shows CHECKDB execution durations over time for a specific database. Useful for detecting drift in execution times.",
+                                           "sql":  "SELECT\r\n    started_dttm, duration_seconds,\r\n    duration_seconds / 3600 AS duration_hours,\r\n    check_mode, executed_on_server, status\r\nFROM ServerOps.DBCC_ExecutionLog\r\nWHERE operation = \u0027CHECKDB\u0027\r\n  AND database_name = \u0027\u003cdatabase_name\u003e\u0027\r\nORDER BY started_dttm DESC;",
                                            "sortOrder":  3
                                        }
                                    ],
@@ -5914,14 +5902,14 @@
                                                  },
                                                  {
                                                      "relatedObject":  "GlobalConfig",
-                                                     "note":  "Execution options (checkdb_mode, max_dop, extended_logical_checks, alerting_enabled) are read from dbo.GlobalConfig at script startup under module ServerOps, category DBCC. Values are captured per-row in the log for historical accuracy.",
+                                                     "note":  "Execution options (max_dop, extended_logical_checks, alerting_enabled) are read from dbo.GlobalConfig at script startup under module ServerOps, category DBCC. check_mode is read per database from DBCC_ScheduleConfig. Captured options are stored per row in the log for historical accuracy.",
                                                      "sortOrder":  3
                                                  }
                                              ]
                    },
                    {
                        "name":  "DBCC_ScheduleConfig",
-                       "description":  "Per-database scheduling configuration for DBCC integrity operations. One row per database with independent enabled/day/time settings per operation type (CHECKDB, CHECKALLOC, CHECKCATALOG, CHECKCONSTRAINTS). The row-level is_enabled flag combines with serverops_dbcc_enabled on ServerRegistry for two-tier control. CHECKTABLE and CHECKFILEGROUP are on-demand only and do not appear in this table.",
+                       "description":  "Per-database scheduling configuration for DBCC integrity operations. One row per database with independent enabled/day/time settings per operation type. The row-level is_enabled flag combines with serverops_dbcc_enabled on ServerRegistry for two-tier control.",
                        "module":  "ServerOps",
                        "category":  "DBCC",
                        "dataFlow":  "Rows are manually inserted when enrolling databases for DBCC operations, typically populated from DatabaseRegistry and ServerRegistry. Execute-DBCC.ps1 reads this table on each cycle to determine which operations are due based on the current day and hour. The script joins to ServerRegistry to enforce the serverops_dbcc_enabled master switch. The Control Center DBCC Operations page reads this table for the schedule overview display.",
@@ -5940,7 +5928,7 @@
                                            "dataType":  "int",
                                            "nullable":  false,
                                            "identity":  false,
-                                           "description":  "FK to ServerRegistry. Denormalized from DatabaseRegistry for direct server-level queries and joins."
+                                           "description":  "FK to ServerRegistry, denormalized from DatabaseRegistry."
                                        },
                                        {
                                            "ordinal":  3,
@@ -5949,7 +5937,7 @@
                                            "length":  "128",
                                            "nullable":  false,
                                            "identity":  false,
-                                           "description":  "Denormalized server name from ServerRegistry. Avoids joins for display and logging."
+                                           "description":  "Denormalized server name from ServerRegistry."
                                        },
                                        {
                                            "ordinal":  4,
@@ -5975,7 +5963,7 @@
                                            "nullable":  false,
                                            "identity":  false,
                                            "default":  "((0))",
-                                           "description":  "Whether CHECKDB is scheduled for this database. 0 = disabled, 1 = enabled. When enabled, checkdb_run_day and checkdb_run_time control when it executes."
+                                           "description":  "Whether CHECKDB is scheduled for this database."
                                        },
                                        {
                                            "ordinal":  7,
@@ -5983,7 +5971,7 @@
                                            "dataType":  "tinyint",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "Day of week for CHECKDB execution. 1=Sunday through 7=Saturday, matching DATEPART(dw,...) convention. NULL when checkdb_enabled = 0."
+                                           "description":  "Day of week for CHECKDB execution (1=Sunday through 7=Saturday). NULL when disabled."
                                        },
                                        {
                                            "ordinal":  8,
@@ -5991,7 +5979,7 @@
                                            "dataType":  "time",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "Time of day for CHECKDB execution. The script matches on the hour component. NULL when checkdb_enabled = 0."
+                                           "description":  "Time of day for CHECKDB execution. NULL when disabled."
                                        },
                                        {
                                            "ordinal":  9,
@@ -6076,7 +6064,7 @@
                                            "nullable":  false,
                                            "identity":  false,
                                            "default":  "(\u0027NONE\u0027)",
-                                           "description":  "DBCC check mode for operations that support it. PHYSICAL_ONLY checks storage corruption only — significantly faster. FULL performs complete logical and physical integrity validation. NONE indicates no check mode configured — CHECKDB cannot be enabled while check_mode is NONE. Applies to CHECKDB and on-demand CHECKTABLE. Other operations ignore this setting."
+                                           "description":  "DBCC check mode used by CHECKDB scheduling; other operations ignore it. Defaults to NONE."
                                        },
                                        {
                                            "ordinal":  19,
@@ -6085,7 +6073,7 @@
                                            "length":  "10",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "Replica routing override for AG listener databases. NULL uses the default routing (SECONDARY for all operations except CHECKCATALOG, which always routes to PRIMARY). PRIMARY forces all operations to the primary replica — used when primary-side integrity verification is needed after hardware events, bulk operations, or as periodic validation. SECONDARY explicitly targets the secondary. Persists until manually cleared. Non-AG servers ignore this column."
+                                           "description":  "Per-database replica routing override for AG listener databases. NULL uses the default routing: the configured source replica (typically SECONDARY) for all operations except CHECKCATALOG, which always routes to PRIMARY. A non-null value pins this database\u0027s operations to the chosen replica. Persists until manually cleared. Non-AG servers ignore this column."
                                        },
                                        {
                                            "ordinal":  20,
@@ -6094,7 +6082,7 @@
                                            "nullable":  false,
                                            "identity":  false,
                                            "default":  "((1))",
-                                           "description":  "Row-level master switch. When 0, no operations run for this database regardless of individual operation settings. Combines with serverops_dbcc_enabled on ServerRegistry for two-tier control."
+                                           "description":  "Row-level master switch; when 0, no operations run for this database regardless of per-operation settings."
                                        },
                                        {
                                            "ordinal":  21,
@@ -6203,7 +6191,7 @@
                        "designNotes":  [
                                            {
                                                "topic":  "Per-Database Granularity",
-                                               "note":  "Each database gets its own schedule row with independent settings per operation. This allows staggering heavy operations like CHECKDB across different days while running lightweight operations (CHECKALLOC, CHECKCATALOG) together. A 10TB database can run CHECKDB on Saturday morning while smaller databases on the same server run Sunday.",
+                                               "note":  "Each database gets its own schedule row with independent settings per operation. This allows staggering heavy operations like CHECKDB across different days while running lightweight operations together, so a large database\u0027s full check and smaller databases\u0027 checks need not share a window.",
                                                "sortOrder":  1
                                            },
                                            {
@@ -6213,10 +6201,42 @@
                                            },
                                            {
                                                "topic":  "Hour-Based Schedule Matching",
-                                               "note":  "The script matches the hour component of run_time against the current hour. A run_time of 20:00 triggers when the script fires during the 8 PM hour (20:00-20:59). Combined with the already-executed-today check on DBCC_ExecutionLog, this prevents duplicate execution if the script fires multiple times within the same hour.",
+                                               "note":  "The script matches the hour component of run_time against the current hour, so an operation becomes due once the script fires during its scheduled hour. Combined with the already-executed-today check on DBCC_ExecutionLog, this prevents duplicate execution when the script fires multiple times within the same hour.",
                                                "sortOrder":  3
                                            }
                                        ],
+                       "statusValues":  [
+                                            {
+                                                "column":  "check_mode",
+                                                "value":  "NONE",
+                                                "meaning":  "No check mode configured. CHECKDB cannot be enabled while check_mode is NONE, and check_mode cannot be set to NONE while CHECKDB is enabled.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "replica_override",
+                                                "value":  "PRIMARY",
+                                                "meaning":  "Pins this database\u0027s DBCC operations to the primary replica, overriding the default routing.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "replica_override",
+                                                "value":  "SECONDARY",
+                                                "meaning":  "Pins this database\u0027s DBCC operations to the secondary replica, overriding the default routing.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "column":  "check_mode",
+                                                "value":  "PHYSICAL_ONLY",
+                                                "meaning":  "Physical structure checks only - page checksums, torn pages, physical page integrity. Significantly faster than FULL.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "column":  "check_mode",
+                                                "value":  "FULL",
+                                                "meaning":  "Complete logical and physical integrity check. Includes all PHYSICAL_ONLY checks plus cross-object logical consistency validation.",
+                                                "sortOrder":  3
+                                            }
+                                        ],
                        "queries":  [
                                        {
                                            "name":  "Full schedule overview",
@@ -11589,7 +11609,7 @@
                         "designNotes":  [
                                             {
                                                 "topic":  "Schedule-Driven Execution",
-                                                "note":  "The script runs on a configurable interval via ProcessRegistry. Each invocation queries DBCC_ScheduleConfig for operations where the run_day matches today and the run_time hour matches the current hour. If no operations are due, exits NO_WORK immediately. The ExecutionLog is checked before each operation to prevent duplicate execution within the same day.",
+                                                "note":  "The script runs on a configurable interval via ProcessRegistry. Each invocation queries DBCC_ScheduleConfig for operations whose run_day matches today and whose run_time hour has arrived. If nothing is due, it reports success with a no-work result and exits. The ExecutionLog is checked before each operation to prevent duplicate execution within the same day.",
                                                 "sortOrder":  1
                                             },
                                             {
@@ -11621,7 +11641,7 @@
                                                   },
                                                   {
                                                       "relatedObject":  "GlobalConfig",
-                                                      "note":  "Reads DBCC execution options at startup: checkdb_mode, max_dop, extended_logical_checks, alerting_enabled. AG topology settings (AGName, SourceReplica) are also loaded from GlobalConfig.",
+                                                      "note":  "Reads DBCC execution options at startup: max_dop, extended_logical_checks, alerting_enabled. AG topology settings (AGName, SourceReplica) are also loaded from GlobalConfig. check_mode is read per database from DBCC_ScheduleConfig, not GlobalConfig.",
                                                       "sortOrder":  3
                                                   }
                                               ]
