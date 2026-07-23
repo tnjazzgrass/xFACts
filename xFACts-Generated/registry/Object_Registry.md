@@ -1,6 +1,6 @@
 # Object Registry
 Source: dbo.Object_Registry
-Generated: 2026-07-23 13:22:41
+Generated: 2026-07-23 17:27:28
 
 | module_name | component_name | object_name | object_category | object_type | object_path | zone | scope | scope_tier | description |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -62,6 +62,7 @@ Generated: 2026-07-23 13:22:41
 | ControlCenter | Documentation.Site | docs-controlcenter.css | Documentation | CSS | E:\xFACts-ControlCenter\public\docs\css\docs-controlcenter.css | docs | SHARED |  | Module Control Center page styles |
 | ControlCenter | Documentation.Site | docs-erd.css | Documentation | CSS | E:\xFACts-ControlCenter\public\docs\css\docs-erd.css | docs | SHARED |  | ERD diagram styles |
 | ControlCenter | Documentation.Site | docs-hub.css | Documentation | CSS | E:\xFACts-ControlCenter\public\docs\css\docs-hub.css | docs | SHARED |  | Documentation hub page styles |
+| ControlCenter | Documentation.Site | docs-meta.css | Documentation | CSS | E:\xFACts-ControlCenter\public\docs\css\docs-meta.css | docs | SHARED |  | Meta page styles |
 | ControlCenter | Documentation.Site | docs-narrative.css | Documentation | CSS | E:\xFACts-ControlCenter\public\docs\css\docs-narrative.css | docs | SHARED |  | Narrative page styles |
 | ControlCenter | Documentation.Site | docs-reference.css | Documentation | CSS | E:\xFACts-ControlCenter\public\docs\css\docs-reference.css | docs | SHARED |  | Reference page styles |
 | ControlCenter | Documentation.Site | b2b-arch.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\arch\b2b-arch.html | docs | LOCAL |  | IBM/B2B architecture page |
@@ -133,6 +134,7 @@ Generated: 2026-07-23 13:22:41
 | ControlCenter | Documentation.Site | ddl-erd.js | Documentation | JavaScript | E:\xFACts-ControlCenter\public\docs\js\ddl-erd.js | docs | SHARED |  | ERD diagram renderer |
 | ControlCenter | Documentation.Site | ddl-loader.js | Documentation | JavaScript | E:\xFACts-ControlCenter\public\docs\js\ddl-loader.js | docs | SHARED |  | DDL reference JSON loader and renderer |
 | ControlCenter | Documentation.Site | docs-controlcenter.js | Documentation | JavaScript | E:\xFACts-ControlCenter\public\docs\js\docs-controlcenter.js | docs | SHARED |  | CC guide page interactive behavior and slideout panel |
+| ControlCenter | Documentation.Site | docs-meta.js | Documentation | JavaScript | E:\xFACts-ControlCenter\public\docs\js\docs-meta.js | docs | SHARED |  | Meta page JSON loader and grid renderer |
 | ControlCenter | Documentation.Site | docs-shared.js | Documentation | JavaScript | E:\xFACts-ControlCenter\public\docs\js\docs-shared.js | docs | SHARED | SHELL | Documentation site shared file |
 | ControlCenter | Documentation.Site | nav.js | Documentation | JavaScript | E:\xFACts-ControlCenter\public\docs\js\nav.js | docs | SHARED |  | Documentation site navigation |
 | dbo | Engine.RBAC | RBAC_ActionGrant | Database | Table | dbo |  |  |  | Granted actions per user |
