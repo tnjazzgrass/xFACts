@@ -794,7 +794,17 @@ Stored procedure for adding new file monitor configurations with built-in valida
 
 AFTER INSERT trigger on FileOps.MonitorLog that disables the IBM/B2B ETL automation for the OneGI client's process rows when any of its four monitored escalation files logs an escalation.
 
+**Data Flow:** Fires when File Monitoring writes an escalation row (event_type = 'Escalated') to FileOps.MonitorLog for one of the four OneGI monitored files (config_id 77, 78, 79, 80). When any such row is inserted, the trigger performs a same-instance cross-database update to Integration.etl.tbl_B2B_CLIENTS_FILES, setting ACTIVE_FLAG = 0 for CLIENT_ID 10678, SEQ_ID 1 through 6, which turns off the IBM/B2B scheduler automation for those six process rows.
+
 **Cross-Database Write:** [sort:1] This trigger runs a cross-database write inside the MonitorLog insert transaction. The escalation check is set-based (EXISTS against the inserted rows) so it fires correctly whether one or up to four files escalate in a single insert, and the UPDATE is idempotent via WHERE ACTIVE_FLAG = 1.
+
+**Verify trigger is enabled** [sort:1] -- Check if the trigger is active
+
+```sql
+SELECT name, is_disabled
+FROM sys.triggers
+WHERE name = 'TR_FileOps_MonitorLog_DisableETL_OneGI';
+```
 
   - **Integration.etl.tbl_B2B_CLIENTS_FILES**: [sort:1] Updates ACTIVE_FLAG on the six OneGI process rows (CLIENT_ID 10678, SEQ_ID 1-6) in the Integration database's B2B client-files table. Setting ACTIVE_FLAG = 0 stops the IBM/B2B scheduler from automatically triggering those processes. The trigger only reaches this table when a OneGI escalation (config_id 77-80) is logged to FileOps.MonitorLog.
 
