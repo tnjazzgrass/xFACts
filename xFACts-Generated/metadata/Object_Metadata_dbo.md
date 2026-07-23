@@ -1,6 +1,6 @@
 # Object_Metadata: dbo
 Source: dbo.Object_Metadata
-Generated: 2026-07-23 05:17:32
+Generated: 2026-07-23 05:52:54
 
 ## ActionAuditLog (Table)
 
@@ -1116,11 +1116,11 @@ Shared Infrastructure
 
 ### data_flow #0  [metadata_id: 4]
 
-Populated manually via INSERT/UPDATE during object creation and documentation maintenance. Read by sp_GenerateDDLReference during JSON export to produce schema-level DDL JSON files. Those JSON files are consumed by ddl-loader.js on reference pages and the troubleshooting page in the Control Center documentation site.
+Populated manually via INSERT/UPDATE during object creation and documentation maintenance. Read by the DDL reference generator during JSON export to produce schema-level DDL JSON files. Those JSON files are consumed by the reference and troubleshooting pages in the Control Center documentation site.
 
 ### description #0  [metadata_id: 1]
 
-Single source of truth for all documentation metadata about database objects across the xFACts platform. Replaces extended properties as the documentation content source. Fed into the DDL JSON export by sp_GenerateDDLReference, rendered automatically on reference and troubleshooting pages.
+Single source of truth for all documentation metadata about database objects across the xFACts platform. Replaces extended properties as the documentation content source. Fed into the DDL JSON export by the DDL reference generator, rendered automatically on reference and troubleshooting pages.
 
 ### design_note #1  [metadata_id: 20]
 Title: Single Source for All Documentation Content
@@ -1236,7 +1236,7 @@ Name of the documented object: table name, procedure name, script filename, etc.
 
 ### description / object_type #4  [metadata_id: 8]
 
-Kind of object: Table, Procedure, Trigger, Function, View, Script
+Kind of object: Table, Procedure, Trigger, DDL Trigger, XE Session, Script
 
 ### description / property_type #6  [metadata_id: 10]
 
@@ -1440,7 +1440,7 @@ Documentation site files: HTML pages, doc-specific JS and CSS.
 
 ### description / object_name #4  [metadata_id: 3142]
 
-Name of the individual object. Database objects use their SQL name (e.g., GlobalConfig, sp_GenerateDDLReference). Files use their filename with extension (e.g., Collect-DMVMetrics.ps1, admin.css).
+Name of the individual object. Database objects use their bare SQL name without schema prefix; file components use their filename with extension.
 
 ### description / object_path #7  [metadata_id: 3145]
 
