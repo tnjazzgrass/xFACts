@@ -1,6 +1,6 @@
 # Object_Metadata: Jira
 Source: dbo.Object_Metadata
-Generated: 2026-07-22 18:59:13
+Generated: 2026-07-22 19:01:32
 
 ## Process-JiraTicketQueue.ps1 (Script)
 
@@ -183,11 +183,11 @@ Unique identifier for this log entry
 
 ### description / ProjectKey #5  [metadata_id: 490]
 
-Jira project key (e.g., SD)
+Jira project key.
 
 ### description / RequestType #4  [metadata_id: 489]
 
-Type of request: CreateTicket, QueueInsertFailed, etc
+Request category. Mirrors the caller-supplied trigger type on a logged API interaction, or QueueInsertFailed when the queue insert fails.
 
 ### description / ResponseMessage #9  [metadata_id: 494]
 
@@ -195,11 +195,11 @@ Full API response or error message
 
 ### description / ServiceName #3  [metadata_id: 488]
 
-Service name (typically 'Jira')
+Service name; always 'Jira' for this module.
 
 ### description / SourceModule #2  [metadata_id: 487]
 
-Module that originated the request (e.g., JobFlow, NoticeRecon)
+Module that originated the request.
 
 ### description / StatusCode #8  [metadata_id: 493]
 
@@ -246,17 +246,12 @@ Ticket summary/title
 
 ### description / TicketKey #7  [metadata_id: 492]
 
-Created ticket key (e.g., SD-12345). NULL if failed. 'Email' if fallback used
+Jira ticket key returned when the ticket is created; NULL when no ticket was created.
 
 ### status_value / TicketKey #20  [metadata_id: 1888]
-Title: SD-12345 (example)
+Title: Actual Jira ticket key
 
-Ticket created successfully in Jira — value is the actual Jira ticket key
-
-### status_value / TicketKey #21  [metadata_id: 1889]
-Title: Email
-
-Fallback email sent instead of ticket — max retries exhausted
+Ticket created successfully in Jira; the column holds the returned Jira ticket key.
 
 ### status_value / TicketKey #22  [metadata_id: 1890]
 Title: NULL
@@ -265,11 +260,11 @@ API call failed — no ticket or email created
 
 ### description / Trigger_Type #12  [metadata_id: 497]
 
-Category for deduplication lookup (e.g., JobFlow_Stall, DM_Template)
+Category used for deduplication lookups; typically a <Module>_<Condition> pattern.
 
 ### description / Trigger_Value #13  [metadata_id: 498]
 
-Specific identifier (e.g., 2025-12-19, BNEW001)
+Specific instance value that pairs with the trigger category to form the deduplication key.
 
 ## sp_QueueTicket (Procedure)
 
@@ -304,10 +299,10 @@ Title: Basic ticket
 Description: Minimal required parameters
 
 EXEC Jira.sp_QueueTicket
-    @SourceModule = 'JobFlow',
-    @ProjectKey   = 'SD',
-    @Summary      = 'System Stall Detected',
-    @Description  = 'Job processing has stalled for 30+ minutes.';
+    @SourceModule = '<source module>',
+    @ProjectKey   = '<project key>',
+    @Summary      = '<ticket summary>',
+    @Description  = '<ticket description>';
 
 ### query #2  [metadata_id: 1893]
 Title: Full example with custom fields
@@ -335,7 +330,7 @@ EXEC Jira.sp_QueueTicket
 ### relationship_note #1  [metadata_id: 1838]
 Title: Jira.TicketQueue
 
-Primary INSERT target. This is the main T-SQL entry point for queuing Jira tickets.
+Primary INSERT target. This is the main entry point for queuing Jira ticket requests, open to any process with EXECUTE permission, including external, non-xFACts callers.
 
 ### relationship_note #2  [metadata_id: 1839]
 Title: Jira.RequestLog
@@ -350,7 +345,7 @@ Jira
 
 ### data_flow #0  [metadata_id: 1897]
 
-Tickets enter via Jira.sp_QueueTicket (from T-SQL callers) or direct INSERT. TR_Jira_TicketQueue_QueueDepth fires on INSERT, incrementing running_count in Orchestrator.ProcessRegistry to signal the orchestrator. Process-JiraTicketQueue.ps1 claims Pending rows (TicketStatus = 'Pending' AND RetryCount < MaxRetries), retrieves Jira credentials from dbo.Credentials via two-tier passphrase decryption (master passphrase from GlobalConfig), creates tickets via Jira REST API, and updates TicketStatus to Success or Failed with the returned TicketKey. On success the script performs a GET to retrieve the assigned user. Each API interaction is logged to Jira.RequestLog. When max retries are exhausted and EmailRecipients is populated, the script sends a fallback email via Database Mail and sets TicketStatus to EmailSent.
+Tickets enter via Jira.sp_QueueTicket or by direct INSERT. TR_Jira_TicketQueue_QueueDepth fires on INSERT, incrementing running_count in Orchestrator.ProcessRegistry to signal the orchestrator. Process-JiraTicketQueue.ps1 claims Pending rows (TicketStatus = 'Pending' AND RetryCount < MaxRetries), retrieves Jira credentials from dbo.Credentials via two-tier passphrase decryption (master passphrase from GlobalConfig), creates tickets via Jira REST API, and updates TicketStatus to Success or Failed with the returned TicketKey. On success the script performs a GET to retrieve the assigned user. Each API interaction is logged to Jira.RequestLog. When max retries are exhausted and EmailRecipients is populated, the script sends a fallback email via Database Mail and sets TicketStatus to EmailSent.
 
 ### description #0  [metadata_id: 52]
 
@@ -369,7 +364,7 @@ When Jira API calls fail after all retry attempts, the script sends a fallback e
 ### design_note #3  [metadata_id: 1900]
 Title: Generic Custom Field Support
 
-Up to three arbitrary Jira custom fields plus one cascading select field can be specified per ticket. Field IDs (e.g., customfield_18401) and values are stored in the queue and mapped into the Jira API payload at creation time. This avoids hardcoding Jira field schemas into the table structure.
+Up to three arbitrary Jira custom fields plus one cascading select field can be specified per ticket. Field IDs and values are stored in the queue and mapped into the Jira API payload at creation time. This avoids hardcoding Jira field schemas into the table structure.
 
 ### design_note #4  [metadata_id: 1901]
 Title: Assignee Retrieval
@@ -462,7 +457,7 @@ Child value for cascading select
 
 ### description / CascadingField_ID #9  [metadata_id: 390]
 
-Field ID for cascading select (e.g., customfield_18401)
+Field ID for the cascading select.
 
 ### description / CascadingField_ParentValue #10  [metadata_id: 391]
 
@@ -502,7 +497,7 @@ Semicolon-separated email addresses for fallback if API fails
 
 ### description / IssueType #6  [metadata_id: 387]
 
-Jira issue type: Task, Issue, Bug, etc
+Jira issue type.
 
 ### description / LastRetryDate #29  [metadata_id: 410]
 
@@ -514,7 +509,7 @@ When PowerShell processed this entry
 
 ### description / ProjectKey #3  [metadata_id: 384]
 
-Jira project key (e.g., SD, DEV)
+Jira project key.
 
 ### description / QueueID #1  [metadata_id: 382]
 
@@ -534,11 +529,11 @@ Number of retry attempts
 
 ### description / SourceModule #2  [metadata_id: 383]
 
-Module that queued the ticket (e.g., JobFlow, NoticeRecon)
+Module that queued the ticket.
 
 ### description / StatusCode #25  [metadata_id: 406]
 
-HTTP status code from Jira API (201 = success)
+HTTP status code returned by the Jira API.
 
 ### description / Summary #4  [metadata_id: 385]
 
@@ -550,7 +545,7 @@ Full ticket description body
 
 ### description / TicketKey #24  [metadata_id: 405]
 
-Jira ticket key if created (e.g., SD-12345)
+Jira ticket key assigned when the ticket is created.
 
 ### description / TicketPriority #7  [metadata_id: 388]
 
@@ -583,22 +578,22 @@ Least urgent tickets.
 
 ### description / TicketStatus #27  [metadata_id: 408]
 
-Current status: Pending, Success, Failed
+Current status: Pending, Success, Failed, EmailSent.
 
 ### status_value / TicketStatus #1  [metadata_id: 1903]
 Title: Pending
 
-Waiting for processor pickup. Set on INSERT as the default value.
+Waiting for processor pickup. Set on INSERT as the default value, and a retryable failure returns the row to this status for the next processor cycle.
 
 ### status_value / TicketStatus #2  [metadata_id: 1904]
 Title: Success
 
-Jira ticket created successfully. TicketKey populated with the Jira issue key (e.g., SD-12345).
+Jira ticket created successfully; TicketKey is populated with the returned Jira issue key.
 
 ### status_value / TicketStatus #3  [metadata_id: 1905]
 Title: Failed
 
-Jira API call failed. RetryCount incremented, ResponseMessage contains error details. Failed rows are not automatically re-picked up since the pending query filters on TicketStatus = 'Pending'.
+Jira API call failed and all retry attempts have been exhausted with no fallback email sent (EmailRecipients not populated). RetryCount has reached MaxRetries and ResponseMessage holds the last error. Terminal status.
 
 ### status_value / TicketStatus #4  [metadata_id: 1906]
 Title: EmailSent
@@ -607,11 +602,11 @@ Max retries exhausted and fallback email sent via Database Mail. Terminal status
 
 ### description / TriggerType #19  [metadata_id: 400]
 
-Category for deduplication (e.g., JobFlow_Stall, DM_Template)
+Category used for deduplication; typically a <Module>_<Condition> pattern.
 
 ### description / TriggerValue #20  [metadata_id: 401]
 
-Specific value for deduplication (e.g., date, template code)
+Specific instance value that pairs with the trigger category to form the deduplication key.
 
 ## TR_Jira_TicketQueue_QueueDepth (Trigger)
 
