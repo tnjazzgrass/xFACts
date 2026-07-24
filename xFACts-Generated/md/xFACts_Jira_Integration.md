@@ -533,15 +533,15 @@ Queue table for pending ticket requests awaiting PowerShell processing. Records 
 
 | Column | Value | Meaning | Sort |
 | --- | --- | --- | --- |
-| TicketStatus | Pending | Waiting for processor pickup. Set on INSERT as the default value, and a retryable failure returns the row to this status for the next processor cycle. | 1 |
 | TicketPriority | Highest | Most urgent tickets requiring immediate attention. | 1 |
 | TicketPriority | High | Default priority set by sp_QueueTicket. Used for most automated ticket creation. | 2 |
-| TicketStatus | Success | Jira ticket created successfully; TicketKey is populated with the returned Jira issue key. | 2 |
-| TicketStatus | Failed | Ticket creation failed terminally and no fallback email was sent because EmailRecipients was not populated. ResponseMessage holds the last error. Terminal status. | 3 |
 | TicketPriority | Medium | Standard priority. | 3 |
 | TicketPriority | Low | Lower priority items. | 4 |
-| TicketStatus | EmailSent | Ticket creation failed terminally and a fallback email was sent via Database Mail. Terminal status indicating the ticket must be created manually from the email. | 4 |
 | TicketPriority | Lowest | Least urgent tickets. | 5 |
+| TicketStatus | Pending | Waiting for processor pickup. Set on INSERT as the default value, and a retryable failure returns the row to this status for the next processor cycle. | 1 |
+| TicketStatus | Success | Jira ticket created successfully; TicketKey is populated with the returned Jira issue key. | 2 |
+| TicketStatus | Failed | Ticket creation failed terminally and no fallback email was sent because EmailRecipients was not populated. ResponseMessage holds the last error. Terminal status. | 3 |
+| TicketStatus | EmailSent | Ticket creation failed terminally and a fallback email was sent via Database Mail. Terminal status indicating the ticket must be created manually from the email. | 4 |
 
 **Pending tickets** [sort:1] -- Shows tickets awaiting processing with wait time, source module, and retry count.
 
