@@ -505,24 +505,6 @@
                                        ],
                        "statusValues":  [
                                             {
-                                                "column":  "run_mode",
-                                                "value":  "0",
-                                                "meaning":  "Disabled — process is not executed by the engine.",
-                                                "sortOrder":  1
-                                            },
-                                            {
-                                                "column":  "run_mode",
-                                                "value":  "1",
-                                                "meaning":  "Scheduled — process uses interval-based or time-based scheduling.",
-                                                "sortOrder":  2
-                                            },
-                                            {
-                                                "column":  "run_mode",
-                                                "value":  "2",
-                                                "meaning":  "Queue-driven — process executes when running_count \u003e 0, triggered by external queue INSERT triggers.",
-                                                "sortOrder":  3
-                                            },
-                                            {
                                                 "column":  "execution_mode",
                                                 "value":  "WAIT",
                                                 "meaning":  "Engine launches the process and waits for completion, capturing stdout/stderr and exit code directly.",
@@ -569,6 +551,24 @@
                                                 "value":  "POLLING",
                                                 "meaning":  "Process completed a cycle but reported no actionable work — used by collectors that found nothing new to process.",
                                                 "sortOrder":  11
+                                            },
+                                            {
+                                                "column":  "run_mode",
+                                                "value":  "0",
+                                                "meaning":  "Disabled — process is not executed by the engine.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "run_mode",
+                                                "value":  "1",
+                                                "meaning":  "Scheduled — process uses interval-based or time-based scheduling.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "column":  "run_mode",
+                                                "value":  "2",
+                                                "meaning":  "Queue-driven — process executes when running_count \u003e 0, triggered by external queue INSERT triggers.",
+                                                "sortOrder":  3
                                             }
                                         ],
                        "queries":  [
