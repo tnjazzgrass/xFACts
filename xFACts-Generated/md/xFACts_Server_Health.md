@@ -2404,10 +2404,10 @@ Audit trail and deduplication table for disk space alerts, tracking when alerts 
 
 | Column | Value | Meaning | Sort |
 | --- | --- | --- | --- |
-| alert_type | DISK_SPACE_LOW | Drive free space has fallen below its configured threshold in Disk_ThresholdConfig. This is the only alert type currently used by the Disk component. The check constraint allows additional types (BACKUP_MISSED, JOB_FAILED, DB_OFFLINE, ERROR_LOG_CRITICAL, LONG_RUNNING_QUERY) for future expansion. | 1 |
 | alert_method | JIRA | Alert was delivered by creating a Jira ticket via Jira.TicketQueue. This is the primary notification method for disk space breaches — Jira tickets create actionable work items for IT Ops to add storage. | 1 |
 | alert_method | TEAMS | Alert was delivered via Teams webhook notification. Not currently used by the Disk component for breach alerts (those use Jira), but available for future use. | 2 |
 | alert_method | EMAIL | Alert was delivered via email. Not currently used but allowed by the check constraint for future expansion. | 3 |
+| alert_type | DISK_SPACE_LOW | Drive free space has fallen below its configured threshold in Disk_ThresholdConfig. This is the only alert type currently used by the Disk component. The check constraint allows additional types (BACKUP_MISSED, JOB_FAILED, DB_OFFLINE, ERROR_LOG_CRITICAL, LONG_RUNNING_QUERY) for future expansion. | 1 |
 
 **Current Active Alerts** [sort:1]
 
