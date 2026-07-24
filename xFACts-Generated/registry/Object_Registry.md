@@ -1,6 +1,6 @@
 # Object Registry
 Source: dbo.Object_Registry
-Generated: 2026-07-24 04:05:07
+Generated: 2026-07-24 04:26:09
 
 | module_name | component_name | object_name | object_category | object_type | object_path | zone | scope | scope_tier | description |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
