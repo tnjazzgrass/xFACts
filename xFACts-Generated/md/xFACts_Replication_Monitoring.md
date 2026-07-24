@@ -563,14 +563,14 @@ Significant replication events including state transitions, errors, agent starts
 
 | Column | Value | Meaning | Sort |
 | --- | --- | --- | --- |
+| correlation_source | BIDATA_BUILD | Event coincides with the nightly BIDATA data warehouse build. Detected by checking BIDATA.BuildExecution for an active or recently completed build. | 7 |
+| correlation_source | NULL | No known correlating process identified. This is a signal — unexpected events with NULL correlation warrant investigation. | 8 |
 | event_type | STATE_CHANGE | Agent run_status changed between collection cycles. Generic transition event logged for any status change. | 1 |
 | event_type | AGENT_START | Agent transitioned to Started, Running, or Idle from a non-running state. Subset of STATE_CHANGE for dashboard convenience. | 2 |
 | event_type | AGENT_STOP | Agent transitioned to Stopped from a running state, or "successfully stopped" message detected. Subset of STATE_CHANGE for dashboard convenience. | 3 |
 | event_type | ERROR | Agent reported an error (error_id > 0 on current distribution history row). Can occur with or without a state change. | 4 |
 | event_type | RETRY | Agent entered retry state (run_status = 4). Indicates an error occurred but the agent is attempting recovery. | 5 |
 | event_type | INFO | Informational event worth recording. Used for registry changes, configuration updates, and other non-error events at collector discretion. | 6 |
-| correlation_source | BIDATA_BUILD | Event coincides with the nightly BIDATA data warehouse build. Detected by checking BIDATA.BuildExecution for an active or recently completed build. | 7 |
-| correlation_source | NULL | No known correlating process identified. This is a signal — unexpected events with NULL correlation warrant investigation. | 8 |
 
 **Recent Events (24 Hours)** [sort:1] -- All events in the last 24 hours with publication context and correlation status.
 
@@ -838,11 +838,11 @@ Master catalog of monitored replication publications and subscribers, dynamicall
 | --- | --- | --- | --- |
 | agent_type | Distribution | Distribution Agent delivering commands from distributor to subscriber. One per publication/subscriber pair. Full monitoring: health, queue depth, throughput, tracer tokens. | 1 |
 | agent_type | LogReader | Log Reader Agent reading the publisher transaction log and writing to the distribution database. One per published database. Health and throughput only — no queue depth or tracer tokens. Single point of failure for all publications from the same database. | 2 |
-| subscription_type | 0 (Push) | Publisher-initiated delivery. The Distribution Agent runs at the distributor and pushes changes to the subscriber. | 3 |
-| subscription_type | 1 (Pull) | Subscriber-initiated delivery. The Distribution Agent runs at the subscriber and pulls changes from the distributor. | 4 |
 | publication_type | 0 (Transactional) | Transactional replication — continuous delivery of committed transactions. All current Frost-Arnett publications use this type. | 5 |
 | publication_type | 1 (Snapshot) | Snapshot replication — periodic full data refresh. Not currently in use. | 6 |
 | publication_type | 2 (Merge) | Merge replication — bidirectional sync with conflict resolution. Not currently in use. | 7 |
+| subscription_type | 0 (Push) | Publisher-initiated delivery. The Distribution Agent runs at the distributor and pushes changes to the subscriber. | 3 |
+| subscription_type | 1 (Pull) | Subscriber-initiated delivery. The Distribution Agent runs at the subscriber and pulls changes from the distributor. | 4 |
 
 **Active Publications** [sort:1] -- All monitored publications with their subscription details.
 
