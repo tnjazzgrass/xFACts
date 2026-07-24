@@ -662,13 +662,13 @@ Detailed execution history for all Backup component operations including collect
 
 | Column | Value | Meaning | Sort |
 | --- | --- | --- | --- |
-| status | SUCCESS | Operation completed successfully. | 1 |
 | component | COLLECTION | Logged by Collect-BackupStatus.ps1. Operations include per-server collection summaries with file counts and duration. | 1 |
 | component | NETWORK_COPY | Logged by Process-BackupNetworkCopy.ps1. Operations include per-file copy results with byte counts and throughput. | 2 |
-| status | FAILED | Operation encountered an error. error_message contains the summary; error_details may contain the full stack trace. | 2 |
-| status | SKIPPED | Operation intentionally bypassed — typically logged when there is no work to do. | 3 |
 | component | AWS_UPLOAD | Logged by Process-BackupAWSUpload.ps1. Operations include per-file upload results with byte counts and throughput. | 3 |
 | component | RETENTION | Logged by Process-BackupRetention.ps1. Operations include LOCAL_DELETE and NETWORK_DELETE with byte counts. HISTORICAL record operations are excluded from logging. | 4 |
+| status | SUCCESS | Operation completed successfully. | 1 |
+| status | FAILED | Operation encountered an error. error_message contains the summary; error_details may contain the full stack trace. | 2 |
+| status | SKIPPED | Operation intentionally bypassed — typically logged when there is no work to do. | 3 |
 | status | WARNING | Operation completed with non-fatal issues. | 4 |
 
 **Recent failures by component** [sort:1] -- Shows failed operations from the last 7 days grouped by pipeline component for troubleshooting.
