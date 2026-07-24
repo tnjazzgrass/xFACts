@@ -526,16 +526,16 @@ One row per archive batch execution. Captures the full execution summary includi
 
 | Column | Value | Meaning | Sort |
 | --- | --- | --- | --- |
-| status | Running | Batch is currently executing. Set on initial insert, updated to final status on completion. | 1 |
 | bidata_status | Success | All four BIDATA table pairs (GenAccount, GenAccPay, GenAccPayAgg, GenPayment) migrated successfully for the batch. ConsumerLog.bidata_migrated set to 1 for all accounts. | 1 |
+| bidata_status | Failed | One or more BIDATA table migrations failed. ConsumerLog.bidata_migrated remains 0. Check Archive_BatchDetail for B1-B4 entries. | 2 |
+| bidata_status | Skipped | BIDATA migration was not performed for this batch. Occurs when BIDATA instance is unavailable or during testing without the migration step enabled. | 3 |
 | schedule_mode | Full | Batch ran during a full-mode schedule window using the standard batch_size from GlobalConfig. | 1 |
 | schedule_mode | Reduced | Batch ran during a reduced-mode schedule window using batch_size_reduced from GlobalConfig. | 2 |
-| bidata_status | Failed | One or more BIDATA table migrations failed. ConsumerLog.bidata_migrated remains 0. Check Archive_BatchDetail for B1-B4 entries. | 2 |
-| status | Success | Batch completed with zero table failures. | 2 |
-| status | Failed | One or more tables in the delete sequence failed. The script stops on first failure. Check error_message and Archive_BatchDetail for specifics. | 3 |
-| bidata_status | Skipped | BIDATA migration was not performed for this batch. Occurs when BIDATA instance is unavailable or during testing without the migration step enabled. | 3 |
 | schedule_mode | Manual | Batch ran with manual parameter overrides, outside of schedule-driven execution. | 3 |
 | schedule_mode | Retry | Batch was created to reprocess a previously failed batch. Consumer and account list sourced from Archive_ConsumerLog for the original failed batch rather than from TA_ARCH tag selection. | 4 |
+| status | Running | Batch is currently executing. Set on initial insert, updated to final status on completion. | 1 |
+| status | Success | Batch completed with zero table failures. | 2 |
+| status | Failed | One or more tables in the delete sequence failed. The script stops on first failure. Check error_message and Archive_BatchDetail for specifics. | 3 |
 | status | Aborted | Batch was terminated by the archive_abort emergency shutoff flag in GlobalConfig. The current batch completed but no further batches were started. | 4 |
 
 **Recent batch history** [sort:1] -- Shows the last 20 archive batches with key metrics.
@@ -903,12 +903,12 @@ One row per shell purge batch execution. Captures the full execution summary inc
 
 | Column | Value | Meaning | Sort |
 | --- | --- | --- | --- |
-| status | Running | Batch is currently executing. Set on initial insert, updated to final status on completion. | 1 |
 | schedule_mode | Full | Batch ran during a full-mode schedule window using the standard batch_size from GlobalConfig. | 1 |
 | schedule_mode | Reduced | Batch ran during a reduced-mode schedule window using batch_size_reduced from GlobalConfig. | 2 |
+| schedule_mode | Manual | Batch ran with manual parameter overrides, outside of schedule-driven execution. | 3 |
+| status | Running | Batch is currently executing. Set on initial insert, updated to final status on completion. | 1 |
 | status | Success | Batch completed with zero table failures. | 2 |
 | status | Failed | One or more tables in the delete sequence failed. The script stops on first failure. Check error_message and ShellPurge_BatchDetail for specifics. | 3 |
-| schedule_mode | Manual | Batch ran with manual parameter overrides, outside of schedule-driven execution. | 3 |
 | status | Aborted | Batch was terminated by the shell_purge_abort emergency shutoff flag in GlobalConfig. The current batch completed but no further batches were started. | 4 |
 
 **Recent batch history** [sort:1] -- Shows the last 20 shell purge batches with key metrics.
