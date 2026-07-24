@@ -1,6 +1,6 @@
 # Object_Metadata: Jira
 Source: dbo.Object_Metadata
-Generated: 2026-07-24 04:26:09
+Generated: 2026-07-24 04:35:05
 
 ## Process-JiraTicketQueue.ps1 (Script)
 
@@ -230,30 +230,30 @@ Title: 404
 
 Not Found - verify the project key and issue type exist in Jira.
 
-### status_value / StatusCode #15  [metadata_id: 1886]
-Title: 500+
-
-Server Error - Jira-side failure. Treated as transient and retried.
-
-### status_value / StatusCode #16  [metadata_id: 1887]
-Title: -99
-
-Queue insert failed - sp_QueueTicket could not write the queue row. The error text is in ResponseMessage.
-
-### status_value / StatusCode #17  [metadata_id: 5315]
-Title: 0
-
-No HTTP response - the request failed before Jira replied. Treated as transient and retried.
-
-### status_value / StatusCode #18  [metadata_id: 5316]
+### status_value / StatusCode #15  [metadata_id: 5316]
 Title: 408
 
 Request Timeout - Jira did not respond in time. Treated as transient and retried.
 
-### status_value / StatusCode #19  [metadata_id: 5317]
+### status_value / StatusCode #16  [metadata_id: 5317]
 Title: 429
 
 Rate Limited - Jira throttled the request. Treated as transient and retried, honoring the Retry-After header when Jira supplies one.
+
+### status_value / StatusCode #17  [metadata_id: 1886]
+Title: 500+
+
+Server Error - Jira-side failure. Treated as transient and retried.
+
+### status_value / StatusCode #18  [metadata_id: 1887]
+Title: -99
+
+Queue insert failed - sp_QueueTicket could not write the queue row. The error text is in ResponseMessage.
+
+### status_value / StatusCode #19  [metadata_id: 5315]
+Title: 0
+
+No HTTP response - the request failed before Jira replied. Treated as transient and retried.
 
 ### description / Summary #6  [metadata_id: 491]
 
