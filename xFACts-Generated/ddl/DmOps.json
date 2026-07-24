@@ -380,16 +380,22 @@
                                             ],
                        "statusValues":  [
                                             {
-                                                "column":  "status",
-                                                "value":  "Running",
-                                                "meaning":  "Batch is currently executing. Set on initial insert, updated to final status on completion.",
-                                                "sortOrder":  1
-                                            },
-                                            {
                                                 "column":  "bidata_status",
                                                 "value":  "Success",
                                                 "meaning":  "All four BIDATA table pairs (GenAccount, GenAccPay, GenAccPayAgg, GenPayment) migrated successfully for the batch. ConsumerLog.bidata_migrated set to 1 for all accounts.",
                                                 "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "bidata_status",
+                                                "value":  "Failed",
+                                                "meaning":  "One or more BIDATA table migrations failed. ConsumerLog.bidata_migrated remains 0. Check Archive_BatchDetail for B1-B4 entries.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "column":  "bidata_status",
+                                                "value":  "Skipped",
+                                                "meaning":  "BIDATA migration was not performed for this batch. Occurs when BIDATA instance is unavailable or during testing without the migration step enabled.",
+                                                "sortOrder":  3
                                             },
                                             {
                                                 "column":  "schedule_mode",
@@ -404,10 +410,22 @@
                                                 "sortOrder":  2
                                             },
                                             {
-                                                "column":  "bidata_status",
-                                                "value":  "Failed",
-                                                "meaning":  "One or more BIDATA table migrations failed. ConsumerLog.bidata_migrated remains 0. Check Archive_BatchDetail for B1-B4 entries.",
-                                                "sortOrder":  2
+                                                "column":  "schedule_mode",
+                                                "value":  "Manual",
+                                                "meaning":  "Batch ran with manual parameter overrides, outside of schedule-driven execution.",
+                                                "sortOrder":  3
+                                            },
+                                            {
+                                                "column":  "schedule_mode",
+                                                "value":  "Retry",
+                                                "meaning":  "Batch was created to reprocess a previously failed batch. Consumer and account list sourced from Archive_ConsumerLog for the original failed batch rather than from TA_ARCH tag selection.",
+                                                "sortOrder":  4
+                                            },
+                                            {
+                                                "column":  "status",
+                                                "value":  "Running",
+                                                "meaning":  "Batch is currently executing. Set on initial insert, updated to final status on completion.",
+                                                "sortOrder":  1
                                             },
                                             {
                                                 "column":  "status",
@@ -420,24 +438,6 @@
                                                 "value":  "Failed",
                                                 "meaning":  "One or more tables in the delete sequence failed. The script stops on first failure. Check error_message and Archive_BatchDetail for specifics.",
                                                 "sortOrder":  3
-                                            },
-                                            {
-                                                "column":  "bidata_status",
-                                                "value":  "Skipped",
-                                                "meaning":  "BIDATA migration was not performed for this batch. Occurs when BIDATA instance is unavailable or during testing without the migration step enabled.",
-                                                "sortOrder":  3
-                                            },
-                                            {
-                                                "column":  "schedule_mode",
-                                                "value":  "Manual",
-                                                "meaning":  "Batch ran with manual parameter overrides, outside of schedule-driven execution.",
-                                                "sortOrder":  3
-                                            },
-                                            {
-                                                "column":  "schedule_mode",
-                                                "value":  "Retry",
-                                                "meaning":  "Batch was created to reprocess a previously failed batch. Consumer and account list sourced from Archive_ConsumerLog for the original failed batch rather than from TA_ARCH tag selection.",
-                                                "sortOrder":  4
                                             },
                                             {
                                                 "column":  "status",
@@ -1598,12 +1598,6 @@
                                             ],
                        "statusValues":  [
                                             {
-                                                "column":  "status",
-                                                "value":  "Running",
-                                                "meaning":  "Batch is currently executing. Set on initial insert, updated to final status on completion.",
-                                                "sortOrder":  1
-                                            },
-                                            {
                                                 "column":  "schedule_mode",
                                                 "value":  "Full",
                                                 "meaning":  "Batch ran during a full-mode schedule window using the standard batch_size from GlobalConfig.",
@@ -1616,6 +1610,18 @@
                                                 "sortOrder":  2
                                             },
                                             {
+                                                "column":  "schedule_mode",
+                                                "value":  "Manual",
+                                                "meaning":  "Batch ran with manual parameter overrides, outside of schedule-driven execution.",
+                                                "sortOrder":  3
+                                            },
+                                            {
+                                                "column":  "status",
+                                                "value":  "Running",
+                                                "meaning":  "Batch is currently executing. Set on initial insert, updated to final status on completion.",
+                                                "sortOrder":  1
+                                            },
+                                            {
                                                 "column":  "status",
                                                 "value":  "Success",
                                                 "meaning":  "Batch completed with zero table failures.",
@@ -1625,12 +1631,6 @@
                                                 "column":  "status",
                                                 "value":  "Failed",
                                                 "meaning":  "One or more tables in the delete sequence failed. The script stops on first failure. Check error_message and ShellPurge_BatchDetail for specifics.",
-                                                "sortOrder":  3
-                                            },
-                                            {
-                                                "column":  "schedule_mode",
-                                                "value":  "Manual",
-                                                "meaning":  "Batch ran with manual parameter overrides, outside of schedule-driven execution.",
                                                 "sortOrder":  3
                                             },
                                             {
