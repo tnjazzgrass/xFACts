@@ -1,6 +1,6 @@
 # Object_Metadata: JBoss
 Source: dbo.Object_Metadata
-Generated: 2026-07-23 17:27:28
+Generated: 2026-07-23 20:14:25
 
 ## Collect-JBossMetrics.ps1 (Script)
 
