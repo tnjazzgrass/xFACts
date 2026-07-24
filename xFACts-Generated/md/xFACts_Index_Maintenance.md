@@ -675,12 +675,12 @@ Ad-hoc maintenance window exceptions with hierarchical scope (DATABASE ? SERVER 
 
 | Column | Value | Meaning | Sort |
 | --- | --- | --- | --- |
-| scope | DATABASE | Applies to a single database. Requires database_id to be populated and server_id to be NULL. Checked first in the hierarchy — overrides SERVER and GLOBAL exceptions. | 1 |
 | exception_type | MAINTENANCE_WINDOW | A planned expanded or modified maintenance window. Typically opens additional hours for index rebuilds. | 1 |
 | exception_type | EMERGENCY_BLOCK | An emergency freeze blocking all maintenance. Typically used during incidents, unexpected load, or deployment issues. All hr columns set to 0. | 2 |
+| exception_type | SPECIAL_EVENT | A known event requiring schedule adjustment (deployment, migration, audit). May block certain hours while opening others. | 3 |
+| scope | DATABASE | Applies to a single database. Requires database_id to be populated and server_id to be NULL. Checked first in the hierarchy — overrides SERVER and GLOBAL exceptions. | 1 |
 | scope | SERVER | Applies to all databases on a specific server. Requires server_id to be populated and database_id to be NULL. Checked second — overrides GLOBAL exceptions but yields to DATABASE exceptions. | 2 |
 | scope | GLOBAL | Applies to all databases across all servers. Requires both server_id and database_id to be NULL. Checked last — yields to SERVER and DATABASE exceptions. | 3 |
-| exception_type | SPECIAL_EVENT | A known event requiring schedule adjustment (deployment, migration, audit). May block certain hours while opening others. | 3 |
 
 **Active exceptions for the next 7 days** [sort:1] -- Shows upcoming exceptions that will affect maintenance scheduling.
 
@@ -887,13 +887,13 @@ Historical execution summary for Index component processes. One row per database
 | Column | Value | Meaning | Sort |
 | --- | --- | --- | --- |
 | process_name | SYNC | Sync-IndexRegistry.ps1 — daily discovery and metadata refresh of indexes across enrolled databases. | 1 |
-| status | SUCCESS | All operations for this database completed without errors. | 1 |
-| status | PARTIAL | Some operations succeeded but others failed. Check items_failed for the count. | 2 |
 | process_name | SCAN | Scan-IndexFragmentation.ps1 — fragmentation assessment via dm_db_index_physical_stats and queue population. | 2 |
 | process_name | EXECUTE | Execute-IndexMaintenance.ps1 — index rebuild execution during maintenance windows. | 3 |
+| process_name | STATS | Update-IndexStatistics.ps1 — statistics maintenance for modification-based and staleness-based updates. | 4 |
+| status | SUCCESS | All operations for this database completed without errors. | 1 |
+| status | PARTIAL | Some operations succeeded but others failed. Check items_failed for the count. | 2 |
 | status | FAILED | All operations for this database failed or the database was unreachable. | 3 |
 | status | NO_WORK | Database was evaluated but had no qualifying work items. | 4 |
-| process_name | STATS | Update-IndexStatistics.ps1 — statistics maintenance for modification-based and staleness-based updates. | 4 |
 | status | SKIPPED | Database was bypassed — typically because the schedule did not allow maintenance during the current hour. | 5 |
 | status | IN_PROGRESS | Currently being processed. Set at the start of database processing. | 6 |
 
@@ -1026,9 +1026,9 @@ Working queue of indexes awaiting maintenance, populated from Index_Registry bas
 
 | Column | Value | Meaning | Sort |
 | --- | --- | --- | --- |
-| status | PENDING | Awaiting processing. Set when an index is first added to the queue by Scan-IndexFragmentation.ps1, or reset from DEFERRED/FAILED at the start of each Execute-IndexMaintenance.ps1 run. | 1 |
 | operation_type | REBUILD | Full index rebuild (ALTER INDEX ... REBUILD). This is the standard operation for all queued indexes. | 1 |
 | operation_type | REORGANIZE | Index reorganization (ALTER INDEX ... REORGANIZE). Reserved for future use — currently all operations are REBUILD. | 2 |
+| status | PENDING | Awaiting processing. Set when an index is first added to the queue by Scan-IndexFragmentation.ps1, or reset from DEFERRED/FAILED at the start of each Execute-IndexMaintenance.ps1 run. | 1 |
 | status | IN_PROGRESS | Currently being rebuilt. Set by Execute-IndexMaintenance.ps1 immediately before issuing the ALTER INDEX command. Scan-IndexFragmentation.ps1 skips IN_PROGRESS entries to avoid interfering with active rebuilds. | 2 |
 | status | DEFERRED | Skipped in the current run because it did not fit in the remaining window. Reset to PENDING at the start of the next Execute-IndexMaintenance.ps1 run. The deferral_count is incremented to boost priority scoring on subsequent runs. | 3 |
 | status | SCHEDULED | Too large for any weekday maintenance window. Identified by comparing estimated duration against Get-MaxWeekdayWindow. Only reset to PENDING on extended window days (weekends/holidays). If a SCHEDULED index still does not fit even in an extended window, its deferral_count is incremented. | 4 |
@@ -1372,15 +1372,15 @@ Dashboard table providing at-a-glance status for all Index component processes. 
 
 | Column | Value | Meaning | Sort |
 | --- | --- | --- | --- |
-| process_name | SYNC | Sync-IndexRegistry.ps1 — daily discovery and metadata refresh. | 1 |
 | last_status | IN_PROGRESS | Process is currently running. Set at script start; completed_dttm is NULL. | 1 |
 | last_status | SUCCESS | Process completed all work without errors. | 2 |
-| process_name | SCAN | Scan-IndexFragmentation.ps1 — fragmentation scanning and queue population. | 2 |
-| process_name | EXECUTE | Execute-IndexMaintenance.ps1 — index rebuild execution. | 3 |
 | last_status | PARTIAL | Process completed but some databases or operations had errors. Check items_failed for count. | 3 |
 | last_status | FAILED | Process encountered critical errors across all databases. | 4 |
-| process_name | STATS | Update-IndexStatistics.ps1 — statistics maintenance. | 4 |
 | last_status | NO_WORK | Process ran but found no qualifying work. No databases matched the filter criteria or had eligible items. | 5 |
+| process_name | SYNC | Sync-IndexRegistry.ps1 — daily discovery and metadata refresh. | 1 |
+| process_name | SCAN | Scan-IndexFragmentation.ps1 — fragmentation scanning and queue population. | 2 |
+| process_name | EXECUTE | Execute-IndexMaintenance.ps1 — index rebuild execution. | 3 |
+| process_name | STATS | Update-IndexStatistics.ps1 — statistics maintenance. | 4 |
 
 **Quick status check** [sort:1] -- At-a-glance dashboard view of all Index processes showing last run timing and outcome.
 
