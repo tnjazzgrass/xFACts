@@ -520,16 +520,16 @@ Audit trail for BDL import executions. One row per import capturing the full lif
 
 | Column | Value | Meaning | Sort |
 | --- | --- | --- | --- |
-| status | VALIDATING | Import initiated. Uploaded file is being parsed and data validation checks are running against the column mapping. | 1 |
 | file_registry_status | PROCESSED | DM File_Registry.file_stts_cd = 5. All records processed successfully. Paired with status = COMPLETED. Record counts: import_success_count should match total_record_count with import_failed_count = 0. | 1 |
 | file_registry_status | PARTIALLY_PROCESSED | DM File_Registry.file_stts_cd = 8. Some records processed, others failed during import. Paired with status = COMPLETED. import_failed_count is non-zero; check import_success_count and import_failed_count for the split. | 2 |
-| status | BUILDING | Validation passed. The BDL XML file is being constructed from the mapped data. | 2 |
-| status | REGISTERED | XML file written to dmfs and registered with DM via POST /fileregistry. file_registry_id is now populated. | 3 |
 | file_registry_status | FAILED | DM File_Registry.file_stts_cd = 6. Processing failed before completion. Paired with status = FAILED. error_message populated from File_Registry.file_err_msg_txt. | 3 |
 | file_registry_status | CANCELED | DM File_Registry.file_stts_cd = 7. Processing was canceled. Paired with status = FAILED. Rare in practice — canceled imports typically result from manual DM-side intervention. | 4 |
+| file_registry_status | ORPHANED | Not a DM code. Set by reconciliation when dbo.File_Registry returns no row for the stored file_registry_id across repeated lookup attempts. Typically occurs after a lower-environment refresh removed DM-side records, or when file_registry_id was never populated due to registration failure. is_complete is set to 1 to stop further reconciliation attempts. | 5 |
+| status | VALIDATING | Import initiated. Uploaded file is being parsed and data validation checks are running against the column mapping. | 1 |
+| status | BUILDING | Validation passed. The BDL XML file is being constructed from the mapped data. | 2 |
+| status | REGISTERED | XML file written to dmfs and registered with DM via POST /fileregistry. file_registry_id is now populated. | 3 |
 | status | SUBMITTED | BDL import triggered via POST /fileregistry/{id}/bdlimport. Transitional state — file handed off to DM, awaiting reconciliation to a terminal state. Reconciliation advances SUBMITTED to COMPLETED or FAILED based on File_Registry.file_stts_cd. | 4 |
 | status | COMPLETED | DM reported terminal success via File_Registry.file_stts_cd (5 = PROCESSED or 8 = PARTIALLY_PROCESSED). Set by reconciliation along with file_registry_status, record counts, and completed_dttm. | 5 |
-| file_registry_status | ORPHANED | Not a DM code. Set by reconciliation when dbo.File_Registry returns no row for the stored file_registry_id across repeated lookup attempts. Typically occurs after a lower-environment refresh removed DM-side records, or when file_registry_id was never populated due to registration failure. is_complete is set to 1 to stop further reconciliation attempts. | 5 |
 | status | FAILED | Import failed at any stage. xFACts-side validation, registration, or submission failures set this directly. Reconciliation also sets this when DM reports File_Registry.file_stts_cd 6 = FAILED or 7 = CANCELED — file_registry_status captures which. error_message contains details. A retry requires a new import with a new filename. | 6 |
 
 **Recent import history** [sort:1] -- Shows the most recent BDL imports across all environments with key details.
@@ -943,10 +943,10 @@ BDL bulk data load format catalog containing one row per entity type. Parsed fro
 | Column | Value | Meaning | Sort |
 | --- | --- | --- | --- |
 | action_type | FILE_MAPPED | Default. User maps source file columns to BDL fields via drag-and-drop panels. Used for entity types where field values come from the uploaded file. | 1 |
-| entity_key | CONSUMER | Entity uses cnsmr_idntfr_agncy_id as the import key. Displayed in the Consumer section of the entity selection grid. | 1 |
-| entity_key | ACCOUNT | Entity uses cnsmr_accnt_idntfr_agncy_id as the import key. Displayed in the Account section of the entity selection grid. | 2 |
 | action_type | FIXED_VALUE | User enters values directly rather than mapping from file columns. The identifier comes from the file, but payload values are entered by the user and applied uniformly to every row. Used for tagging operations. | 2 |
 | action_type | HYBRID | Reserved for future use. Combination of file-mapped and manually entered fields. | 3 |
+| entity_key | CONSUMER | Entity uses cnsmr_idntfr_agncy_id as the import key. Displayed in the Consumer section of the entity selection grid. | 1 |
+| entity_key | ACCOUNT | Entity uses cnsmr_accnt_idntfr_agncy_id as the import key. Displayed in the Account section of the entity selection grid. | 2 |
 | entity_key | OTHER | Specialized entity that does not fit the consumer or account key pattern. Displayed in the Other section of the entity selection grid. | 3 |
 
 **All BDL data entities** [sort:1] -- Lists importable BDL entity types excluding wrapper/container types.
