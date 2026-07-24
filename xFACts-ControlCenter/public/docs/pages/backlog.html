@@ -26,7 +26,7 @@
             <div class="doc-body-inner">
 
 <div class="doc-context-bar">
-        A read-only view of the authored backlog file. It holds open items only &mdash; finished work is removed rather than marked done, and items carry no identifier, so history lives in git and the session record. Trivial fixes never appear here; they are done in the moment. Use the filters to narrow by component, priority, type, or initiative, or search across the summary and description text. Select any item&rsquo;s summary to read its full description.
+        A read-only view of the authored backlog file. It holds open items only &mdash; finished work is removed rather than marked done, and items carry no identifier, so history lives in git and the session record. Trivial fixes never appear here; they are done in the moment. Use the filters to narrow by component, priority, or type, or search across the summary, label, and description text. Select any item&rsquo;s summary to read its full description.
     </div>
 
     <!-- ============================================ -->
@@ -49,12 +49,8 @@
                 <select class="doc-meta-select" data-doc-filter="type" aria-label="Filter by type"></select>
             </div>
             <div class="doc-meta-control">
-                <span class="doc-meta-control-label">Initiative</span>
-                <select class="doc-meta-select" data-doc-filter="initiative" aria-label="Filter by initiative"></select>
-            </div>
-            <div class="doc-meta-control">
                 <span class="doc-meta-control-label">Search</span>
-                <input class="doc-meta-search" type="search" placeholder="Summary and description" aria-label="Search summary and description text">
+                <input class="doc-meta-search" type="search" placeholder="Summary, label, and description" aria-label="Search summary, label, and description text">
             </div>
             <label class="doc-meta-toggle-group">
                 <input class="doc-meta-checkbox" type="checkbox" checked>

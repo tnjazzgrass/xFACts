@@ -62,7 +62,6 @@ var doc_metaFilters = {
     component: '',
     priority: '',
     type: '',
-    initiative: '',
     search: ''
 };
 
@@ -148,19 +147,18 @@ function doc_metaSetStatus(text) {
    ----------------------------------------------------------------------------
    The filter controls are filled from the loaded payload rather than from
    fixed markup: the priority and type vocabularies come from the arrays the
-   file declares, while the component and initiative lists are collected from
-   the items themselves so only values actually in use are offered.
+   file declares, while the component list is collected from the items
+   themselves so only values actually in use are offered.
    Prefix: doc
    ============================================================================ */
 
 /* Fills every filter dropdown from the payload, taking the declared priority
-   and type vocabularies and collecting the component and initiative values that
-   the items actually carry. */
+   and type vocabularies and collecting the component values that the items
+   actually carry. */
 function doc_metaFillControls(data) {
     doc_metaFillSelect('component', doc_metaDistinct(data.items, 'component'));
     doc_metaFillSelect('priority', data.priorities || []);
     doc_metaFillSelect('type', data.types || []);
-    doc_metaFillSelect('initiative', doc_metaDistinct(data.items, 'initiative'));
 }
 
 /* Fills one named dropdown with an unfiltered default followed by the supplied
@@ -223,9 +221,6 @@ function doc_metaMatches(item, filters) {
         return false;
     }
     if (filters.type && item.type !== filters.type) {
-        return false;
-    }
-    if (filters.initiative && item.initiative !== filters.initiative) {
         return false;
     }
     if (filters.search) {
@@ -429,7 +424,7 @@ function doc_metaIsSiteUrl(value) {
 }
 
 /* Builds the collapsed detail drawer holding the full description and, when the
-   item carries them, its detail reference, initiative, and recorded date. */
+   item carries them, its detail reference and recorded date. */
 function doc_metaDetailHtml(item, columnCount) {
     var foot = '';
     if (item.detail_link) {
@@ -441,10 +436,6 @@ function doc_metaDetailHtml(item, columnCount) {
             foot += '<span class="doc-meta-detail-ref">' + doc_esc(item.detail_link) + '</span>';
         }
         foot += '</span>';
-    }
-    if (item.initiative) {
-        foot += '<span><span class="doc-meta-detail-label">Initiative</span>';
-        foot += doc_esc(item.initiative) + '</span>';
     }
     if (item.added) {
         foot += '<span><span class="doc-meta-detail-label">Added</span>';
