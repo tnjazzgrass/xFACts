@@ -55,6 +55,13 @@
    Prefix: (none)
    ============================================================================ #>
 
+# 2026-07-24  Ordered the statusValues arrays by column then sort_order instead
+#             of sort_order alone. A table's status values span multiple columns
+#             that each number from their own sequence, so ordering by number
+#             alone interleaved the columns and made two columns sharing a number
+#             order nondeterministically. Grouping by column first keeps each
+#             field's values contiguous, makes the order stable, and matches how
+#             the per-schema metadata markdown export already groups them.
 # 2026-07-23  Emitted the full enrichment set (data flow, design notes, status
 #             values, common queries, relationship notes) uniformly for every
 #             object type the JSON carries, not just tables. Procedures,
@@ -356,7 +363,7 @@ $sqlQuery = @"
                       AND om.object_name = t.name
                       AND om.property_type = 'status_value'
                       AND om.is_active = 1
-                    ORDER BY om.sort_order
+                    ORDER BY om.column_name, om.sort_order
                     FOR JSON PATH
                 ) AS [statusValues],
                 -- Common Queries (enrichment)
@@ -491,7 +498,7 @@ $sqlQuery = @"
                       AND om.object_name = p.name
                       AND om.property_type = 'status_value'
                       AND om.is_active = 1
-                    ORDER BY om.sort_order
+                    ORDER BY om.column_name, om.sort_order
                     FOR JSON PATH
                 ) AS [statusValues],
                 -- Common Queries (enrichment)
@@ -607,7 +614,7 @@ $sqlQuery = @"
                       AND om.object_name = tr.name
                       AND om.property_type = 'status_value'
                       AND om.is_active = 1
-                    ORDER BY om.sort_order
+                    ORDER BY om.column_name, om.sort_order
                     FOR JSON PATH
                 ) AS [statusValues],
                 -- Common Queries (enrichment)
@@ -744,7 +751,7 @@ $sqlQuery = @"
                       AND om.object_name = o.name
                       AND om.property_type = 'status_value'
                       AND om.is_active = 1
-                    ORDER BY om.sort_order
+                    ORDER BY om.column_name, om.sort_order
                     FOR JSON PATH
                 ) AS [statusValues],
                 -- Common Queries (enrichment)
@@ -877,7 +884,7 @@ $sqlQuery = @"
                       AND om.object_name = v.name
                       AND om.property_type = 'status_value'
                       AND om.is_active = 1
-                    ORDER BY om.sort_order
+                    ORDER BY om.column_name, om.sort_order
                     FOR JSON PATH
                 ) AS [statusValues],
                 -- Common Queries (enrichment)
@@ -987,7 +994,7 @@ $sqlQuery = @"
                       AND om.object_name = s.object_name
                       AND om.property_type = 'status_value'
                       AND om.is_active = 1
-                    ORDER BY om.sort_order
+                    ORDER BY om.column_name, om.sort_order
                     FOR JSON PATH
                 ) AS [statusValues],
                 -- Common Queries
@@ -1103,7 +1110,7 @@ $sqlQuery = @"
                       AND om.object_name = x.object_name
                       AND om.property_type = 'status_value'
                       AND om.is_active = 1
-                    ORDER BY om.sort_order
+                    ORDER BY om.column_name, om.sort_order
                     FOR JSON PATH
                 ) AS [statusValues],
                 -- Common Queries
@@ -1220,7 +1227,7 @@ $sqlQuery = @"
                       AND om.object_name = d.object_name
                       AND om.property_type = 'status_value'
                       AND om.is_active = 1
-                    ORDER BY om.sort_order
+                    ORDER BY om.column_name, om.sort_order
                     FOR JSON PATH
                 ) AS [statusValues],
                 -- Common Queries
