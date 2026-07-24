@@ -38,7 +38,7 @@
                                            "dataType":  "int",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "SQL Agent instance_id from sysjobhistory. NULL for NOT_STARTED records"
+                                           "description":  "SQL Agent instance identifier from job history. NULL when the record was created without any job history."
                                        },
                                        {
                                            "ordinal":  5,
@@ -88,7 +88,7 @@
                                            "length":  "20",
                                            "nullable":  false,
                                            "identity":  false,
-                                           "description":  "Build status: COMPLETED, FAILED, IN_PROGRESS, NOT_STARTED, SUPERSEDED"
+                                           "description":  "Current state of this build execution attempt."
                                        },
                                        {
                                            "ordinal":  11,
@@ -96,7 +96,7 @@
                                            "dataType":  "int",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "SQL Agent run_status code (1=Success, 0=Failed)"
+                                           "description":  "SQL Agent job outcome code captured from job history. NULL while the build is still running."
                                        },
                                        {
                                            "ordinal":  12,
@@ -104,7 +104,7 @@
                                            "dataType":  "int",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "Step ID that failed (if status = FAILED)"
+                                           "description":  "Step number that caused the build to fail. NULL when no step failed."
                                        },
                                        {
                                            "ordinal":  13,
@@ -130,7 +130,7 @@
                                            "nullable":  false,
                                            "identity":  false,
                                            "default":  "((0))",
-                                           "description":  "Reserved and currently unused; always 0, with no code path that sets or reads it."
+                                           "description":  "Reserved and currently unused; always written as 0 and never read."
                                        },
                                        {
                                            "ordinal":  16,
@@ -165,7 +165,7 @@
                                            },
                                            {
                                                "topic":  "Instance-Based Deduplication",
-                                               "note":  "Notification TriggerValue includes the instance_id (e.g., COMPLETED-12345) so each execution attempt can only trigger one alert regardless of how many monitoring cycles observe the completed state.",
+                                               "note":  "The notification trigger value combines the build status with the execution attempt identifier, so each attempt can only trigger one alert regardless of how many monitoring cycles observe the same state.",
                                                "sortOrder":  3
                                            },
                                            {
@@ -233,7 +233,7 @@
                        "queries":  [
                                        {
                                            "name":  "Today\u0027s Build Status",
-                                           "description":  "Daily check — shows all build records for today including status and notification state.",
+                                           "description":  "Daily check - shows all build records for today including status and notification state.",
                                            "sql":  "SELECT build_id, build_date, instance_id, start_dttm, end_dttm, \r\n       total_duration_formatted, status, notified_dttm\r\nFROM BIDATA.BuildExecution\r\nWHERE build_date = CAST(GETDATE() AS DATE)\r\nORDER BY build_id;",
                                            "sortOrder":  1
                                        },
@@ -245,7 +245,7 @@
                                        },
                                        {
                                            "name":  "Days with Multiple Attempts",
-                                           "description":  "Identifies dates with more than one execution attempt — indicates failures and restarts.",
+                                           "description":  "Identifies dates with more than one execution attempt - indicates failures and restarts.",
                                            "sql":  "SELECT build_date, COUNT(*) AS attempts\r\nFROM BIDATA.BuildExecution\r\nWHERE status IN (\u0027COMPLETED\u0027, \u0027FAILED\u0027)\r\nGROUP BY build_date\r\nHAVING COUNT(*) \u003e 1\r\nORDER BY build_date DESC;",
                                            "sortOrder":  3
                                        },
@@ -317,7 +317,7 @@
                                            "nullable":  false,
                                            "identity":  false,
                                            "default":  "((1))",
-                                           "description":  "SQL Agent run_status: 1=Success, 0=Failed"
+                                           "description":  "SQL Agent outcome code for this step, captured from job history."
                                        },
                                        {
                                            "ordinal":  6,
@@ -374,7 +374,7 @@
                        "designNotes":  [
                                            {
                                                "topic":  "Complete Step Capture",
-                                               "note":  "All SQL Agent job steps are captured including infrastructure steps (disable users, enable replication) and legacy notification steps, even though some are excluded from the Teams notification message. This preserves full execution history for analysis.",
+                                               "note":  "All SQL Agent job steps are captured, including the infrastructure and legacy notification steps that are excluded from the Teams notification message. This preserves full execution history for analysis.",
                                                "sortOrder":  1
                                            },
                                            {
@@ -437,14 +437,14 @@
                                        {
                                            "name":  "Step Duration Trend",
                                            "description":  "Tracks a specific step\u0027s duration over time for performance trending. Replace the step_name filter with the target step.",
-                                           "sql":  "SELECT \r\n    b.build_date,\r\n    s.duration_seconds,\r\n    s.duration_formatted\r\nFROM BIDATA.StepExecution s\r\nINNER JOIN BIDATA.BuildExecution b ON s.build_id = b.build_id\r\nWHERE s.step_name = \u0027Build Table X\u0027  -- Replace with actual step name\r\n  AND s.run_status = 1\r\nORDER BY b.build_date;",
+                                           "sql":  "SELECT\r\n    b.build_date,\r\n    s.duration_seconds,\r\n    s.duration_formatted\r\nFROM BIDATA.StepExecution s\r\nINNER JOIN BIDATA.BuildExecution b ON s.build_id = b.build_id\r\nWHERE s.step_name = \u0027\u003cstep_name\u003e\u0027\r\n  AND s.run_status = 1\r\nORDER BY b.build_date;",
                                            "sortOrder":  5
                                        }
                                    ],
                        "relationshipNotes":  [
                                                  {
                                                      "relatedObject":  "BuildExecution",
-                                                     "note":  "Each StepExecution row belongs to one BuildExecution record via the build_id foreign key. Step data only has meaning in the context of its parent build — the build_date, status, and instance_id come from the parent row.",
+                                                     "note":  "Each StepExecution row belongs to one BuildExecution record via the build_id foreign key. Step data only has meaning in the context of its parent build - the build_date, status, and instance_id come from the parent row.",
                                                      "sortOrder":  1
                                                  }
                                              ]
@@ -472,7 +472,7 @@
                         "designNotes":  [
                                             {
                                                 "topic":  "Direct Connection vs Linked Server",
-                                                "note":  "Uses direct PowerShell connection to the source server via Invoke-Sqlcmd instead of linked server queries. This eliminates the linked server dependency, enables real-time step capture during build execution, and aligns with the platform direction of unified PowerShell orchestration.",
+                                                "note":  "Queries the source server over a direct PowerShell connection rather than through a linked server. This removes the linked server dependency and enables step capture while the build is still running.",
                                                 "sortOrder":  1
                                             },
                                             {
@@ -487,12 +487,12 @@
                                             },
                                             {
                                                 "topic":  "Instance-Based Deduplication",
-                                                "note":  "Notification TriggerValue includes the instance_id or date (e.g., COMPLETED-12345, NOT_STARTED-2026-01-29) so each build attempt or not-started condition can only trigger one alert regardless of how many monitoring cycles observe the same state.",
+                                                "note":  "The notification trigger value combines the build status with either the execution attempt identifier or the build date, so each build attempt or not-started condition can only trigger one alert regardless of how many monitoring cycles observe the same state.",
                                                 "sortOrder":  4
                                             },
                                             {
                                                 "topic":  "Notification Step Filtering",
-                                                "note":  "Infrastructure steps (disable users, enable replication) and legacy notification steps are excluded from the Teams message body to keep notifications focused on actual data processing steps. These steps are still captured in StepExecution for historical completeness.",
+                                                "note":  "Infrastructure and legacy notification steps are excluded from the Teams message body by step number, keeping notifications focused on data processing steps. The excluded steps are still captured in StepExecution for historical completeness.",
                                                 "sortOrder":  5
                                             }
                                         ],
