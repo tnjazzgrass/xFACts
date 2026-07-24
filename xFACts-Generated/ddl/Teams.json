@@ -281,7 +281,7 @@
                                            "dataType":  "int",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "Foreign key to AlertQueue. Links to the original queued alert"
+                                           "description":  "Links this log entry to its AlertQueue row; no FK constraint, the column is present for tracing."
                                        },
                                        {
                                            "ordinal":  3,
