@@ -3,8 +3,10 @@
 --   Section 1  Preview - current catalog state
 --   Section 2  Object_Registry - INSERT docs-meta.css
 --   Section 3  Object_Registry - INSERT docs-meta.js
---   Section 4  Verification
--- Run section by section in SSMS. Sections 2-3 are idempotent (guarded).
+--   Section 4  Object_Registry - INSERT backlog.html
+--   Section 5  Verification
+-- Run section by section in SSMS. Sections 2-4 are idempotent (guarded), so
+-- re-running after the css and js rows already exist is safe.
 -- Component: Documentation.Site (module ControlCenter).
 --
 -- Both files are page-type family assets in the docs zone, classified exactly
@@ -35,7 +37,7 @@ GO
 SELECT registry_id, module_name, component_name, object_name,
        object_category, object_type, object_path, zone, scope, scope_tier, is_active
 FROM dbo.Object_Registry
-WHERE object_name IN ('docs-meta.css', 'docs-meta.js')
+WHERE object_name IN ('docs-meta.css', 'docs-meta.js', 'backlog.html')
 ORDER BY object_name;
 
 SELECT registry_id, object_name, object_type, zone, scope, scope_tier, description
@@ -95,13 +97,40 @@ END
 GO
 
 -- ============================================================================
--- SECTION 4: VERIFICATION
+-- SECTION 4: OBJECT_REGISTRY - INSERT backlog.html
 -- ----------------------------------------------------------------------------
--- Both assets registered and active with zone docs and scope SHARED.
+-- The page itself. Every one of the 66 existing doc-site pages carries a row,
+-- so the new page needs one too; the deploy run flags it as UNREGISTERED until
+-- it does. Pages are scope LOCAL (one consumer each), unlike the css and js
+-- family assets above, which are SHARED.
+-- ============================================================================
+
+IF NOT EXISTS (
+    SELECT 1 FROM dbo.Object_Registry
+    WHERE component_name = 'Documentation.Site'
+      AND object_name = 'backlog.html'
+)
+BEGIN
+    INSERT INTO dbo.Object_Registry
+        (module_name, component_name, object_name, object_category, object_type,
+         object_path, zone, scope, description)
+    VALUES
+        ('ControlCenter', 'Documentation.Site', 'backlog.html', 'Documentation', 'HTML',
+         'E:\xFACts-ControlCenter\public\docs\pages\backlog.html',
+         'docs', 'LOCAL',
+         'Platform backlog page - filterable view of the open backlog items');
+END
+GO
+
+-- ============================================================================
+-- SECTION 5: VERIFICATION
+-- ----------------------------------------------------------------------------
+-- All three objects registered and active: the css and js family assets with
+-- zone docs and scope SHARED, and the page with zone docs and scope LOCAL.
 -- ============================================================================
 
 SELECT registry_id, object_name, object_category, object_type,
        object_path, zone, scope, scope_tier, is_active, description
 FROM dbo.Object_Registry
-WHERE object_name IN ('docs-meta.css', 'docs-meta.js')
-ORDER BY object_name;
+WHERE object_name IN ('docs-meta.css', 'docs-meta.js', 'backlog.html')
+ORDER BY object_type, object_name;
