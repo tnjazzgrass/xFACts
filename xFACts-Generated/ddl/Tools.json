@@ -631,12 +631,6 @@
                                        ],
                        "statusValues":  [
                                             {
-                                                "column":  "status",
-                                                "value":  "VALIDATING",
-                                                "meaning":  "Import initiated. Uploaded file is being parsed and data validation checks are running against the column mapping.",
-                                                "sortOrder":  1
-                                            },
-                                            {
                                                 "column":  "file_registry_status",
                                                 "value":  "PROCESSED",
                                                 "meaning":  "DM File_Registry.file_stts_cd = 5. All records processed successfully. Paired with status = COMPLETED. Record counts: import_success_count should match total_record_count with import_failed_count = 0.",
@@ -647,18 +641,6 @@
                                                 "value":  "PARTIALLY_PROCESSED",
                                                 "meaning":  "DM File_Registry.file_stts_cd = 8. Some records processed, others failed during import. Paired with status = COMPLETED. import_failed_count is non-zero; check import_success_count and import_failed_count for the split.",
                                                 "sortOrder":  2
-                                            },
-                                            {
-                                                "column":  "status",
-                                                "value":  "BUILDING",
-                                                "meaning":  "Validation passed. The BDL XML file is being constructed from the mapped data.",
-                                                "sortOrder":  2
-                                            },
-                                            {
-                                                "column":  "status",
-                                                "value":  "REGISTERED",
-                                                "meaning":  "XML file written to dmfs and registered with DM via POST /fileregistry. file_registry_id is now populated.",
-                                                "sortOrder":  3
                                             },
                                             {
                                                 "column":  "file_registry_status",
@@ -673,6 +655,30 @@
                                                 "sortOrder":  4
                                             },
                                             {
+                                                "column":  "file_registry_status",
+                                                "value":  "ORPHANED",
+                                                "meaning":  "Not a DM code. Set by reconciliation when dbo.File_Registry returns no row for the stored file_registry_id across repeated lookup attempts. Typically occurs after a lower-environment refresh removed DM-side records, or when file_registry_id was never populated due to registration failure. is_complete is set to 1 to stop further reconciliation attempts.",
+                                                "sortOrder":  5
+                                            },
+                                            {
+                                                "column":  "status",
+                                                "value":  "VALIDATING",
+                                                "meaning":  "Import initiated. Uploaded file is being parsed and data validation checks are running against the column mapping.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "status",
+                                                "value":  "BUILDING",
+                                                "meaning":  "Validation passed. The BDL XML file is being constructed from the mapped data.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "column":  "status",
+                                                "value":  "REGISTERED",
+                                                "meaning":  "XML file written to dmfs and registered with DM via POST /fileregistry. file_registry_id is now populated.",
+                                                "sortOrder":  3
+                                            },
+                                            {
                                                 "column":  "status",
                                                 "value":  "SUBMITTED",
                                                 "meaning":  "BDL import triggered via POST /fileregistry/{id}/bdlimport. Transitional state — file handed off to DM, awaiting reconciliation to a terminal state. Reconciliation advances SUBMITTED to COMPLETED or FAILED based on File_Registry.file_stts_cd.",
@@ -682,12 +688,6 @@
                                                 "column":  "status",
                                                 "value":  "COMPLETED",
                                                 "meaning":  "DM reported terminal success via File_Registry.file_stts_cd (5 = PROCESSED or 8 = PARTIALLY_PROCESSED). Set by reconciliation along with file_registry_status, record counts, and completed_dttm.",
-                                                "sortOrder":  5
-                                            },
-                                            {
-                                                "column":  "file_registry_status",
-                                                "value":  "ORPHANED",
-                                                "meaning":  "Not a DM code. Set by reconciliation when dbo.File_Registry returns no row for the stored file_registry_id across repeated lookup attempts. Typically occurs after a lower-environment refresh removed DM-side records, or when file_registry_id was never populated due to registration failure. is_complete is set to 1 to stop further reconciliation attempts.",
                                                 "sortOrder":  5
                                             },
                                             {
@@ -1885,18 +1885,6 @@
                                                 "sortOrder":  1
                                             },
                                             {
-                                                "column":  "entity_key",
-                                                "value":  "CONSUMER",
-                                                "meaning":  "Entity uses cnsmr_idntfr_agncy_id as the import key. Displayed in the Consumer section of the entity selection grid.",
-                                                "sortOrder":  1
-                                            },
-                                            {
-                                                "column":  "entity_key",
-                                                "value":  "ACCOUNT",
-                                                "meaning":  "Entity uses cnsmr_accnt_idntfr_agncy_id as the import key. Displayed in the Account section of the entity selection grid.",
-                                                "sortOrder":  2
-                                            },
-                                            {
                                                 "column":  "action_type",
                                                 "value":  "FIXED_VALUE",
                                                 "meaning":  "User enters values directly rather than mapping from file columns. The identifier comes from the file, but payload values are entered by the user and applied uniformly to every row. Used for tagging operations.",
@@ -1907,6 +1895,18 @@
                                                 "value":  "HYBRID",
                                                 "meaning":  "Reserved for future use. Combination of file-mapped and manually entered fields.",
                                                 "sortOrder":  3
+                                            },
+                                            {
+                                                "column":  "entity_key",
+                                                "value":  "CONSUMER",
+                                                "meaning":  "Entity uses cnsmr_idntfr_agncy_id as the import key. Displayed in the Consumer section of the entity selection grid.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "entity_key",
+                                                "value":  "ACCOUNT",
+                                                "meaning":  "Entity uses cnsmr_accnt_idntfr_agncy_id as the import key. Displayed in the Account section of the entity selection grid.",
+                                                "sortOrder":  2
                                             },
                                             {
                                                 "column":  "entity_key",
