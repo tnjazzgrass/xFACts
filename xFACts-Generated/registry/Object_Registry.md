@@ -1,6 +1,6 @@
 # Object Registry
 Source: dbo.Object_Registry
-Generated: 2026-07-23 17:27:28
+Generated: 2026-07-23 20:14:25
 
 | module_name | component_name | object_name | object_category | object_type | object_path | zone | scope | scope_tier | description |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -69,6 +69,7 @@ Generated: 2026-07-23 17:27:28
 | ControlCenter | Documentation.Site | b2b-cc.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\cc\b2b-cc.html | docs | LOCAL |  | IBM/B2B Control Center guide page |
 | ControlCenter | Documentation.Site | b2b-ref.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\ref\b2b-ref.html | docs | LOCAL |  | IBM/B2B DDL reference page |
 | ControlCenter | Documentation.Site | b2b.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\b2b.html | docs | LOCAL |  | IBM/B2B narrative documentation page |
+| ControlCenter | Documentation.Site | backlog.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\backlog.html | docs | LOCAL |  | Platform backlog page - filterable view of the open backlog items |
 | ControlCenter | Documentation.Site | backup-arch.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\arch\backup-arch.html | docs | LOCAL |  | Backup architecture page |
 | ControlCenter | Documentation.Site | backup-cc.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\cc\backup-cc.html | docs | LOCAL |  | Backup Monitoring Control Center guide page |
 | ControlCenter | Documentation.Site | backup-ref.html | Documentation | HTML | E:\xFACts-ControlCenter\public\docs\pages\ref\backup-ref.html | docs | LOCAL |  | Backup DDL reference page |
