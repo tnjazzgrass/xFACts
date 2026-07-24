@@ -4948,12 +4948,6 @@
                                        ],
                        "statusValues":  [
                                             {
-                                                "column":  "status",
-                                                "value":  "SUCCESS",
-                                                "meaning":  "Operation completed successfully.",
-                                                "sortOrder":  1
-                                            },
-                                            {
                                                 "column":  "component",
                                                 "value":  "COLLECTION",
                                                 "meaning":  "Logged by Collect-BackupStatus.ps1. Operations include per-server collection summaries with file counts and duration.",
@@ -4966,18 +4960,6 @@
                                                 "sortOrder":  2
                                             },
                                             {
-                                                "column":  "status",
-                                                "value":  "FAILED",
-                                                "meaning":  "Operation encountered an error. error_message contains the summary; error_details may contain the full stack trace.",
-                                                "sortOrder":  2
-                                            },
-                                            {
-                                                "column":  "status",
-                                                "value":  "SKIPPED",
-                                                "meaning":  "Operation intentionally bypassed — typically logged when there is no work to do.",
-                                                "sortOrder":  3
-                                            },
-                                            {
                                                 "column":  "component",
                                                 "value":  "AWS_UPLOAD",
                                                 "meaning":  "Logged by Process-BackupAWSUpload.ps1. Operations include per-file upload results with byte counts and throughput.",
@@ -4988,6 +4970,24 @@
                                                 "value":  "RETENTION",
                                                 "meaning":  "Logged by Process-BackupRetention.ps1. Operations include LOCAL_DELETE and NETWORK_DELETE with byte counts. HISTORICAL record operations are excluded from logging.",
                                                 "sortOrder":  4
+                                            },
+                                            {
+                                                "column":  "status",
+                                                "value":  "SUCCESS",
+                                                "meaning":  "Operation completed successfully.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "status",
+                                                "value":  "FAILED",
+                                                "meaning":  "Operation encountered an error. error_message contains the summary; error_details may contain the full stack trace.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "column":  "status",
+                                                "value":  "SKIPPED",
+                                                "meaning":  "Operation intentionally bypassed — typically logged when there is no work to do.",
+                                                "sortOrder":  3
                                             },
                                             {
                                                 "column":  "status",
@@ -5803,22 +5803,16 @@
                                        ],
                        "statusValues":  [
                                             {
-                                                "column":  "status",
-                                                "value":  "PENDING",
-                                                "meaning":  "Operation has been claimed by a script invocation and is waiting in queue. The row exists to prevent other concurrent invocations from claiming the same work. queued_dttm is populated; started_dttm is NULL.",
-                                                "sortOrder":  0
-                                            },
-                                            {
                                                 "column":  "check_mode",
                                                 "value":  "PHYSICAL_ONLY",
                                                 "meaning":  "Physical structure checks only — page checksums, torn pages, physical page integrity. Catches most real-world storage corruption. Significantly faster than FULL.",
                                                 "sortOrder":  1
                                             },
                                             {
-                                                "column":  "status",
-                                                "value":  "IN_PROGRESS",
-                                                "meaning":  "DBCC operation is actively executing. Transitioned from PENDING when the script begins processing this item. started_dttm and executed_on_server are populated at this transition.",
-                                                "sortOrder":  1
+                                                "column":  "check_mode",
+                                                "value":  "FULL",
+                                                "meaning":  "Complete logical and physical integrity check. Includes all PHYSICAL_ONLY checks plus cross-object logical consistency validation.",
+                                                "sortOrder":  2
                                             },
                                             {
                                                 "column":  "operation",
@@ -5833,24 +5827,6 @@
                                                 "sortOrder":  2
                                             },
                                             {
-                                                "column":  "status",
-                                                "value":  "SUCCESS",
-                                                "meaning":  "The DBCC operation completed with no errors reported. Integrity verified for the checked scope.",
-                                                "sortOrder":  2
-                                            },
-                                            {
-                                                "column":  "check_mode",
-                                                "value":  "FULL",
-                                                "meaning":  "Complete logical and physical integrity check. Includes all PHYSICAL_ONLY checks plus cross-object logical consistency validation.",
-                                                "sortOrder":  2
-                                            },
-                                            {
-                                                "column":  "status",
-                                                "value":  "FAILED",
-                                                "meaning":  "Script or connection error prevented DBCC from completing. Typical causes: database not online, connection timeout, permissions issue. error_details contains the exception message. Teams alert is sent.",
-                                                "sortOrder":  3
-                                            },
-                                            {
                                                 "column":  "operation",
                                                 "value":  "CHECKCATALOG",
                                                 "meaning":  "System catalog consistency check. Verifies system table relationships. Very fast — seconds.",
@@ -5861,6 +5837,30 @@
                                                 "value":  "CHECKCONSTRAINTS",
                                                 "meaning":  "FK and CHECK constraint data validation. Identifies rows that violate constraint rules. Duration varies — minutes to hours depending on table sizes and constraint count. Not included in CHECKDB.",
                                                 "sortOrder":  4
+                                            },
+                                            {
+                                                "column":  "status",
+                                                "value":  "PENDING",
+                                                "meaning":  "Operation has been claimed by a script invocation and is waiting in queue. The row exists to prevent other concurrent invocations from claiming the same work. queued_dttm is populated; started_dttm is NULL.",
+                                                "sortOrder":  0
+                                            },
+                                            {
+                                                "column":  "status",
+                                                "value":  "IN_PROGRESS",
+                                                "meaning":  "DBCC operation is actively executing. Transitioned from PENDING when the script begins processing this item. started_dttm and executed_on_server are populated at this transition.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "status",
+                                                "value":  "SUCCESS",
+                                                "meaning":  "The DBCC operation completed with no errors reported. Integrity verified for the checked scope.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "column":  "status",
+                                                "value":  "FAILED",
+                                                "meaning":  "Script or connection error prevented DBCC from completing. Typical causes: database not online, connection timeout, permissions issue. error_details contains the exception message. Teams alert is sent.",
+                                                "sortOrder":  3
                                             },
                                             {
                                                 "column":  "status",
@@ -6213,18 +6213,6 @@
                                                 "sortOrder":  1
                                             },
                                             {
-                                                "column":  "replica_override",
-                                                "value":  "PRIMARY",
-                                                "meaning":  "Pins this database\u0027s DBCC operations to the primary replica, overriding the default routing.",
-                                                "sortOrder":  1
-                                            },
-                                            {
-                                                "column":  "replica_override",
-                                                "value":  "SECONDARY",
-                                                "meaning":  "Pins this database\u0027s DBCC operations to the secondary replica, overriding the default routing.",
-                                                "sortOrder":  2
-                                            },
-                                            {
                                                 "column":  "check_mode",
                                                 "value":  "PHYSICAL_ONLY",
                                                 "meaning":  "Physical structure checks only - page checksums, torn pages, physical page integrity. Significantly faster than FULL.",
@@ -6235,6 +6223,18 @@
                                                 "value":  "FULL",
                                                 "meaning":  "Complete logical and physical integrity check. Includes all PHYSICAL_ONLY checks plus cross-object logical consistency validation.",
                                                 "sortOrder":  3
+                                            },
+                                            {
+                                                "column":  "replica_override",
+                                                "value":  "PRIMARY",
+                                                "meaning":  "Pins this database\u0027s DBCC operations to the primary replica, overriding the default routing.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "replica_override",
+                                                "value":  "SECONDARY",
+                                                "meaning":  "Pins this database\u0027s DBCC operations to the secondary replica, overriding the default routing.",
+                                                "sortOrder":  2
                                             }
                                         ],
                        "queries":  [
@@ -6455,12 +6455,6 @@
                                        ],
                        "statusValues":  [
                                             {
-                                                "column":  "alert_type",
-                                                "value":  "DISK_SPACE_LOW",
-                                                "meaning":  "Drive free space has fallen below its configured threshold in Disk_ThresholdConfig. This is the only alert type currently used by the Disk component. The check constraint allows additional types (BACKUP_MISSED, JOB_FAILED, DB_OFFLINE, ERROR_LOG_CRITICAL, LONG_RUNNING_QUERY) for future expansion.",
-                                                "sortOrder":  1
-                                            },
-                                            {
                                                 "column":  "alert_method",
                                                 "value":  "JIRA",
                                                 "meaning":  "Alert was delivered by creating a Jira ticket via Jira.TicketQueue. This is the primary notification method for disk space breaches — Jira tickets create actionable work items for IT Ops to add storage.",
@@ -6477,6 +6471,12 @@
                                                 "value":  "EMAIL",
                                                 "meaning":  "Alert was delivered via email. Not currently used but allowed by the check constraint for future expansion.",
                                                 "sortOrder":  3
+                                            },
+                                            {
+                                                "column":  "alert_type",
+                                                "value":  "DISK_SPACE_LOW",
+                                                "meaning":  "Drive free space has fallen below its configured threshold in Disk_ThresholdConfig. This is the only alert type currently used by the Disk component. The check constraint allows additional types (BACKUP_MISSED, JOB_FAILED, DB_OFFLINE, ERROR_LOG_CRITICAL, LONG_RUNNING_QUERY) for future expansion.",
+                                                "sortOrder":  1
                                             }
                                         ],
                        "queries":  [
@@ -7976,12 +7976,6 @@
                                        ],
                        "statusValues":  [
                                             {
-                                                "column":  "scope",
-                                                "value":  "DATABASE",
-                                                "meaning":  "Applies to a single database. Requires database_id to be populated and server_id to be NULL. Checked first in the hierarchy — overrides SERVER and GLOBAL exceptions.",
-                                                "sortOrder":  1
-                                            },
-                                            {
                                                 "column":  "exception_type",
                                                 "value":  "MAINTENANCE_WINDOW",
                                                 "meaning":  "A planned expanded or modified maintenance window. Typically opens additional hours for index rebuilds.",
@@ -7994,6 +7988,18 @@
                                                 "sortOrder":  2
                                             },
                                             {
+                                                "column":  "exception_type",
+                                                "value":  "SPECIAL_EVENT",
+                                                "meaning":  "A known event requiring schedule adjustment (deployment, migration, audit). May block certain hours while opening others.",
+                                                "sortOrder":  3
+                                            },
+                                            {
+                                                "column":  "scope",
+                                                "value":  "DATABASE",
+                                                "meaning":  "Applies to a single database. Requires database_id to be populated and server_id to be NULL. Checked first in the hierarchy — overrides SERVER and GLOBAL exceptions.",
+                                                "sortOrder":  1
+                                            },
+                                            {
                                                 "column":  "scope",
                                                 "value":  "SERVER",
                                                 "meaning":  "Applies to all databases on a specific server. Requires server_id to be populated and database_id to be NULL. Checked second — overrides GLOBAL exceptions but yields to DATABASE exceptions.",
@@ -8003,12 +8009,6 @@
                                                 "column":  "scope",
                                                 "value":  "GLOBAL",
                                                 "meaning":  "Applies to all databases across all servers. Requires both server_id and database_id to be NULL. Checked last — yields to SERVER and DATABASE exceptions.",
-                                                "sortOrder":  3
-                                            },
-                                            {
-                                                "column":  "exception_type",
-                                                "value":  "SPECIAL_EVENT",
-                                                "meaning":  "A known event requiring schedule adjustment (deployment, migration, audit). May block certain hours while opening others.",
                                                 "sortOrder":  3
                                             }
                                         ],
@@ -8565,18 +8565,6 @@
                                                 "sortOrder":  1
                                             },
                                             {
-                                                "column":  "status",
-                                                "value":  "SUCCESS",
-                                                "meaning":  "All operations for this database completed without errors.",
-                                                "sortOrder":  1
-                                            },
-                                            {
-                                                "column":  "status",
-                                                "value":  "PARTIAL",
-                                                "meaning":  "Some operations succeeded but others failed. Check items_failed for the count.",
-                                                "sortOrder":  2
-                                            },
-                                            {
                                                 "column":  "process_name",
                                                 "value":  "SCAN",
                                                 "meaning":  "Scan-IndexFragmentation.ps1 — fragmentation assessment via dm_db_index_physical_stats and queue population.",
@@ -8589,6 +8577,24 @@
                                                 "sortOrder":  3
                                             },
                                             {
+                                                "column":  "process_name",
+                                                "value":  "STATS",
+                                                "meaning":  "Update-IndexStatistics.ps1 — statistics maintenance for modification-based and staleness-based updates.",
+                                                "sortOrder":  4
+                                            },
+                                            {
+                                                "column":  "status",
+                                                "value":  "SUCCESS",
+                                                "meaning":  "All operations for this database completed without errors.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "status",
+                                                "value":  "PARTIAL",
+                                                "meaning":  "Some operations succeeded but others failed. Check items_failed for the count.",
+                                                "sortOrder":  2
+                                            },
+                                            {
                                                 "column":  "status",
                                                 "value":  "FAILED",
                                                 "meaning":  "All operations for this database failed or the database was unreachable.",
@@ -8598,12 +8604,6 @@
                                                 "column":  "status",
                                                 "value":  "NO_WORK",
                                                 "meaning":  "Database was evaluated but had no qualifying work items.",
-                                                "sortOrder":  4
-                                            },
-                                            {
-                                                "column":  "process_name",
-                                                "value":  "STATS",
-                                                "meaning":  "Update-IndexStatistics.ps1 — statistics maintenance for modification-based and staleness-based updates.",
                                                 "sortOrder":  4
                                             },
                                             {
@@ -9161,12 +9161,6 @@
                                        ],
                        "statusValues":  [
                                             {
-                                                "column":  "status",
-                                                "value":  "PENDING",
-                                                "meaning":  "Awaiting processing. Set when an index is first added to the queue by Scan-IndexFragmentation.ps1, or reset from DEFERRED/FAILED at the start of each Execute-IndexMaintenance.ps1 run.",
-                                                "sortOrder":  1
-                                            },
-                                            {
                                                 "column":  "operation_type",
                                                 "value":  "REBUILD",
                                                 "meaning":  "Full index rebuild (ALTER INDEX ... REBUILD). This is the standard operation for all queued indexes.",
@@ -9177,6 +9171,12 @@
                                                 "value":  "REORGANIZE",
                                                 "meaning":  "Index reorganization (ALTER INDEX ... REORGANIZE). Reserved for future use — currently all operations are REBUILD.",
                                                 "sortOrder":  2
+                                            },
+                                            {
+                                                "column":  "status",
+                                                "value":  "PENDING",
+                                                "meaning":  "Awaiting processing. Set when an index is first added to the queue by Scan-IndexFragmentation.ps1, or reset from DEFERRED/FAILED at the start of each Execute-IndexMaintenance.ps1 run.",
+                                                "sortOrder":  1
                                             },
                                             {
                                                 "column":  "status",
@@ -10066,12 +10066,6 @@
                                        ],
                        "statusValues":  [
                                             {
-                                                "column":  "process_name",
-                                                "value":  "SYNC",
-                                                "meaning":  "Sync-IndexRegistry.ps1 — daily discovery and metadata refresh.",
-                                                "sortOrder":  1
-                                            },
-                                            {
                                                 "column":  "last_status",
                                                 "value":  "IN_PROGRESS",
                                                 "meaning":  "Process is currently running. Set at script start; completed_dttm is NULL.",
@@ -10082,18 +10076,6 @@
                                                 "value":  "SUCCESS",
                                                 "meaning":  "Process completed all work without errors.",
                                                 "sortOrder":  2
-                                            },
-                                            {
-                                                "column":  "process_name",
-                                                "value":  "SCAN",
-                                                "meaning":  "Scan-IndexFragmentation.ps1 — fragmentation scanning and queue population.",
-                                                "sortOrder":  2
-                                            },
-                                            {
-                                                "column":  "process_name",
-                                                "value":  "EXECUTE",
-                                                "meaning":  "Execute-IndexMaintenance.ps1 — index rebuild execution.",
-                                                "sortOrder":  3
                                             },
                                             {
                                                 "column":  "last_status",
@@ -10108,16 +10090,34 @@
                                                 "sortOrder":  4
                                             },
                                             {
-                                                "column":  "process_name",
-                                                "value":  "STATS",
-                                                "meaning":  "Update-IndexStatistics.ps1 — statistics maintenance.",
-                                                "sortOrder":  4
-                                            },
-                                            {
                                                 "column":  "last_status",
                                                 "value":  "NO_WORK",
                                                 "meaning":  "Process ran but found no qualifying work. No databases matched the filter criteria or had eligible items.",
                                                 "sortOrder":  5
+                                            },
+                                            {
+                                                "column":  "process_name",
+                                                "value":  "SYNC",
+                                                "meaning":  "Sync-IndexRegistry.ps1 — daily discovery and metadata refresh.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "process_name",
+                                                "value":  "SCAN",
+                                                "meaning":  "Scan-IndexFragmentation.ps1 — fragmentation scanning and queue population.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "column":  "process_name",
+                                                "value":  "EXECUTE",
+                                                "meaning":  "Execute-IndexMaintenance.ps1 — index rebuild execution.",
+                                                "sortOrder":  3
+                                            },
+                                            {
+                                                "column":  "process_name",
+                                                "value":  "STATS",
+                                                "meaning":  "Update-IndexStatistics.ps1 — statistics maintenance.",
+                                                "sortOrder":  4
                                             }
                                         ],
                        "queries":  [
@@ -10577,6 +10577,18 @@
                                        ],
                        "statusValues":  [
                                             {
+                                                "column":  "correlation_source",
+                                                "value":  "BIDATA_BUILD",
+                                                "meaning":  "Event coincides with the nightly BIDATA data warehouse build. Detected by checking BIDATA.BuildExecution for an active or recently completed build.",
+                                                "sortOrder":  7
+                                            },
+                                            {
+                                                "column":  "correlation_source",
+                                                "value":  "NULL",
+                                                "meaning":  "No known correlating process identified. This is a signal — unexpected events with NULL correlation warrant investigation.",
+                                                "sortOrder":  8
+                                            },
+                                            {
                                                 "column":  "event_type",
                                                 "value":  "STATE_CHANGE",
                                                 "meaning":  "Agent run_status changed between collection cycles. Generic transition event logged for any status change.",
@@ -10611,18 +10623,6 @@
                                                 "value":  "INFO",
                                                 "meaning":  "Informational event worth recording. Used for registry changes, configuration updates, and other non-error events at collector discretion.",
                                                 "sortOrder":  6
-                                            },
-                                            {
-                                                "column":  "correlation_source",
-                                                "value":  "BIDATA_BUILD",
-                                                "meaning":  "Event coincides with the nightly BIDATA data warehouse build. Detected by checking BIDATA.BuildExecution for an active or recently completed build.",
-                                                "sortOrder":  7
-                                            },
-                                            {
-                                                "column":  "correlation_source",
-                                                "value":  "NULL",
-                                                "meaning":  "No known correlating process identified. This is a signal — unexpected events with NULL correlation warrant investigation.",
-                                                "sortOrder":  8
                                             }
                                         ],
                        "queries":  [
@@ -11102,18 +11102,6 @@
                                                 "sortOrder":  2
                                             },
                                             {
-                                                "column":  "subscription_type",
-                                                "value":  "0 (Push)",
-                                                "meaning":  "Publisher-initiated delivery. The Distribution Agent runs at the distributor and pushes changes to the subscriber.",
-                                                "sortOrder":  3
-                                            },
-                                            {
-                                                "column":  "subscription_type",
-                                                "value":  "1 (Pull)",
-                                                "meaning":  "Subscriber-initiated delivery. The Distribution Agent runs at the subscriber and pulls changes from the distributor.",
-                                                "sortOrder":  4
-                                            },
-                                            {
                                                 "column":  "publication_type",
                                                 "value":  "0 (Transactional)",
                                                 "meaning":  "Transactional replication — continuous delivery of committed transactions. All current Frost-Arnett publications use this type.",
@@ -11130,6 +11118,18 @@
                                                 "value":  "2 (Merge)",
                                                 "meaning":  "Merge replication — bidirectional sync with conflict resolution. Not currently in use.",
                                                 "sortOrder":  7
+                                            },
+                                            {
+                                                "column":  "subscription_type",
+                                                "value":  "0 (Push)",
+                                                "meaning":  "Publisher-initiated delivery. The Distribution Agent runs at the distributor and pushes changes to the subscriber.",
+                                                "sortOrder":  3
+                                            },
+                                            {
+                                                "column":  "subscription_type",
+                                                "value":  "1 (Pull)",
+                                                "meaning":  "Subscriber-initiated delivery. The Distribution Agent runs at the subscriber and pulls changes from the distributor.",
+                                                "sortOrder":  4
                                             }
                                         ],
                        "queries":  [
