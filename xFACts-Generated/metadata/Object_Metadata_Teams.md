@@ -1,6 +1,6 @@
 # Object_Metadata: Teams
 Source: dbo.Object_Metadata
-Generated: 2026-07-23 21:14:44
+Generated: 2026-07-24 03:24:55
 
 ## AlertQueue (Table)
 
@@ -39,7 +39,7 @@ On failure, the processor retries immediately with 2-second sleep between attemp
 ### design_note #5  [metadata_id: 3117]
 Title: Manual Resend via original_queue_id
 
-Failed alerts can be resent from the Admin page Alert Failures card. Resend inserts a new Pending row copying the original alert content (source_module, alert_category, title, message, color, card_json, trigger_type, trigger_value) with original_queue_id set to the failed row's queue_id. This is a soft self-reference with no FK constraint — used only by the Admin page display query. The NOT EXISTS filter hides failed alerts that have a successful or pending resend, so the original disappears from the failure list once its resend succeeds. If the resend also fails, the original reappears. Routing is re-resolved at delivery time through WebhookSubscription rather than capturing the original delivery target, so subscription changes between failure and resend are respected.
+Failed alerts can be resent from the Admin page Alert Failures card. Resend inserts a new Pending row copying the original alert content (source_module, alert_category, title, message, color, card_json, trigger_type, trigger_value) with original_queue_id set to the failed row's queue_id. This is a soft self-reference with no FK constraint, used only by the Admin page display query. The NOT EXISTS filter hides failed alerts that have a successful or pending resend, so the original disappears from the failure list once its resend succeeds. If the resend also fails, the original reappears. Routing is re-resolved at delivery time through WebhookSubscription rather than capturing the original delivery target, so subscription changes between failure and resend are respected.
 
 ### module #0  [metadata_id: 1659]
 
@@ -126,7 +126,7 @@ TR_Teams_AlertQueue_QueueDepth increments running_count on INSERT, signaling the
 
 ### description / alert_category #3  [metadata_id: 882]
 
-Category: CRITICAL, WARNING, or INFO
+Severity category assigned by the caller.
 
 ### status_value / alert_category #1  [metadata_id: 1798]
 Title: CRITICAL
@@ -165,7 +165,7 @@ Full alert message body. Supports markdown. Used as plain text audit trail when 
 
 ### description / original_queue_id #15  [metadata_id: 3116]
 
-References the queue_id of the original failed alert. NULL for normal alerts. Populated only on manually resent copies created via the Admin page Alert Failures resend action. Soft reference — no FK constraint. Used by the NOT EXISTS display query to filter out failed alerts that have a successful or pending resend.
+References the queue_id of the original failed alert. NULL for normal alerts. Populated only on manually resent copies created via the Admin page Alert Failures resend action. Soft reference with no FK constraint. Used by the NOT EXISTS display query to filter out failed alerts that have a successful or pending resend.
 
 ### description / processed_dttm #13  [metadata_id: 892]
 
@@ -181,11 +181,11 @@ Number of retry attempts beyond the first delivery, set in place on the original
 
 ### description / source_module #2  [metadata_id: 881]
 
-Module that queued the alert (e.g., JobFlow, ServerOps, BIDATA)
+Module that queued the alert.
 
 ### description / status #8  [metadata_id: 887]
 
-Current status: Pending, Success, Failed
+Current delivery state of this queued alert.
 
 ### status_value / status #1  [metadata_id: 1795]
 Title: Pending
@@ -208,11 +208,11 @@ Alert title displayed in Teams
 
 ### description / trigger_type #9  [metadata_id: 888]
 
-Category for deduplication (e.g., JobFlow_Stall, DiskHealthSummary)
+Category used for deduplication; typically a <Module>_<Condition> pattern.
 
 ### description / trigger_value #10  [metadata_id: 889]
 
-Specific value for deduplication (e.g., date)
+Specific instance value that pairs with the trigger category to form the deduplication key.
 
 ## Process-TeamsAlertQueue.ps1 (Script)
 
@@ -236,7 +236,7 @@ Runs as a queue-driven process (run_mode = 2) in the orchestrator. Only launched
 ### design_note #2  [metadata_id: 1860]
 Title: Two Card Build Paths
 
-Legacy alerts with title/message/color fields have Adaptive Cards built at send time using a standard template. Alerts with pre-built card_json are sent as-is after emoji placeholder resolution. The pre-built path enables rich multi-section layouts (like disk summaries and batch status reports) that cannot be expressed with the legacy fields.
+Legacy alerts with title/message/color fields have Adaptive Cards built at send time using a standard template. Alerts with pre-built card_json are sent as-is after emoji placeholder resolution. The pre-built path enables rich multi-section layouts that cannot be expressed with the legacy fields.
 
 ### design_note #3  [metadata_id: 1861]
 Title: Inline Retry with Per-Attempt Logging
@@ -376,7 +376,7 @@ queue_id links each log entry back to the original queued alert. Multiple Reques
 
 ### description / alert_category #4  [metadata_id: 1456]
 
-Alert category: CRITICAL, WARNING, INFO
+Severity category carried through from the queued alert.
 
 ### description / created_dttm #11  [metadata_id: 1463]
 
@@ -400,37 +400,42 @@ Module that originated the alert
 
 ### description / status_code #7  [metadata_id: 1459]
 
-HTTP status code from webhook: 200=success
+HTTP status code returned by the webhook for this delivery attempt.
 
 ### status_value / status_code #10  [metadata_id: 1868]
 Title: 200
 
-Success — alert delivered to webhook
+Success - the alert was delivered to the webhook.
 
 ### status_value / status_code #11  [metadata_id: 1869]
 Title: 400
 
-Bad Request — check Adaptive Card JSON structure
+Bad Request - check the Adaptive Card JSON structure.
 
 ### status_value / status_code #12  [metadata_id: 1870]
 Title: 401
 
-Unauthorized — verify webhook URL in WebhookConfig
+Unauthorized - verify the webhook URL in WebhookConfig.
 
 ### status_value / status_code #13  [metadata_id: 1871]
 Title: 404
 
-Not Found — webhook deleted in Teams, recreate it
+Not Found - the webhook no longer exists in Teams and must be recreated.
 
 ### status_value / status_code #14  [metadata_id: 1872]
 Title: 429
 
-Rate Limited — will retry on next processor run
+Rate Limited - Teams throttled the delivery. The processor retries inline within the same run and the alert is marked Failed once attempts are exhausted.
 
 ### status_value / status_code #15  [metadata_id: 1873]
 Title: 500+
 
-Server Error — Teams-side issue, retry later
+Server Error - Teams-side failure. Retried inline within the same run.
+
+### status_value / status_code #16  [metadata_id: 5314]
+Title: 0
+
+No HTTP response - the delivery attempt failed before the webhook replied.
 
 ### description / title #6  [metadata_id: 1458]
 
@@ -476,36 +481,36 @@ Title: Basic info alert
 Description: Simple informational notification
 
 EXEC Teams.sp_QueueAlert
-    @SourceModule  = 'BIDATA',
+    @SourceModule  = '<source module>',
     @AlertCategory = 'INFO',
-    @Title         = 'BIDATA Daily Build Complete',
-    @Message       = 'Completed: 6:45 AM | Total Duration: 01:15:07',
-    @TriggerType   = 'DailyCompletion',
-    @TriggerValue  = '2025-12-20';
+    @Title         = '<alert title>',
+    @Message       = '<alert message>',
+    @TriggerType   = '<Module>_<Condition>',
+    @TriggerValue  = '<instance value>';
 
 ### query #2  [metadata_id: 1876]
 Title: Warning alert
 Description: Warning with deduplication context
 
 EXEC Teams.sp_QueueAlert
-    @SourceModule  = 'BatchOps',
+    @SourceModule  = '<source module>',
     @AlertCategory = 'WARNING',
-    @Title         = '3 Batch(es) In Progress - Review Before Restart',
-    @Message       = @batch_details,
-    @TriggerType   = 'DM_OpenBatchCheck',
-    @TriggerValue  = '2025-12-20';
+    @Title         = '<alert title>',
+    @Message       = @message_body,
+    @TriggerType   = '<Module>_<Condition>',
+    @TriggerValue  = '<instance value>';
 
 ### query #3  [metadata_id: 1877]
 Title: Critical alert
 Description: High-priority alert for system issues
 
 EXEC Teams.sp_QueueAlert
-    @SourceModule  = 'JobFlow',
+    @SourceModule  = '<source module>',
     @AlertCategory = 'CRITICAL',
-    @Title         = 'System Stall Detected',
-    @Message       = 'No job progress detected for 30+ minutes.',
-    @TriggerType   = 'SystemStall',
-    @TriggerValue  = '2025-12-20';
+    @Title         = '<alert title>',
+    @Message       = '<alert message>',
+    @TriggerType   = '<Module>_<Condition>',
+    @TriggerValue  = '<instance value>';
 
 ### relationship_note #1  [metadata_id: 1832]
 Title: Teams.AlertQueue
@@ -572,7 +577,7 @@ Rows are manually configured when setting up Teams webhook endpoints. Process-Te
 
 ### description #0  [metadata_id: 119]
 
-Configuration table storing Teams webhook URLs and their category routing settings.
+Configuration table holding the Teams webhook endpoints that alerts can be delivered to.
 
 ### design_note #1  [metadata_id: 1808]
 Title: Active Flag for Maintenance
@@ -604,12 +609,12 @@ WebhookSubscription references WebhookConfig via config_id FK. WebhookConfig def
 
 ### description / alert_category #4  [metadata_id: 1392]
 
-Category filter: ALL, CRITICAL, WARNING, or INFO
+Descriptive label for the alert type this webhook is intended to carry. Not evaluated during routing.
 
 ### status_value / alert_category #1  [metadata_id: 1809]
 Title: ALL
 
-Descriptive label indicating this webhook is intended for all alert types. Not used in routing logic — routing is controlled entirely by WebhookSubscription.
+Descriptive label indicating this webhook is intended for all alert types. Not used in routing logic - routing is controlled entirely by WebhookSubscription.
 
 ### status_value / alert_category #2  [metadata_id: 1810]
 Title: CRITICAL
@@ -648,7 +653,7 @@ When this configuration was last modified
 
 ### description / webhook_name #2  [metadata_id: 1390]
 
-Human-readable name for this webhook (e.g., "Apps-Critical", "General-Alerts")
+Human-readable name for this webhook.
 
 ### description / webhook_url #3  [metadata_id: 1391]
 
@@ -676,7 +681,7 @@ NULL values in alert_category and trigger_type act as wildcards, matching all va
 ### design_note #2  [metadata_id: 1817]
 Title: Module-Level Routing
 
-Different modules route to different channels, supporting organizational boundaries. For example, JobFlow alerts go to the Apps team channel while BIDATA alerts go to the BI team channel, without requiring separate webhook infrastructure per team.
+Subscriptions are keyed on source module, so each module's alerts can be directed to the channel that owns them without requiring separate webhook infrastructure per team.
 
 ### module #0  [metadata_id: 1664]
 
@@ -702,12 +707,12 @@ ORDER BY s.channel_name, s.source_module;
 Title: Routing simulation
 Description: Shows which channels and webhooks would receive an alert for a given module, category, and trigger type. Replace the parameter values to test routing.
 
-DECLARE @Module VARCHAR(50) = 'JobFlow';
-DECLARE @Category VARCHAR(50) = 'CRITICAL';
-DECLARE @Trigger VARCHAR(50) = 'JobFlow_Stall';
+DECLARE @Module VARCHAR(50) = '<source module>';
+DECLARE @Category VARCHAR(50) = '<alert category>';
+DECLARE @Trigger VARCHAR(50) = '<trigger type>';
 
-SELECT DISTINCT 
-    s.channel_name, 
+SELECT DISTINCT
+    s.channel_name,
     w.webhook_name
 FROM Teams.WebhookSubscription s
 INNER JOIN Teams.WebhookConfig w ON s.config_id = w.config_id
@@ -757,7 +762,7 @@ When this subscription was last modified
 
 ### description / source_module #4  [metadata_id: 1541]
 
-Module name to match (e.g., JobFlow, BIDATA)
+Module name to match.
 
 ### description / subscription_id #1  [metadata_id: 1538]
 
