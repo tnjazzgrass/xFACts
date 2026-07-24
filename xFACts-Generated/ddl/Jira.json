@@ -2,7 +2,7 @@
     "tables":  [
                    {
                        "name":  "RequestLog",
-                       "description":  "Permanent audit log of all Jira API interactions including successful ticket creations, failures, and queue insert errors.",
+                       "description":  "Permanent audit log of every Jira API interaction, and of queue inserts that failed before an API call was made.",
                        "module":  "Jira",
                        "category":  "Jira",
                        "dataFlow":  "Process-JiraTicketQueue.ps1 inserts one row per Jira API interaction (both successes and failures). sp_QueueTicket also writes directly to RequestLog when a queue INSERT fails (RequestType = \u0027QueueInsertFailed\u0027, StatusCode = -99). Calling modules query this table for deduplication before queuing new tickets, checking Trigger_Type and Trigger_Value with a successful StatusCode to avoid creating duplicate Jira tickets for the same condition.",
@@ -75,7 +75,7 @@
                                            "dataType":  "int",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "HTTP status code: 201=success, 400/401/500=errors, -99=queue failure"
+                                           "description":  "Outcome code recorded for this logged interaction."
                                        },
                                        {
                                            "ordinal":  9,
@@ -182,7 +182,7 @@
                                            },
                                            {
                                                "topic":  "Deduplication Source",
-                                               "note":  "Same pattern as Teams: calling modules query RequestLog before queuing tickets to check if a successful creation already exists for the same Trigger_Type and Trigger_Value combination. Prevents duplicate Jira tickets across orchestrator cycles.",
+                                               "note":  "Calling modules query RequestLog before queuing a ticket to check whether a successful creation already exists for the same trigger type and trigger value. Prevents duplicate Jira tickets across orchestrator cycles.",
                                                "sortOrder":  3
                                            }
                                        ],
@@ -190,44 +190,62 @@
                                             {
                                                 "column":  "StatusCode",
                                                 "value":  "201",
-                                                "meaning":  "Created — ticket exists in Jira",
+                                                "meaning":  "Created - ticket exists in Jira.",
                                                 "sortOrder":  10
                                             },
                                             {
                                                 "column":  "StatusCode",
                                                 "value":  "400",
-                                                "meaning":  "Bad Request — check custom field IDs and required fields",
+                                                "meaning":  "Bad Request - check custom field IDs and required fields.",
                                                 "sortOrder":  11
                                             },
                                             {
                                                 "column":  "StatusCode",
                                                 "value":  "401",
-                                                "meaning":  "Unauthorized — verify credentials in dbo.Credentials",
+                                                "meaning":  "Unauthorized - verify credentials in dbo.Credentials.",
                                                 "sortOrder":  12
                                             },
                                             {
                                                 "column":  "StatusCode",
                                                 "value":  "403",
-                                                "meaning":  "Forbidden — check user permissions in Jira project",
+                                                "meaning":  "Forbidden - check user permissions on the Jira project.",
                                                 "sortOrder":  13
                                             },
                                             {
                                                 "column":  "StatusCode",
                                                 "value":  "404",
-                                                "meaning":  "Not Found — verify ProjectKey and IssueType exist in Jira",
+                                                "meaning":  "Not Found - verify the project key and issue type exist in Jira.",
                                                 "sortOrder":  14
                                             },
                                             {
                                                 "column":  "StatusCode",
                                                 "value":  "500+",
-                                                "meaning":  "Server Error — Jira-side issue, retry later",
+                                                "meaning":  "Server Error - Jira-side failure. Treated as transient and retried.",
                                                 "sortOrder":  15
                                             },
                                             {
                                                 "column":  "StatusCode",
                                                 "value":  "-99",
-                                                "meaning":  "Queue insert failed — check sp_QueueTicket error in ResponseMessage",
+                                                "meaning":  "Queue insert failed - sp_QueueTicket could not write the queue row. The error text is in ResponseMessage.",
                                                 "sortOrder":  16
+                                            },
+                                            {
+                                                "column":  "StatusCode",
+                                                "value":  "0",
+                                                "meaning":  "No HTTP response - the request failed before Jira replied. Treated as transient and retried.",
+                                                "sortOrder":  17
+                                            },
+                                            {
+                                                "column":  "StatusCode",
+                                                "value":  "408",
+                                                "meaning":  "Request Timeout - Jira did not respond in time. Treated as transient and retried.",
+                                                "sortOrder":  18
+                                            },
+                                            {
+                                                "column":  "StatusCode",
+                                                "value":  "429",
+                                                "meaning":  "Rate Limited - Jira throttled the request. Treated as transient and retried, honoring the Retry-After header when Jira supplies one.",
+                                                "sortOrder":  19
                                             },
                                             {
                                                 "column":  "TicketKey",
@@ -238,7 +256,7 @@
                                             {
                                                 "column":  "TicketKey",
                                                 "value":  "NULL",
-                                                "meaning":  "API call failed — no ticket or email created",
+                                                "meaning":  "No ticket was created - the API call failed, or the queue insert itself failed.",
                                                 "sortOrder":  22
                                             }
                                         ],
@@ -345,7 +363,7 @@
                                            "nullable":  true,
                                            "identity":  false,
                                            "default":  "(\u0027High\u0027)",
-                                           "description":  "Priority: Highest, High, Medium, Low, Lowest"
+                                           "description":  "Jira priority requested for the ticket."
                                        },
                                        {
                                            "ordinal":  8,
@@ -523,7 +541,7 @@
                                            "nullable":  true,
                                            "identity":  false,
                                            "default":  "(\u0027Pending\u0027)",
-                                           "description":  "Current status: Pending, Success, Failed, EmailSent."
+                                           "description":  "Current processing state of this queue entry."
                                        },
                                        {
                                            "ordinal":  28,
@@ -532,7 +550,7 @@
                                            "nullable":  true,
                                            "identity":  false,
                                            "default":  "((0))",
-                                           "description":  "Number of retry attempts"
+                                           "description":  "Number of processor turns in which this entry failed and was left for a later cycle."
                                        },
                                        {
                                            "ordinal":  29,
@@ -540,7 +558,7 @@
                                            "dataType":  "datetime",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "When last retry was attempted"
+                                           "description":  "When the processor last acted on this entry."
                                        }
                                    ],
                        "indexes":  [
@@ -582,12 +600,12 @@
                        "designNotes":  [
                                            {
                                                "topic":  "Queue-Based Decoupling",
-                                               "note":  "Same pattern as Teams: calling modules insert and continue without waiting for Jira API responses. Ticket creation latency does not affect the calling process execution time.",
+                                               "note":  "Calling modules insert and continue without waiting for Jira API responses. Ticket creation latency does not affect the calling process execution time.",
                                                "sortOrder":  1
                                            },
                                            {
                                                "topic":  "Email Fallback",
-                                               "note":  "When Jira API calls fail after all retry attempts, the script sends a fallback email via Database Mail containing the ticket details for manual creation. Requires EmailRecipients to be populated on the queue row. TicketStatus is set to EmailSent as a terminal status.",
+                                               "note":  "When ticket creation cannot succeed - either retries are exhausted or the failure is deterministic - the script sends a fallback email via Database Mail containing the ticket details for manual creation. Requires EmailRecipients to be populated on the queue row. TicketStatus is set to EmailSent as a terminal status.",
                                                "sortOrder":  2
                                            },
                                            {
@@ -634,7 +652,7 @@
                                             {
                                                 "column":  "TicketStatus",
                                                 "value":  "Failed",
-                                                "meaning":  "Jira API call failed and all retry attempts have been exhausted with no fallback email sent (EmailRecipients not populated). RetryCount has reached MaxRetries and ResponseMessage holds the last error. Terminal status.",
+                                                "meaning":  "Ticket creation failed terminally and no fallback email was sent because EmailRecipients was not populated. ResponseMessage holds the last error. Terminal status.",
                                                 "sortOrder":  3
                                             },
                                             {
@@ -652,7 +670,7 @@
                                             {
                                                 "column":  "TicketStatus",
                                                 "value":  "EmailSent",
-                                                "meaning":  "Max retries exhausted and fallback email sent via Database Mail. Terminal status indicating the ticket must be created manually from the email.",
+                                                "meaning":  "Ticket creation failed terminally and a fallback email was sent via Database Mail. Terminal status indicating the ticket must be created manually from the email.",
                                                 "sortOrder":  4
                                             },
                                             {
