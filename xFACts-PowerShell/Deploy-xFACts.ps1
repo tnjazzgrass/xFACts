@@ -242,6 +242,16 @@ $AuthoredDeployMap = @(
         Filter   = @("*.js")
         Recurse  = $false
     }
+    # Authored docs data, projected cross-root into the served site tree. This is
+    # the only entry where the repository path does not predict the live path:
+    # every other entry differs from its repository path by root prefix alone, so
+    # the live location is readable straight off the repository location. Here it
+    # is not - the file is authored under xFACts-Documentation and lands under
+    # xFACts-ControlCenter. Deliberate: backlog.json is authored beside the specs
+    # whose work it plans, and has to be served from the site tree because
+    # $DocsRoot is served by no static route. A second authored-data file needing
+    # the same treatment is the trigger to formalize the pattern properly rather
+    # than extend the exception a second time.
     @{
         RepoPath = "xFACts-Documentation/docs"
         LivePath = "$CCRoot\public\docs\data"
