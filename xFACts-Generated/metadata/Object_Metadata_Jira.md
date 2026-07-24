@@ -1,6 +1,6 @@
 # Object_Metadata: Jira
 Source: dbo.Object_Metadata
-Generated: 2026-07-23 21:14:44
+Generated: 2026-07-24 03:24:55
 
 ## Process-JiraTicketQueue.ps1 (Script)
 
@@ -77,7 +77,7 @@ Process-JiraTicketQueue.ps1 inserts one row per Jira API interaction (both succe
 
 ### description #0  [metadata_id: 58]
 
-Permanent audit log of all Jira API interactions including successful ticket creations, failures, and queue insert errors.
+Permanent audit log of every Jira API interaction, and of queue inserts that failed before an API call was made.
 
 ### design_note #1  [metadata_id: 1919]
 Title: Append-Only Audit Trail
@@ -92,7 +92,7 @@ sp_QueueTicket catches INSERT failures and logs them directly to RequestLog with
 ### design_note #3  [metadata_id: 1921]
 Title: Deduplication Source
 
-Same pattern as Teams: calling modules query RequestLog before queuing tickets to check if a successful creation already exists for the same Trigger_Type and Trigger_Value combination. Prevents duplicate Jira tickets across orchestrator cycles.
+Calling modules query RequestLog before queuing a ticket to check whether a successful creation already exists for the same trigger type and trigger value. Prevents duplicate Jira tickets across orchestrator cycles.
 
 ### module #0  [metadata_id: 1595]
 
@@ -203,42 +203,57 @@ Module that originated the request.
 
 ### description / StatusCode #8  [metadata_id: 493]
 
-HTTP status code: 201=success, 400/401/500=errors, -99=queue failure
+Outcome code recorded for this logged interaction.
 
 ### status_value / StatusCode #10  [metadata_id: 1881]
 Title: 201
 
-Created — ticket exists in Jira
+Created - ticket exists in Jira.
 
 ### status_value / StatusCode #11  [metadata_id: 1882]
 Title: 400
 
-Bad Request — check custom field IDs and required fields
+Bad Request - check custom field IDs and required fields.
 
 ### status_value / StatusCode #12  [metadata_id: 1883]
 Title: 401
 
-Unauthorized — verify credentials in dbo.Credentials
+Unauthorized - verify credentials in dbo.Credentials.
 
 ### status_value / StatusCode #13  [metadata_id: 1884]
 Title: 403
 
-Forbidden — check user permissions in Jira project
+Forbidden - check user permissions on the Jira project.
 
 ### status_value / StatusCode #14  [metadata_id: 1885]
 Title: 404
 
-Not Found — verify ProjectKey and IssueType exist in Jira
+Not Found - verify the project key and issue type exist in Jira.
 
 ### status_value / StatusCode #15  [metadata_id: 1886]
 Title: 500+
 
-Server Error — Jira-side issue, retry later
+Server Error - Jira-side failure. Treated as transient and retried.
 
 ### status_value / StatusCode #16  [metadata_id: 1887]
 Title: -99
 
-Queue insert failed — check sp_QueueTicket error in ResponseMessage
+Queue insert failed - sp_QueueTicket could not write the queue row. The error text is in ResponseMessage.
+
+### status_value / StatusCode #17  [metadata_id: 5315]
+Title: 0
+
+No HTTP response - the request failed before Jira replied. Treated as transient and retried.
+
+### status_value / StatusCode #18  [metadata_id: 5316]
+Title: 408
+
+Request Timeout - Jira did not respond in time. Treated as transient and retried.
+
+### status_value / StatusCode #19  [metadata_id: 5317]
+Title: 429
+
+Rate Limited - Jira throttled the request. Treated as transient and retried, honoring the Retry-After header when Jira supplies one.
 
 ### description / Summary #6  [metadata_id: 491]
 
@@ -256,7 +271,7 @@ Ticket created successfully in Jira; the column holds the returned Jira ticket k
 ### status_value / TicketKey #22  [metadata_id: 1890]
 Title: NULL
 
-API call failed — no ticket or email created
+No ticket was created - the API call failed, or the queue insert itself failed.
 
 ### description / Trigger_Type #12  [metadata_id: 497]
 
@@ -354,12 +369,12 @@ Queue table for pending ticket requests awaiting PowerShell processing. Records 
 ### design_note #1  [metadata_id: 1898]
 Title: Queue-Based Decoupling
 
-Same pattern as Teams: calling modules insert and continue without waiting for Jira API responses. Ticket creation latency does not affect the calling process execution time.
+Calling modules insert and continue without waiting for Jira API responses. Ticket creation latency does not affect the calling process execution time.
 
 ### design_note #2  [metadata_id: 1899]
 Title: Email Fallback
 
-When Jira API calls fail after all retry attempts, the script sends a fallback email via Database Mail containing the ticket details for manual creation. Requires EmailRecipients to be populated on the queue row. TicketStatus is set to EmailSent as a terminal status.
+When ticket creation cannot succeed - either retries are exhausted or the failure is deterministic - the script sends a fallback email via Database Mail containing the ticket details for manual creation. Requires EmailRecipients to be populated on the queue row. TicketStatus is set to EmailSent as a terminal status.
 
 ### design_note #3  [metadata_id: 1900]
 Title: Generic Custom Field Support
@@ -501,7 +516,7 @@ Jira issue type.
 
 ### description / LastRetryDate #29  [metadata_id: 410]
 
-When last retry was attempted
+When the processor last acted on this entry.
 
 ### description / ProcessedDate #23  [metadata_id: 404]
 
@@ -525,7 +540,7 @@ API response or error message
 
 ### description / RetryCount #28  [metadata_id: 409]
 
-Number of retry attempts
+Number of processor turns in which this entry failed and was left for a later cycle.
 
 ### description / SourceModule #2  [metadata_id: 383]
 
@@ -549,7 +564,7 @@ Jira ticket key assigned when the ticket is created.
 
 ### description / TicketPriority #7  [metadata_id: 388]
 
-Priority: Highest, High, Medium, Low, Lowest
+Jira priority requested for the ticket.
 
 ### status_value / TicketPriority #1  [metadata_id: 1907]
 Title: Highest
@@ -578,7 +593,7 @@ Least urgent tickets.
 
 ### description / TicketStatus #27  [metadata_id: 408]
 
-Current status: Pending, Success, Failed, EmailSent.
+Current processing state of this queue entry.
 
 ### status_value / TicketStatus #1  [metadata_id: 1903]
 Title: Pending
@@ -593,12 +608,12 @@ Jira ticket created successfully; TicketKey is populated with the returned Jira 
 ### status_value / TicketStatus #3  [metadata_id: 1905]
 Title: Failed
 
-Jira API call failed and all retry attempts have been exhausted with no fallback email sent (EmailRecipients not populated). RetryCount has reached MaxRetries and ResponseMessage holds the last error. Terminal status.
+Ticket creation failed terminally and no fallback email was sent because EmailRecipients was not populated. ResponseMessage holds the last error. Terminal status.
 
 ### status_value / TicketStatus #4  [metadata_id: 1906]
 Title: EmailSent
 
-Max retries exhausted and fallback email sent via Database Mail. Terminal status indicating the ticket must be created manually from the email.
+Ticket creation failed terminally and a fallback email was sent via Database Mail. Terminal status indicating the ticket must be created manually from the email.
 
 ### description / TriggerType #19  [metadata_id: 400]
 
