@@ -403,11 +403,11 @@ Permanent audit log of every Jira API interaction, and of queue inserts that fai
 | StatusCode | 401 | Unauthorized - verify credentials in dbo.Credentials. | 12 |
 | StatusCode | 403 | Forbidden - check user permissions on the Jira project. | 13 |
 | StatusCode | 404 | Not Found - verify the project key and issue type exist in Jira. | 14 |
-| StatusCode | 500+ | Server Error - Jira-side failure. Treated as transient and retried. | 15 |
-| StatusCode | -99 | Queue insert failed - sp_QueueTicket could not write the queue row. The error text is in ResponseMessage. | 16 |
-| StatusCode | 0 | No HTTP response - the request failed before Jira replied. Treated as transient and retried. | 17 |
-| StatusCode | 408 | Request Timeout - Jira did not respond in time. Treated as transient and retried. | 18 |
-| StatusCode | 429 | Rate Limited - Jira throttled the request. Treated as transient and retried, honoring the Retry-After header when Jira supplies one. | 19 |
+| StatusCode | 408 | Request Timeout - Jira did not respond in time. Treated as transient and retried. | 15 |
+| StatusCode | 429 | Rate Limited - Jira throttled the request. Treated as transient and retried, honoring the Retry-After header when Jira supplies one. | 16 |
+| StatusCode | 500+ | Server Error - Jira-side failure. Treated as transient and retried. | 17 |
+| StatusCode | -99 | Queue insert failed - sp_QueueTicket could not write the queue row. The error text is in ResponseMessage. | 18 |
+| StatusCode | 0 | No HTTP response - the request failed before Jira replied. Treated as transient and retried. | 19 |
 
 **Recent activity** [sort:1] -- Last 20 API interactions showing source module, ticket key, status code, and timestamp.
 
