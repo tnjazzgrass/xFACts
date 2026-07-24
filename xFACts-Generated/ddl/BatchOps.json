@@ -1314,12 +1314,6 @@
                                        ],
                        "statusValues":  [
                                             {
-                                                "column":  "completed_status",
-                                                "value":  "POSTED",
-                                                "meaning":  "All payments posted successfully (batch_status_code 4). Primary success terminal state — represents the vast majority of completions.",
-                                                "sortOrder":  1
-                                            },
-                                            {
                                                 "column":  "batch_type",
                                                 "value":  "IMPORT",
                                                 "meaning":  "File-based payment import (batch_type_code 3). Primary batch type for automated processing. Stall detection and alerting apply to this type only.",
@@ -1332,18 +1326,6 @@
                                                 "sortOrder":  2
                                             },
                                             {
-                                                "column":  "completed_status",
-                                                "value":  "FAILED",
-                                                "meaning":  "Batch processing failed (batch_status_code 6). Terminal failure requiring investigation.",
-                                                "sortOrder":  2
-                                            },
-                                            {
-                                                "column":  "completed_status",
-                                                "value":  "IMPORTFAILED",
-                                                "meaning":  "File import failed (batch_status_code 11). Terminal failure — source file could not be imported.",
-                                                "sortOrder":  3
-                                            },
-                                            {
                                                 "column":  "batch_type",
                                                 "value":  "REVERSAL",
                                                 "meaning":  "Payment reversal batch. Tracked for visibility but no stall detection.",
@@ -1354,6 +1336,24 @@
                                                 "value":  "REAPPLY",
                                                 "meaning":  "Reapplied payment batch referencing an original_batch_id. Tracked for visibility but no stall detection.",
                                                 "sortOrder":  4
+                                            },
+                                            {
+                                                "column":  "completed_status",
+                                                "value":  "POSTED",
+                                                "meaning":  "All payments posted successfully (batch_status_code 4). Primary success terminal state — represents the vast majority of completions.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "completed_status",
+                                                "value":  "FAILED",
+                                                "meaning":  "Batch processing failed (batch_status_code 6). Terminal failure requiring investigation.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "column":  "completed_status",
+                                                "value":  "IMPORTFAILED",
+                                                "meaning":  "File import failed (batch_status_code 11). Terminal failure — source file could not be imported.",
+                                                "sortOrder":  3
                                             },
                                             {
                                                 "column":  "completed_status",
@@ -1515,12 +1515,6 @@
                                        ],
                        "statusValues":  [
                                             {
-                                                "column":  "processing_status",
-                                                "value":  "RUNNING",
-                                                "meaning":  "Collector is currently executing. Set at the start of each execution cycle.",
-                                                "sortOrder":  1
-                                            },
-                                            {
                                                 "column":  "last_status",
                                                 "value":  "SUCCESS",
                                                 "meaning":  "Most recent execution completed without errors.",
@@ -1531,6 +1525,12 @@
                                                 "value":  "FAILED",
                                                 "meaning":  "Most recent execution encountered errors. Check Orchestrator TaskLog for details.",
                                                 "sortOrder":  2
+                                            },
+                                            {
+                                                "column":  "processing_status",
+                                                "value":  "RUNNING",
+                                                "meaning":  "Collector is currently executing. Set at the start of each execution cycle.",
+                                                "sortOrder":  1
                                             },
                                             {
                                                 "column":  "processing_status",
