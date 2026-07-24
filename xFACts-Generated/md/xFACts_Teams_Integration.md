@@ -362,12 +362,12 @@ Queue table for pending Teams notifications awaiting PowerShell processing. Reco
 
 | Column | Value | Meaning | Sort |
 | --- | --- | --- | --- |
-| status | Pending | Waiting for processor pickup. Set on INSERT as the default value. Rows remaining in Pending for more than a few minutes indicate the processor may not be running. | 1 |
 | alert_category | CRITICAL | System failures, stalls, and urgent issues requiring immediate attention. On the T-SQL path sp_QueueAlert auto-colors this attention (red) when no explicit color is given; Send-TeamsAlert defaults every category to attention unless the caller passes a color. | 1 |
 | alert_category | WARNING | Potential issues, thresholds approaching, and items needing review. On the T-SQL path sp_QueueAlert auto-colors this warning (yellow) when no explicit color is given; Send-TeamsAlert defaults to attention unless the caller passes a color. | 2 |
+| alert_category | INFO | Informational messages, successful completions, and status updates. On the T-SQL path sp_QueueAlert auto-colors this good (green) when no explicit color is given; Send-TeamsAlert defaults to attention unless the caller passes a color. | 3 |
+| status | Pending | Waiting for processor pickup. Set on INSERT as the default value. Rows remaining in Pending for more than a few minutes indicate the processor may not be running. | 1 |
 | status | Success | Delivered to all matching webhooks. Set by Process-TeamsAlertQueue.ps1 after receiving HTTP 200 responses. | 2 |
 | status | Failed | Webhook delivery failed after all retry attempts exhausted. Set by the processor with error details in error_message. | 3 |
-| alert_category | INFO | Informational messages, successful completions, and status updates. On the T-SQL path sp_QueueAlert auto-colors this good (green) when no explicit color is given; Send-TeamsAlert defaults to attention unless the caller passes a color. | 3 |
 
 **Pending alerts** [sort:1] -- Shows alerts waiting for processing with wait time and card path type.
 
