@@ -125,6 +125,21 @@ mistake in a diff, so your own verification carries the full weight.
   git checkout . and git pull to re-sync the clone with what has been
   published.
 
+## Backlog
+
+- The backlog lives at xFACts-Documentation/docs/backlog.json and is the
+  single home for planned work. Edits are made to that file only. It
+  deploys to the doc site as a served asset and is rendered by the
+  Backlog page, so never edit the published copy.
+- Hand edits keep byte discipline (pure ASCII, CRLF) and must validate
+  against the vocabularies the file itself declares: component against
+  its components list, priority against High/Medium/Low, type against
+  Build/Enhance/Bug/Design/Investigate. Malformed JSON surfaces as the
+  page's error banner, but an invalid component or priority renders
+  without complaint - the page does not validate vocabularies.
+- The file's own conventions block governs everything else. Do not
+  restate those rules here or anywhere else.
+
 ## Working style
 
 - Ask questions before proceeding when anything is unclear. When a question

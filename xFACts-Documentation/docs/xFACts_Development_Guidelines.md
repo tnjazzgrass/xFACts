@@ -14,7 +14,7 @@ The single source of truth for how xFACts platform components are built. Every n
 
 ## 1. Philosophy & Principles
 
-**Document current state only.** Documentation describes what exists today. No roadmap sections, no "planned for future" notes, no version history embedded in content. Version history lives in `dbo.System_Metadata`. Planned work lives in the Backlog Items document. These are the only two homes for that information.
+**Document current state only.** Documentation describes what exists today. No roadmap sections, no "planned for future" notes, no version history embedded in content. Version history lives in `dbo.System_Metadata`. Planned work lives in `xFACts-Documentation/docs/backlog.json`. These are the only two homes for that information.
 
 **Minimize hardcoded values.** Don't write "runs every 5 minutes" when you can write "runs on a configurable schedule via ProcessRegistry." Don't write "threshold is 15%" when you can write "threshold is configurable via GlobalConfig." This prevents documentation rot when settings change.
 
@@ -1302,6 +1302,8 @@ docs/
 |   |   +-- {pageId}-arch.html              <- Architecture pages
 |   +-- ref/
 |       +-- {pageId}-ref.html               <- Reference pages
++-- data/
+|   +-- backlog.json                        <- Authored JSON, served at /docs/data/
 +-- css/
 |   +-- docs-base.css, docs-narrative.css, docs-architecture.css, etc.
 +-- js/
@@ -1311,6 +1313,8 @@ docs/
 ```
 
 Machine-generated DDL reference data no longer lives under `docs/`. `Generate-DDLReference.ps1` writes `doc-registry.json` and the per-schema `{Schema}.json` files to `E:\xFACts-Generated\ddl\`, which the Control Center serves at `/generated/ddl/`. `nav.js` (doc-registry.json), `ddl-loader.js`, and `ddl-erd.js` ({Schema}.json) fetch them from that root-absolute URL.
+
+Authored JSON is the exception that does live under `docs/`. `backlog.json` is authored at `xFACts-Documentation/docs/backlog.json` and deployed to `docs/data/`, served at `/docs/data/` and fetched by `docs-meta.js` for the Backlog page. The distinction is origin, not file type: generated data lives under the generated root, authored data the site fetches lives under `docs/data/`.
 
 #### nav.js Page Discovery
 
@@ -1387,7 +1391,7 @@ Documentation is maintained in HTML only. Two additional output formats are gene
 | Output | Format | Purpose | Location |
 |--------|--------|---------|----------|
 | **Confluence** | Storage Format (XHTML) | Published to Confluence Server via REST API | Confluence ITDOC space |
-| **Markdown** | `.md` files | AI context files for Claude project knowledge | `docs/data/md/` |
+| **Markdown** | `.md` files | AI context files for Claude project knowledge | `E:\xFACts-Generated\md\` |
 
 **No direct edits to Confluence pages.** All documentation changes happen in the HTML source. The publisher script converts and uploads. If something looks wrong in Confluence, fix the HTML and re-publish.
 
