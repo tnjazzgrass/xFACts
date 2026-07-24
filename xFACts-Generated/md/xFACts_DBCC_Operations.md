@@ -485,16 +485,16 @@ Execution history for DBCC integrity operations. One row per database per operat
 
 | Column | Value | Meaning | Sort |
 | --- | --- | --- | --- |
-| status | PENDING | Operation has been claimed by a script invocation and is waiting in queue. The row exists to prevent other concurrent invocations from claiming the same work. queued_dttm is populated; started_dttm is NULL. |  |
 | check_mode | PHYSICAL_ONLY | Physical structure checks only — page checksums, torn pages, physical page integrity. Catches most real-world storage corruption. Significantly faster than FULL. | 1 |
-| status | IN_PROGRESS | DBCC operation is actively executing. Transitioned from PENDING when the script begins processing this item. started_dttm and executed_on_server are populated at this transition. | 1 |
+| check_mode | FULL | Complete logical and physical integrity check. Includes all PHYSICAL_ONLY checks plus cross-object logical consistency validation. | 2 |
 | operation | CHECKDB | Full database integrity check. Verifies physical and logical consistency of all objects. Longest-running operation — hours for large databases. | 1 |
 | operation | CHECKALLOC | Allocation structure consistency check. Verifies page allocation and extent structures. Lightweight — seconds to minutes. | 2 |
-| status | SUCCESS | The DBCC operation completed with no errors reported. Integrity verified for the checked scope. | 2 |
-| check_mode | FULL | Complete logical and physical integrity check. Includes all PHYSICAL_ONLY checks plus cross-object logical consistency validation. | 2 |
-| status | FAILED | Script or connection error prevented DBCC from completing. Typical causes: database not online, connection timeout, permissions issue. error_details contains the exception message. Teams alert is sent. | 3 |
 | operation | CHECKCATALOG | System catalog consistency check. Verifies system table relationships. Very fast — seconds. | 3 |
 | operation | CHECKCONSTRAINTS | FK and CHECK constraint data validation. Identifies rows that violate constraint rules. Duration varies — minutes to hours depending on table sizes and constraint count. Not included in CHECKDB. | 4 |
+| status | PENDING | Operation has been claimed by a script invocation and is waiting in queue. The row exists to prevent other concurrent invocations from claiming the same work. queued_dttm is populated; started_dttm is NULL. |  |
+| status | IN_PROGRESS | DBCC operation is actively executing. Transitioned from PENDING when the script begins processing this item. started_dttm and executed_on_server are populated at this transition. | 1 |
+| status | SUCCESS | The DBCC operation completed with no errors reported. Integrity verified for the checked scope. | 2 |
+| status | FAILED | Script or connection error prevented DBCC from completing. Typical causes: database not online, connection timeout, permissions issue. error_details contains the exception message. Teams alert is sent. | 3 |
 | status | ERRORS_FOUND | The DBCC operation completed but reported problems - corruption for the integrity checks, or constraint violations for CHECKCONSTRAINTS. error_count has the total and error_details has the full output. A Teams alert is sent; CHECKDB corruption also queues a Jira ticket. | 4 |
 
 **Non-success executions** [sort:1] -- Shows all executions that did not complete successfully — errors found, failures, or still in progress.
@@ -608,10 +608,10 @@ Per-database scheduling configuration for DBCC integrity operations. One row per
 | Column | Value | Meaning | Sort |
 | --- | --- | --- | --- |
 | check_mode | NONE | No check mode configured. CHECKDB cannot be enabled while check_mode is NONE, and check_mode cannot be set to NONE while CHECKDB is enabled. | 1 |
-| replica_override | PRIMARY | Pins this database's DBCC operations to the primary replica, overriding the default routing. | 1 |
-| replica_override | SECONDARY | Pins this database's DBCC operations to the secondary replica, overriding the default routing. | 2 |
 | check_mode | PHYSICAL_ONLY | Physical structure checks only - page checksums, torn pages, physical page integrity. Significantly faster than FULL. | 2 |
 | check_mode | FULL | Complete logical and physical integrity check. Includes all PHYSICAL_ONLY checks plus cross-object logical consistency validation. | 3 |
+| replica_override | PRIMARY | Pins this database's DBCC operations to the primary replica, overriding the default routing. | 1 |
+| replica_override | SECONDARY | Pins this database's DBCC operations to the secondary replica, overriding the default routing. | 2 |
 
 **Full schedule overview** [sort:1] -- Shows all scheduled operations across all databases with their day and time settings.
 
