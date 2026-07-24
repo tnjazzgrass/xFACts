@@ -408,9 +408,6 @@ Permanent audit log of every Jira API interaction, and of queue inserts that fai
 | StatusCode | 0 | No HTTP response - the request failed before Jira replied. Treated as transient and retried. | 17 |
 | StatusCode | 408 | Request Timeout - Jira did not respond in time. Treated as transient and retried. | 18 |
 | StatusCode | 429 | Rate Limited - Jira throttled the request. Treated as transient and retried, honoring the Retry-After header when Jira supplies one. | 19 |
-| TicketKey | <Ticket #> | Ticket created successfully in Jira; the column holds the returned Jira ticket key. | 20 |
-| TicketKey | Email | Fallback email sent instead of ticket — max retries exhausted | 21 |
-| TicketKey | NULL | No ticket was created - the API call failed, or the queue insert itself failed. | 22 |
 
 **Recent activity** [sort:1] -- Last 20 API interactions showing source module, ticket key, status code, and timestamp.
 
