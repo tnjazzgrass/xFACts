@@ -1163,9 +1163,9 @@ Complete asset inventory of every object in the xFACts platform. Each row repres
 
 | Column | Value | Meaning | Sort |
 | --- | --- | --- | --- |
-| object_category | Database | SQL Server objects: tables, procedures, triggers, views, functions. | 1 |
 | is_active | 1 | Object is active and in use. Default value on INSERT. | 1 |
 | is_active | 0 | Object has been retired, dropped, or decommissioned. Row preserved for historical reference. | 2 |
+| object_category | Database | SQL Server objects: tables, procedures, triggers, views, functions. | 1 |
 | object_category | PowerShell | PowerShell scripts (.ps1) and modules (.psm1) in the automation layer. | 2 |
 | object_category | WebAsset | Control Center files: route pages, API endpoints, JavaScript, CSS. | 3 |
 | object_category | Documentation | Documentation site files: HTML pages, doc-specific JS and CSS. | 4 |
@@ -1330,15 +1330,15 @@ Registry of SQL Server instances managed by xFACts, including connection informa
 | Column | Value | Meaning | Sort |
 | --- | --- | --- | --- |
 | environment | PROD | Production environment. These servers can be set to is_active = 1 for orchestrator-managed collection. All automated monitoring runs exclusively against PROD servers. | 1 |
-| server_type | SQL_SERVER | Standard SQL Server instance. Default value for new registrations. | 1 |
-| is_active | 1 | Server is actively enrolled in orchestrator-managed collection processes. Only PROD servers can have this value (enforced by CK_ServerRegistry_environment_is_active). All automated collectors filter on is_active = 1. | 1 |
-| is_active | 0 | Server is registered but not enrolled in automated collection. Required for all non-PROD servers (STAGE, TEST, DEV). PROD servers may also be set to 0 to temporarily exclude them from collection without removing the registration. | 2 |
-| server_type | WINDOWS | Windows server monitored for non-SQL operations (e.g., disk space only). | 2 |
 | environment | DEV | Development environment. Cannot be set to is_active = 1 (enforced by CHECK constraint). Available as a target for testing processes via environment-based lookups. | 2 |
 | environment | TEST | Test environment. Cannot be set to is_active = 1 (enforced by CHECK constraint). Used by DmOps archive/shell purge testing and BDL Import testing via environment-based or GlobalConfig target_instance lookups. | 3 |
+| environment | STAGE | Staging environment. Cannot be set to is_active = 1 (enforced by CHECK constraint). Represents the DM staging AG cluster (DM-STAGE-DB / DM-STAGE-REP / AVG-STAGE-LSNR) and associated app servers. | 4 |
+| is_active | 1 | Server is actively enrolled in orchestrator-managed collection processes. Only PROD servers can have this value (enforced by CK_ServerRegistry_environment_is_active). All automated collectors filter on is_active = 1. | 1 |
+| is_active | 0 | Server is registered but not enrolled in automated collection. Required for all non-PROD servers (STAGE, TEST, DEV). PROD servers may also be set to 0 to temporarily exclude them from collection without removing the registration. | 2 |
+| server_type | SQL_SERVER | Standard SQL Server instance. Default value for new registrations. | 1 |
+| server_type | WINDOWS | Windows server monitored for non-SQL operations (e.g., disk space only). | 2 |
 | server_type | AG_LISTENER | Availability Group listener endpoint. Represents a logical connection point, not a physical server. | 3 |
 | server_type | APP_SERVER | Application server (e.g., JBoss EAP). Monitored for HTTP responsiveness, service state, and application-level metrics by the DmOps module. | 4 |
-| environment | STAGE | Staging environment. Cannot be set to is_active = 1 (enforced by CHECK constraint). Represents the DM staging AG cluster (DM-STAGE-DB / DM-STAGE-REP / AVG-STAGE-LSNR) and associated app servers. | 4 |
 
 **Active servers with module flags** [sort:1] -- Shows all active servers and which modules are enabled for each.
 
@@ -1716,9 +1716,6 @@ Configuration hub for all orchestrated processes. Defines scheduling, execution 
 
 | Column | Value | Meaning | Sort |
 | --- | --- | --- | --- |
-| run_mode | 0 | Disabled — process is not executed by the engine. | 1 |
-| run_mode | 1 | Scheduled — process uses interval-based or time-based scheduling. | 2 |
-| run_mode | 2 | Queue-driven — process executes when running_count > 0, triggered by external queue INSERT triggers. | 3 |
 | execution_mode | WAIT | Engine launches the process and waits for completion, capturing stdout/stderr and exit code directly. | 4 |
 | execution_mode | FIRE_AND_FORGET | Engine launches the process in the background and moves on. The process reports completion via the Complete-OrchestratorTask callback. | 5 |
 | last_execution_status | SUCCESS | Most recent execution completed successfully. | 6 |
@@ -1727,6 +1724,9 @@ Configuration hub for all orchestrated processes. Defines scheduling, execution 
 | last_execution_status | TIMEOUT | Process exceeded its timeout_seconds threshold without completing. | 9 |
 | last_execution_status | NOT_STARTED | Process has been registered but has not yet executed. | 10 |
 | last_execution_status | POLLING | Process completed a cycle but reported no actionable work — used by collectors that found nothing new to process. | 11 |
+| run_mode | 0 | Disabled — process is not executed by the engine. | 1 |
+| run_mode | 1 | Scheduled — process uses interval-based or time-based scheduling. | 2 |
+| run_mode | 2 | Queue-driven — process executes when running_count > 0, triggered by external queue INSERT triggers. | 3 |
 
 **All Registered Processes with Schedule** [sort:1] -- Complete process inventory showing execution targets, scheduling configuration, and current runtime status.
 
@@ -2010,9 +2010,9 @@ Action-level permission overrides for the Control Center RBAC framework. Provide
 
 | Column | Value | Meaning | Sort |
 | --- | --- | --- | --- |
-| grant_type | ALLOW | Grants access to an action the user would not normally have based on their tier. Example: ReadOnly users get ALLOW for kill-zombie because everyone loves killing zombie connections. | 1 |
 | grant_scope | ROLE | Grant applies to all users who hold the specified role. The standard approach for most overrides. | 1 |
 | grant_scope | USER | Grant applies to a specific AD username. The exception path for one-off permissions that do not justify a new AD group. | 2 |
+| grant_type | ALLOW | Grants access to an action the user would not normally have based on their tier. Example: ReadOnly users get ALLOW for kill-zombie because everyone loves killing zombie connections. | 1 |
 | grant_type | DENY | Revokes access to an action the user would normally have. Always takes precedence over ALLOW. Example: PowerUser gets DENY for bulk-toggle-tasks because bulk operations on production flows are admin-only. | 2 |
 
 **All active grants with action details** [sort:1] -- Shows every override with the action it applies to.
@@ -2129,15 +2129,15 @@ Logs permission evaluation events from the Control Center RBAC framework. Captur
 | Column | Value | Meaning | Sort |
 | --- | --- | --- | --- |
 | event_type | LOGIN_SUCCESS | User successfully authenticated via Active Directory. | 1 |
-| result | ALLOWED | Permission check passed. Action or page access was granted. | 1 |
-| result | DENIED | Permission check failed in enforce mode. Access was blocked. | 2 |
 | event_type | LOGIN_FAILURE | Active Directory authentication failed. | 2 |
 | event_type | ACCESS_DENIED | User lacks page-level permission. Logged in enforce mode. | 3 |
-| result | WOULD_DENY | Permission check failed in audit mode. Access was allowed but the event was logged for impact assessment. | 3 |
 | event_type | ACCESS_AUDIT | User would lack page-level permission. Logged in audit mode without blocking. | 4 |
 | event_type | ACTION_DENIED | User lacks action-level permission. Logged in enforce mode. | 5 |
 | event_type | ACTION_AUDIT | User would lack action-level permission. Logged in audit mode without blocking. | 6 |
 | event_type | PERMISSION_CHANGE | RBAC table configuration was modified through the admin interface. | 7 |
+| result | ALLOWED | Permission check passed. Action or page access was granted. | 1 |
+| result | DENIED | Permission check failed in enforce mode. Access was blocked. | 2 |
+| result | WOULD_DENY | Permission check failed in audit mode. Access was allowed but the event was logged for impact assessment. | 3 |
 
 **Recent denials** [sort:1] -- Shows blocked or would-be-blocked events in the last 7 days.
 
