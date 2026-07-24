@@ -1,6 +1,6 @@
 # Object_Metadata: Teams
 Source: dbo.Object_Metadata
-Generated: 2026-07-24 04:35:05
+Generated: 2026-07-24 04:56:18
 
 ## AlertQueue (Table)
 
@@ -388,7 +388,7 @@ Unique identifier for this log entry
 
 ### description / queue_id #2  [metadata_id: 1454]
 
-Foreign key to AlertQueue. Links to the original queued alert
+Links this log entry to its AlertQueue row; no FK constraint, the column is present for tracing.
 
 ### description / response_text #8  [metadata_id: 1460]
 
