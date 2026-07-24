@@ -2402,12 +2402,6 @@
                                        ],
                        "statusValues":  [
                                             {
-                                                "column":  "object_category",
-                                                "value":  "Database",
-                                                "meaning":  "SQL Server objects: tables, procedures, triggers, views, functions.",
-                                                "sortOrder":  1
-                                            },
-                                            {
                                                 "column":  "is_active",
                                                 "value":  "1",
                                                 "meaning":  "Object is active and in use. Default value on INSERT.",
@@ -2418,6 +2412,12 @@
                                                 "value":  "0",
                                                 "meaning":  "Object has been retired, dropped, or decommissioned. Row preserved for historical reference.",
                                                 "sortOrder":  2
+                                            },
+                                            {
+                                                "column":  "object_category",
+                                                "value":  "Database",
+                                                "meaning":  "SQL Server objects: tables, procedures, triggers, views, functions.",
+                                                "sortOrder":  1
                                             },
                                             {
                                                 "column":  "object_category",
@@ -2764,12 +2764,6 @@
                                        ],
                        "statusValues":  [
                                             {
-                                                "column":  "grant_type",
-                                                "value":  "ALLOW",
-                                                "meaning":  "Grants access to an action the user would not normally have based on their tier. Example: ReadOnly users get ALLOW for kill-zombie because everyone loves killing zombie connections.",
-                                                "sortOrder":  1
-                                            },
-                                            {
                                                 "column":  "grant_scope",
                                                 "value":  "ROLE",
                                                 "meaning":  "Grant applies to all users who hold the specified role. The standard approach for most overrides.",
@@ -2780,6 +2774,12 @@
                                                 "value":  "USER",
                                                 "meaning":  "Grant applies to a specific AD username. The exception path for one-off permissions that do not justify a new AD group.",
                                                 "sortOrder":  2
+                                            },
+                                            {
+                                                "column":  "grant_type",
+                                                "value":  "ALLOW",
+                                                "meaning":  "Grants access to an action the user would not normally have based on their tier. Example: ReadOnly users get ALLOW for kill-zombie because everyone loves killing zombie connections.",
+                                                "sortOrder":  1
                                             },
                                             {
                                                 "column":  "grant_type",
@@ -3193,18 +3193,6 @@
                                                 "sortOrder":  1
                                             },
                                             {
-                                                "column":  "result",
-                                                "value":  "ALLOWED",
-                                                "meaning":  "Permission check passed. Action or page access was granted.",
-                                                "sortOrder":  1
-                                            },
-                                            {
-                                                "column":  "result",
-                                                "value":  "DENIED",
-                                                "meaning":  "Permission check failed in enforce mode. Access was blocked.",
-                                                "sortOrder":  2
-                                            },
-                                            {
                                                 "column":  "event_type",
                                                 "value":  "LOGIN_FAILURE",
                                                 "meaning":  "Active Directory authentication failed.",
@@ -3214,12 +3202,6 @@
                                                 "column":  "event_type",
                                                 "value":  "ACCESS_DENIED",
                                                 "meaning":  "User lacks page-level permission. Logged in enforce mode.",
-                                                "sortOrder":  3
-                                            },
-                                            {
-                                                "column":  "result",
-                                                "value":  "WOULD_DENY",
-                                                "meaning":  "Permission check failed in audit mode. Access was allowed but the event was logged for impact assessment.",
                                                 "sortOrder":  3
                                             },
                                             {
@@ -3245,6 +3227,24 @@
                                                 "value":  "PERMISSION_CHANGE",
                                                 "meaning":  "RBAC table configuration was modified through the admin interface.",
                                                 "sortOrder":  7
+                                            },
+                                            {
+                                                "column":  "result",
+                                                "value":  "ALLOWED",
+                                                "meaning":  "Permission check passed. Action or page access was granted.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "result",
+                                                "value":  "DENIED",
+                                                "meaning":  "Permission check failed in enforce mode. Access was blocked.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "column":  "result",
+                                                "value":  "WOULD_DENY",
+                                                "meaning":  "Permission check failed in audit mode. Access was allowed but the event was logged for impact assessment.",
+                                                "sortOrder":  3
                                             }
                                         ],
                        "queries":  [
@@ -4637,10 +4637,22 @@
                                                 "sortOrder":  1
                                             },
                                             {
-                                                "column":  "server_type",
-                                                "value":  "SQL_SERVER",
-                                                "meaning":  "Standard SQL Server instance. Default value for new registrations.",
-                                                "sortOrder":  1
+                                                "column":  "environment",
+                                                "value":  "DEV",
+                                                "meaning":  "Development environment. Cannot be set to is_active = 1 (enforced by CHECK constraint). Available as a target for testing processes via environment-based lookups.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "column":  "environment",
+                                                "value":  "TEST",
+                                                "meaning":  "Test environment. Cannot be set to is_active = 1 (enforced by CHECK constraint). Used by DmOps archive/shell purge testing and BDL Import testing via environment-based or GlobalConfig target_instance lookups.",
+                                                "sortOrder":  3
+                                            },
+                                            {
+                                                "column":  "environment",
+                                                "value":  "STAGE",
+                                                "meaning":  "Staging environment. Cannot be set to is_active = 1 (enforced by CHECK constraint). Represents the DM staging AG cluster (DM-STAGE-DB / DM-STAGE-REP / AVG-STAGE-LSNR) and associated app servers.",
+                                                "sortOrder":  4
                                             },
                                             {
                                                 "column":  "is_active",
@@ -4656,21 +4668,15 @@
                                             },
                                             {
                                                 "column":  "server_type",
+                                                "value":  "SQL_SERVER",
+                                                "meaning":  "Standard SQL Server instance. Default value for new registrations.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "server_type",
                                                 "value":  "WINDOWS",
                                                 "meaning":  "Windows server monitored for non-SQL operations (e.g., disk space only).",
                                                 "sortOrder":  2
-                                            },
-                                            {
-                                                "column":  "environment",
-                                                "value":  "DEV",
-                                                "meaning":  "Development environment. Cannot be set to is_active = 1 (enforced by CHECK constraint). Available as a target for testing processes via environment-based lookups.",
-                                                "sortOrder":  2
-                                            },
-                                            {
-                                                "column":  "environment",
-                                                "value":  "TEST",
-                                                "meaning":  "Test environment. Cannot be set to is_active = 1 (enforced by CHECK constraint). Used by DmOps archive/shell purge testing and BDL Import testing via environment-based or GlobalConfig target_instance lookups.",
-                                                "sortOrder":  3
                                             },
                                             {
                                                 "column":  "server_type",
@@ -4682,12 +4688,6 @@
                                                 "column":  "server_type",
                                                 "value":  "APP_SERVER",
                                                 "meaning":  "Application server (e.g., JBoss EAP). Monitored for HTTP responsiveness, service state, and application-level metrics by the DmOps module.",
-                                                "sortOrder":  4
-                                            },
-                                            {
-                                                "column":  "environment",
-                                                "value":  "STAGE",
-                                                "meaning":  "Staging environment. Cannot be set to is_active = 1 (enforced by CHECK constraint). Represents the DM staging AG cluster (DM-STAGE-DB / DM-STAGE-REP / AVG-STAGE-LSNR) and associated app servers.",
                                                 "sortOrder":  4
                                             }
                                         ],
