@@ -334,27 +334,27 @@ Queue table for pending Teams notifications awaiting PowerShell processing. Reco
 
 **Inline Retry:** [sort:4] On failure, the processor retries immediately with 2-second sleep between attempts rather than reinserting a new Pending row. retry_count is updated in place on the original row and each attempt is individually logged to RequestLog. This eliminates orphaned Pending rows from trigger/running_count timing gaps that the earlier reinsert approach caused.
 
-**Manual Resend via original_queue_id:** [sort:5] Failed alerts can be resent from the Admin page Alert Failures card. Resend inserts a new Pending row copying the original alert content (source_module, alert_category, title, message, color, card_json, trigger_type, trigger_value) with original_queue_id set to the failed row's queue_id. This is a soft self-reference with no FK constraint — used only by the Admin page display query. The NOT EXISTS filter hides failed alerts that have a successful or pending resend, so the original disappears from the failure list once its resend succeeds. If the resend also fails, the original reappears. Routing is re-resolved at delivery time through WebhookSubscription rather than capturing the original delivery target, so subscription changes between failure and resend are respected.
+**Manual Resend via original_queue_id:** [sort:5] Failed alerts can be resent from the Admin page Alert Failures card. Resend inserts a new Pending row copying the original alert content (source_module, alert_category, title, message, color, card_json, trigger_type, trigger_value) with original_queue_id set to the failed row's queue_id. This is a soft self-reference with no FK constraint, used only by the Admin page display query. The NOT EXISTS filter hides failed alerts that have a successful or pending resend, so the original disappears from the failure list once its resend succeeds. If the resend also fails, the original reappears. Routing is re-resolved at delivery time through WebhookSubscription rather than capturing the original delivery target, so subscription changes between failure and resend are respected.
 
 **Columns:**
 
 | Column | Type | Nullable | Default | Description |
 | --- | --- | --- | --- | --- |
 | queue_id (IDENTITY) | int | No | IDENTITY | Unique identifier for this queue entry |
-| source_module | varchar(50) | No | — | Module that queued the alert (e.g., JobFlow, ServerOps, BIDATA) |
-| alert_category | varchar(50) | No | — | Category: CRITICAL, WARNING, or INFO |
+| source_module | varchar(50) | No | — | Module that queued the alert. |
+| alert_category | varchar(50) | No | — | Severity category assigned by the caller. |
 | title | varchar(255) | No | — | Alert title displayed in Teams |
 | message | nvarchar(MAX) | No | — | Full alert message body. Supports markdown. Used as plain text audit trail when card_json is populated |
 | color | varchar(20) | Yes | — | Adaptive Card accent color. On the T-SQL path sp_QueueAlert sets it from the alert category when not supplied; Send-TeamsAlert defaults it to attention unless the caller passes a color. |
 | card_json | nvarchar(MAX) | Yes | — | Pre-built Adaptive Card JSON payload. When populated, the processor sends this directly instead of building a card from title/message/color. May contain emoji placeholders resolved at send time |
-| status | varchar(20) | Yes | 'Pending' | Current status: Pending, Success, Failed |
-| trigger_type | varchar(50) | Yes | — | Category for deduplication (e.g., JobFlow_Stall, DiskHealthSummary) |
-| trigger_value | varchar(100) | Yes | — | Specific value for deduplication (e.g., date) |
+| status | varchar(20) | Yes | 'Pending' | Current delivery state of this queued alert. |
+| trigger_type | varchar(50) | Yes | — | Category used for deduplication; typically a <Module>_<Condition> pattern. |
+| trigger_value | varchar(100) | Yes | — | Specific instance value that pairs with the trigger category to form the deduplication key. |
 | retry_count | int | No | 0 | Number of retry attempts beyond the first delivery, set in place on the original row by Process-TeamsAlertQueue.ps1; 0 when the first attempt succeeds. |
 | created_dttm | datetime | Yes | getdate() | When alert was queued |
 | processed_dttm | datetime | Yes | — | When PowerShell processed this entry |
 | error_message | nvarchar(MAX) | Yes | — | Error details if processing failed |
-| original_queue_id | int | Yes | — | References the queue_id of the original failed alert. NULL for normal alerts. Populated only on manually resent copies created via the Admin page Alert Failures resend action. Soft reference — no FK constraint. Used by the NOT EXISTS display query to filter out failed alerts that have a successful or pending resend. |
+| original_queue_id | int | Yes | — | References the queue_id of the original failed alert. NULL for normal alerts. Populated only on manually resent copies created via the Admin page Alert Failures resend action. Soft reference with no FK constraint. Used by the NOT EXISTS display query to filter out failed alerts that have a successful or pending resend. |
 
   - **PK_Teams_AlertQueue** (CLUSTERED): queue_id -- PRIMARY KEY
 
@@ -457,10 +457,10 @@ Permanent audit log of all Teams webhook interactions including successful deliv
 | log_id (IDENTITY) | int | No | IDENTITY | Unique identifier for this log entry |
 | queue_id | int | Yes | — | Foreign key to AlertQueue. Links to the original queued alert |
 | source_module | varchar(50) | No | — | Module that originated the alert |
-| alert_category | varchar(50) | No | — | Alert category: CRITICAL, WARNING, INFO |
+| alert_category | varchar(50) | No | — | Severity category carried through from the queued alert. |
 | webhook_name | varchar(50) | No | — | Name of the webhook this was sent to |
 | title | varchar(255) | No | — | Alert title |
-| status_code | int | Yes | — | HTTP status code from webhook: 200=success |
+| status_code | int | Yes | — | HTTP status code returned by the webhook for this delivery attempt. |
 | response_text | nvarchar(MAX) | Yes | — | Response body or error message |
 | trigger_type | varchar(50) | Yes | — | Category for deduplication lookup |
 | trigger_value | varchar(100) | Yes | — | Specific identifier for deduplication |
@@ -472,12 +472,13 @@ Permanent audit log of all Teams webhook interactions including successful deliv
 
 | Column | Value | Meaning | Sort |
 | --- | --- | --- | --- |
-| status_code | 200 | Success — alert delivered to webhook | 10 |
-| status_code | 400 | Bad Request — check Adaptive Card JSON structure | 11 |
-| status_code | 401 | Unauthorized — verify webhook URL in WebhookConfig | 12 |
-| status_code | 404 | Not Found — webhook deleted in Teams, recreate it | 13 |
-| status_code | 429 | Rate Limited — will retry on next processor run | 14 |
-| status_code | 500+ | Server Error — Teams-side issue, retry later | 15 |
+| status_code | 200 | Success - the alert was delivered to the webhook. | 10 |
+| status_code | 400 | Bad Request - check the Adaptive Card JSON structure. | 11 |
+| status_code | 401 | Unauthorized - verify the webhook URL in WebhookConfig. | 12 |
+| status_code | 404 | Not Found - the webhook no longer exists in Teams and must be recreated. | 13 |
+| status_code | 429 | Rate Limited - Teams throttled the delivery. The processor retries inline within the same run and the alert is marked Failed once attempts are exhausted. | 14 |
+| status_code | 500+ | Server Error - Teams-side failure. Retried inline within the same run. | 15 |
+| status_code | 0 | No HTTP response - the delivery attempt failed before the webhook replied. | 16 |
 
 **Recent activity** [sort:1] -- Last 20 deliveries showing module, category, webhook, and status.
 
@@ -543,7 +544,7 @@ END
 
 ### WebhookConfig
 
-Configuration table storing Teams webhook URLs and their category routing settings.
+Configuration table holding the Teams webhook endpoints that alerts can be delivered to.
 
 **Data Flow:** Rows are manually configured when setting up Teams webhook endpoints. Process-TeamsAlertQueue.ps1 reads webhook_name, webhook_url, and is_active during alert routing, joined through WebhookSubscription via config_id. Only webhooks with is_active = 1 are included in routing.
 
@@ -554,9 +555,9 @@ Configuration table storing Teams webhook URLs and their category routing settin
 | Column | Type | Nullable | Default | Description |
 | --- | --- | --- | --- | --- |
 | config_id (IDENTITY) | int | No | IDENTITY | Unique identifier for this webhook configuration |
-| webhook_name | varchar(50) | No | — | Human-readable name for this webhook (e.g., "Apps-Critical", "General-Alerts") |
+| webhook_name | varchar(50) | No | — | Human-readable name for this webhook. |
 | webhook_url | varchar(500) | No | — | Full Teams incoming webhook URL |
-| alert_category | varchar(50) | No | — | Category filter: ALL, CRITICAL, WARNING, or INFO |
+| alert_category | varchar(50) | No | — | Descriptive label for the alert type this webhook is intended to carry. Not evaluated during routing. |
 | description | varchar(255) | Yes | — | Description of this webhook's purpose |
 | is_active | bit | Yes | 1 | Whether this webhook is active. Inactive webhooks are skipped |
 | created_dttm | datetime | Yes | getdate() | When this configuration was created |
@@ -568,7 +569,7 @@ Configuration table storing Teams webhook URLs and their category routing settin
 
 | Column | Value | Meaning | Sort |
 | --- | --- | --- | --- |
-| alert_category | ALL | Descriptive label indicating this webhook is intended for all alert types. Not used in routing logic — routing is controlled entirely by WebhookSubscription. | 1 |
+| alert_category | ALL | Descriptive label indicating this webhook is intended for all alert types. Not used in routing logic - routing is controlled entirely by WebhookSubscription. | 1 |
 | alert_category | CRITICAL | Descriptive label indicating this webhook is intended for critical alerts. Not used in routing logic. | 2 |
 | alert_category | WARNING | Descriptive label indicating this webhook is intended for warning alerts. Not used in routing logic. | 3 |
 | alert_category | INFO | Descriptive label indicating this webhook is intended for informational alerts. Not used in routing logic. | 4 |
@@ -598,7 +599,7 @@ Subscription routing table that controls which alerts are delivered to which Tea
 
 **NULL-as-Wildcard Pattern:** [sort:1] NULL values in alert_category and trigger_type act as wildcards, matching all values for that field. This allows broad subscriptions (all alerts from a module) and narrow subscriptions (specific trigger types only) using the same table structure without requiring separate wildcard rows.
 
-**Module-Level Routing:** [sort:2] Different modules route to different channels, supporting organizational boundaries. For example, JobFlow alerts go to the Apps team channel while BIDATA alerts go to the BI team channel, without requiring separate webhook infrastructure per team.
+**Module-Level Routing:** [sort:2] Subscriptions are keyed on source module, so each module's alerts can be directed to the channel that owns them without requiring separate webhook infrastructure per team.
 
 **Columns:**
 
@@ -607,7 +608,7 @@ Subscription routing table that controls which alerts are delivered to which Tea
 | subscription_id (IDENTITY) | int | No | IDENTITY | Unique identifier for this subscription |
 | config_id | int | No | — | Foreign key to WebhookConfig. Links to the webhook URL |
 | channel_name | varchar(100) | No | — | Human-readable name of the Teams channel (for documentation) |
-| source_module | varchar(50) | No | — | Module name to match (e.g., JobFlow, BIDATA) |
+| source_module | varchar(50) | No | — | Module name to match. |
 | alert_category | varchar(50) | Yes | — | Category filter. NULL = match all categories |
 | trigger_type | varchar(50) | Yes | — | Trigger type filter. NULL = match all trigger types |
 | is_active | bit | No | 1 | Whether this subscription is active |
@@ -642,12 +643,12 @@ ORDER BY s.channel_name, s.source_module;
 **Routing simulation** [sort:2] -- Shows which channels and webhooks would receive an alert for a given module, category, and trigger type. Replace the parameter values to test routing.
 
 ```sql
-DECLARE @Module VARCHAR(50) = 'JobFlow';
-DECLARE @Category VARCHAR(50) = 'CRITICAL';
-DECLARE @Trigger VARCHAR(50) = 'JobFlow_Stall';
+DECLARE @Module VARCHAR(50) = '<source module>';
+DECLARE @Category VARCHAR(50) = '<alert category>';
+DECLARE @Trigger VARCHAR(50) = '<trigger type>';
 
-SELECT DISTINCT 
-    s.channel_name, 
+SELECT DISTINCT
+    s.channel_name,
     w.webhook_name
 FROM Teams.WebhookSubscription s
 INNER JOIN Teams.WebhookConfig w ON s.config_id = w.config_id
@@ -686,36 +687,36 @@ Queue procedure that inserts Teams notification requests into AlertQueue for asy
 
 ```sql
 EXEC Teams.sp_QueueAlert
-    @SourceModule  = 'BIDATA',
+    @SourceModule  = '<source module>',
     @AlertCategory = 'INFO',
-    @Title         = 'BIDATA Daily Build Complete',
-    @Message       = 'Completed: 6:45 AM | Total Duration: 01:15:07',
-    @TriggerType   = 'DailyCompletion',
-    @TriggerValue  = '2025-12-20';
+    @Title         = '<alert title>',
+    @Message       = '<alert message>',
+    @TriggerType   = '<Module>_<Condition>',
+    @TriggerValue  = '<instance value>';
 ```
 
 **Warning alert** [sort:2] -- Warning with deduplication context
 
 ```sql
 EXEC Teams.sp_QueueAlert
-    @SourceModule  = 'BatchOps',
+    @SourceModule  = '<source module>',
     @AlertCategory = 'WARNING',
-    @Title         = '3 Batch(es) In Progress - Review Before Restart',
-    @Message       = @batch_details,
-    @TriggerType   = 'DM_OpenBatchCheck',
-    @TriggerValue  = '2025-12-20';
+    @Title         = '<alert title>',
+    @Message       = @message_body,
+    @TriggerType   = '<Module>_<Condition>',
+    @TriggerValue  = '<instance value>';
 ```
 
 **Critical alert** [sort:3] -- High-priority alert for system issues
 
 ```sql
 EXEC Teams.sp_QueueAlert
-    @SourceModule  = 'JobFlow',
+    @SourceModule  = '<source module>',
     @AlertCategory = 'CRITICAL',
-    @Title         = 'System Stall Detected',
-    @Message       = 'No job progress detected for 30+ minutes.',
-    @TriggerType   = 'SystemStall',
-    @TriggerValue  = '2025-12-20';
+    @Title         = '<alert title>',
+    @Message       = '<alert message>',
+    @TriggerType   = '<Module>_<Condition>',
+    @TriggerValue  = '<instance value>';
 ```
 
   - **Teams.AlertQueue**: [sort:1] Inserts directly into AlertQueue. This is the T-SQL entry point for queuing Teams alerts, available to external or in-database callers. xFACts PowerShell scripts queue through the shared Send-TeamsAlert function instead, including rich Adaptive Card layouts via its -CardJson parameter.
@@ -762,7 +763,7 @@ Queue processor that delivers Teams notifications via webhook. Claims Pending al
 
 **Queue-Driven Execution:** [sort:1] Runs as a queue-driven process (run_mode = 2) in the orchestrator. Only launched when alerts are waiting, not on a fixed polling schedule. This minimizes resource usage during quiet periods while ensuring near-real-time delivery when alerts are queued.
 
-**Two Card Build Paths:** [sort:2] Legacy alerts with title/message/color fields have Adaptive Cards built at send time using a standard template. Alerts with pre-built card_json are sent as-is after emoji placeholder resolution. The pre-built path enables rich multi-section layouts (like disk summaries and batch status reports) that cannot be expressed with the legacy fields.
+**Two Card Build Paths:** [sort:2] Legacy alerts with title/message/color fields have Adaptive Cards built at send time using a standard template. Alerts with pre-built card_json are sent as-is after emoji placeholder resolution. The pre-built path enables rich multi-section layouts that cannot be expressed with the legacy fields.
 
 **Inline Retry with Per-Attempt Logging:** [sort:3] On webhook delivery failure, retries immediately with 2-second sleep between attempts rather than requeueing. Each attempt (including retries) generates a separate RequestLog entry. retry_count on AlertQueue is updated in place. This eliminates orphaned Pending rows from trigger/running_count timing gaps that the earlier requeue approach caused.
 
