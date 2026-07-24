@@ -219,32 +219,32 @@
                                             },
                                             {
                                                 "column":  "StatusCode",
-                                                "value":  "500+",
-                                                "meaning":  "Server Error - Jira-side failure. Treated as transient and retried.",
-                                                "sortOrder":  15
-                                            },
-                                            {
-                                                "column":  "StatusCode",
-                                                "value":  "-99",
-                                                "meaning":  "Queue insert failed - sp_QueueTicket could not write the queue row. The error text is in ResponseMessage.",
-                                                "sortOrder":  16
-                                            },
-                                            {
-                                                "column":  "StatusCode",
-                                                "value":  "0",
-                                                "meaning":  "No HTTP response - the request failed before Jira replied. Treated as transient and retried.",
-                                                "sortOrder":  17
-                                            },
-                                            {
-                                                "column":  "StatusCode",
                                                 "value":  "408",
                                                 "meaning":  "Request Timeout - Jira did not respond in time. Treated as transient and retried.",
-                                                "sortOrder":  18
+                                                "sortOrder":  15
                                             },
                                             {
                                                 "column":  "StatusCode",
                                                 "value":  "429",
                                                 "meaning":  "Rate Limited - Jira throttled the request. Treated as transient and retried, honoring the Retry-After header when Jira supplies one.",
+                                                "sortOrder":  16
+                                            },
+                                            {
+                                                "column":  "StatusCode",
+                                                "value":  "500+",
+                                                "meaning":  "Server Error - Jira-side failure. Treated as transient and retried.",
+                                                "sortOrder":  17
+                                            },
+                                            {
+                                                "column":  "StatusCode",
+                                                "value":  "-99",
+                                                "meaning":  "Queue insert failed - sp_QueueTicket could not write the queue row. The error text is in ResponseMessage.",
+                                                "sortOrder":  18
+                                            },
+                                            {
+                                                "column":  "StatusCode",
+                                                "value":  "0",
+                                                "meaning":  "No HTTP response - the request failed before Jira replied. Treated as transient and retried.",
                                                 "sortOrder":  19
                                             }
                                         ],
