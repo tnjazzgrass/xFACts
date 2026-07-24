@@ -249,9 +249,15 @@
                                             },
                                             {
                                                 "column":  "TicketKey",
-                                                "value":  "Actual Jira ticket key",
+                                                "value":  "\u003cTicket #\u003e",
                                                 "meaning":  "Ticket created successfully in Jira; the column holds the returned Jira ticket key.",
                                                 "sortOrder":  20
+                                            },
+                                            {
+                                                "column":  "TicketKey",
+                                                "value":  "Email",
+                                                "meaning":  "Fallback email sent instead of ticket — max retries exhausted",
+                                                "sortOrder":  21
                                             },
                                             {
                                                 "column":  "TicketKey",
