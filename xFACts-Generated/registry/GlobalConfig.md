@@ -1,6 +1,6 @@
 # Global Configuration
 Source: dbo.GlobalConfig
-Generated: 2026-07-24 05:27:07
+Generated: 2026-07-24 05:56:48
 
 | module_name | category | setting_name | setting_value | data_type | is_ui_editable | description |
 | --- | --- | --- | --- | --- | --- | --- |
