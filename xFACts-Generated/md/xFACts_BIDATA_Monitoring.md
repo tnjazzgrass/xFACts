@@ -349,13 +349,13 @@ Primary tracking table for BIDATA Daily Build executions, holding per-attempt ti
 
 | Column | Value | Meaning | Sort |
 | --- | --- | --- | --- |
-| status | IN_PROGRESS | Build is currently running. Set when first step is detected in sysjobhistory but job outcome row (step_id=0) has not appeared. | 1 |
 | run_status | 0 | Failed. The SQL Agent job outcome indicates the build did not complete successfully. | 1 |
 | run_status | 1 | Succeeded. The SQL Agent job outcome indicates the build completed successfully. | 2 |
-| status | COMPLETED | Build finished successfully. Set when job outcome row shows run_status=1. | 2 |
-| status | FAILED | Build encountered an error. Set when job outcome row shows run_status=0. The failed_step_id and failed_step_name columns identify the failing step. | 3 |
 | run_status | 2 | Retry. The SQL Agent job is being retried. | 3 |
 | run_status | 3 | Canceled. The SQL Agent job was canceled. | 4 |
+| status | IN_PROGRESS | Build is currently running. Set when first step is detected in sysjobhistory but job outcome row (step_id=0) has not appeared. | 1 |
+| status | COMPLETED | Build finished successfully. Set when job outcome row shows run_status=1. | 2 |
+| status | FAILED | Build encountered an error. Set when job outcome row shows run_status=0. The failed_step_id and failed_step_name columns identify the failing step. | 3 |
 | status | NOT_STARTED | Build did not start within the grace period after the scheduled start time. Created by NOT_STARTED detection logic when no sysjobhistory records exist for the target date. | 4 |
 | status | SUPERSEDED | A NOT_STARTED record that was replaced when the build eventually started. The original NOT_STARTED alert was already sent. | 5 |
 
