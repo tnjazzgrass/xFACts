@@ -315,54 +315,6 @@
                                                 "sortOrder":  1
                                             },
                                             {
-                                                "column":  "status_classification",
-                                                "value":  "IN_FLIGHT",
-                                                "meaning":  "Source status 0 and the run is presumed executing (young row, or Sterling cross-check confirmed RUNNING).",
-                                                "sortOrder":  1
-                                            },
-                                            {
-                                                "column":  "fault_report_type",
-                                                "value":  "TRANSLATION",
-                                                "meaning":  "The run\u0027s fault report is a translation-map report with structured entries. Full report in SI_FaultReport.",
-                                                "sortOrder":  1
-                                            },
-                                            {
-                                                "column":  "sterling_status",
-                                                "value":  "SUCCESS",
-                                                "meaning":  "The process reached a successful terminal state within Sterling Integrator.",
-                                                "sortOrder":  1
-                                            },
-                                            {
-                                                "column":  "sterling_check_result",
-                                                "value":  "RUNNING",
-                                                "meaning":  "The b2bi WF_INST_S instance for this RUN_ID was found and is still executing. The run is genuinely in flight.",
-                                                "sortOrder":  1
-                                            },
-                                            {
-                                                "column":  "sterling_check_result",
-                                                "value":  "TERMINATED",
-                                                "meaning":  "The b2bi instance was found but has ended. Combined with source status 0, the run died without writing a terminal status.",
-                                                "sortOrder":  2
-                                            },
-                                            {
-                                                "column":  "sterling_status",
-                                                "value":  "FAILED",
-                                                "meaning":  "The process failed within Sterling Integrator.",
-                                                "sortOrder":  2
-                                            },
-                                            {
-                                                "column":  "fault_report_type",
-                                                "value":  "SERVICE",
-                                                "meaning":  "The run\u0027s fault report is a service report (e.g. XSLT Service) carrying a service-level exception. Full report in SI_FaultReport.",
-                                                "sortOrder":  2
-                                            },
-                                            {
-                                                "column":  "status_classification",
-                                                "value":  "AWAITING_DM",
-                                                "meaning":  "Source status 2 on a non-dispatcher run: the B2B side is done and the run awaits promotion by the reconciliation job (DM batch confirmation for NB/PAY/BDL handoffs; immediate promotion for other process types). Rows whose DM batch never reaches a recognized terminal code remain here indefinitely - a small permanent-limbo population exists in history.",
-                                                "sortOrder":  2
-                                            },
-                                            {
                                                 "column":  "batch_status",
                                                 "value":  "2",
                                                 "meaning":  "Transitional: the B2B side is done. For NB/PAY/BDL runs, awaiting DM confirmation by the reconciliation job. For dispatcher rows with NULL SEQ_ID, permanent (the reconciliation join cannot promote them).",
@@ -373,48 +325,6 @@
                                                 "value":  "3",
                                                 "meaning":  "Fully complete. For NB/PAY/BDL runs this includes DM-side confirmation written by the reconciliation job.",
                                                 "sortOrder":  3
-                                            },
-                                            {
-                                                "column":  "status_classification",
-                                                "value":  "COMPLETE",
-                                                "meaning":  "Fully complete. Source status 3, or a dispatcher/non-handoff run whose terminal state is success.",
-                                                "sortOrder":  3
-                                            },
-                                            {
-                                                "column":  "fault_report_type",
-                                                "value":  "MESSAGE",
-                                                "meaning":  "The run\u0027s fault report is a bare single-string message. Full report in SI_FaultReport.",
-                                                "sortOrder":  3
-                                            },
-                                            {
-                                                "column":  "sterling_status",
-                                                "value":  "NO_ACTION",
-                                                "meaning":  "The run performed no processing - there was nothing to act on.",
-                                                "sortOrder":  3
-                                            },
-                                            {
-                                                "column":  "sterling_check_result",
-                                                "value":  "NOT_FOUND",
-                                                "meaning":  "No b2bi instance exists for this RUN_ID - the instance aged out of the Sterling runtime retention window (~30 days) or never registered.",
-                                                "sortOrder":  3
-                                            },
-                                            {
-                                                "column":  "sterling_status",
-                                                "value":  "IN_PROGRESS",
-                                                "meaning":  "The run has not yet reached a terminal state within Sterling Integrator.",
-                                                "sortOrder":  4
-                                            },
-                                            {
-                                                "column":  "fault_report_type",
-                                                "value":  "NONE",
-                                                "meaning":  "The collector attempted capture but the failure carried no extractable report. Sentinel that prevents re-attempting; no SI_FaultReport row exists.",
-                                                "sortOrder":  4
-                                            },
-                                            {
-                                                "column":  "status_classification",
-                                                "value":  "NO_FILES",
-                                                "meaning":  "Source status 4 where the run genuinely acquired no files: either a non-NB/PAY/BDL process type (the reconciliation job never writes 4 for those), or an NB/PAY/BDL run with no nonzero-size pickup rows in BATCH_FILES.",
-                                                "sortOrder":  4
                                             },
                                             {
                                                 "column":  "batch_status",
@@ -429,24 +339,6 @@
                                                 "sortOrder":  5
                                             },
                                             {
-                                                "column":  "status_classification",
-                                                "value":  "NO_HANDOFF",
-                                                "meaning":  "Source status 4 on an NB/PAY/BDL run that acquired files (nonzero-size pickups exist in BATCH_FILES) but never handed off to DM - it reached status 2 with NULL BATCH_ID and the reconciliation job demoted it.",
-                                                "sortOrder":  5
-                                            },
-                                            {
-                                                "column":  "sterling_status",
-                                                "value":  "UNDEFINED",
-                                                "meaning":  "The Sterling-level status has not been determined.",
-                                                "sortOrder":  5
-                                            },
-                                            {
-                                                "column":  "status_classification",
-                                                "value":  "DUPLICATE",
-                                                "meaning":  "Source status 5: duplicate file detected, processing suppressed.",
-                                                "sortOrder":  6
-                                            },
-                                            {
                                                 "column":  "batch_status",
                                                 "value":  "-1",
                                                 "meaning":  "Dual meaning at the source: a Sterling-side workflow fault (onFault handler), or a DM-side batch rejection written by the reconciliation job. Disambiguated in status_classification.",
@@ -459,6 +351,72 @@
                                                 "sortOrder":  7
                                             },
                                             {
+                                                "column":  "batch_status",
+                                                "value":  "1",
+                                                "meaning":  "Defined for the retired ETL_CALL success path. Unreachable since 2024-08; zero rows exist in source history.",
+                                                "sortOrder":  8
+                                            },
+                                            {
+                                                "column":  "fault_report_type",
+                                                "value":  "TRANSLATION",
+                                                "meaning":  "The run\u0027s fault report is a translation-map report with structured entries. Full report in SI_FaultReport.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "fault_report_type",
+                                                "value":  "SERVICE",
+                                                "meaning":  "The run\u0027s fault report is a service report (e.g. XSLT Service) carrying a service-level exception. Full report in SI_FaultReport.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "column":  "fault_report_type",
+                                                "value":  "MESSAGE",
+                                                "meaning":  "The run\u0027s fault report is a bare single-string message. Full report in SI_FaultReport.",
+                                                "sortOrder":  3
+                                            },
+                                            {
+                                                "column":  "fault_report_type",
+                                                "value":  "NONE",
+                                                "meaning":  "The collector attempted capture but the failure carried no extractable report. Sentinel that prevents re-attempting; no SI_FaultReport row exists.",
+                                                "sortOrder":  4
+                                            },
+                                            {
+                                                "column":  "status_classification",
+                                                "value":  "IN_FLIGHT",
+                                                "meaning":  "Source status 0 and the run is presumed executing (young row, or Sterling cross-check confirmed RUNNING).",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "status_classification",
+                                                "value":  "AWAITING_DM",
+                                                "meaning":  "Source status 2 on a non-dispatcher run: the B2B side is done and the run awaits promotion by the reconciliation job (DM batch confirmation for NB/PAY/BDL handoffs; immediate promotion for other process types). Rows whose DM batch never reaches a recognized terminal code remain here indefinitely - a small permanent-limbo population exists in history.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "column":  "status_classification",
+                                                "value":  "COMPLETE",
+                                                "meaning":  "Fully complete. Source status 3, or a dispatcher/non-handoff run whose terminal state is success.",
+                                                "sortOrder":  3
+                                            },
+                                            {
+                                                "column":  "status_classification",
+                                                "value":  "NO_FILES",
+                                                "meaning":  "Source status 4 where the run genuinely acquired no files: either a non-NB/PAY/BDL process type (the reconciliation job never writes 4 for those), or an NB/PAY/BDL run with no nonzero-size pickup rows in BATCH_FILES.",
+                                                "sortOrder":  4
+                                            },
+                                            {
+                                                "column":  "status_classification",
+                                                "value":  "NO_HANDOFF",
+                                                "meaning":  "Source status 4 on an NB/PAY/BDL run that acquired files (nonzero-size pickups exist in BATCH_FILES) but never handed off to DM - it reached status 2 with NULL BATCH_ID and the reconciliation job demoted it.",
+                                                "sortOrder":  5
+                                            },
+                                            {
+                                                "column":  "status_classification",
+                                                "value":  "DUPLICATE",
+                                                "meaning":  "Source status 5: duplicate file detected, processing suppressed.",
+                                                "sortOrder":  6
+                                            },
+                                            {
                                                 "column":  "status_classification",
                                                 "value":  "CASCADE_SKIP",
                                                 "meaning":  "Source status -2: skipped because the predecessor in a SEQUENTIAL chain failed.",
@@ -468,12 +426,6 @@
                                                 "column":  "status_classification",
                                                 "value":  "STERLING_FAULT",
                                                 "meaning":  "Source status -1 where no DM rejection is possible: either NULL BATCH_ID (the workflow faulted before any DM handoff), or a process type outside NEW_BUSINESS/PAYMENT/BDL (the reconciliation job never writes -1 for those types, so the -1 is the workflow fault handler regardless of BATCH_ID).",
-                                                "sortOrder":  8
-                                            },
-                                            {
-                                                "column":  "batch_status",
-                                                "value":  "1",
-                                                "meaning":  "Defined for the retired ETL_CALL success path. Unreachable since 2024-08; zero rows exist in source history.",
                                                 "sortOrder":  8
                                             },
                                             {
@@ -499,6 +451,54 @@
                                                 "value":  "UNCLASSIFIED",
                                                 "meaning":  "The collector could not resolve a classification (missing evidence, verification unavailable). A holding state that should be rare; persistent UNCLASSIFIED rows indicate a collector or source problem.",
                                                 "sortOrder":  12
+                                            },
+                                            {
+                                                "column":  "sterling_check_result",
+                                                "value":  "RUNNING",
+                                                "meaning":  "The b2bi WF_INST_S instance for this RUN_ID was found and is still executing. The run is genuinely in flight.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "sterling_check_result",
+                                                "value":  "TERMINATED",
+                                                "meaning":  "The b2bi instance was found but has ended. Combined with source status 0, the run died without writing a terminal status.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "column":  "sterling_check_result",
+                                                "value":  "NOT_FOUND",
+                                                "meaning":  "No b2bi instance exists for this RUN_ID - the instance aged out of the Sterling runtime retention window (~30 days) or never registered.",
+                                                "sortOrder":  3
+                                            },
+                                            {
+                                                "column":  "sterling_status",
+                                                "value":  "SUCCESS",
+                                                "meaning":  "The process reached a successful terminal state within Sterling Integrator.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "sterling_status",
+                                                "value":  "FAILED",
+                                                "meaning":  "The process failed within Sterling Integrator.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "column":  "sterling_status",
+                                                "value":  "NO_ACTION",
+                                                "meaning":  "The run performed no processing - there was nothing to act on.",
+                                                "sortOrder":  3
+                                            },
+                                            {
+                                                "column":  "sterling_status",
+                                                "value":  "IN_PROGRESS",
+                                                "meaning":  "The run has not yet reached a terminal state within Sterling Integrator.",
+                                                "sortOrder":  4
+                                            },
+                                            {
+                                                "column":  "sterling_status",
+                                                "value":  "UNDEFINED",
+                                                "meaning":  "The Sterling-level status has not been determined.",
+                                                "sortOrder":  5
                                             }
                                         ],
                        "relationshipNotes":  [
