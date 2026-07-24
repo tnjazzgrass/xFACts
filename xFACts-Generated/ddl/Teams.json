@@ -22,7 +22,7 @@
                                            "length":  "50",
                                            "nullable":  false,
                                            "identity":  false,
-                                           "description":  "Module that queued the alert (e.g., JobFlow, ServerOps, BIDATA)"
+                                           "description":  "Module that queued the alert."
                                        },
                                        {
                                            "ordinal":  3,
@@ -31,7 +31,7 @@
                                            "length":  "50",
                                            "nullable":  false,
                                            "identity":  false,
-                                           "description":  "Category: CRITICAL, WARNING, or INFO"
+                                           "description":  "Severity category assigned by the caller."
                                        },
                                        {
                                            "ordinal":  4,
@@ -77,7 +77,7 @@
                                            "nullable":  true,
                                            "identity":  false,
                                            "default":  "(\u0027Pending\u0027)",
-                                           "description":  "Current status: Pending, Success, Failed"
+                                           "description":  "Current delivery state of this queued alert."
                                        },
                                        {
                                            "ordinal":  9,
@@ -86,7 +86,7 @@
                                            "length":  "50",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "Category for deduplication (e.g., JobFlow_Stall, DiskHealthSummary)"
+                                           "description":  "Category used for deduplication; typically a \u003cModule\u003e_\u003cCondition\u003e pattern."
                                        },
                                        {
                                            "ordinal":  10,
@@ -95,7 +95,7 @@
                                            "length":  "100",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "Specific value for deduplication (e.g., date)"
+                                           "description":  "Specific instance value that pairs with the trigger category to form the deduplication key."
                                        },
                                        {
                                            "ordinal":  11,
@@ -138,7 +138,7 @@
                                            "dataType":  "int",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "References the queue_id of the original failed alert. NULL for normal alerts. Populated only on manually resent copies created via the Admin page Alert Failures resend action. Soft reference — no FK constraint. Used by the NOT EXISTS display query to filter out failed alerts that have a successful or pending resend."
+                                           "description":  "References the queue_id of the original failed alert. NULL for normal alerts. Populated only on manually resent copies created via the Admin page Alert Failures resend action. Soft reference with no FK constraint. Used by the NOT EXISTS display query to filter out failed alerts that have a successful or pending resend."
                                        }
                                    ],
                        "indexes":  [
@@ -174,7 +174,7 @@
                                            },
                                            {
                                                "topic":  "Manual Resend via original_queue_id",
-                                               "note":  "Failed alerts can be resent from the Admin page Alert Failures card. Resend inserts a new Pending row copying the original alert content (source_module, alert_category, title, message, color, card_json, trigger_type, trigger_value) with original_queue_id set to the failed row\u0027s queue_id. This is a soft self-reference with no FK constraint — used only by the Admin page display query. The NOT EXISTS filter hides failed alerts that have a successful or pending resend, so the original disappears from the failure list once its resend succeeds. If the resend also fails, the original reappears. Routing is re-resolved at delivery time through WebhookSubscription rather than capturing the original delivery target, so subscription changes between failure and resend are respected.",
+                                               "note":  "Failed alerts can be resent from the Admin page Alert Failures card. Resend inserts a new Pending row copying the original alert content (source_module, alert_category, title, message, color, card_json, trigger_type, trigger_value) with original_queue_id set to the failed row\u0027s queue_id. This is a soft self-reference with no FK constraint, used only by the Admin page display query. The NOT EXISTS filter hides failed alerts that have a successful or pending resend, so the original disappears from the failure list once its resend succeeds. If the resend also fails, the original reappears. Routing is re-resolved at delivery time through WebhookSubscription rather than capturing the original delivery target, so subscription changes between failure and resend are respected.",
                                                "sortOrder":  5
                                            }
                                        ],
@@ -299,7 +299,7 @@
                                            "length":  "50",
                                            "nullable":  false,
                                            "identity":  false,
-                                           "description":  "Alert category: CRITICAL, WARNING, INFO"
+                                           "description":  "Severity category carried through from the queued alert."
                                        },
                                        {
                                            "ordinal":  5,
@@ -325,7 +325,7 @@
                                            "dataType":  "int",
                                            "nullable":  true,
                                            "identity":  false,
-                                           "description":  "HTTP status code from webhook: 200=success"
+                                           "description":  "HTTP status code returned by the webhook for this delivery attempt."
                                        },
                                        {
                                            "ordinal":  8,
@@ -395,38 +395,44 @@
                                             {
                                                 "column":  "status_code",
                                                 "value":  "200",
-                                                "meaning":  "Success — alert delivered to webhook",
+                                                "meaning":  "Success - the alert was delivered to the webhook.",
                                                 "sortOrder":  10
                                             },
                                             {
                                                 "column":  "status_code",
                                                 "value":  "400",
-                                                "meaning":  "Bad Request — check Adaptive Card JSON structure",
+                                                "meaning":  "Bad Request - check the Adaptive Card JSON structure.",
                                                 "sortOrder":  11
                                             },
                                             {
                                                 "column":  "status_code",
                                                 "value":  "401",
-                                                "meaning":  "Unauthorized — verify webhook URL in WebhookConfig",
+                                                "meaning":  "Unauthorized - verify the webhook URL in WebhookConfig.",
                                                 "sortOrder":  12
                                             },
                                             {
                                                 "column":  "status_code",
                                                 "value":  "404",
-                                                "meaning":  "Not Found — webhook deleted in Teams, recreate it",
+                                                "meaning":  "Not Found - the webhook no longer exists in Teams and must be recreated.",
                                                 "sortOrder":  13
                                             },
                                             {
                                                 "column":  "status_code",
                                                 "value":  "429",
-                                                "meaning":  "Rate Limited — will retry on next processor run",
+                                                "meaning":  "Rate Limited - Teams throttled the delivery. The processor retries inline within the same run and the alert is marked Failed once attempts are exhausted.",
                                                 "sortOrder":  14
                                             },
                                             {
                                                 "column":  "status_code",
                                                 "value":  "500+",
-                                                "meaning":  "Server Error — Teams-side issue, retry later",
+                                                "meaning":  "Server Error - Teams-side failure. Retried inline within the same run.",
                                                 "sortOrder":  15
+                                            },
+                                            {
+                                                "column":  "status_code",
+                                                "value":  "0",
+                                                "meaning":  "No HTTP response - the delivery attempt failed before the webhook replied.",
+                                                "sortOrder":  16
                                             }
                                         ],
                        "queries":  [
@@ -465,7 +471,7 @@
                    },
                    {
                        "name":  "WebhookConfig",
-                       "description":  "Configuration table storing Teams webhook URLs and their category routing settings.",
+                       "description":  "Configuration table holding the Teams webhook endpoints that alerts can be delivered to.",
                        "module":  "Teams",
                        "category":  "Teams",
                        "dataFlow":  "Rows are manually configured when setting up Teams webhook endpoints. Process-TeamsAlertQueue.ps1 reads webhook_name, webhook_url, and is_active during alert routing, joined through WebhookSubscription via config_id. Only webhooks with is_active = 1 are included in routing.",
@@ -485,7 +491,7 @@
                                            "length":  "50",
                                            "nullable":  false,
                                            "identity":  false,
-                                           "description":  "Human-readable name for this webhook (e.g., \"Apps-Critical\", \"General-Alerts\")"
+                                           "description":  "Human-readable name for this webhook."
                                        },
                                        {
                                            "ordinal":  3,
@@ -503,7 +509,7 @@
                                            "length":  "50",
                                            "nullable":  false,
                                            "identity":  false,
-                                           "description":  "Category filter: ALL, CRITICAL, WARNING, or INFO"
+                                           "description":  "Descriptive label for the alert type this webhook is intended to carry. Not evaluated during routing."
                                        },
                                        {
                                            "ordinal":  5,
@@ -563,7 +569,7 @@
                                             {
                                                 "column":  "alert_category",
                                                 "value":  "ALL",
-                                                "meaning":  "Descriptive label indicating this webhook is intended for all alert types. Not used in routing logic — routing is controlled entirely by WebhookSubscription.",
+                                                "meaning":  "Descriptive label indicating this webhook is intended for all alert types. Not used in routing logic - routing is controlled entirely by WebhookSubscription.",
                                                 "sortOrder":  1
                                             },
                                             {
@@ -640,7 +646,7 @@
                                            "length":  "50",
                                            "nullable":  false,
                                            "identity":  false,
-                                           "description":  "Module name to match (e.g., JobFlow, BIDATA)"
+                                           "description":  "Module name to match."
                                        },
                                        {
                                            "ordinal":  5,
@@ -738,7 +744,7 @@
                                            },
                                            {
                                                "topic":  "Module-Level Routing",
-                                               "note":  "Different modules route to different channels, supporting organizational boundaries. For example, JobFlow alerts go to the Apps team channel while BIDATA alerts go to the BI team channel, without requiring separate webhook infrastructure per team.",
+                                               "note":  "Subscriptions are keyed on source module, so each module\u0027s alerts can be directed to the channel that owns them without requiring separate webhook infrastructure per team.",
                                                "sortOrder":  2
                                            }
                                        ],
@@ -752,7 +758,7 @@
                                        {
                                            "name":  "Routing simulation",
                                            "description":  "Shows which channels and webhooks would receive an alert for a given module, category, and trigger type. Replace the parameter values to test routing.",
-                                           "sql":  "DECLARE @Module VARCHAR(50) = \u0027JobFlow\u0027;\r\nDECLARE @Category VARCHAR(50) = \u0027CRITICAL\u0027;\r\nDECLARE @Trigger VARCHAR(50) = \u0027JobFlow_Stall\u0027;\r\n\r\nSELECT DISTINCT \r\n    s.channel_name, \r\n    w.webhook_name\r\nFROM Teams.WebhookSubscription s\r\nINNER JOIN Teams.WebhookConfig w ON s.config_id = w.config_id\r\nWHERE s.source_module = @Module\r\n  AND s.is_active = 1\r\n  AND w.is_active = 1\r\n  AND (s.alert_category IS NULL OR s.alert_category = @Category)\r\n  AND (s.trigger_type IS NULL OR s.trigger_type = @Trigger);",
+                                           "sql":  "DECLARE @Module VARCHAR(50) = \u0027\u003csource module\u003e\u0027;\r\nDECLARE @Category VARCHAR(50) = \u0027\u003calert category\u003e\u0027;\r\nDECLARE @Trigger VARCHAR(50) = \u0027\u003ctrigger type\u003e\u0027;\r\n\r\nSELECT DISTINCT\r\n    s.channel_name,\r\n    w.webhook_name\r\nFROM Teams.WebhookSubscription s\r\nINNER JOIN Teams.WebhookConfig w ON s.config_id = w.config_id\r\nWHERE s.source_module = @Module\r\n  AND s.is_active = 1\r\n  AND w.is_active = 1\r\n  AND (s.alert_category IS NULL OR s.alert_category = @Category)\r\n  AND (s.trigger_type IS NULL OR s.trigger_type = @Trigger);",
                                            "sortOrder":  2
                                        }
                                    ],
@@ -846,19 +852,19 @@
                                            {
                                                "name":  "Basic info alert",
                                                "description":  "Simple informational notification",
-                                               "sql":  "EXEC Teams.sp_QueueAlert\r\n    @SourceModule  = \u0027BIDATA\u0027,\r\n    @AlertCategory = \u0027INFO\u0027,\r\n    @Title         = \u0027BIDATA Daily Build Complete\u0027,\r\n    @Message       = \u0027Completed: 6:45 AM | Total Duration: 01:15:07\u0027,\r\n    @TriggerType   = \u0027DailyCompletion\u0027,\r\n    @TriggerValue  = \u00272025-12-20\u0027;",
+                                               "sql":  "EXEC Teams.sp_QueueAlert\r\n    @SourceModule  = \u0027\u003csource module\u003e\u0027,\r\n    @AlertCategory = \u0027INFO\u0027,\r\n    @Title         = \u0027\u003calert title\u003e\u0027,\r\n    @Message       = \u0027\u003calert message\u003e\u0027,\r\n    @TriggerType   = \u0027\u003cModule\u003e_\u003cCondition\u003e\u0027,\r\n    @TriggerValue  = \u0027\u003cinstance value\u003e\u0027;",
                                                "sortOrder":  1
                                            },
                                            {
                                                "name":  "Warning alert",
                                                "description":  "Warning with deduplication context",
-                                               "sql":  "EXEC Teams.sp_QueueAlert\r\n    @SourceModule  = \u0027BatchOps\u0027,\r\n    @AlertCategory = \u0027WARNING\u0027,\r\n    @Title         = \u00273 Batch(es) In Progress - Review Before Restart\u0027,\r\n    @Message       = @batch_details,\r\n    @TriggerType   = \u0027DM_OpenBatchCheck\u0027,\r\n    @TriggerValue  = \u00272025-12-20\u0027;",
+                                               "sql":  "EXEC Teams.sp_QueueAlert\r\n    @SourceModule  = \u0027\u003csource module\u003e\u0027,\r\n    @AlertCategory = \u0027WARNING\u0027,\r\n    @Title         = \u0027\u003calert title\u003e\u0027,\r\n    @Message       = @message_body,\r\n    @TriggerType   = \u0027\u003cModule\u003e_\u003cCondition\u003e\u0027,\r\n    @TriggerValue  = \u0027\u003cinstance value\u003e\u0027;",
                                                "sortOrder":  2
                                            },
                                            {
                                                "name":  "Critical alert",
                                                "description":  "High-priority alert for system issues",
-                                               "sql":  "EXEC Teams.sp_QueueAlert\r\n    @SourceModule  = \u0027JobFlow\u0027,\r\n    @AlertCategory = \u0027CRITICAL\u0027,\r\n    @Title         = \u0027System Stall Detected\u0027,\r\n    @Message       = \u0027No job progress detected for 30+ minutes.\u0027,\r\n    @TriggerType   = \u0027SystemStall\u0027,\r\n    @TriggerValue  = \u00272025-12-20\u0027;",
+                                               "sql":  "EXEC Teams.sp_QueueAlert\r\n    @SourceModule  = \u0027\u003csource module\u003e\u0027,\r\n    @AlertCategory = \u0027CRITICAL\u0027,\r\n    @Title         = \u0027\u003calert title\u003e\u0027,\r\n    @Message       = \u0027\u003calert message\u003e\u0027,\r\n    @TriggerType   = \u0027\u003cModule\u003e_\u003cCondition\u003e\u0027,\r\n    @TriggerValue  = \u0027\u003cinstance value\u003e\u0027;",
                                                "sortOrder":  3
                                            }
                                        ],
@@ -939,7 +945,7 @@
                                             },
                                             {
                                                 "topic":  "Two Card Build Paths",
-                                                "note":  "Legacy alerts with title/message/color fields have Adaptive Cards built at send time using a standard template. Alerts with pre-built card_json are sent as-is after emoji placeholder resolution. The pre-built path enables rich multi-section layouts (like disk summaries and batch status reports) that cannot be expressed with the legacy fields.",
+                                                "note":  "Legacy alerts with title/message/color fields have Adaptive Cards built at send time using a standard template. Alerts with pre-built card_json are sent as-is after emoji placeholder resolution. The pre-built path enables rich multi-section layouts that cannot be expressed with the legacy fields.",
                                                 "sortOrder":  2
                                             },
                                             {
