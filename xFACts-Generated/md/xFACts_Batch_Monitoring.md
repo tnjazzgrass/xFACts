@@ -882,13 +882,13 @@ Payment batch lifecycle tracking table. Captures all payment batch types (Import
 
 | Column | Value | Meaning | Sort |
 | --- | --- | --- | --- |
-| completed_status | POSTED | All payments posted successfully (batch_status_code 4). Primary success terminal state — represents the vast majority of completions. | 1 |
 | batch_type | IMPORT | File-based payment import (batch_type_code 3). Primary batch type for automated processing. Stall detection and alerting apply to this type only. | 1 |
 | batch_type | MANUAL | Manually entered payment batch. Tracked for visibility but no stall detection or alerting. | 2 |
-| completed_status | FAILED | Batch processing failed (batch_status_code 6). Terminal failure requiring investigation. | 2 |
-| completed_status | IMPORTFAILED | File import failed (batch_status_code 11). Terminal failure — source file could not be imported. | 3 |
 | batch_type | REVERSAL | Payment reversal batch. Tracked for visibility but no stall detection. | 3 |
 | batch_type | REAPPLY | Reapplied payment batch referencing an original_batch_id. Tracked for visibility but no stall detection. | 4 |
+| completed_status | POSTED | All payments posted successfully (batch_status_code 4). Primary success terminal state — represents the vast majority of completions. | 1 |
+| completed_status | FAILED | Batch processing failed (batch_status_code 6). Terminal failure requiring investigation. | 2 |
+| completed_status | IMPORTFAILED | File import failed (batch_status_code 11). Terminal failure — source file could not be imported. | 3 |
 | completed_status | REVERSALFAILED | Reversal processing failed (batch_status_code 27). Terminal failure requiring manual intervention. | 4 |
 | completed_status | DELETED | Batch removed from DM. Detected via hard delete detection when the batch no longer exists in the source table. | 5 |
 | completed_status | PARTIAL | Some payments posted, some failed (batch_status_code 5). Transitional only — not a true terminal state. Cleared if the batch is re-fired and recovers. May exist on historical batches from before the PARTIAL non-terminal fix. | 6 |
@@ -965,9 +965,9 @@ Multi-row collector execution dashboard. One row per BatchOps process, tracking 
 
 | Column | Value | Meaning | Sort |
 | --- | --- | --- | --- |
-| processing_status | RUNNING | Collector is currently executing. Set at the start of each execution cycle. | 1 |
 | last_status | SUCCESS | Most recent execution completed without errors. | 1 |
 | last_status | FAILED | Most recent execution encountered errors. Check Orchestrator TaskLog for details. | 2 |
+| processing_status | RUNNING | Collector is currently executing. Set at the start of each execution cycle. | 1 |
 | processing_status | IDLE | Collector is between execution cycles. Set at the end of each execution cycle. | 2 |
 
 **Process health check** [sort:1] -- All BatchOps processes with health classification based on last status and recency.
