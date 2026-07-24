@@ -614,12 +614,6 @@
                                        ],
                        "statusValues":  [
                                             {
-                                                "column":  "TicketStatus",
-                                                "value":  "Pending",
-                                                "meaning":  "Waiting for processor pickup. Set on INSERT as the default value, and a retryable failure returns the row to this status for the next processor cycle.",
-                                                "sortOrder":  1
-                                            },
-                                            {
                                                 "column":  "TicketPriority",
                                                 "value":  "Highest",
                                                 "meaning":  "Most urgent tickets requiring immediate attention.",
@@ -630,18 +624,6 @@
                                                 "value":  "High",
                                                 "meaning":  "Default priority set by sp_QueueTicket. Used for most automated ticket creation.",
                                                 "sortOrder":  2
-                                            },
-                                            {
-                                                "column":  "TicketStatus",
-                                                "value":  "Success",
-                                                "meaning":  "Jira ticket created successfully; TicketKey is populated with the returned Jira issue key.",
-                                                "sortOrder":  2
-                                            },
-                                            {
-                                                "column":  "TicketStatus",
-                                                "value":  "Failed",
-                                                "meaning":  "Ticket creation failed terminally and no fallback email was sent because EmailRecipients was not populated. ResponseMessage holds the last error. Terminal status.",
-                                                "sortOrder":  3
                                             },
                                             {
                                                 "column":  "TicketPriority",
@@ -656,16 +638,34 @@
                                                 "sortOrder":  4
                                             },
                                             {
-                                                "column":  "TicketStatus",
-                                                "value":  "EmailSent",
-                                                "meaning":  "Ticket creation failed terminally and a fallback email was sent via Database Mail. Terminal status indicating the ticket must be created manually from the email.",
-                                                "sortOrder":  4
-                                            },
-                                            {
                                                 "column":  "TicketPriority",
                                                 "value":  "Lowest",
                                                 "meaning":  "Least urgent tickets.",
                                                 "sortOrder":  5
+                                            },
+                                            {
+                                                "column":  "TicketStatus",
+                                                "value":  "Pending",
+                                                "meaning":  "Waiting for processor pickup. Set on INSERT as the default value, and a retryable failure returns the row to this status for the next processor cycle.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "TicketStatus",
+                                                "value":  "Success",
+                                                "meaning":  "Jira ticket created successfully; TicketKey is populated with the returned Jira issue key.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "column":  "TicketStatus",
+                                                "value":  "Failed",
+                                                "meaning":  "Ticket creation failed terminally and no fallback email was sent because EmailRecipients was not populated. ResponseMessage holds the last error. Terminal status.",
+                                                "sortOrder":  3
+                                            },
+                                            {
+                                                "column":  "TicketStatus",
+                                                "value":  "EmailSent",
+                                                "meaning":  "Ticket creation failed terminally and a fallback email was sent via Database Mail. Terminal status indicating the ticket must be created manually from the email.",
+                                                "sortOrder":  4
                                             }
                                         ],
                        "queries":  [
