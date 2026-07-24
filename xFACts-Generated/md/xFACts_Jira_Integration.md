@@ -360,7 +360,7 @@ Jira Integration is an open service. Any process with EXECUTE permission on `sp_
 
 ### RequestLog
 
-Permanent audit log of all Jira API interactions including successful ticket creations, failures, and queue insert errors.
+Permanent audit log of every Jira API interaction, and of queue inserts that failed before an API call was made.
 
 **Data Flow:** Process-JiraTicketQueue.ps1 inserts one row per Jira API interaction (both successes and failures). sp_QueueTicket also writes directly to RequestLog when a queue INSERT fails (RequestType = 'QueueInsertFailed', StatusCode = -99). Calling modules query this table for deduplication before queuing new tickets, checking Trigger_Type and Trigger_Value with a successful StatusCode to avoid creating duplicate Jira tickets for the same condition.
 
@@ -368,7 +368,7 @@ Permanent audit log of all Jira API interactions including successful ticket cre
 
 **Queue Failure Logging:** [sort:2] sp_QueueTicket catches INSERT failures and logs them directly to RequestLog with StatusCode = -99 and RequestType = 'QueueInsertFailed'. This ensures visibility even when the queue INSERT itself fails.
 
-**Deduplication Source:** [sort:3] Same pattern as Teams: calling modules query RequestLog before queuing tickets to check if a successful creation already exists for the same Trigger_Type and Trigger_Value combination. Prevents duplicate Jira tickets across orchestrator cycles.
+**Deduplication Source:** [sort:3] Calling modules query RequestLog before queuing a ticket to check whether a successful creation already exists for the same trigger type and trigger value. Prevents duplicate Jira tickets across orchestrator cycles.
 
 **Columns:**
 
@@ -381,7 +381,7 @@ Permanent audit log of all Jira API interactions including successful ticket cre
 | ProjectKey | varchar(20) | Yes | — | Jira project key. |
 | Summary | nvarchar(1000) | Yes | — | Ticket summary/title |
 | TicketKey | varchar(50) | Yes | — | Jira ticket key returned when the ticket is created; NULL when no ticket was created. |
-| StatusCode | int | Yes | — | HTTP status code: 201=success, 400/401/500=errors, -99=queue failure |
+| StatusCode | int | Yes | — | Outcome code recorded for this logged interaction. |
 | ResponseMessage | nvarchar(MAX) | Yes | — | Full API response or error message |
 | CreatedDate | datetime | Yes | getdate() | When this log entry was created |
 | CreatedBy | varchar(100) | Yes | — | Process or user that created this log entry |
@@ -398,15 +398,18 @@ Permanent audit log of all Jira API interactions including successful ticket cre
 
 | Column | Value | Meaning | Sort |
 | --- | --- | --- | --- |
-| StatusCode | 201 | Created — ticket exists in Jira | 10 |
-| StatusCode | 400 | Bad Request — check custom field IDs and required fields | 11 |
-| StatusCode | 401 | Unauthorized — verify credentials in dbo.Credentials | 12 |
-| StatusCode | 403 | Forbidden — check user permissions in Jira project | 13 |
-| StatusCode | 404 | Not Found — verify ProjectKey and IssueType exist in Jira | 14 |
-| StatusCode | 500+ | Server Error — Jira-side issue, retry later | 15 |
-| StatusCode | -99 | Queue insert failed — check sp_QueueTicket error in ResponseMessage | 16 |
+| StatusCode | 201 | Created - ticket exists in Jira. | 10 |
+| StatusCode | 400 | Bad Request - check custom field IDs and required fields. | 11 |
+| StatusCode | 401 | Unauthorized - verify credentials in dbo.Credentials. | 12 |
+| StatusCode | 403 | Forbidden - check user permissions on the Jira project. | 13 |
+| StatusCode | 404 | Not Found - verify the project key and issue type exist in Jira. | 14 |
+| StatusCode | 500+ | Server Error - Jira-side failure. Treated as transient and retried. | 15 |
+| StatusCode | -99 | Queue insert failed - sp_QueueTicket could not write the queue row. The error text is in ResponseMessage. | 16 |
+| StatusCode | 0 | No HTTP response - the request failed before Jira replied. Treated as transient and retried. | 17 |
+| StatusCode | 408 | Request Timeout - Jira did not respond in time. Treated as transient and retried. | 18 |
+| StatusCode | 429 | Rate Limited - Jira throttled the request. Treated as transient and retried, honoring the Retry-After header when Jira supplies one. | 19 |
 | TicketKey | Actual Jira ticket key | Ticket created successfully in Jira; the column holds the returned Jira ticket key. | 20 |
-| TicketKey | NULL | API call failed — no ticket or email created | 22 |
+| TicketKey | NULL | No ticket was created - the API call failed, or the queue insert itself failed. | 22 |
 
 **Recent activity** [sort:1] -- Last 20 API interactions showing source module, ticket key, status code, and timestamp.
 
@@ -479,9 +482,9 @@ Queue table for pending ticket requests awaiting PowerShell processing. Records 
 
 **Data Flow:** Tickets enter via Jira.sp_QueueTicket or by direct INSERT. TR_Jira_TicketQueue_QueueDepth fires on INSERT, incrementing running_count in Orchestrator.ProcessRegistry to signal the orchestrator. Process-JiraTicketQueue.ps1 claims Pending rows (TicketStatus = 'Pending' AND RetryCount < MaxRetries), retrieves Jira credentials from dbo.Credentials via two-tier passphrase decryption (master passphrase from GlobalConfig), creates tickets via Jira REST API, and sets TicketStatus to Success with the returned TicketKey, leaves it Pending for a later cycle on a transient failure, or sets a terminal status once retries are exhausted or a deterministic failure occurs. On success the script performs a GET to retrieve the assigned user. Each API interaction is logged to Jira.RequestLog. When retries are exhausted or a deterministic failure occurs and EmailRecipients is populated, the script sends a fallback email via Database Mail and sets TicketStatus to EmailSent.
 
-**Queue-Based Decoupling:** [sort:1] Same pattern as Teams: calling modules insert and continue without waiting for Jira API responses. Ticket creation latency does not affect the calling process execution time.
+**Queue-Based Decoupling:** [sort:1] Calling modules insert and continue without waiting for Jira API responses. Ticket creation latency does not affect the calling process execution time.
 
-**Email Fallback:** [sort:2] When Jira API calls fail after all retry attempts, the script sends a fallback email via Database Mail containing the ticket details for manual creation. Requires EmailRecipients to be populated on the queue row. TicketStatus is set to EmailSent as a terminal status.
+**Email Fallback:** [sort:2] When ticket creation cannot succeed - either retries are exhausted or the failure is deterministic - the script sends a fallback email via Database Mail containing the ticket details for manual creation. Requires EmailRecipients to be populated on the queue row. TicketStatus is set to EmailSent as a terminal status.
 
 **Generic Custom Field Support:** [sort:3] Up to three arbitrary Jira custom fields plus one cascading select field can be specified per ticket. Field IDs and values are stored in the queue and mapped into the Jira API payload at creation time. This avoids hardcoding Jira field schemas into the table structure.
 
@@ -499,7 +502,7 @@ Queue table for pending ticket requests awaiting PowerShell processing. Records 
 | Summary | nvarchar(1000) | No | — | Ticket title/summary |
 | TicketDescription | nvarchar(MAX) | No | — | Full ticket description body |
 | IssueType | varchar(50) | Yes | 'Task' | Jira issue type. |
-| TicketPriority | varchar(20) | Yes | 'High' | Priority: Highest, High, Medium, Low, Lowest |
+| TicketPriority | varchar(20) | Yes | 'High' | Jira priority requested for the ticket. |
 | Assignee | varchar(100) | Yes | — | Jira username to assign ticket to |
 | CascadingField_ID | varchar(50) | Yes | — | Field ID for the cascading select. |
 | CascadingField_ParentValue | varchar(500) | Yes | — | Parent value for cascading select |
@@ -519,9 +522,9 @@ Queue table for pending ticket requests awaiting PowerShell processing. Records 
 | TicketKey | varchar(50) | Yes | — | Jira ticket key assigned when the ticket is created. |
 | StatusCode | int | Yes | — | HTTP status code returned by the Jira API. |
 | ResponseMessage | nvarchar(MAX) | Yes | — | API response or error message |
-| TicketStatus | varchar(20) | Yes | 'Pending' | Current status: Pending, Success, Failed, EmailSent. |
-| RetryCount | int | Yes | 0 | Number of retry attempts |
-| LastRetryDate | datetime | Yes | — | When last retry was attempted |
+| TicketStatus | varchar(20) | Yes | 'Pending' | Current processing state of this queue entry. |
+| RetryCount | int | Yes | 0 | Number of processor turns in which this entry failed and was left for a later cycle. |
+| LastRetryDate | datetime | Yes | — | When the processor last acted on this entry. |
 
   - **PK_Jira_TicketQueue** (CLUSTERED): QueueID -- PRIMARY KEY
   - **IX_Jira_TicketQueue_SourceModule** (NONCLUSTERED): SourceModule, RequestedDate [includes: TicketStatus, TicketKey]
@@ -536,10 +539,10 @@ Queue table for pending ticket requests awaiting PowerShell processing. Records 
 | TicketPriority | Highest | Most urgent tickets requiring immediate attention. | 1 |
 | TicketPriority | High | Default priority set by sp_QueueTicket. Used for most automated ticket creation. | 2 |
 | TicketStatus | Success | Jira ticket created successfully; TicketKey is populated with the returned Jira issue key. | 2 |
-| TicketStatus | Failed | Jira API call failed and all retry attempts have been exhausted with no fallback email sent (EmailRecipients not populated). RetryCount has reached MaxRetries and ResponseMessage holds the last error. Terminal status. | 3 |
+| TicketStatus | Failed | Ticket creation failed terminally and no fallback email was sent because EmailRecipients was not populated. ResponseMessage holds the last error. Terminal status. | 3 |
 | TicketPriority | Medium | Standard priority. | 3 |
 | TicketPriority | Low | Lower priority items. | 4 |
-| TicketStatus | EmailSent | Max retries exhausted and fallback email sent via Database Mail. Terminal status indicating the ticket must be created manually from the email. | 4 |
+| TicketStatus | EmailSent | Ticket creation failed terminally and a fallback email was sent via Database Mail. Terminal status indicating the ticket must be created manually from the email. | 4 |
 | TicketPriority | Lowest | Least urgent tickets. | 5 |
 
 **Pending tickets** [sort:1] -- Shows tickets awaiting processing with wait time, source module, and retry count.
