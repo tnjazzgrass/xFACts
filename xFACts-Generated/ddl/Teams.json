@@ -180,12 +180,6 @@
                                        ],
                        "statusValues":  [
                                             {
-                                                "column":  "status",
-                                                "value":  "Pending",
-                                                "meaning":  "Waiting for processor pickup. Set on INSERT as the default value. Rows remaining in Pending for more than a few minutes indicate the processor may not be running.",
-                                                "sortOrder":  1
-                                            },
-                                            {
                                                 "column":  "alert_category",
                                                 "value":  "CRITICAL",
                                                 "meaning":  "System failures, stalls, and urgent issues requiring immediate attention. On the T-SQL path sp_QueueAlert auto-colors this attention (red) when no explicit color is given; Send-TeamsAlert defaults every category to attention unless the caller passes a color.",
@@ -198,6 +192,18 @@
                                                 "sortOrder":  2
                                             },
                                             {
+                                                "column":  "alert_category",
+                                                "value":  "INFO",
+                                                "meaning":  "Informational messages, successful completions, and status updates. On the T-SQL path sp_QueueAlert auto-colors this good (green) when no explicit color is given; Send-TeamsAlert defaults to attention unless the caller passes a color.",
+                                                "sortOrder":  3
+                                            },
+                                            {
+                                                "column":  "status",
+                                                "value":  "Pending",
+                                                "meaning":  "Waiting for processor pickup. Set on INSERT as the default value. Rows remaining in Pending for more than a few minutes indicate the processor may not be running.",
+                                                "sortOrder":  1
+                                            },
+                                            {
                                                 "column":  "status",
                                                 "value":  "Success",
                                                 "meaning":  "Delivered to all matching webhooks. Set by Process-TeamsAlertQueue.ps1 after receiving HTTP 200 responses.",
@@ -207,12 +213,6 @@
                                                 "column":  "status",
                                                 "value":  "Failed",
                                                 "meaning":  "Webhook delivery failed after all retry attempts exhausted. Set by the processor with error details in error_message.",
-                                                "sortOrder":  3
-                                            },
-                                            {
-                                                "column":  "alert_category",
-                                                "value":  "INFO",
-                                                "meaning":  "Informational messages, successful completions, and status updates. On the T-SQL path sp_QueueAlert auto-colors this good (green) when no explicit color is given; Send-TeamsAlert defaults to attention unless the caller passes a color.",
                                                 "sortOrder":  3
                                             }
                                         ],
