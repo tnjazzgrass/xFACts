@@ -1,6 +1,6 @@
 # Object_Metadata: BIDATA
 Source: dbo.Object_Metadata
-Generated: 2026-07-23 21:14:44
+Generated: 2026-07-24 03:24:55
 
 ## BuildExecution (Table)
 
@@ -29,7 +29,7 @@ When no job history exists within the configured grace period after the schedule
 ### design_note #3  [metadata_id: 1929]
 Title: Instance-Based Deduplication
 
-Notification TriggerValue includes the instance_id (e.g., COMPLETED-12345) so each execution attempt can only trigger one alert regardless of how many monitoring cycles observe the completed state.
+The notification trigger value combines the build status with the execution attempt identifier, so each attempt can only trigger one alert regardless of how many monitoring cycles observe the same state.
 
 ### design_note #5  [metadata_id: 5308]
 Title: Job Name Stored as Free Text
@@ -42,7 +42,7 @@ BIDATA
 
 ### query #1  [metadata_id: 1940]
 Title: Today's Build Status
-Description: Daily check — shows all build records for today including status and notification state.
+Description: Daily check - shows all build records for today including status and notification state.
 
 SELECT build_id, build_date, instance_id, start_dttm, end_dttm, 
        total_duration_formatted, status, notified_dttm
@@ -63,7 +63,7 @@ ORDER BY build_date DESC, start_dttm DESC;
 
 ### query #3  [metadata_id: 1942]
 Title: Days with Multiple Attempts
-Description: Identifies dates with more than one execution attempt — indicates failures and restarts.
+Description: Identifies dates with more than one execution attempt - indicates failures and restarts.
 
 SELECT build_date, COUNT(*) AS attempts
 FROM BIDATA.BuildExecution
@@ -121,7 +121,7 @@ When the build completed
 
 ### description / failed_step_id #12  [metadata_id: 149]
 
-Step ID that failed (if status = FAILED)
+Step number that caused the build to fail. NULL when no step failed.
 
 ### description / failed_step_name #13  [metadata_id: 150]
 
@@ -129,11 +129,11 @@ Name of the failed step
 
 ### description / instance_id #4  [metadata_id: 141]
 
-SQL Agent instance_id from sysjobhistory. NULL for NOT_STARTED records
+SQL Agent instance identifier from job history. NULL when the record was created without any job history.
 
 ### description / is_backfill #15  [metadata_id: 152]
 
-Reserved and currently unused; always 0, with no code path that sets or reads it.
+Reserved and currently unused; always written as 0 and never read.
 
 ### description / job_name #3  [metadata_id: 140]
 
@@ -145,7 +145,7 @@ When the Teams build notification was queued; NULL until notified.
 
 ### description / run_status #11  [metadata_id: 148]
 
-SQL Agent run_status code (1=Success, 0=Failed)
+SQL Agent job outcome code captured from job history. NULL while the build is still running.
 
 ### status_value / run_status #1  [metadata_id: 1936]
 Title: 0
@@ -173,7 +173,7 @@ When the build started
 
 ### description / status #10  [metadata_id: 147]
 
-Build status: COMPLETED, FAILED, IN_PROGRESS, NOT_STARTED, SUPERSEDED
+Current state of this build execution attempt.
 
 ### status_value / status #1  [metadata_id: 1931]
 Title: IN_PROGRESS
@@ -229,7 +229,7 @@ Monitors the BIDATA Daily Build SQL Agent job over a direct connection to the so
 ### design_note #1  [metadata_id: 1963]
 Title: Direct Connection vs Linked Server
 
-Uses direct PowerShell connection to the source server via Invoke-Sqlcmd instead of linked server queries. This eliminates the linked server dependency, enables real-time step capture during build execution, and aligns with the platform direction of unified PowerShell orchestration.
+Queries the source server over a direct PowerShell connection rather than through a linked server. This removes the linked server dependency and enables step capture while the build is still running.
 
 ### design_note #2  [metadata_id: 1964]
 Title: Incremental Step Capture
@@ -244,12 +244,12 @@ Queries the job schedule from msdb.dbo.sysschedules to determine the expected st
 ### design_note #4  [metadata_id: 1966]
 Title: Instance-Based Deduplication
 
-Notification TriggerValue includes the instance_id or date (e.g., COMPLETED-12345, NOT_STARTED-2026-01-29) so each build attempt or not-started condition can only trigger one alert regardless of how many monitoring cycles observe the same state.
+The notification trigger value combines the build status with either the execution attempt identifier or the build date, so each build attempt or not-started condition can only trigger one alert regardless of how many monitoring cycles observe the same state.
 
 ### design_note #5  [metadata_id: 1967]
 Title: Notification Step Filtering
 
-Infrastructure steps (disable users, enable replication) and legacy notification steps are excluded from the Teams message body to keep notifications focused on actual data processing steps. These steps are still captured in StepExecution for historical completeness.
+Infrastructure and legacy notification steps are excluded from the Teams message body by step number, keeping notifications focused on data processing steps. The excluded steps are still captured in StepExecution for historical completeness.
 
 ### module #0  [metadata_id: 1960]
 
@@ -292,7 +292,7 @@ Step-level execution detail for the BIDATA Daily Build, one row per SQL Agent jo
 ### design_note #1  [metadata_id: 1947]
 Title: Complete Step Capture
 
-All SQL Agent job steps are captured including infrastructure steps (disable users, enable replication) and legacy notification steps, even though some are excluded from the Teams notification message. This preserves full execution history for analysis.
+All SQL Agent job steps are captured, including the infrastructure and legacy notification steps that are excluded from the Teams notification message. This preserves full execution history for analysis.
 
 ### design_note #2  [metadata_id: 1948]
 Title: Incremental Capture
@@ -368,20 +368,20 @@ ORDER BY b.build_date DESC;
 Title: Step Duration Trend
 Description: Tracks a specific step's duration over time for performance trending. Replace the step_name filter with the target step.
 
-SELECT 
+SELECT
     b.build_date,
     s.duration_seconds,
     s.duration_formatted
 FROM BIDATA.StepExecution s
 INNER JOIN BIDATA.BuildExecution b ON s.build_id = b.build_id
-WHERE s.step_name = 'Build Table X'  -- Replace with actual step name
+WHERE s.step_name = '<step_name>'
   AND s.run_status = 1
 ORDER BY b.build_date;
 
 ### relationship_note #1  [metadata_id: 1958]
 Title: BuildExecution
 
-Each StepExecution row belongs to one BuildExecution record via the build_id foreign key. Step data only has meaning in the context of its parent build — the build_date, status, and instance_id come from the parent row.
+Each StepExecution row belongs to one BuildExecution record via the build_id foreign key. Step data only has meaning in the context of its parent build - the build_date, status, and instance_id come from the parent row.
 
 ### description / build_id #2  [metadata_id: 211]
 
@@ -397,7 +397,7 @@ Step duration in seconds
 
 ### description / run_status #5  [metadata_id: 214]
 
-SQL Agent run_status: 1=Success, 0=Failed
+SQL Agent outcome code for this step, captured from job history.
 
 ### status_value / run_status #1  [metadata_id: 1949]
 Title: 0
