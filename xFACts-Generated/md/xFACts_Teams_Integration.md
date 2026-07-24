@@ -455,7 +455,7 @@ Permanent audit log of all Teams webhook interactions including successful deliv
 | Column | Type | Nullable | Default | Description |
 | --- | --- | --- | --- | --- |
 | log_id (IDENTITY) | int | No | IDENTITY | Unique identifier for this log entry |
-| queue_id | int | Yes | — | Foreign key to AlertQueue. Links to the original queued alert |
+| queue_id | int | Yes | — | Links this log entry to its AlertQueue row; no FK constraint, the column is present for tracing. |
 | source_module | varchar(50) | No | — | Module that originated the alert |
 | alert_category | varchar(50) | No | — | Severity category carried through from the queued alert. |
 | webhook_name | varchar(50) | No | — | Name of the webhook this was sent to |
