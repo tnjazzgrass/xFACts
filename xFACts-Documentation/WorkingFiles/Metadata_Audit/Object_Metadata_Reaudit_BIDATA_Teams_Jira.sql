@@ -66,9 +66,10 @@
    ----------------------------------------------------------------------------
    SUMMARY OF CHANGES
    ----------------------------------------------------------------------------
-   Rows touched: 61 UPDATE + 4 INSERT = 65, plus 1 conditional UPDATE in the
-   Section 5 decision block (metadata_id 1891) that runs only if query 0.3
-   returns 0.
+   Rows touched: 62 UPDATE + 4 INSERT = 66. Section 5's conditional UPDATE
+   (metadata_id 1891) is NOT applied: query 0.3 returned a sentinel count of 2,
+   so historical 'Email' rows exist and the documented dedup filter still
+   matches real rows (flag F2, resolved).
 
      BIDATA .... 15 UPDATE
        R1 strips ........ 147 status, 148 run_status (BuildExecution),
@@ -80,7 +81,7 @@
        Trim ............. 1963 (rationale + direction language)
        ASCII ............ 1940, 1942 (query descriptions), 1958
 
-     Jira ...... 20 UPDATE + 3 INSERT (+1 conditional, Section 5)
+     Jira ...... 20 UPDATE + 3 INSERT (Section 5 conditional NOT applied)
        R1 strips ........ 493 StatusCode, 408 TicketStatus, 388 TicketPriority
        Corrections ...... 1899, 1905, 1906 (deterministic failure also ends the
                           row terminally, not only retry exhaustion),
@@ -91,7 +92,7 @@
        ASCII ............ 1881, 1882, 1883, 1884, 1885, 1886, 1887, 1890
        INSERT ........... RequestLog.StatusCode 0, 408, 429
 
-     Teams ..... 26 UPDATE + 1 INSERT
+     Teams ..... 27 UPDATE + 1 INSERT
        R1 strips ........ 882 alert_category, 887 status (AlertQueue),
                           1456 alert_category, 1459 status_code (RequestLog),
                           1392 alert_category (WebhookConfig)
@@ -99,7 +100,9 @@
                           descriptive label, NOT a routing filter - the
                           processor joins WebhookConfig on config_id and
                           is_active only), 1872 (429 retries inline in the same
-                          run, not "on next processor run"), 1871
+                          run, not "on next processor run"), 1871,
+                          1454 queue_id (no FK exists - softened from a
+                          foreign-key claim to a plain reference; flag F5)
        R4 ............... 881, 1390, 1541 (module/webhook name examples),
                           888, 889 (dedup keys to pattern form), 1817
                           (Module-Level Routing illustration), 1860 (card
@@ -120,14 +123,12 @@
        and does NOT create duplicate rows. If you want the copy columns to
        carry their own sets, say so and I will add them.
 
-   F2  Jira.RequestLog query 1891 filters "AND TicketKey != 'Email'".
-       No current code path writes 'Email' into Jira.RequestLog.TicketKey -
-       Process-JiraTicketQueue.ps1 writes the returned issue key or NULL, and
-       sp_QueueTicket writes NULL. status_value sort_order 21 on that column is
-       absent from the active set, consistent with an 'Email' row already
-       soft-retired. The filter is therefore dead unless historical rows carry
-       it. Section 0 has the count query; Section 5 has the UPDATE to run only
-       if the count is 0.
+   F2  RESOLVED - Jira.RequestLog query 1891 filters "AND TicketKey != 'Email'".
+       Query 0.3 returned a sentinel count of 2: historical rows DO carry the
+       'Email' sentinel, so the documented dedup filter matches real rows and is
+       not dead. Per the Section 5 gate, that UPDATE is NOT applied - query 1891
+       is left exactly as authored. Section 5 is retained below as a note only,
+       with no runnable statement.
 
    F3  Teams.AlertQueue status 'Sent' does not exist.
        Admin-API.ps1 (/api/admin/alert-failures and its count endpoint) filters
@@ -142,11 +143,10 @@
        outcome, so they can never differ. One is a retirement candidate.
        Reported, not changed.
 
-   F5  Teams.RequestLog.queue_id is described as "Foreign key to AlertQueue".
-       No FK is exported to the repo and I will not execute SQL to check.
-       Section 0 has the sys.foreign_keys query. If it returns no row, the
-       description needs the Jira wording ("no FK constraint exists but the
-       column is present for tracing") - tell me and I will add the UPDATE.
+   F5  RESOLVED - Teams.RequestLog.queue_id was described as "Foreign key to
+       AlertQueue". Query 0.4 confirmed no FK exists on the column. The UPDATE in
+       Section 3 (metadata_id 1454) softens the false foreign-key claim to a
+       plain reference, matching the Jira RequestLog.QueueID wording.
 
    F6  Teams.AlertQueue.color (885) states the default value 'attention' inline.
        A single fixed default reads as column semantics rather than an enum
@@ -184,9 +184,9 @@ WHERE metadata_id IN (
         58, 388, 408, 409, 410, 493, 1881, 1882, 1883, 1884, 1885, 1886,
         1887, 1890, 1893, 1898, 1899, 1905, 1906, 1921,
         -- Teams
-        119, 881, 882, 887, 888, 889, 1390, 1392, 1456, 1459, 1541, 1809,
-        1817, 1819, 1860, 1868, 1869, 1870, 1871, 1872, 1873, 1875, 1876,
-        1877, 3116, 3117
+        119, 881, 882, 887, 888, 889, 1390, 1392, 1454, 1456, 1459, 1541,
+        1809, 1817, 1819, 1860, 1868, 1869, 1870, 1871, 1872, 1873, 1875,
+        1876, 1877, 3116, 3117
       )
 ORDER BY schema_name, object_name, property_type, column_name, sort_order;
 
@@ -203,19 +203,22 @@ WHERE property_type = 'status_value'
 ORDER BY schema_name, object_name, column_name, sort_order;
 
 -- 0.3  F2 evidence: does any historical RequestLog row carry the 'Email'
---      sentinel? If this returns 0, run Section 5.
+--      sentinel?  ANSWERED: this returned 2. Historical rows carry it, so the
+--      dedup filter is live and Section 5 is NOT applied (query 1891 unchanged).
 SELECT COUNT(*) AS email_sentinel_rows
 FROM Jira.RequestLog
 WHERE TicketKey = 'Email';
 
 -- 0.4  F5 evidence: does Teams.RequestLog.queue_id actually have an FK?
+--      ANSWERED: no row - no FK exists. The Section 3 UPDATE to 1454 softens the
+--      false foreign-key claim to a plain reference.
 SELECT fk.name AS fk_name,
        OBJECT_NAME(fk.parent_object_id)     AS parent_table,
        OBJECT_NAME(fk.referenced_object_id) AS referenced_table
 FROM sys.foreign_keys fk
 WHERE fk.parent_object_id = OBJECT_ID('Teams.RequestLog');
 
--- 0.5  Non-ASCII sweep across the three schemas (G1). Should return 18 rows
+-- 0.5  Non-ASCII sweep across the three schemas (G1). Should return 20 rows
 --      before this script and 0 rows after.
 SELECT metadata_id, schema_name, object_name, column_name, property_type, sort_order
 FROM dbo.Object_Metadata
@@ -595,6 +598,14 @@ SET content = 'HTTP status code returned by the webhook for this delivery attemp
     modified_dttm = GETDATE(), modified_by = SUSER_SNAME()
 WHERE metadata_id = 1459;
 
+-- 1454  description / queue_id  (CORRECTION, flag F5: query 0.4 confirmed no FK
+--        exists on this column. Softened the false "Foreign key" claim to a
+--        plain reference, matching the Jira RequestLog.QueueID wording.)
+UPDATE dbo.Object_Metadata
+SET content = 'Links this log entry to its AlertQueue row; no FK constraint, the column is present for tracing.',
+    modified_dttm = GETDATE(), modified_by = SUSER_SNAME()
+WHERE metadata_id = 1454;
+
 -- 1868..1873  status_value / status_code  (ASCII: em dash. 1871 and 1872 also
 --        corrected - see below.)
 UPDATE dbo.Object_Metadata
@@ -752,9 +763,9 @@ SELECT metadata_id, object_name, column_name, property_type, sort_order,
        title, description, content
 FROM dbo.Object_Metadata
 WHERE schema_name = 'Teams'
-  AND metadata_id IN (119, 881, 882, 887, 888, 889, 1390, 1392, 1456, 1459,
-                      1541, 1809, 1817, 1819, 1860, 1868, 1869, 1870, 1871,
-                      1872, 1873, 1875, 1876, 1877, 3116, 3117)
+  AND metadata_id IN (119, 881, 882, 887, 888, 889, 1390, 1392, 1454, 1456,
+                      1459, 1541, 1809, 1817, 1819, 1860, 1868, 1869, 1870,
+                      1871, 1872, 1873, 1875, 1876, 1877, 3116, 3117)
 ORDER BY object_name, property_type, column_name, sort_order;
 
 
@@ -831,30 +842,18 @@ ORDER BY schema_name, column_name, sort_order;
 
 
 /* ============================================================================
-   SECTION 5 - DECISION section (F2). Run ONLY if query 0.3 returned 0.
+   SECTION 5 - DECISION section (F2) - RESOLVED, NOT APPLIED.
    ----------------------------------------------------------------------------
-   Removes the dead "AND TicketKey != 'Email'" filter from the documented
-   deduplication pattern. No current code path writes 'Email' into
-   Jira.RequestLog.TicketKey. If query 0.3 returned a non-zero count, historical
-   rows carry the sentinel - SKIP this section and tell me, and the 'Email'
-   status_value row gets reinstated instead.
+   This section originally held a conditional UPDATE to remove the
+   "AND TicketKey != 'Email'" filter from the documented dedup pattern (query
+   1891), gated on query 0.3 returning 0. Query 0.3 returned 2: historical
+   Jira.RequestLog rows carry the 'Email' sentinel, so the filter matches real
+   rows and is not dead. Per the gate, the UPDATE is NOT applied and has been
+   removed - query 1891 is left exactly as authored. No statement runs here.
+   The SELECT below is read-only, confirming 1891's content is untouched.
    ============================================================================ */
 
-UPDATE dbo.Object_Metadata
-SET content = 'IF NOT EXISTS (
-    SELECT 1 FROM Jira.RequestLog
-    WHERE Trigger_Type = @TriggerType
-      AND Trigger_Value = @TriggerValue
-      AND StatusCode = 201
-      AND TicketKey IS NOT NULL
-)
-BEGIN
-    EXEC Jira.sp_QueueTicket ...
-END',
-    modified_dttm = GETDATE(), modified_by = SUSER_SNAME()
-WHERE metadata_id = 1891;
-
--- Verify Section 5
+-- Confirm query 1891 is unchanged (read-only; nothing is modified in Section 5).
 SELECT metadata_id, object_name, property_type, sort_order, title, content
 FROM dbo.Object_Metadata
 WHERE metadata_id = 1891;
