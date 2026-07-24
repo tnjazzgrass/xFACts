@@ -315,6 +315,32 @@
     transform: rotate(90deg);
 }
 
+/* Stacks the item summary above its label chip within the summary cell. */
+.doc-meta-summary {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+/* Renders the item's stable label handle as a small chip beside the summary. */
+.doc-meta-label {
+    align-self: flex-start;
+    padding: 0 6px;
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: var(--color-text-muted);
+    border: 1px solid currentColor;
+    border-radius: 3px;
+}
+
+/* Marks a label chip as a missing-label warning; styling lives on the compound. */
+.doc-meta-label-missing {
+}
+
+.doc-meta-label.doc-meta-label-missing { /* label field absent */
+    color: var(--color-status-critical);
+}
+
 /* ============================================================================
    CONTENT: PRIORITY BADGES
    ----------------------------------------------------------------------------

@@ -7,6 +7,7 @@
     "The Critical priority tier is retired: critical issues are fixed in the moment, not parked here. Allowed priorities are High, Medium, Low.",
     "Platform is for genuinely cross-cutting items only; anything owned by a single module or component uses its registry name.",
     "component is validated against the components list; priority against High/Medium/Low; type against Build/Enhance/Bug/Design/Investigate.",
+    "label is a mandatory stable handle for each item: lowercase kebab-case, content-derived from the item's subject, unique within its component, and referenced as component/label (e.g. B2B/get-list-tickets); a label dies with its item and is never reused.",
     "detail_link is a site-relative URL when the target is site-served, otherwise a plain-text repo reference that renders as text rather than as a link."
   ],
   "priorities": [
@@ -66,6 +67,7 @@
   "items": [
     {
       "component": "Orchestrator",
+      "label": "orphan-task-cleanup",
       "priority": "High",
       "type": "Bug",
       "summary": "Stale FIRE_AND_FORGET tasks left in LAUNCHED/RUNNING after a crash or timeout are never auto-failed; add startup orphan cleanup and heartbeat timeout detection.",
@@ -76,6 +78,7 @@
     },
     {
       "component": "Tools.BDLImport",
+      "label": "execute-endpoint-rbac",
       "priority": "High",
       "type": "Enhance",
       "summary": "BDL import execute endpoints enforce only AD auth with no RBAC, letting any page-holder bypass the UI content filter by direct POST; add server-side department-scope validation.",
@@ -86,6 +89,7 @@
     },
     {
       "component": "BatchOps",
+      "label": "thread-cap-stall-detection",
       "priority": "High",
       "type": "Enhance",
       "summary": "Investigate DM processing thread caps so stall detection for the PMT and NB collectors accounts for concurrency limits.",
@@ -96,6 +100,7 @@
     },
     {
       "component": "FileOps",
+      "label": "webhook-alert-routing",
       "priority": "High",
       "type": "Enhance",
       "summary": "Move alert detection/escalation from MonitorConfig booleans to WebhookSubscription filters with alert_category populated (blocked on the Teams Workflow migration).",
@@ -106,6 +111,7 @@
     },
     {
       "component": "ServerOps.ServerHealth",
+      "label": "ranked-cause-diagnosis",
       "priority": "High",
       "type": "Enhance",
       "summary": "Evolve sp_DiagnoseServerHealth to analyze time windows and output ranked probable causes with plain-English conclusions.",
@@ -116,6 +122,7 @@
     },
     {
       "component": "ControlCenter.Shared",
+      "label": "asset-registry-doc-pages",
       "priority": "High",
       "type": "Build",
       "summary": "Build the remaining Asset_Registry generated documentation pages (shared infrastructure, per-page component inventory, naming conventions, API endpoint reference).",
@@ -126,6 +133,7 @@
     },
     {
       "component": "Engine.RBAC",
+      "label": "scope-dimension-model",
       "priority": "High",
       "type": "Design",
       "summary": "RBAC cannot express per-scope page access, so department-scoped tool grants rely on nav-hiding plus content filtering with a URL-typing loophole; add a scope dimension to the model.",
@@ -136,6 +144,7 @@
     },
     {
       "component": "ControlCenter.Shared",
+      "label": "js-duplicate-identifier",
       "priority": "High",
       "type": "Build",
       "summary": "The JS populator lacks the cross-file duplicate top-level identifier detection the PS spec already has; add it (zone-scoped, all top-level identifiers) with an exemption for rule-mandated repeated names.",
@@ -146,6 +155,7 @@
     },
     {
       "component": "B2B",
+      "label": "execution-census",
       "priority": "High",
       "type": "Build",
       "summary": "Build a b2bi-native execution census as the primary B2B tracking surface (one row per instance from Sterling existence, enriched from Integration/DM) to close the silent child-fault gap; design phase.",
@@ -156,6 +166,7 @@
     },
     {
       "component": "B2B",
+      "label": "get-list-tickets",
       "priority": "High",
       "type": "Bug",
       "summary": "FA_CLIENTS_GET_LIST's positional insert into the 11-column TICKETS table can never succeed, making GET_LIST faults ticket-invisible; fix with column-listed inserts in GET_LIST v20.",
@@ -166,6 +177,7 @@
     },
     {
       "component": "Platform",
+      "label": "literal-token-burndown",
       "priority": "Medium",
       "type": "Enhance",
       "summary": "Site-wide burn-down of CSS hex/px literals to shared tokens; the color half is un-gated and in progress while size/radius stay gated behind the scale-design and matcher items.",
@@ -176,6 +188,7 @@
     },
     {
       "component": "ControlCenter.Shared",
+      "label": "size-token-subfamilies",
       "priority": "Medium",
       "type": "Design",
       "summary": "Decide whether size literals need color-style purpose sub-families so value-coincidence collisions with unrelated size tokens stop firing false drift; populator change.",
@@ -186,6 +199,7 @@
     },
     {
       "component": "ControlCenter.Shared",
+      "label": "matched-token-persistence",
       "priority": "Medium",
       "type": "Build",
       "summary": "Persist the matched token name on color/size literal-drift rows so the burn-down can self-classify safe-bulk-repoint vs needs-review without eyeballing each row.",
@@ -196,6 +210,7 @@
     },
     {
       "component": "ControlCenter.Shared",
+      "label": "anchor-palette",
       "priority": "Medium",
       "type": "Design",
       "summary": "Consolidate the cc-shared.css color token set into a concise anchor palette (dedupe identical-value tokens, decide anchor hues, name un-tokenized purposes) as prerequisite to the cousin half of the burn-down.",
@@ -206,6 +221,7 @@
     },
     {
       "component": "ControlCenter.Shared",
+      "label": "cousin-color-detection",
       "priority": "Medium",
       "type": "Design",
       "summary": "Detect near-match cousin color literals that share a token's semantic purpose but not its exact value, via post-populator RGB-distance analysis grouped by purpose and property.",
@@ -216,6 +232,7 @@
     },
     {
       "component": "ControlCenter.Shared",
+      "label": "state-not-compounded",
       "priority": "Medium",
       "type": "Build",
       "summary": "Add STATE_NOT_COMPOUNDED to the CSS spec and build populator detection (state-token vocabulary plus non-compound styled-suffix check).",
@@ -226,6 +243,7 @@
     },
     {
       "component": "ControlCenter.Shared",
+      "label": "dynamic-ref-construct",
       "priority": "Medium",
       "type": "Design",
       "summary": "Decide whether and how to catalog prefix-known dynamic references as a DYNAMIC_REF construct (stem-capture shared with dead-code detection).",
@@ -236,6 +254,7 @@
     },
     {
       "component": "Engine.RBAC",
+      "label": "endpoint-protection-default",
       "priority": "Medium",
       "type": "Enhance",
       "summary": "Codify the endpoint-protection default (GET via page access, mutating endpoints via Test-ActionEndpoint plus a registry row) and build an Asset_Registry gap report of non-compliant endpoints.",
@@ -246,6 +265,7 @@
     },
     {
       "component": "Engine.RBAC",
+      "label": "action-registry-rows",
       "priority": "Medium",
       "type": "Enhance",
       "summary": "Test-ActionEndpoint is wired but fail-open until registry rows exist; add RBAC_ActionRegistry rows for the mutating/launch endpoints that are UI-hidden but not server-enforced.",
@@ -256,6 +276,7 @@
     },
     {
       "component": "Engine.RBAC",
+      "label": "wildcard-gapcheck-fp",
       "priority": "Medium",
       "type": "Enhance",
       "summary": "Wildcard-granted admin pages show as false positives in the NavRegistry-vs-PermissionMapping gap-check; resolve query-side or add a requires-explicit-permission flag.",
@@ -266,6 +287,7 @@
     },
     {
       "component": "Platform",
+      "label": "data-retention-strategy",
       "priority": "Medium",
       "type": "Enhance",
       "summary": "No data retention exists for any module; design and implement a platform-wide per-table retention strategy run via an orchestrator-scheduled cleanup.",
@@ -276,6 +298,7 @@
     },
     {
       "component": "Engine.SharedInfrastructure",
+      "label": "pode-error-logging",
       "priority": "Medium",
       "type": "Investigate",
       "summary": "No Pode error logs have been written for months despite configured logging; find the cause (permissions, rotation, or empty catch blocks swallowing exceptions) and restore visibility.",
@@ -286,6 +309,7 @@
     },
     {
       "component": "ServerOps.ServerHealth",
+      "label": "performance-analysis-page",
       "priority": "Medium",
       "type": "Build",
       "summary": "Build a Performance Analysis page for forensic time-range analysis correlating waits, LRQs, HADR metrics, blocking, and scheduled jobs.",
@@ -296,6 +320,7 @@
     },
     {
       "component": "ServerOps.ServerHealth",
+      "label": "multi-source-correlation",
       "priority": "Medium",
       "type": "Enhance",
       "summary": "Extend sp_Activity_CorrelateIncidents from single-source to multi-source pattern detection (PLE crash plus blocking plus AG sync delay in one window).",
@@ -306,6 +331,7 @@
     },
     {
       "component": "ServerOps.DBCC",
+      "label": "checkdb-disk-suppression",
       "priority": "Medium",
       "type": "Enhance",
       "summary": "CHECKDB snapshot disk usage triggers ServerHealth disk alerts to IT Ops; add cross-component awareness to suppress or annotate disk alerts while CHECKDB is active on that server.",
@@ -316,6 +342,7 @@
     },
     {
       "component": "JobFlow",
+      "label": "flow-card-consolidation",
       "priority": "Medium",
       "type": "Enhance",
       "summary": "Process Status cards waste space on mostly-zero values; evaluate consolidating flow-transition cards to free room for execution history.",
@@ -326,6 +353,7 @@
     },
     {
       "component": "JobFlow",
+      "label": "pending-queue-state",
       "priority": "Medium",
       "type": "Enhance",
       "summary": "Flows can report COMPLETE when detected jobs finish but pending jobs have not started; cross-reference the pending queue to hold EXECUTING state.",
@@ -336,6 +364,7 @@
     },
     {
       "component": "BatchOps",
+      "label": "open-batch-checks",
       "priority": "Medium",
       "type": "Build",
       "summary": "Implement the remaining Send-OpenBatchSummary check functions for BDL imports and notice processing (needs Phase 0 investigation).",
@@ -346,6 +375,7 @@
     },
     {
       "component": "BatchOps",
+      "label": "active-batch-eob-alert",
       "priority": "Medium",
       "type": "Enhance",
       "summary": "Add a daily end-of-business alert for manual PMT payment batches still ACTIVE (needs accounting input on cutoff time).",
@@ -356,6 +386,7 @@
     },
     {
       "component": "DmOps",
+      "label": "shell-purge-validation-fatal",
       "priority": "Medium",
       "type": "Enhance",
       "summary": "Harden the Step 3d exception-validation path in Execute-DmShellPurge so failures are fatal (hoist $newExclusions, set the failed flag, log, Teams alert, break) instead of crashing or silently partial-filtering.",
@@ -366,6 +397,7 @@
     },
     {
       "component": "DmOps",
+      "label": "shell-purge-noop-notice",
       "priority": "Medium",
       "type": "Enhance",
       "summary": "Three startup-path exits in Execute-DmShellPurge return silently; fire INFO/WARNING Teams notices so operators know the run was a no-op.",
@@ -376,6 +408,7 @@
     },
     {
       "component": "ControlCenter.Admin",
+      "label": "health-usage-subpage",
       "priority": "Medium",
       "type": "Build",
       "summary": "Build the Admin Health & Usage sub-page (platform pulse, CC performance, operational volume, usage analytics) on the already-deployed collection infrastructure.",
@@ -386,6 +419,7 @@
     },
     {
       "component": "ControlCenter.Admin",
+      "label": "alert-subscription-page",
       "priority": "Medium",
       "type": "Build",
       "summary": "Build a self-service Alert Subscription Management page for dept leads, with webhook creation still held by the Apps team (depends on RBAC).",
@@ -396,6 +430,7 @@
     },
     {
       "component": "Documentation.Pipeline",
+      "label": "deptops-enrichment",
       "priority": "Medium",
       "type": "Enhance",
       "summary": "DeptOps still needs full documentation enrichment.",
@@ -406,6 +441,7 @@
     },
     {
       "component": "Documentation.Site",
+      "label": "docs-rbac-nav",
       "priority": "Medium",
       "type": "Build",
       "summary": "Apply RBAC and dynamic nav to the /docs pages (currently unauthenticated) via auth on the static route and a doc_page_id -> route -> permission lookup.",
@@ -416,6 +452,7 @@
     },
     {
       "component": "Platform",
+      "label": "credential-model-docs",
       "priority": "Medium",
       "type": "Investigate",
       "summary": "Document the two-tier credential model and catalog script error-handling patterns, then fill the Development Guidelines credential and integration stubs currently marked PENDING.",
@@ -426,6 +463,7 @@
     },
     {
       "component": "Documentation.Pipeline",
+      "label": "shared-function-inventory",
       "priority": "Medium",
       "type": "Build",
       "summary": "Generate an always-current markdown inventory of shared PowerShell functions from Asset_Registry and repoint the Development Guidelines function lists at it.",
@@ -436,6 +474,7 @@
     },
     {
       "component": "ControlCenter.Shared",
+      "label": "user-context-dedup",
       "priority": "Medium",
       "type": "Investigate",
       "summary": "Home and likely other pages call both Get-UserAccess and Get-UserContext, redundantly re-resolving roles; investigate a module-level dedup (shared resolved roles or a superset return).",
@@ -446,6 +485,7 @@
     },
     {
       "component": "ControlCenter.Shared",
+      "label": "capability-inventory",
       "priority": "Medium",
       "type": "Investigate",
       "summary": "Evaluate adding a capability-inventory catalog category (network, WebSocket, storage, timers) for runtime APIs that carry no cross-reference or drift payload today.",
@@ -456,6 +496,7 @@
     },
     {
       "component": "ControlCenter.Shared",
+      "label": "populator-coverage-docs",
       "priority": "Medium",
       "type": "Build",
       "summary": "Document each populator's capture coverage and inclusion criteria in the Development Guidelines so what earns an Asset_Registry row is knowable without reading populator source.",
@@ -466,6 +507,7 @@
     },
     {
       "component": "ControlCenter.Shared",
+      "label": "history-tree-table",
       "priority": "Medium",
       "type": "Build",
       "summary": "Establish a shared year/month/day history-tree table construct so the per-page implementations converge, standardizing on the CSS-rotate expand chevron.",
@@ -476,6 +518,7 @@
     },
     {
       "component": "BIDATA",
+      "label": "variance-baseline-config",
       "priority": "Medium",
       "type": "Enhance",
       "summary": "The 14-day variance baseline is hardcoded in BIDATAMonitoring-API.ps1 and echoed in the UI and doc; migrate it to GlobalConfig and update query, label, and doc together.",
@@ -486,6 +529,7 @@
     },
     {
       "component": "Platform",
+      "label": "session-metadata-review",
       "priority": "Medium",
       "type": "Enhance",
       "summary": "Adopt an end-of-session Object_Metadata review as standing Code-session practice, producing a drift-fix script for the objects touched that session.",
@@ -496,6 +540,7 @@
     },
     {
       "component": "Documentation.Site",
+      "label": "docs-zone-realignment",
       "priority": "Medium",
       "type": "Design",
       "summary": "Docs zone spec-era realignment: shell architecture, family files, and conformity pass.",
@@ -506,6 +551,7 @@
     },
     {
       "component": "ControlCenter.Shared",
+      "label": "dead-code-detection",
       "priority": "Low",
       "type": "Build",
       "summary": "Build cross-file dead-code/orphan detection for CSS classes, JS functions, and endpoints (resolver enhancement plus advisory drift code; after the migration).",
@@ -516,6 +562,7 @@
     },
     {
       "component": "ControlCenter.Shared",
+      "label": "html-sniff-coverage",
       "priority": "Low",
       "type": "Build",
       "summary": "The HTML populator sniffs only three emission patterns, so concatenation-built markup is silently skipped; flag helper functions that contain HTML markers but produce zero catalog rows.",
@@ -526,6 +573,7 @@
     },
     {
       "component": "ControlCenter.Shared",
+      "label": "inline-script-tag",
       "priority": "Low",
       "type": "Design",
       "summary": "Decide whether all pages inline the literal cc-shared.js script tag (spec-correct, zero drift) and retire Get-PageScriptTagHtml.",
@@ -536,6 +584,7 @@
     },
     {
       "component": "ControlCenter.Shared",
+      "label": "keyframe-prefix-normalize",
       "priority": "Low",
       "type": "Enhance",
       "summary": "Normalize all FOUNDATION keyframe names to the cc- prefix and update every animation reference (naming pass, not a drift fix).",
@@ -546,6 +595,7 @@
     },
     {
       "component": "ControlCenter.Shared",
+      "label": "admin-pulse-collapse",
       "priority": "Low",
       "type": "Enhance",
       "summary": "Collapse duplicate admin opacity-pulse keyframes into the shell's shared pulse, updating admin.css references.",
@@ -556,6 +606,7 @@
     },
     {
       "component": "ControlCenter.Shared",
+      "label": "section-table-chrome",
       "priority": "Low",
       "type": "Build",
       "summary": "Establish shared section-table chrome and map outlier page-local section tables onto it.",
@@ -566,6 +617,7 @@
     },
     {
       "component": "ControlCenter.Shared",
+      "label": "conditional-markup-support",
       "priority": "Low",
       "type": "Enhance",
       "summary": "The HTML populator only catalogs IDs inside a single here-string, so conditional admin markup loses ID resolution; design proper conditional-markup support so partially-gated pages can omit admin markup without drift.",
@@ -576,6 +628,7 @@
     },
     {
       "component": "ControlCenter.Platform",
+      "label": "stale-tile-display",
       "priority": "Low",
       "type": "Enhance",
       "summary": "Show a dimmed stale tile when a server's collection is stale instead of letting the tile vanish.",
@@ -586,6 +639,7 @@
     },
     {
       "component": "Engine.RBAC",
+      "label": "base-role-count",
       "priority": "Low",
       "type": "Design",
       "summary": "Decide whether four base platform roles is right given the site is roughly 90% view-only with most writes admin-gated.",
@@ -596,6 +650,7 @@
     },
     {
       "component": "Engine.RBAC",
+      "label": "per-tool-access-tables",
       "priority": "Low",
       "type": "Design",
       "summary": "Decide whether per-tool access tables (Tools.AccessConfig / AccessFieldConfig) persist or a more expressive RBAC model subsumes them.",
@@ -606,6 +661,7 @@
     },
     {
       "component": "Engine.SharedInfrastructure",
+      "label": "config-source-logging",
       "priority": "Low",
       "type": "Enhance",
       "summary": "Enhance Initialize-Configuration across scripts to log whether each setting loaded from GlobalConfig or fell back to a script default, speeding config-failure diagnosis.",
@@ -616,6 +672,7 @@
     },
     {
       "component": "Platform",
+      "label": "ms-description-removal",
       "priority": "Low",
       "type": "Enhance",
       "summary": "Remove legacy MS_Description extended properties from all objects now that Object_Metadata is the sole documentation source.",
@@ -626,6 +683,7 @@
     },
     {
       "component": "ServerOps.Index",
+      "label": "index-constraint-rename",
       "priority": "Low",
       "type": "Enhance",
       "summary": "Four ServerOps tables were renamed to the Index_ prefix but their constraints and indexes still carry old names; rename to match (cosmetic).",
@@ -636,6 +694,7 @@
     },
     {
       "component": "Platform",
+      "label": "nonquery-dml-audit",
       "priority": "Low",
       "type": "Enhance",
       "summary": "Audit older scripts using Invoke-XFActsQuery for non-SELECT DML and switch them to Invoke-XFActsNonQuery per the stated rule (fix opportunistically).",
@@ -646,6 +705,7 @@
     },
     {
       "component": "Orchestrator",
+      "label": "parallel-group-execution",
       "priority": "Low",
       "type": "Enhance",
       "summary": "Enable parallel execution for same-dependency-group processes with no interdependencies (not currently a concern; sequential completes within cycle time).",
@@ -656,6 +716,7 @@
     },
     {
       "component": "ServerOps.ServerHealth",
+      "label": "diagnostic-button-home",
       "priority": "Low",
       "type": "Enhance",
       "summary": "Find a home for the sp_DiagnoseServerHealth Diagnostic Report button removed from the Server Health page.",
@@ -666,6 +727,7 @@
     },
     {
       "component": "ServerOps.ServerHealth",
+      "label": "metric-value-split",
       "priority": "Low",
       "type": "Enhance",
       "summary": "Split .metric-value into separate gauge and card-number classes for independent font sizing.",
@@ -676,6 +738,7 @@
     },
     {
       "component": "ServerOps.ServerHealth",
+      "label": "incident-history-page",
       "priority": "Low",
       "type": "Build",
       "summary": "Build an Incident History page timelining correlated incidents from the Activity and XE tables with plain-English explanations.",
@@ -686,6 +749,7 @@
     },
     {
       "component": "ServerOps.ServerHealth",
+      "label": "incident-analyzer-enhance",
       "priority": "Low",
       "type": "Enhance",
       "summary": "Enhance the Incident Analyzer with time-window clustering, cross-source correlation, and plain-English narrative generation.",
@@ -696,6 +760,7 @@
     },
     {
       "component": "ServerOps.ServerHealth",
+      "label": "xe-batch-pagination",
       "priority": "Low",
       "type": "Enhance",
       "summary": "Collect-XEEvents materializes the full session backlog before insert; batch and paginate reads so catch-ups stream, commit progress, and stay resumable.",
@@ -706,6 +771,7 @@
     },
     {
       "component": "ServerOps.Index",
+      "label": "exception-schedule-form",
       "priority": "Low",
       "type": "Enhance",
       "summary": "Add a UI form/method to create Exception Schedule entries plus sp_AddExceptionSchedule with validation.",
@@ -716,6 +782,7 @@
     },
     {
       "component": "ServerOps.Index",
+      "label": "index-orchestrator-schedule",
       "priority": "Low",
       "type": "Enhance",
       "summary": "Evaluate scheduling index maintenance through Orchestrator ProcessRegistry instead of manual launch.",
@@ -726,6 +793,7 @@
     },
     {
       "component": "ServerOps.Replication",
+      "label": "replication-source-server",
       "priority": "Low",
       "type": "Enhance",
       "summary": "Add source_server to Replication_PublicationRegistry, populate it in the collector, and replace agent-name string parsing in the CC card with the stored value.",
@@ -736,6 +804,7 @@
     },
     {
       "component": "JobFlow",
+      "label": "critical-job-threshold",
       "priority": "Low",
       "type": "Enhance",
       "summary": "Revisit min_failure_threshold so critical jobs bypass the threshold and alert on any failure.",
@@ -746,6 +815,7 @@
     },
     {
       "component": "JobFlow",
+      "label": "last-error-field-retire",
       "priority": "Low",
       "type": "Enhance",
       "summary": "Evaluate whether anything reads JobFlow.Status.last_error_message and remove it if TaskLog already carries full error history.",
@@ -756,6 +826,7 @@
     },
     {
       "component": "JobFlow",
+      "label": "configsync-panel",
       "priority": "Low",
       "type": "Enhance",
       "summary": "Evaluate sp_AnalyzeHistory and sp_PopulateConfig for a ConfigSync management panel (unconfigured-flow indicator, config modal).",
@@ -766,6 +837,7 @@
     },
     {
       "component": "JobFlow",
+      "label": "managed-flow-scheduling",
       "priority": "Low",
       "type": "Enhance",
       "summary": "Replace the Windows Task Scheduler dependency with xFACts-managed scheduling for flow execution.",
@@ -776,6 +848,7 @@
     },
     {
       "component": "JobFlow",
+      "label": "cancelling-stuck-alert",
       "priority": "Low",
       "type": "Enhance",
       "summary": "Detect and alert on jobs stuck in CANCELLING (stts_cd 5) past a period in status.",
@@ -786,6 +859,7 @@
     },
     {
       "component": "JobFlow",
+      "label": "section-load-inline-error",
       "priority": "Low",
       "type": "Enhance",
       "summary": "Consider reverting background section-load failures from the blocking cc_showAlert modal to a non-blocking inline state, reserving the modal for user-initiated actions.",
@@ -796,6 +870,7 @@
     },
     {
       "component": "DmOps",
+      "label": "failed-count-line",
       "priority": "Low",
       "type": "Enhance",
       "summary": "Restructure the Shell Purge history's parenthetical failed counts into a separate line (showing 0 when none); apply the same to the Archive side.",
@@ -806,6 +881,7 @@
     },
     {
       "component": "ControlCenter.Admin",
+      "label": "dbnull-truthy-scan",
       "priority": "Low",
       "type": "Enhance",
       "summary": "Scan for the DBNull-as-truthy pattern elsewhere now that ConvertFrom-DBNull exists (defensive; no known bugs).",
@@ -816,6 +892,7 @@
     },
     {
       "component": "Tools.BDLImport",
+      "label": "history-tab-refresh",
       "priority": "Low",
       "type": "Enhance",
       "summary": "Verify whether the BDL history panel auto-refreshes on tab-return, since cc_connectEngineEvents early-returns before registering the visibilitychange listener for no-engine pages.",
@@ -826,6 +903,7 @@
     },
     {
       "component": "Tools.Utilities",
+      "label": "scoped-purpose-capture",
       "priority": "Low",
       "type": "Enhance",
       "summary": "The PS populator captures .SYNOPSIS for platform-tier functions but not the single-line purpose comment SCOPED-tier and standalone functions use, leaving those rows' purpose_description NULL; capture it so the generated inventory is complete.",
@@ -836,6 +914,7 @@
     },
     {
       "component": "ControlCenter.Shared",
+      "label": "token-scale-design",
       "priority": "Low",
       "type": "Design",
       "summary": "Refine the never-designed chrome token scales (spacing, color-tint, font-size) by deciding promote-vs-normalize per axis before the bulk literal tokenization, since the scale decisions change what the correct token is.",
@@ -846,6 +925,7 @@
     },
     {
       "component": "Orchestrator",
+      "label": "drain-aware-teardown",
       "priority": "Low",
       "type": "Design",
       "summary": "The raw service-stop teardown force-clears running_count to zero while fire-and-forget processes are still running; make the teardown drain-aware or enforce draining via the Admin modal before stopping.",
@@ -856,6 +936,7 @@
     },
     {
       "component": "BIDATA",
+      "label": "sustained-polling-alert",
       "priority": "Low",
       "type": "Enhance",
       "summary": "A single POLLING result is indistinguishable from a healthy in-progress build, so a chronic source-query outage is invisible; escalate to Teams only when source failures become sustained.",
@@ -866,6 +947,7 @@
     },
     {
       "component": "Orchestrator",
+      "label": "partial-status-vocabulary",
       "priority": "Low",
       "type": "Design",
       "summary": "Multi-target collectors have no honest single status when some targets fail (PARTIAL was invalid, now mapped to FAILED, losing nuance); evaluate a first-class PARTIAL/WARNING status across the orchestrator vocabulary and every engine branch that reads it.",
@@ -876,6 +958,7 @@
     },
     {
       "component": "Tools.Utilities",
+      "label": "dimension-token-convention",
       "priority": "Low",
       "type": "Enhance",
       "summary": "Replace the name-based chrome-dimension carve-out with a naming convention so only explicitly-prefixed general-dimension tokens participate in size literal-matching and structural/chrome dimensions match nothing.",
@@ -886,6 +969,7 @@
     },
     {
       "component": "Documentation.Site",
+      "label": "bdl-guide-style-extract",
       "priority": "Low",
       "type": "Build",
       "summary": "Extract the bdl-import-guide's embedded style block into a conformant docs CSS file and eliminate its inline styles (gated on whether a docs static-HTML populator is built).",
@@ -896,6 +980,7 @@
     },
     {
       "component": "ServerOps.DBCC",
+      "label": "dbcc-no-work-status",
       "priority": "Low",
       "type": "Enhance",
       "summary": "Execute-DBCC reports SUCCESS on no-work exits while its sibling Index scripts emit NO_WORK; add NO_WORK on both no-work paths for engine-card parity and correct the header .DESCRIPTION.",
@@ -906,6 +991,7 @@
     },
     {
       "component": "Teams",
+      "label": "queue-alert-api-decision",
       "priority": "Low",
       "type": "Design",
       "summary": "Teams.sp_QueueAlert is an intentionally-exposed external T-SQL entry point with no current callers; decide whether to keep it as a documented external API or retire it.",
@@ -915,7 +1001,30 @@
       "added": null
     },
     {
+      "component": "Teams",
+      "label": "sent-status-route",
+      "priority": "Medium",
+      "type": "Bug",
+      "summary": "Admin route filters Teams requests on status Sent, which no writer sets, so the route returns nothing; fix the route filter, then align the mirrored metadata query to match.",
+      "description": "The Admin route that lists Teams requests filters on a `Sent` status that no writer in the Teams pipeline ever sets, so the route's status filter matches nothing and the list comes back empty. Fix the route filter to the status writers actually set, then align the mirrored metadata query -- the Object_Metadata copy of the route's query -- so the documented query and the live route stay in step. Surfaced during the Teams metadata/doc audit.",
+      "detail_link": null,
+      "initiative": null,
+      "added": "2026-07-24"
+    },
+    {
+      "component": "Jira",
+      "label": "queue-date-columns",
+      "priority": "Low",
+      "type": "Design",
+      "summary": "ProcessedDate and LastRetryDate on the ticket queue are set identically in the same statement; evaluate retiring one.",
+      "description": "On the Jira ticket queue, ProcessedDate and LastRetryDate are assigned the same value in the same statement, so the two columns always hold identical data. Evaluate whether both columns are needed or one can be retired. Design decision surfaced during the Jira metadata/doc audit; no functional defect.",
+      "detail_link": null,
+      "initiative": null,
+      "added": "2026-07-24"
+    },
+    {
       "component": "Platform",
+      "label": "static-page-populator",
       "priority": "Low",
       "type": "Investigate",
       "summary": "Feasibility of extending HTML populator coverage to static doc-site pages.",

@@ -95,6 +95,21 @@ Verify accuracy; light trim only.
   (`'<database_name>'`), per pattern-not-instances (section 4).
 - `relationship_note`: verify the described FK/flow still matches code.
 
+### 2.6 Copy / denormalized columns -- RULE 3
+
+A column that copies or denormalizes a value maintained authoritatively
+elsewhere carries a **purpose-only description that references the authoritative
+column**; it never restates the value set. Value sets (enum domains, status
+vocabularies) live on the **authoritative column alone** -- the copy does not
+duplicate them, for the same rot reason as RULE 1: a duplicated set is a second
+sync point that drifts.
+
+- Describe what the copy is and where the authority lives ("the owning row's
+  status as captured at write time"), not the list of values it can hold.
+- The `status_value` rows belong on the authoritative column; the reference page
+  reads the domain there. A copy column needing the domain rendered is a signal
+  to place the rows on the authority, never a licence to duplicate.
+
 ## 3. Documentation-current-state rule
 
 All metadata content and doc-page content reflects **current state only** --
@@ -217,6 +232,16 @@ trailing CRLF. Verify byte cleanliness and brace/here-string balance before
 delivery. Re-normalize after any scripted edit (Python `.replace()` can strip
 CRLF).
 
+**Object_Metadata stored text** is subject to the same ASCII discipline. Every
+description, design_note, data_flow, status_value, query, and relationship_note
+string is emitted verbatim into the generated DDL JSON, the metadata `.md`, and
+the doc site, so a non-ASCII character authored into a row (smart quote, em dash,
+ellipsis, non-breaking space) reaches repo files and rendered pages. Author the
+stored text in pure ASCII, using the plain `--`, `->`, and `...` forms. This
+holds even though the trim SQL file's own byte discipline is waived (section 8):
+the waiver covers the script file, not the strings it stores -- those must be
+ASCII because they are emitted downstream.
+
 ## 11. Comment-bloat inventory (standing, observation-only)
 
 While reading module code as audit ground truth, additionally NOTE -- never edit
@@ -237,6 +262,11 @@ While reading module code as audit ground truth, additionally NOTE -- never edit
 
 ## Change log
 
+- 2026-07-24 (backlog label session): added RULE 3 (copy / denormalized columns
+  carry purpose-only descriptions referencing the authoritative column and never
+  duplicate its value set) and the Object_Metadata-stored-text ASCII-discipline
+  clarification (stored strings are ASCII even where the trim SQL file's own byte
+  discipline is waived).
 - 2026-07-23 (DBCC audit): document created. RULE 1 (enum descriptions =
   purpose only) supersedes the earlier "keep enum lists" guidance entirely;
   RULE 2 (companion status_value migration) added. Recorded the reserved-

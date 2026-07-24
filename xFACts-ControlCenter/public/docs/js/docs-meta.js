@@ -214,7 +214,7 @@ function doc_metaFilterItems(items, filters) {
 }
 
 /* Reports whether one item satisfies every active filter, matching the search
-   term against the summary and description together. */
+   term against the summary, label, and description together. */
 function doc_metaMatches(item, filters) {
     if (filters.component && item.component !== filters.component) {
         return false;
@@ -229,7 +229,7 @@ function doc_metaMatches(item, filters) {
         return false;
     }
     if (filters.search) {
-        var haystack = ((item.summary || '') + ' ' + (item.description || '')).toLowerCase();
+        var haystack = ((item.summary || '') + ' ' + (item.label || '') + ' ' + (item.description || '')).toLowerCase();
         if (haystack.indexOf(filters.search.toLowerCase()) === -1) {
             return false;
         }
@@ -390,7 +390,10 @@ function doc_metaRowHtml(item, columns, priorities) {
     html += '<td class="doc-meta-cell">';
     html += '<button class="doc-meta-toggle">';
     html += '<span class="doc-meta-caret">&#9656;</span>';
+    html += '<span class="doc-meta-summary">';
     html += '<span>' + doc_esc(item.summary) + '</span>';
+    html += doc_metaLabelHtml(item.label);
+    html += '</span>';
     html += '</button></td></tr>';
     html += doc_metaDetailHtml(item, columns.length);
     return html;
@@ -407,6 +410,15 @@ function doc_metaBadgeHtml(priority, priorities) {
         tier = 'doc-meta-medium';
     }
     return '<span class="doc-meta-badge ' + tier + '">' + doc_esc(priority) + '</span>';
+}
+
+/* Builds the label chip beside the summary, rendering a visible warning in
+   place of the handle when the item carries no label. */
+function doc_metaLabelHtml(label) {
+    if (!label) {
+        return '<span class="doc-meta-label doc-meta-label-missing">MISSING LABEL</span>';
+    }
+    return '<span class="doc-meta-label">' + doc_esc(label) + '</span>';
 }
 
 /* Reports whether a detail reference points at a site-served target, which is
