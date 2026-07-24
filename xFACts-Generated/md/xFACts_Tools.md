@@ -47,7 +47,7 @@ Platform-wide views that cut across the modules rather than belonging to any one
 
 
 Backlog
-Open work items across the platform, grouped by component and priority-ordered within each group. Filter by component, priority, type, or initiative, search the summary and description text, and expand any item for its full detail.
+Open work items across the platform, grouped by component and priority-ordered within each group. Filter by component, priority, or type, search the summary, label, and description text, and expand any item for its full detail.
 Available
 
 ---
