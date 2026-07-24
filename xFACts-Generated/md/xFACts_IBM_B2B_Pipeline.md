@@ -510,37 +510,37 @@ Pipeline-run lifecycle tracking mirrored from Integration.ETL.tbl_B2B_CLIENTS_BA
 | Column | Value | Meaning | Sort |
 | --- | --- | --- | --- |
 | batch_status | 0 | In-flight (source column default; the workflow INSERT supplies no status). Also the permanent value for runs that died without reaching a fault handler. | 1 |
-| status_classification | IN_FLIGHT | Source status 0 and the run is presumed executing (young row, or Sterling cross-check confirmed RUNNING). | 1 |
-| fault_report_type | TRANSLATION | The run's fault report is a translation-map report with structured entries. Full report in SI_FaultReport. | 1 |
-| sterling_status | SUCCESS | The process reached a successful terminal state within Sterling Integrator. | 1 |
-| sterling_check_result | RUNNING | The b2bi WF_INST_S instance for this RUN_ID was found and is still executing. The run is genuinely in flight. | 1 |
-| sterling_check_result | TERMINATED | The b2bi instance was found but has ended. Combined with source status 0, the run died without writing a terminal status. | 2 |
-| sterling_status | FAILED | The process failed within Sterling Integrator. | 2 |
-| fault_report_type | SERVICE | The run's fault report is a service report (e.g. XSLT Service) carrying a service-level exception. Full report in SI_FaultReport. | 2 |
-| status_classification | AWAITING_DM | Source status 2 on a non-dispatcher run: the B2B side is done and the run awaits promotion by the reconciliation job (DM batch confirmation for NB/PAY/BDL handoffs; immediate promotion for other process types). Rows whose DM batch never reaches a recognized terminal code remain here indefinitely - a small permanent-limbo population exists in history. | 2 |
 | batch_status | 2 | Transitional: the B2B side is done. For NB/PAY/BDL runs, awaiting DM confirmation by the reconciliation job. For dispatcher rows with NULL SEQ_ID, permanent (the reconciliation join cannot promote them). | 2 |
 | batch_status | 3 | Fully complete. For NB/PAY/BDL runs this includes DM-side confirmation written by the reconciliation job. | 3 |
-| status_classification | COMPLETE | Fully complete. Source status 3, or a dispatcher/non-handoff run whose terminal state is success. | 3 |
-| fault_report_type | MESSAGE | The run's fault report is a bare single-string message. Full report in SI_FaultReport. | 3 |
-| sterling_status | NO_ACTION | The run performed no processing - there was nothing to act on. | 3 |
-| sterling_check_result | NOT_FOUND | No b2bi instance exists for this RUN_ID - the instance aged out of the Sterling runtime retention window (~30 days) or never registered. | 3 |
-| sterling_status | IN_PROGRESS | The run has not yet reached a terminal state within Sterling Integrator. | 4 |
-| fault_report_type | NONE | The collector attempted capture but the failure carried no extractable report. Sentinel that prevents re-attempting; no SI_FaultReport row exists. | 4 |
-| status_classification | NO_FILES | Source status 4 where the run genuinely acquired no files: either a non-NB/PAY/BDL process type (the reconciliation job never writes 4 for those), or an NB/PAY/BDL run with no nonzero-size pickup rows in BATCH_FILES. | 4 |
 | batch_status | 4 | Dual meaning at the source: no files acquired (workflow tail), or reached status 2 with NULL BATCH_ID meaning the handoff never happened (reconciliation job, NB/PAY/BDL only). Disambiguated in status_classification. | 4 |
 | batch_status | 5 | Duplicate file detected; processing suppressed. | 5 |
-| status_classification | NO_HANDOFF | Source status 4 on an NB/PAY/BDL run that acquired files (nonzero-size pickups exist in BATCH_FILES) but never handed off to DM - it reached status 2 with NULL BATCH_ID and the reconciliation job demoted it. | 5 |
-| sterling_status | UNDEFINED | The Sterling-level status has not been determined. | 5 |
-| status_classification | DUPLICATE | Source status 5: duplicate file detected, processing suppressed. | 6 |
 | batch_status | -1 | Dual meaning at the source: a Sterling-side workflow fault (onFault handler), or a DM-side batch rejection written by the reconciliation job. Disambiguated in status_classification. | 6 |
 | batch_status | -2 | Cascade-skip: this run short-circuited because its predecessor in a SEQUENTIAL chain failed. | 7 |
+| batch_status | 1 | Defined for the retired ETL_CALL success path. Unreachable since 2024-08; zero rows exist in source history. | 8 |
+| fault_report_type | TRANSLATION | The run's fault report is a translation-map report with structured entries. Full report in SI_FaultReport. | 1 |
+| fault_report_type | SERVICE | The run's fault report is a service report (e.g. XSLT Service) carrying a service-level exception. Full report in SI_FaultReport. | 2 |
+| fault_report_type | MESSAGE | The run's fault report is a bare single-string message. Full report in SI_FaultReport. | 3 |
+| fault_report_type | NONE | The collector attempted capture but the failure carried no extractable report. Sentinel that prevents re-attempting; no SI_FaultReport row exists. | 4 |
+| status_classification | IN_FLIGHT | Source status 0 and the run is presumed executing (young row, or Sterling cross-check confirmed RUNNING). | 1 |
+| status_classification | AWAITING_DM | Source status 2 on a non-dispatcher run: the B2B side is done and the run awaits promotion by the reconciliation job (DM batch confirmation for NB/PAY/BDL handoffs; immediate promotion for other process types). Rows whose DM batch never reaches a recognized terminal code remain here indefinitely - a small permanent-limbo population exists in history. | 2 |
+| status_classification | COMPLETE | Fully complete. Source status 3, or a dispatcher/non-handoff run whose terminal state is success. | 3 |
+| status_classification | NO_FILES | Source status 4 where the run genuinely acquired no files: either a non-NB/PAY/BDL process type (the reconciliation job never writes 4 for those), or an NB/PAY/BDL run with no nonzero-size pickup rows in BATCH_FILES. | 4 |
+| status_classification | NO_HANDOFF | Source status 4 on an NB/PAY/BDL run that acquired files (nonzero-size pickups exist in BATCH_FILES) but never handed off to DM - it reached status 2 with NULL BATCH_ID and the reconciliation job demoted it. | 5 |
+| status_classification | DUPLICATE | Source status 5: duplicate file detected, processing suppressed. | 6 |
 | status_classification | CASCADE_SKIP | Source status -2: skipped because the predecessor in a SEQUENTIAL chain failed. | 7 |
 | status_classification | STERLING_FAULT | Source status -1 where no DM rejection is possible: either NULL BATCH_ID (the workflow faulted before any DM handoff), or a process type outside NEW_BUSINESS/PAYMENT/BDL (the reconciliation job never writes -1 for those types, so the -1 is the workflow fault handler regardless of BATCH_ID). | 8 |
-| batch_status | 1 | Defined for the retired ETL_CALL success path. Unreachable since 2024-08; zero rows exist in source history. | 8 |
 | status_classification | DM_REJECTED | Source status -1 with a BATCH_ID whose DM batch shows a failed or deleted terminal code: DM rejected the batch after handoff (the reconciliation job write, independently re-verified against the DM tables). | 9 |
 | status_classification | FAULT_POST_HANDOFF | Source status -1 with a BATCH_ID whose DM batch is healthy: the data landed in DM but the pipeline faulted afterward (cleanup or notification steps died). A distinct triage category. | 10 |
 | status_classification | DIED_UNHANDLED | Source status 0 past the aging threshold with a Sterling cross-check of TERMINATED or NOT_FOUND: the run died without reaching a fault handler and will never update its own row. | 11 |
 | status_classification | UNCLASSIFIED | The collector could not resolve a classification (missing evidence, verification unavailable). A holding state that should be rare; persistent UNCLASSIFIED rows indicate a collector or source problem. | 12 |
+| sterling_check_result | RUNNING | The b2bi WF_INST_S instance for this RUN_ID was found and is still executing. The run is genuinely in flight. | 1 |
+| sterling_check_result | TERMINATED | The b2bi instance was found but has ended. Combined with source status 0, the run died without writing a terminal status. | 2 |
+| sterling_check_result | NOT_FOUND | No b2bi instance exists for this RUN_ID - the instance aged out of the Sterling runtime retention window (~30 days) or never registered. | 3 |
+| sterling_status | SUCCESS | The process reached a successful terminal state within Sterling Integrator. | 1 |
+| sterling_status | FAILED | The process failed within Sterling Integrator. | 2 |
+| sterling_status | NO_ACTION | The run performed no processing - there was nothing to act on. | 3 |
+| sterling_status | IN_PROGRESS | The run has not yet reached a terminal state within Sterling Integrator. | 4 |
+| sterling_status | UNDEFINED | The Sterling-level status has not been determined. | 5 |
 
   - **Collect-B2BPipeline.ps1**: [sort:1] Primary writer. Inserts classified new runs, re-polls and reclassifies incomplete rows inside the lookback working window, resolves dispatcher_name, applies Sterling cross-check results, and increments alert_count when alerts are queued. Rows outside the working window are never touched after reaching their final collected state.
   - **Integration.ETL.tbl_B2B_CLIENTS_BATCH_STATUS**: [sort:2] The mirrored source (external, AVG-PROD-LSNR). One tracking row per source RUN_ID; batch_status, the source dates, and the identity columns are mirrored verbatim. The source row is written by the pipeline workflows themselves (first-party status writes verified from BPML source) and promoted by the reconciliation job FAINT.USP_B2B_CLIENTS_UPDATE_BATCH_STATUS, which runs every minute 00:15-18:59:59.
