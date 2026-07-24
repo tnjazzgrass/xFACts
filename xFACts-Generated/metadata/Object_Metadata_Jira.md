@@ -1,6 +1,6 @@
 # Object_Metadata: Jira
 Source: dbo.Object_Metadata
-Generated: 2026-07-24 03:40:10
+Generated: 2026-07-24 04:05:08
 
 ## Process-JiraTicketQueue.ps1 (Script)
 
@@ -262,21 +262,6 @@ Ticket summary/title
 ### description / TicketKey #7  [metadata_id: 492]
 
 Jira ticket key returned when the ticket is created; NULL when no ticket was created.
-
-### status_value / TicketKey #20  [metadata_id: 1888]
-Title: <Ticket #>
-
-Ticket created successfully in Jira; the column holds the returned Jira ticket key.
-
-### status_value / TicketKey #21  [metadata_id: 1889]
-Title: Email
-
-Fallback email sent instead of ticket — max retries exhausted
-
-### status_value / TicketKey #22  [metadata_id: 1890]
-Title: NULL
-
-No ticket was created - the API call failed, or the queue insert itself failed.
 
 ### description / Trigger_Type #12  [metadata_id: 497]
 
