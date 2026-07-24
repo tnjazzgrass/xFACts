@@ -176,12 +176,6 @@
                                        ],
                        "statusValues":  [
                                             {
-                                                "column":  "status",
-                                                "value":  "IN_PROGRESS",
-                                                "meaning":  "Build is currently running. Set when first step is detected in sysjobhistory but job outcome row (step_id=0) has not appeared.",
-                                                "sortOrder":  1
-                                            },
-                                            {
                                                 "column":  "run_status",
                                                 "value":  "0",
                                                 "meaning":  "Failed. The SQL Agent job outcome indicates the build did not complete successfully.",
@@ -194,18 +188,6 @@
                                                 "sortOrder":  2
                                             },
                                             {
-                                                "column":  "status",
-                                                "value":  "COMPLETED",
-                                                "meaning":  "Build finished successfully. Set when job outcome row shows run_status=1.",
-                                                "sortOrder":  2
-                                            },
-                                            {
-                                                "column":  "status",
-                                                "value":  "FAILED",
-                                                "meaning":  "Build encountered an error. Set when job outcome row shows run_status=0. The failed_step_id and failed_step_name columns identify the failing step.",
-                                                "sortOrder":  3
-                                            },
-                                            {
                                                 "column":  "run_status",
                                                 "value":  "2",
                                                 "meaning":  "Retry. The SQL Agent job is being retried.",
@@ -216,6 +198,24 @@
                                                 "value":  "3",
                                                 "meaning":  "Canceled. The SQL Agent job was canceled.",
                                                 "sortOrder":  4
+                                            },
+                                            {
+                                                "column":  "status",
+                                                "value":  "IN_PROGRESS",
+                                                "meaning":  "Build is currently running. Set when first step is detected in sysjobhistory but job outcome row (step_id=0) has not appeared.",
+                                                "sortOrder":  1
+                                            },
+                                            {
+                                                "column":  "status",
+                                                "value":  "COMPLETED",
+                                                "meaning":  "Build finished successfully. Set when job outcome row shows run_status=1.",
+                                                "sortOrder":  2
+                                            },
+                                            {
+                                                "column":  "status",
+                                                "value":  "FAILED",
+                                                "meaning":  "Build encountered an error. Set when job outcome row shows run_status=0. The failed_step_id and failed_step_name columns identify the failing step.",
+                                                "sortOrder":  3
                                             },
                                             {
                                                 "column":  "status",
